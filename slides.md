@@ -292,15 +292,46 @@ layout: none
 </style>
 
 ---
-layout: default
+layout: none
 ---
 
-# 个人基本情况说明
+<div class="content-root">
+  <h1 class="content-title">一、个人基本情况说明</h1>
+  <div class="content-body">
+    <ul>
+      <li><strong>姓名</strong>：张旭</li>
+      <li><strong>部门</strong>：XX部门</li>
+      <li><strong>岗位</strong>：XX岗位</li>
+      <li><strong>入职时间</strong>：20XX年X月</li>
+    </ul>
+  </div>
+</div>
 
-- **姓名**：张旭
-- **部门**：XX部门
-- **岗位**：XX岗位
-- **入职时间**：20XX年X月
+<style>
+.content-root {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  overflow: hidden;
+  padding: 48px 60px;
+  box-sizing: border-box;
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+.content-title {
+  color: #d00d14;
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  margin: 0;
+  line-height: 1.2;
+}
+.content-body {
+  margin-top: 48px;
+  color: #ffffff;
+  font-size: 22px;
+  line-height: 1.8;
+}
+</style>
 
 ---
 layout: none
@@ -447,16 +478,312 @@ layout: none
 </style>
 
 ---
-layout: default
+layout: none
 ---
 
-# 2025 年度工作总结
+<div class="content-root">
+  <h1 class="content-title">二、2025 年度工作总结</h1>
+  <div class="content-body">
+    <p>本年度围绕业务目标，重点推进了以下几个方面：</p>
+    <ul>
+      <li><strong>产品迭代</strong>：完成 3 个核心功能模块上线</li>
+      <li><strong>团队协作</strong>：主导 2 次跨部门项目</li>
+      <li><strong>技术沉淀</strong>：输出 5 篇技术文档</li>
+    </ul>
+  </div>
+</div>
 
-本年度围绕业务目标，重点推进了以下几个方面：
+<style>
+.content-root {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  overflow: hidden;
+  padding: 48px 60px;
+  box-sizing: border-box;
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+.content-title {
+  color: #d00d14;
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  margin: 0;
+  line-height: 1.2;
+}
+.content-body {
+  margin-top: 48px;
+  color: #333333;
+  font-size: 22px;
+  line-height: 1.8;
+}
+</style>
 
-- **产品迭代**：完成 3 个核心功能模块上线
-- **团队协作**：主导 2 次跨部门项目
-- **技术沉淀**：输出 5 篇技术文档
+---
+layout: none
+---
+
+<div class="two-col-root">
+  <h1 class="content-title">亮点回顾 · 对比分析</h1>
+  <div class="two-col-body">
+    <div class="col">
+      <h2 class="col-title">年初目标</h2>
+      <div class="col-content">
+        <ul>
+          <li>核心模块上线 2 个</li>
+          <li>跨部门协作 1 次</li>
+          <li>技术文档 3 篇</li>
+          <li>GMV 同比增长 20%</li>
+        </ul>
+      </div>
+    </div>
+    <div class="col-divider"></div>
+    <div class="col">
+      <h2 class="col-title">实际达成</h2>
+      <div class="col-content">
+        <ul>
+          <li>核心模块上线 <strong>3 个</strong></li>
+          <li>跨部门协作 <strong>2 次</strong></li>
+          <li>技术文档 <strong>5 篇</strong></li>
+          <li>GMV 同比增长 <strong>32%</strong></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.two-col-root {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  overflow: hidden;
+  padding: 48px 60px;
+  box-sizing: border-box;
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+.content-title {
+  color: #d00d14;
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  margin: 0;
+  line-height: 1.2;
+}
+.two-col-body {
+  margin-top: 48px;
+  display: flex;
+  align-items: stretch;
+  gap: 40px;
+}
+.col {
+  flex: 1;
+  min-width: 0;
+}
+.col-divider {
+  width: 2px;
+  background: #d00d14;
+  opacity: 0.5;
+  align-self: stretch;
+}
+.col-title {
+  color: #d00d14;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  margin: 0 0 18px 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #d00d14;
+}
+.col-content {
+  color: #333333;
+  font-size: 20px;
+  line-height: 1.8;
+}
+.col-content ul {
+  margin: 0;
+  padding-left: 20px;
+}
+</style>
+
+---
+layout: none
+---
+
+<div class="img-content-root">
+  <h1 class="content-title">核心项目 · 产品 A 上线</h1>
+  <div class="img-content-body">
+    <div class="image-wrap">
+      <img src="/templates/company-standard/logo-mark.png" class="content-image" />
+    </div>
+    <div class="text-wrap">
+      <h2 class="text-title">重点项目介绍</h2>
+      <div class="text-body">
+        <p>产品 A 是本年心的交付成果，历时 6 个月完成从立项到上线。</p>
+        <ul>
+          <li>覆盖 <strong>12 个</strong> 业务线</li>
+          <li>日均调用量 <strong>50 万+</strong></li>
+          <li>用户满意度 <strong>95%</strong></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.img-content-root {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  overflow: hidden;
+  padding: 48px 60px;
+  box-sizing: border-box;
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+.content-title {
+  color: #d00d14;
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  margin: 0;
+  line-height: 1.2;
+}
+.img-content-body {
+  margin-top: 48px;
+  display: flex;
+  align-items: center;
+  gap: 48px;
+}
+.image-wrap {
+  flex: 0 0 45%;
+  aspect-ratio: 4 / 3;
+  background: #f5f5f5;
+  border: 4px solid #d00d14;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.content-image {
+  width: 60%;
+  height: 60%;
+  object-fit: contain;
+  filter: invert(87%) sepia(98%) saturate(4811%) hue-rotate(352deg) brightness(82%) contrast(100%);
+}
+.text-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.text-title {
+  color: #d00d14;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  margin: 0 0 20px 0;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #d00d14;
+}
+.text-body {
+  color: #333333;
+  font-size: 20px;
+  line-height: 1.8;
+}
+.text-body ul {
+  margin: 10px 0 0 0;
+  padding-left: 20px;
+}
+</style>
+
+---
+layout: none
+---
+
+<div class="data-root">
+  <h1 class="content-title">业绩数据 · 同比增长</h1>
+  <div class="data-body">
+    <div class="chart-wrap">
+      <BarChart
+        :labels="['Q1', 'Q2', 'Q3', 'Q4']"
+        :values="[120, 180, 240, 310]"
+        label="季度业绩（万元）"
+      />
+    </div>
+    <div class="metrics-wrap">
+      <div class="metric-card">
+        <div class="metric-value">850<span class="metric-unit">万</span></div>
+        <div class="metric-label">年度总业绩</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">+32<span class="metric-unit">%</span></div>
+        <div class="metric-label">同比增长</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">12<span class="metric-unit">个</span></div>
+        <div class="metric-label">核心项目</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.data-root {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  overflow: hidden;
+  padding: 48px 60px;
+  box-sizing: border-box;
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+.content-title {
+  color: #d00d14;
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  margin: 0;
+  line-height: 1.2;
+}
+.data-body {
+  margin-top: 40px;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+.chart-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.metrics-wrap {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.metric-card {
+  padding: 18px 20px;
+  background: linear-gradient(180deg, #d00d14 0%, #c00b11 60%, #a8090e 100%);
+  color: #ffffff;
+  text-align: center;
+}
+.metric-value {
+  font-size: 42px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 1px;
+}
+.metric-unit {
+  font-size: 20px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+.metric-label {
+  margin-top: 6px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  opacity: 0.95;
+}
+</style>
 
 ---
 layout: none
@@ -603,20 +930,150 @@ layout: none
 </style>
 
 ---
-layout: default
+layout: none
 ---
 
-# 2026 年工作计划
+<div class="content-root">
+  <h1 class="content-title">三、2026 年工作计划</h1>
+  <div class="content-body">
+    <ul>
+      <li><strong>目标一</strong>：持续推进核心业务优化</li>
+      <li><strong>目标二</strong>：加强团队建设与培训</li>
+      <li><strong>目标三</strong>：拓展新业务方向</li>
+    </ul>
+  </div>
+</div>
 
-- **目标一**：持续推进核心业务优化
-- **目标二**：加强团队建设与培训
-- **目标三**：拓展新业务方向
+<style>
+.content-root {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  overflow: hidden;
+  padding: 48px 60px;
+  box-sizing: border-box;
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+.content-title {
+  color: #d00d14;
+  font-size: 40px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  margin: 0;
+  line-height: 1.2;
+}
+.content-body {
+  margin-top: 48px;
+  color: #333333;
+  font-size: 22px;
+  line-height: 1.8;
+}
+</style>
 
 ---
-layout: center
-class: text-center
+layout: none
 ---
 
-# 感谢聆听
+<div class="back-cover-root">
+  <!-- 中央红色结束语区 -->
+  <div class="ending-block">
+    <div class="ending-texture"></div>
+    <div class="ending-content">
+      <h1>汇报完毕，谢谢！</h1>
+    </div>
+  </div>
 
-期待您的指导与反馈
+  <!-- 底部 logo + 日期 -->
+  <div class="footer-area">
+    <div class="footer-logo">
+      <img src="/templates/company-standard/logo-mark.png" class="footer-mark" />
+      <img src="/templates/company-standard/logo-text.png" class="footer-text" />
+    </div>
+    <p class="footer-date">2026年1月</p>
+  </div>
+</div>
+
+<style>
+.back-cover-root {
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  overflow: hidden;
+  padding: 36px 48px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding-top: 120px;
+  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+}
+
+/* ── 中央红色结束语区 ── */
+.ending-block {
+  position: relative;
+  width: 100%;
+  padding: 40px 0;
+  background: linear-gradient(180deg, #d00d14 0%, #c00b11 60%, #a8090e 100%);
+  overflow: hidden;
+}
+
+.ending-texture {
+  position: absolute;
+  inset: 0;
+  background-image: url('/templates/company-standard/logo-mark.png');
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-position: center;
+  opacity: 0.1;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.ending-content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+}
+.ending-content h1 {
+  color: #ffffff;
+  font-size: 52px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── 底部 logo + 日期 ── */
+.footer-area {
+  margin-top: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.footer-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.footer-mark {
+  height: 24px;
+  filter: invert(87%) sepia(98%) saturate(4811%) hue-rotate(352deg) brightness(82%) contrast(100%);
+}
+
+.footer-text {
+  height: 24px;
+  filter: brightness(0);
+}
+
+.footer-date {
+  color: #333333;
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  margin: 0;
+}
+</style>
