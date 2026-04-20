@@ -1,6 +1,6 @@
 # Big-PPT 开发路线图
 
-## Phase 1：项目基础 + 模板
+## Phase 1：项目基础 + 模板 ✅
 
 **目标**：搭建项目结构，创建模板体系和 AI Skill 文件
 
@@ -9,26 +9,13 @@
 - templates 目录及模板套结构
 - AI Skill 文件（slide-generator.md）
 - 公司模板 markdown 文件（基于模板图片生成）
+- AI 生成效果已验证通过（slides.md 示例）
 
-**状态**：进行中
-
----
-
-## Phase 2：模板完善 + AI 验证
-
-**目标**：完善所有模板套，验证 AI 能基于 Skill 文件生成合格幻灯片
-
-**交付物**：
-- 完整的多套模板（每套包含封面、封底、目录、内容等页面）
-- 自定义 Slidev layouts（如需要）
-- 公司视觉资源（logo、背景图等）
-- AI 生成效果测试报告
-
-**依赖**：Phase 1 完成，用户提供模板图片
+**状态**：已完成
 
 ---
 
-## Phase 3：AI 集成 + 对话 UI
+## Phase 2：AI 集成 + 对话 UI
 
 **目标**：构建 AI 对话界面，实现对话式幻灯片生成
 
@@ -38,7 +25,26 @@
 - 幻灯片实时预览
 - 流式生成支持
 
-**依赖**：Phase 2 完成
+**状态**：待开始
+
+**依赖**：Phase 1（已完成）
+
+---
+
+## Phase 3：架构重组（Monorepo）
+
+**目标**：将原型拆分为 monorepo 三包结构，为后续功能开发和部署打好基础
+
+**交付物**：
+- pnpm workspace monorepo 搭建
+- `packages/slidev` — 幻灯片渲染（现有内容迁入）
+- `packages/creator` — 聊天 UI 前端（从 Vite 中间件迁移）
+- `packages/agent` — Agent 后端（Node.js，Agent 主循环 + 工具执行 + LLM 调用）
+- 前端不再直接操作文件，全部通过 Agent 后端 API
+
+**状态**：待开始
+
+**依赖**：Phase 2 完成（原型验证通过后再拆分，避免过早抽象）
 
 ---
 

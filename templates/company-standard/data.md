@@ -16,7 +16,6 @@ class: data-slide
         label="季度业绩（万元）"
       />
     </div>
-
     <div class="metrics-wrap">
       <div class="metric-card">
         <div class="metric-value">850<span class="metric-unit">万</span></div>
