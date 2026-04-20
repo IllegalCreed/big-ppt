@@ -12,12 +12,91 @@ const PROVIDERS: Record<string, { name: string; baseURL: string; defaultModel: s
   qwen:     { name: '千问 (Qwen)',     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-plus' },
 }
 
+// 会话日志中间件：前端通过 POST /api/log 上报事件，写入 logs/creator-YYYY-MM-DD.jsonl
+function loggerPlugin() {
+  const LOGS_DIR = path.resolve('logs')
+
+  function ensureDir() {
+    if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true })
+  }
+
+  function currentLogFile(): string {
+    const d = new Date()
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return path.resolve(LOGS_DIR, `creator-${yyyy}-${mm}-${dd}.jsonl`)
+  }
+
+  return {
+    name: 'creator-logger',
+    configureServer(server: any) {
+      server.middlewares.use('/api/log-event', (req: any, res: any) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ success: false, error: 'method not allowed' }))
+          return
+        }
+        let body = ''
+        req.on('data', (chunk: string) => { body += chunk })
+        req.on('end', () => {
+          try {
+            ensureDir()
+            const raw = JSON.parse(body || '{}')
+            const { payload, ...indexFields } = raw
+
+            // 大 payload 单独落盘到 logs/payloads/<session>/<序号>-<kind>.json
+            if (payload !== undefined && payload !== null) {
+              const session = (indexFields.session || 'no-session').toString()
+                .replace(/[^a-zA-Z0-9_-]/g, '_')
+                .slice(0, 64)
+              const payloadDir = path.resolve(LOGS_DIR, 'payloads', session)
+              if (!fs.existsSync(payloadDir)) fs.mkdirSync(payloadDir, { recursive: true })
+              const seq = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 6)
+              const kindSafe = String(indexFields.kind || 'event').replace(/[^a-zA-Z0-9_-]/g, '_')
+              const filename = `${seq}-${kindSafe}.json`
+              fs.writeFileSync(path.resolve(payloadDir, filename), JSON.stringify(payload, null, 2))
+              indexFields.payload_file = `payloads/${session}/${filename}`
+              // 统计一下 payload 体积，便于索引行扫描时判断
+              indexFields.payload_bytes = Buffer.byteLength(JSON.stringify(payload))
+            }
+
+            const line = JSON.stringify({ ts: new Date().toISOString(), ...indexFields })
+            fs.appendFileSync(currentLogFile(), line + '\n')
+            res.setHeader('Content-Type', 'application/json; charset=utf-8')
+            res.end(JSON.stringify({ success: true }))
+          } catch (err: any) {
+            res.statusCode = 500
+            res.end(JSON.stringify({ success: false, error: err.message }))
+          }
+        })
+      })
+
+      // 方便用户 tail -f 查看：打印日志文件位置
+      const firstFile = currentLogFile()
+      if (!server.__loggerAnnounced) {
+        server.__loggerAnnounced = true
+        console.log(`\n  \x1b[36m[creator-logger]\x1b[0m 会话日志将写入: ${firstFile}\n`)
+      }
+    },
+  }
+}
+
 // Agent 工具中间件
 function slidesToolPlugin() {
   const SLIDES_PATH = path.resolve('slides.md')
+  const SLIDES_BAK = path.resolve('slides.md.bak')
   const TEMPLATES_DIR = path.resolve('templates/company-standard')
+  const LOGS_DIR = path.resolve('logs')
   // 排除非页面模板的文件
   const IGNORE_FILES = new Set(['DESIGN.md', 'README.md'])
+
+  // 每次 write/edit 前备份当前 slides.md 到 .bak，用于 /undo 恢复
+  function backupSlides() {
+    if (fs.existsSync(SLIDES_PATH)) {
+      fs.copyFileSync(SLIDES_PATH, SLIDES_BAK)
+    }
+  }
 
   return {
     name: 'slides-tools',
@@ -46,6 +125,7 @@ function slidesToolPlugin() {
               res.end(JSON.stringify({ success: false, error: 'content 不能为空' }))
               return
             }
+            backupSlides()
             fs.writeFileSync(SLIDES_PATH, content, 'utf-8')
             res.setHeader('Content-Type', 'application/json; charset=utf-8')
             res.end(JSON.stringify({ success: true }))
@@ -109,6 +189,7 @@ function slidesToolPlugin() {
 
             // 唯一匹配 → 执行替换
             const newContent = content.replace(old_string, new_string)
+            backupSlides()
             fs.writeFileSync(SLIDES_PATH, newContent, 'utf-8')
             res.setHeader('Content-Type', 'application/json; charset=utf-8')
             res.end(JSON.stringify({ success: true }))
@@ -172,13 +253,77 @@ function slidesToolPlugin() {
           const designPath = path.resolve(TEMPLATES_DIR, 'DESIGN.md')
           const design = fs.existsSync(designPath) ? fs.readFileSync(designPath, 'utf-8') : ''
 
+          // 列出可用的图片资源（帮 AI 避免编造不存在的图片路径）
+          const images = fs.readdirSync(TEMPLATES_DIR)
+            .filter(f => /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f))
+            .map(f => `/templates/company-standard/${f}`)
+
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
           res.end(JSON.stringify({
             success: true,
             templates: files,
             usage_guide: readme,
             design_spec: design,
+            available_images: images,
           }))
+        } catch (err: any) {
+          res.statusCode = 500
+          res.end(JSON.stringify({ success: false, error: err.message }))
+        }
+      })
+
+      // 从 slides.md.bak 恢复（斜杠指令 /undo）
+      server.middlewares.use('/api/restore-slides', (_req: any, res: any) => {
+        try {
+          if (!fs.existsSync(SLIDES_BAK)) {
+            res.statusCode = 404
+            res.setHeader('Content-Type', 'application/json; charset=utf-8')
+            res.end(JSON.stringify({ success: false, error: '没有可撤销的备份（slides.md.bak 不存在）' }))
+            return
+          }
+          fs.copyFileSync(SLIDES_BAK, SLIDES_PATH)
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({ success: true, message: '已恢复到上一次修改前的版本' }))
+        } catch (err: any) {
+          res.statusCode = 500
+          res.end(JSON.stringify({ success: false, error: err.message }))
+        }
+      })
+
+      // 获取最近一次完整会话的日志事件（斜杠指令 /log）
+      server.middlewares.use('/api/log/latest', (_req: any, res: any) => {
+        try {
+          if (!fs.existsSync(LOGS_DIR)) {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8')
+            res.end(JSON.stringify({ success: true, events: [] }))
+            return
+          }
+          const files = fs.readdirSync(LOGS_DIR)
+            .filter(f => /^creator-\d{4}-\d{2}-\d{2}\.jsonl$/.test(f))
+            .sort()
+          if (files.length === 0) {
+            res.setHeader('Content-Type', 'application/json; charset=utf-8')
+            res.end(JSON.stringify({ success: true, events: [] }))
+            return
+          }
+          const latestFile = path.resolve(LOGS_DIR, files[files.length - 1])
+          const lines = fs.readFileSync(latestFile, 'utf-8').trim().split('\n').filter(Boolean)
+          const events = lines.map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean) as any[]
+
+          // 倒序找最近一个 session_end，再取该 session 的全部事件
+          let sessionId: string | undefined
+          for (let i = events.length - 1; i >= 0; i--) {
+            if (events[i].kind === 'session_end') { sessionId = events[i].session; break }
+          }
+          // 如果没有 session_end（尚未结束），取最新一条 event 的 session
+          if (!sessionId && events.length > 0) sessionId = events[events.length - 1].session
+
+          const sessionEvents = sessionId
+            ? events.filter(e => e.session === sessionId)
+            : []
+
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({ success: true, session: sessionId, events: sessionEvents }))
         } catch (err: any) {
           res.statusCode = 500
           res.end(JSON.stringify({ success: false, error: err.message }))
@@ -218,7 +363,7 @@ const selectedProvider = process.env.LLM_PROVIDER || 'zhipu'
 export default defineConfig({
   root: 'creator/',
   cacheDir: 'node_modules/.vite-creator',
-  plugins: [vue(), slidesToolPlugin()],
+  plugins: [vue(), loggerPlugin(), slidesToolPlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'creator/src'),

@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { buildSystemPrompt } from '../prompts/buildSystemPrompt'
 import { tools } from '../prompts/tools'
+import { logEvent, setCurrentSession, truncate } from './logger'
 
 // --- 类型定义 ---
 
@@ -17,9 +18,19 @@ interface ChatMessage {
   tool_call_id?: string
 }
 
+export interface ToolStep {
+  key: string
+  name: string
+  label: string
+  status: 'loading' | 'success' | 'error'
+  argsPreview?: string
+  error?: string
+}
+
 interface ChatBubble {
   role: 'user' | 'assistant'
   content: string
+  toolSteps?: ToolStep[]
 }
 
 type AgentStatus = 'idle' | 'thinking' | 'calling_tool' | 'streaming' | 'error' | 'cancelled'
@@ -34,6 +45,7 @@ const TOOL_STATUS_MAP: Record<string, string> = {
 
 const MAX_ITERATIONS = 20
 const MAX_CONTEXT_MESSAGES = 20
+
 
 // --- Settings (localStorage) ---
 
@@ -253,8 +265,23 @@ export function useAIChat() {
   // 当前流式输出的缓冲（用于实时显示 LLM 回复）
   const streamingContent = ref('')
 
+  // 当前轮的工具调用步骤（思维链可视化数据源）
+  const toolSteps = ref<ToolStep[]>([])
+
   async function sendMessage(userText: string) {
     if (status.value !== 'idle') return
+
+    const session = (globalThis.crypto?.randomUUID?.() || `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    setCurrentSession(session)
+    const t0 = Date.now()
+    logEvent({
+      session,
+      kind: 'user_message',
+      text: truncate(userText, 500),
+      length: userText.length,
+      model: getModel(),
+      payload: { text: userText },
+    })
 
     // 添加用户消息
     messages.value.push({ role: 'user', content: userText })
@@ -274,6 +301,17 @@ export function useAIChat() {
         status.value = 'thinking'
         statusText.value = '正在思考...'
 
+        const turnT0 = Date.now()
+        logEvent({
+          session,
+          turn: i + 1,
+          kind: 'llm_request',
+          messages_count: trimmed.length,
+          tools_count: tools.length,
+          model: getModel(),
+          payload: { messages: trimmed, tools, model: getModel() },
+        })
+
         const { toolCalls, content } = await callLLMWithRetry(
           trimmed,
           abortController.signal,
@@ -288,6 +326,18 @@ export function useAIChat() {
           },
         )
 
+        logEvent({
+          session,
+          turn: i + 1,
+          kind: 'llm_response',
+          content_length: (content || '').length,
+          content_preview: truncate(content, 300),
+          tool_calls_count: toolCalls.length,
+          tool_call_names: toolCalls.map(t => t.function.name),
+          duration_ms: Date.now() - turnT0,
+          payload: { content, tool_calls: toolCalls },
+        })
+
         if (toolCalls.length > 0) {
           // 把 assistant 的 tool_calls 消息加入历史
           messages.value.push({
@@ -298,14 +348,58 @@ export function useAIChat() {
 
           // 逐个执行工具
           for (const tc of toolCalls) {
+            const step: ToolStep = {
+              key: tc.id || `${tc.function.name}-${Date.now()}-${Math.random()}`,
+              name: tc.function.name,
+              label: TOOL_STATUS_MAP[tc.function.name] || `调用工具：${tc.function.name}`,
+              status: 'loading',
+              argsPreview: (tc.function.arguments || '').slice(0, 80),
+            }
+            toolSteps.value.push(step)
+
             status.value = 'calling_tool'
-            statusText.value = TOOL_STATUS_MAP[tc.function.name] || '正在处理...'
+            statusText.value = step.label
+
+            const toolT0 = Date.now()
+            logEvent({
+              session,
+              turn: i + 1,
+              kind: 'tool_call',
+              tool: tc.function.name,
+              args: truncate(tc.function.arguments, 500),
+              payload: { tool_call_id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
+            })
 
             let result: string
             try {
               result = await executeTool(tc)
+              const idx = toolSteps.value.findIndex(s => s.key === step.key)
+              if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'success' }
+              logEvent({
+                session,
+                turn: i + 1,
+                kind: 'tool_result',
+                tool: tc.function.name,
+                success: true,
+                bytes: result.length,
+                preview: truncate(result, 300),
+                duration_ms: Date.now() - toolT0,
+                payload: { result },
+              })
             } catch (err: any) {
               result = JSON.stringify({ success: false, error: err.message })
+              const idx = toolSteps.value.findIndex(s => s.key === step.key)
+              if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'error', error: err.message }
+              logEvent({
+                session,
+                turn: i + 1,
+                kind: 'tool_result',
+                tool: tc.function.name,
+                success: false,
+                error: err.message,
+                duration_ms: Date.now() - toolT0,
+                payload: { error: err.message, stack: err.stack },
+              })
             }
 
             messages.value.push({
@@ -320,30 +414,65 @@ export function useAIChat() {
         // LLM 最终自然语言回复
         if (fullContent) {
           messages.value.push({ role: 'assistant', content: fullContent })
-          chatMessages.value.push({ role: 'assistant', content: fullContent })
         }
+        if (fullContent || toolSteps.value.length > 0) {
+          chatMessages.value.push({
+            role: 'assistant',
+            content: fullContent,
+            toolSteps: toolSteps.value.length > 0 ? toolSteps.value : undefined,
+          })
+        }
+        logEvent({
+          session,
+          kind: 'session_end',
+          reason: 'completed',
+          turns: i + 1,
+          duration_ms: Date.now() - t0,
+        })
+        toolSteps.value = []
         streamingContent.value = ''
         status.value = 'idle'
         statusText.value = ''
         return
       }
 
+      logEvent({ session, kind: 'session_end', reason: 'max_iterations', turns: MAX_ITERATIONS, duration_ms: Date.now() - t0 })
+
       // 超过最大轮次
       const timeoutMsg = '生成超时（工具调用轮次过多），请尝试简化需求或重新开始。'
       chatMessages.value.push({ role: 'assistant', content: timeoutMsg })
       status.value = 'idle'
     } catch (err: any) {
+      // 归档进行中步骤为 error，避免丢失可视化上下文
+      if (toolSteps.value.length > 0) {
+        const finalized = toolSteps.value.map(s =>
+          s.status === 'loading'
+            ? { ...s, status: 'error' as const, error: err.name === 'AbortError' ? '已取消' : (err.message || '中断') }
+            : s,
+        )
+        if (err.name === 'AbortError') {
+          chatMessages.value.push({ role: 'assistant', content: '', toolSteps: finalized })
+        } else {
+          chatMessages.value.push({ role: 'assistant', content: `出错了：${err.message}`, toolSteps: finalized })
+        }
+        toolSteps.value = []
+      } else if (err.name !== 'AbortError') {
+        chatMessages.value.push({ role: 'assistant', content: `出错了：${err.message}` })
+      }
+
       if (err.name === 'AbortError') {
         status.value = 'cancelled'
         statusText.value = '已取消'
+        logEvent({ session, kind: 'session_end', reason: 'cancelled', duration_ms: Date.now() - t0 })
       } else {
         status.value = 'error'
         statusText.value = err.message || '未知错误'
-        chatMessages.value.push({ role: 'assistant', content: `出错了：${err.message}` })
+        logEvent({ session, kind: 'session_end', reason: 'error', error: err.message, duration_ms: Date.now() - t0 })
       }
       streamingContent.value = ''
     } finally {
       abortController = null
+      setCurrentSession(null)
     }
   }
 
@@ -357,17 +486,37 @@ export function useAIChat() {
     status.value = 'idle'
     statusText.value = ''
     streamingContent.value = ''
+    toolSteps.value = []
+  }
+
+  /** 在 chat 面板插入一条本地系统提示（不发给 LLM） */
+  function appendLocalMessage(content: string) {
+    chatMessages.value.push({ role: 'assistant', content })
+  }
+
+  /** 重试上一条用户消息：在 chatMessages 里找最后一条 user 消息，再次 sendMessage */
+  function retryLastUserMessage() {
+    if (status.value !== 'idle') return
+    const lastUser = [...chatMessages.value].reverse().find(m => m.role === 'user')
+    if (!lastUser) {
+      appendLocalMessage('没有可重试的用户消息。')
+      return
+    }
+    sendMessage(lastUser.content)
   }
 
   return {
     chatMessages,
     streamingContent,
+    toolSteps,
     status,
     statusText,
     isGenerating,
     sendMessage,
     cancel,
     clearHistory,
+    appendLocalMessage,
+    retryLastUserMessage,
     getSettings,
   }
 }

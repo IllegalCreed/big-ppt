@@ -147,3 +147,9 @@ vite.config.ts.timestamp-*
 .vite-inspect
 .remote-assets
 components.d.ts
+
+# /undo 功能自动生成的备份
+slides.md.bak
+# 手动副本不纳入版本控制
+slides?copy.md
+slides-*.md

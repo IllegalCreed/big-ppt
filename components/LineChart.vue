@@ -3,6 +3,7 @@ import { Line } from 'vue-chartjs'
 import {
   CategoryScale,
   Chart as ChartJS,
+  Filler,
   Legend,
   LineElement,
   LinearScale,
@@ -19,6 +20,7 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
+  Filler,
 )
 
 const props = defineProps<{
