@@ -28,6 +28,11 @@ export interface Paths {
 
 let cached: Paths | null = null
 
+/** 仅测试使用：清空缓存，让下次 getPaths() 重新读 env 和 monorepo root */
+export function __resetPathsForTesting(): void {
+  cached = null
+}
+
 export function getPaths(): Paths {
   if (cached) return cached
   const root = findMonorepoRoot()
