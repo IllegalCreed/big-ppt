@@ -114,41 +114,136 @@
 
 ---
 
-## Phase 5：导出与部署
+## Phase 5：用户系统 + Deck 管理 + 历史版本（单用户路径）
 
-**目标**：完善导出功能，支持云端部署。
+**目标**：把"文件系统的 `slides.md`"升级成"数据库里的 deck 对象"，每次保存自动入版本历史。**Slidev 仍是单实例**，但 deck 切换时 agent 改写那一份 slides.md。先把数据模型打通，多用户并发留到 Phase 6。
 
 **交付物**：
 
-- PDF 导出
-- PPTX 导出
-- 一键部署到阿里云服务器
-- 本地演示模式优化
+- 后端 `packages/agent` 引入 **SQLite + Drizzle ORM**（单机零运维、类型安全）；agent 启动时自动建 schema + 跑 migration
+- 三张核心表：
+  - `users(id, email, password_hash, created_at, updated_at)`
+  - `decks(id, user_id, title, status, created_at, updated_at)` — status ∈ draft/published
+  - `deck_versions(id, deck_id, content, message, author_id, created_at)` — append-only，每次 save 一条，天然版本历史
+- 认证：`/api/auth/register` / `/api/auth/login` / `/api/auth/me`，session cookie（httpOnly + SameSite=Lax），密码用 argon2 存
+- API Key 从前端 localStorage 搬到后端 `users.llm_settings`（加密存 ，同步清 P3-2）
+- deck 操作 API：`GET /api/decks` / `POST /api/decks` / `GET /api/decks/:id` / `PUT /api/decks/:id` / `DELETE /api/decks/:id` / `GET /api/decks/:id/versions` / `POST /api/decks/:id/restore/:versionId`
+- 前端新增页面：登录 / 注册 / Deck 列表 / Deck 编辑（现有 Creator UI 收到 deck id 参数）/ 版本时间轴面板
+- 打开某 deck 时：agent 把 `deck_versions` 最新一条的 content 落地成 `packages/slidev/slides.md`（互斥锁：同一时刻只有一个"活跃 deck"）
+- 所有 creator 的读写 slides API（`/api/read-slides` / `/api/write-slides` 等）接入 deck 上下文：写操作同时新建一条 deck_version，不再直接覆盖文件
+
+**验收条件**：
+
+- [ ] 新用户能注册 → 登录 → 建 deck → 用对话生成 → 保存 → 登出 → 重登看到 deck 列表带正确 title
+- [ ] Deck 详情页的"历史版本"面板显示所有历史记录，点击某条可预览 + 一键回滚（回滚 = 新建一条 version 指向该历史 content，保留完整时间线）
+- [ ] 同一用户不同 deck 可切换（切换时 agent 把对应 content 写入 slides.md，Slidev 自动热更新）
+- [ ] API Key 后端化后，前端 localStorage 不再存敏感信息；清账 P3-2
+- [ ] `pnpm test` 新增 DB 层测试：repository CRUD + migration round-trip + 版本 append-only 不变性
+
+**状态**：待开始
 
 **依赖**：Phase 4 完成
 
+**不做什么**（范围围栏，防蔓延）：
+
+- ❌ 多用户同时在线（**Phase 6**，MVP 先按"一次一个活跃 deck"串行）
+- ❌ 导出（PDF/PPTX）— 延 Phase 7
+- ❌ 云端部署 — 延 Phase 7
+- ❌ Deck 分享链接、权限、协同编辑 — 延 Phase 6
+
 ---
 
-## Phase 6：高级功能（远期）
+## Phase 6：多用户并发 + Deck 运行时隔离
 
-**目标**：扩展高级能力。
+**目标**：解决 Slidev 单实例天花板，让多用户可以真正并行编辑自己的 deck。同时上"公开分享"场景（只读链接，不占编辑实例）。
+
+**核心架构**（A + B 混合）：
+
+```
+                   ┌─────────────────────────────────────┐
+                   │  agent (Hono :4000)                 │
+用户编辑 ─────────▶│  /api/decks/:id/editor              │
+                   │   └─▶ DeckRuntime 进程池（LRU）     │
+                   │        ├─ slidev(slides=X.md) :4101 │  ← 活跃实例 ≤10
+                   │        ├─ slidev(slides=Y.md) :4102 │     超上限排队
+                   │        └─ ...                       │
+                   │                                     │
+用户查看 ─────────▶│  /decks/:id/share/:token            │
+                   │   └─▶ 静态 dist/（build 产物）      │  ← 零实例开销
+                   └─────────────────────────────────────┘
+```
+
+**交付物**：
+
+- `packages/agent` 新增 **`deck-runtime` 模块**：
+  - 进程池管理器（Map<deckId, { proc, port, lastUsed }>）
+  - on-demand spawn：用户进编辑页 → 分配空闲端口 → `slidev` 子进程（slides 指向临时文件 `runtime/decks/<deckId>.md`）
+  - 空闲回收：每个实例 5 分钟无活动自动 SIGTERM；上限 10，超限时 LRU 踢最老的
+  - 健康检查：实例崩溃自动重拉；`/healthz/runtime` 暴露池状态
+- 前端 `SlidePreview.vue` 的 iframe URL 不再写死 `:3031`，改为从 agent 的 `/api/decks/:id/editor` 响应里取动态端口（或走 agent 的 reverse proxy 路径）
+- Deck 编辑实时保存（debounce 2s）→ 写到 `runtime/decks/<deckId>.md` → slidev HMR 自然生效 → 同时 append `deck_versions`
+- **发布 / 分享**：
+  - `POST /api/decks/:id/publish` → agent 跑 `slidev build`，产物存到 `storage/decks/<deckId>/<versionId>/dist/`
+  - `GET /decks/:id/share/:shareToken` → agent 作为静态文件服务器返回 build 产物
+  - `deck_shares(id, deck_id, token, version_id, expires_at, created_at)` 表管理分享链接
+- 并发控制：同一用户可同时编辑多 deck（上限 3）；同一 deck 同一时刻只允许一个 tab 编辑（其他 tab 显示"编辑中"提示）
+- 新增 `@big-ppt/shared` 类型：`DeckRuntimeStatus` / `DeckShareInfo`
+
+**验收条件**：
+
+- [ ] 三个不同用户同时登录、各自进入自己的 deck 编辑页，HMR 预览各自独立，互不干扰
+- [ ] 超过 10 个 deck 进入编辑态时，最老的自动被回收，用户重新进入时再 spawn（<5s）
+- [ ] `/decks/:id/share/:token` 不占用进程池；关掉 agent dev 模式下的 slidev 子进程后，分享页仍可访问
+- [ ] 压测：10 个 deck 同时活跃、100 req/s 打分享页，agent 内存 < 2GB
+- [ ] 进程崩溃 / OOM 自动重拉，不丢用户已保存的 content（因为源在 DB）
+
+**状态**：待开始
+
+**依赖**：Phase 5 完成（数据模型必须先稳）
+
+**不做什么**：
+
+- ❌ 多人实时协同编辑同一 deck（CRDT / OT）— 复杂度太高，留 Phase 8+ 或永不做
+- ❌ 跨服务器分布式进程池 — 单机 10 实例已够内部 50 用户场景
+
+---
+
+## Phase 7：导出与部署
+
+**目标**：完善导出功能，把 Phase 5/6 的架构上云。
+
+**交付物**：
+
+- PDF 导出（Playwright 无头渲染）
+- PPTX 导出（探索 `pptxgenjs` 或 slidev 插件）
+- 部署：agent + slidev build 产物 → 阿里云服务器（Docker compose：agent + nginx 静态托管）
+- 域名 / HTTPS / 登录页
+- 本地演示模式优化（离线单 deck 快速启动）
+
+**依赖**：Phase 6 完成
+
+---
+
+## Phase 8：远期可能
 
 **可能方向**：
 
+- 多人实时协同（CRDT）
 - 多语言支持
 - 团队共享模板
-- 版本历史（替代简单的 `.bak` 机制）
-- 协同编辑
+- `slides.md.history` 环形缓冲升级（P2-2 已随 Phase 5 的 deck_versions 天然解决，可复盘是否还需要文件级 undo）
 - 自定义主题编辑器
+- 更多模板套系（不止 company-standard）
 
 ---
 
 ## 路线图变更记录
 
-| 日期       | 变更                                                                                     | 原因                                                                               |
-| ---------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 2026-04-20 | Phase 2 关闭，验收条件写入；MCP 计划（04）合并进 Phase 3                                 | Phase 2 范围已超出"原型验证"；MCP client 应跑在独立 agent 后端而非 Vite middleware |
-| 2026-04-20 | Phase 3 新增"测试基础设施"、明确 BarChart/LineChart 组件迁移                             | 重构前补网；根目录杂散组件应进 monorepo                                            |
-| 2026-04-20 | Phase 4 新增"slides.md 架构升级"、工具拆分                                               | write_slides 一次吐 16KB 5 分钟才完，架构撑不住编辑场景                            |
-| 2026-04-21 | Phase 3 拆为两步：本轮只做 monorepo + agent + 工具链基建，MCP 延到 07-mcp-integration.md | 04-mcp 原计划寄生于 Vite middleware；先做后端独立再做 MCP，减少返工                |
-| 2026-04-21 | Phase 3 关闭（9 步迁移，P1-1/P1-2 骨架/P1-3/P1-4 技术债清除）                            | 按 06-phase3-monorepo-agent.md 计划执行完成，验收条件全部满足                      |
+| 日期       | 变更                                                                                                 | 原因                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 2026-04-20 | Phase 2 关闭，验收条件写入；MCP 计划（04）合并进 Phase 3                                             | Phase 2 范围已超出"原型验证"；MCP client 应跑在独立 agent 后端而非 Vite middleware                |
+| 2026-04-20 | Phase 3 新增"测试基础设施"、明确 BarChart/LineChart 组件迁移                                         | 重构前补网；根目录杂散组件应进 monorepo                                                           |
+| 2026-04-20 | Phase 4 新增"slides.md 架构升级"、工具拆分                                                           | write_slides 一次吐 16KB 5 分钟才完，架构撑不住编辑场景                                           |
+| 2026-04-21 | Phase 3 拆为两步：本轮只做 monorepo + agent + 工具链基建，MCP 延到 07-mcp-integration.md             | 04-mcp 原计划寄生于 Vite middleware；先做后端独立再做 MCP，减少返工                               |
+| 2026-04-21 | Phase 3 关闭（9 步迁移，P1-1/P1-2 骨架/P1-3/P1-4 技术债清除）                                        | 按 06-phase3-monorepo-agent.md 计划执行完成，验收条件全部满足                                     |
+| 2026-04-21 | Phase 5/6/7 重排：插入"用户系统+DB+历史版本"（5）与"多用户并发+Deck 运行时"（6），原导出部署顺延为 7 | 用户提出用户系统 / 历史版本 / 多用户并行需求；Slidev 单实例是关键瓶颈，必须先解好才能上分享与部署 |
