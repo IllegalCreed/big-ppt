@@ -2,12 +2,20 @@
   "name": "big-ppt",
   "type": "module",
   "private": true,
+  "packageManager": "pnpm@10.29.2",
   "scripts": {
-    "build": "slidev build",
-    "dev": "slidev --open",
-    "export": "slidev export",
-    "creator": "concurrently \"vite --config vite.config.creator.ts\" \"slidev --port 3031\"",
-    "slidev": "slidev"
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "type-check": "turbo run type-check",
+    "legacy:slidev": "slidev",
+    "legacy:slidev-open": "slidev --open",
+    "legacy:slidev-build": "slidev build",
+    "legacy:slidev-export": "slidev export",
+    "legacy:creator": "concurrently \"vite --config vite.config.creator.ts\" \"slidev --port 3031\""
   },
   "dependencies": {
     "@antdv-next/x": "^0.3.0",
@@ -20,6 +28,16 @@
     "vue-chartjs": "^5.3.3"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "@types/node": "^22.10.2",
+    "@vue/eslint-config-typescript": "^14.1.4",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-vue": "^9.32.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }
