@@ -1,0 +1,10 @@
+node_modules
+dist
+.slidev
+.vite-inspect
+.remote-assets
+components.d.ts
+slides.md.bak
+slides-*.md
+*.local
+.DS_Store

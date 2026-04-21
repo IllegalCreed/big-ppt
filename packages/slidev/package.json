@@ -1,0 +1,26 @@
+{
+  "name": "@big-ppt/slidev",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "slidev --port 3031",
+    "dev-open": "slidev --open --port 3031",
+    "build": "slidev build",
+    "export": "slidev export",
+    "preview": "slidev --port 3031"
+  },
+  "dependencies": {
+    "@antdv-next/x": "^0.3.0",
+    "@slidev/cli": "^52.14.2",
+    "@slidev/theme-default": "latest",
+    "@slidev/theme-seriph": "latest",
+    "antdv-next": "^1.2.0",
+    "chart.js": "^4.5.1",
+    "vue": "^3.5.29",
+    "vue-chartjs": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
