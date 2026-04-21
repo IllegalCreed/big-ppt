@@ -67,6 +67,8 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
 
+  packages/shared: {}
+
 packages:
 
   '@ant-design/colors@7.2.1':

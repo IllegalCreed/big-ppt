@@ -1,3 +1,7 @@
+# Turborepo
+.turbo/
+**/.turbo/
+
 # Logs
 logs
 *.log
