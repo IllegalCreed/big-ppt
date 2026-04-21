@@ -1,14 +1,17 @@
 import { ref, computed } from 'vue'
 import type {
   AgentStatus,
+  CallToolRequest,
+  CallToolResponse,
   ChatBubble,
   ChatMessage,
+  GetToolsResponse,
   LLMSettings,
+  LLMTool,
   ToolCall,
   ToolStep,
 } from '@big-ppt/shared'
 import { buildSystemPrompt } from '../prompts/buildSystemPrompt'
-import { tools } from '../prompts/tools'
 import { logEvent, setCurrentSession, truncate } from './logger'
 
 export type { ToolStep, LLMSettings }
@@ -23,6 +26,31 @@ const TOOL_STATUS_MAP: Record<string, string> = {
 
 const MAX_ITERATIONS = 20
 const MAX_CONTEXT_MESSAGES = 20
+
+let cachedTools: LLMTool[] | null = null
+let toolsLoadPromise: Promise<LLMTool[]> | null = null
+
+async function ensureTools(): Promise<LLMTool[]> {
+  if (cachedTools) return cachedTools
+  if (!toolsLoadPromise) {
+    toolsLoadPromise = (async () => {
+      const res = await fetch('/api/tools')
+      const json = (await res.json()) as GetToolsResponse
+      if (!res.ok || !json.success || !json.tools) {
+        toolsLoadPromise = null
+        throw new Error(json.error || `GET /api/tools failed: ${res.status}`)
+      }
+      cachedTools = json.tools
+      return cachedTools
+    })()
+  }
+  return toolsLoadPromise
+}
+
+export function __clearToolsCacheForTesting() {
+  cachedTools = null
+  toolsLoadPromise = null
+}
 
 // --- Settings (localStorage) ---
 
@@ -68,40 +96,25 @@ function trimMessages(messages: ChatMessage[]): ChatMessage[] {
 // --- 工具执行 ---
 
 async function executeTool(call: ToolCall): Promise<string> {
-  const args = JSON.parse(call.function.arguments || '{}')
-
-  switch (call.function.name) {
-    case 'read_slides':
-      return await fetchToolResult('/api/read-slides')
-    case 'write_slides':
-      return await fetchToolResult('/api/write-slides', args)
-    case 'edit_slides':
-      return await fetchToolResult('/api/edit-slides', args)
-    case 'read_template':
-      return await fetchToolResult('/api/read-template', args)
-    case 'list_templates':
-      return await fetchToolResult('/api/list-templates')
-    default:
-      return JSON.stringify({ success: false, error: `未知工具: ${call.function.name}` })
-  }
-}
-
-async function fetchToolResult(endpoint: string, body?: Record<string, string>): Promise<string> {
-  const options: RequestInit = {
-    headers: { 'Content-Type': 'application/json' },
-  }
-  if (body) {
-    options.method = 'POST'
-    options.body = JSON.stringify(body)
-  }
-  const res = await fetch(endpoint, options)
-  const text = await res.text()
-
+  let args: Record<string, unknown>
   try {
-    return JSON.stringify(JSON.parse(text))
-  } catch {
-    return text
+    args = JSON.parse(call.function.arguments || '{}')
+  } catch (err) {
+    return JSON.stringify({
+      success: false,
+      error: `invalid tool arguments JSON: ${(err as Error).message}`,
+    } satisfies CallToolResponse)
   }
+  const res = await fetch('/api/call-tool', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: call.function.name, args } satisfies CallToolRequest),
+  })
+  const json = (await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }))) as CallToolResponse
+  if (!res.ok || !json.success) {
+    return JSON.stringify({ success: false, error: json.error || `HTTP ${res.status}` })
+  }
+  return json.result ?? ''
 }
 
 // --- SSE 流式解析 ---
@@ -109,6 +122,7 @@ async function fetchToolResult(endpoint: string, body?: Record<string, string>):
 async function callLLMStream(
   messages: ChatMessage[],
   signal: AbortSignal,
+  toolsList: LLMTool[],
   onTextChunk: (chunk: string) => void,
 ): Promise<{ toolCalls: ToolCall[]; content: string }> {
   const response = await fetch('/api/llm/chat/completions', {
@@ -117,7 +131,7 @@ async function callLLMStream(
     body: JSON.stringify({
       model: getModel(),
       messages,
-      tools,
+      tools: toolsList,
       stream: true,
     }),
     signal,
@@ -201,18 +215,18 @@ async function callLLMStream(
 async function callLLMWithRetry(
   messages: ChatMessage[],
   signal: AbortSignal,
+  toolsList: LLMTool[],
   onTextChunk: (chunk: string) => void,
   retries = 2,
 ): Promise<{ toolCalls: ToolCall[]; content: string }> {
   try {
-    return await callLLMStream(messages, signal, onTextChunk)
+    return await callLLMStream(messages, signal, toolsList, onTextChunk)
   } catch (err: any) {
     if (err.name === 'AbortError') throw err
     if (err.message?.includes('API Key')) throw err
-
     if (retries > 0) {
       await new Promise((r) => setTimeout(r, 2000))
-      return callLLMWithRetry(messages, signal, onTextChunk, retries - 1)
+      return callLLMWithRetry(messages, signal, toolsList, onTextChunk, retries - 1)
     }
     throw err
   }
@@ -242,6 +256,14 @@ export function useAIChat() {
 
   async function sendMessage(userText: string) {
     if (status.value !== 'idle') return
+
+    let liveTools: LLMTool[]
+    try {
+      liveTools = await ensureTools()
+    } catch (err: any) {
+      chatMessages.value.push({ role: 'assistant', content: `无法加载工具列表:${err.message}` })
+      return
+    }
 
     const session =
       globalThis.crypto?.randomUUID?.() ||
@@ -281,16 +303,16 @@ export function useAIChat() {
           turn: i + 1,
           kind: 'llm_request',
           messages_count: trimmed.length,
-          tools_count: tools.length,
+          tools_count: liveTools.length,
           model: getModel(),
-          payload: { messages: trimmed, tools, model: getModel() },
+          payload: { messages: trimmed, tools: liveTools, model: getModel() },
         })
 
         const { toolCalls, content } = await callLLMWithRetry(
           trimmed,
           abortController.signal,
+          liveTools,
           (chunk) => {
-            // 流式文本回调
             if (status.value !== 'streaming') {
               status.value = 'streaming'
               statusText.value = ''
