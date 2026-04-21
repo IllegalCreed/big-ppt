@@ -24,6 +24,7 @@ export interface Paths {
   slidesBak: string
   templatesDir: string
   logsDir: string
+  mcpConfigPath: string
 }
 
 let cached: Paths | null = null
@@ -45,12 +46,16 @@ export function getPaths(): Paths {
   const logsDir = process.env.BIG_PPT_LOGS_DIR
     ? path.resolve(process.env.BIG_PPT_LOGS_DIR)
     : path.join(root, 'logs')
+  const mcpConfigPath = process.env.BIG_PPT_MCP_CONFIG
+    ? path.resolve(process.env.BIG_PPT_MCP_CONFIG)
+    : path.join(root, 'packages/agent/data/mcp.json')
   cached = {
     root,
     slidesPath,
     slidesBak: `${slidesPath}.bak`,
     templatesDir,
     logsDir,
+    mcpConfigPath,
   }
   return cached
 }
