@@ -1,5 +1,7 @@
 # Phase 2.2：通用 MCP 集成
 
+> ⚠️ **已废弃（2026-04-21）**：本计划的实施基于"Vite middleware = 事实上的后端"前提。Phase 2 关闭时已决定把后端剥离成独立 `packages/agent`，MCP client 应跑在 agent 里。本文档保留作历史参考；实际实施延至 Phase 3 monorepo 完成后，见 `07-mcp-integration.md`（Phase 3 关闭后创建）。
+>
 > **REQUIRED SUB-SKILL:** `superpowers:executing-plans` — inline 顺序执行。
 
 ---
