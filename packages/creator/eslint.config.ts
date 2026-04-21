@@ -18,6 +18,10 @@ export default defineConfigWithVueTs(
   {
     ...pluginVitest.configs.recommended,
     files: ['src/**/__tests__/*', 'test/**/*', '**/*.test.ts'],
+    rules: {
+      ...pluginVitest.configs.recommended.rules,
+      'vitest/expect-expect': ['warn', { assertFunctionNames: ['expect', 'expectTypeOf'] }],
+    },
   },
 
   {

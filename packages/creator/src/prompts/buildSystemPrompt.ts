@@ -1,5 +1,13 @@
-export function buildSystemPrompt(): string {
-  return `你是一个专业的幻灯片生成助手，帮助用户使用 Slidev 框架创建商务演示文稿。
+/**
+ * 构建发给 LLM 的 system prompt。
+ *
+ * @param mcpBadges 已启用 MCP 的类别角标(如 ['搜索', '读网页'])。
+ *   传入时会在末尾追加"扩展工具(MCP)"一段,告诉 LLM 可以调用哪些外部工具类别。
+ *   TODO(phase-4): useAIChat 在第一次 sendMessage 时,从 `ensureTools()` 拉到的
+ *   工具列表里 derive 出 badges 传入。Phase 3.5 MVP 保持无参调用。
+ */
+export function buildSystemPrompt(mcpBadges?: string[]): string {
+  const base = `你是一个专业的幻灯片生成助手，帮助用户使用 Slidev 框架创建商务演示文稿。
 
 ## 你的工作方式
 
@@ -132,4 +140,15 @@ export function buildSystemPrompt(): string {
 - 不要在 write_slides 的 content 中包裹 \`\`\`markdown 代码块标记
 - CSS 必须与模板文件一致，不要自行发挥
 - 必须遵循 list_templates 返回的 usage_guide 中的组装规范`
+  if (!mcpBadges || mcpBadges.length === 0) return base
+  return base + `
+
+## 扩展工具(MCP)
+
+除了本地幻灯片工具,你现在还可以调用以下类别的外部工具:${mcpBadges.join('、')}。
+
+- 当需要获取时效信息(新闻、最新数据)时,优先用"搜索"类工具
+- 抓取特定 URL 的网页正文,用"读网页"类工具
+- 这些工具的名字都带 \`mcp__\` 前缀,参数以模型收到的 schema 为准
+`
 }

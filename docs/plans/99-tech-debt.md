@@ -7,7 +7,7 @@
 | 级别   | 含义                 | 条数                           |
 | ------ | -------------------- | ------------------------------ |
 | **P1** | Phase 3 关闭前必须清 | 5（已清 4，P1-5 延到 Phase 4） |
-| **P2** | Phase 4 关闭前必须清 | 3                              |
+| **P2** | Phase 4 关闭前必须清 | 4                              |
 | **P3** | 非阻塞，有机会再清   | 7                              |
 
 ---
@@ -21,7 +21,7 @@
 **实际修复**：拆到 [packages/agent/](../../packages/agent/)，Hono + @hono/node-server 独立进程（:4000），对外暴露 `/api/llm/chat/completions`（SSE 流透传）/ `/api/read-slides` / `/api/write-slides` / `/api/edit-slides` / `/api/restore-slides` / `/api/list-templates` / `/api/read-template` / `/api/log-event` / `/api/log/latest`。dev 时由 creator 的 [vite.config.ts](../../packages/creator/vite.config.ts) `server.proxy` 转发 `/api` → `http://localhost:4000`。
 **触发时机**：Phase 3 第一优先级 — 已于 [06-phase3-closeout.md](06-phase3-closeout.md) 关闭
 
-### P1-2. 工具系统完全静态 ✅（骨架部分，2026-04-21 清；MCP 合并留到 07-mcp-integration.md）
+### P1-2. 工具系统完全静态 ✅（骨架部分，2026-04-21 清；完全清零 2026-04-21）
 
 **原位置**：
 
@@ -31,6 +31,11 @@
 **影响**：加一个工具要改两处；接 MCP 时需要动态合并。
 **实际修复（骨架）**：agent 后端建了 tool registry 骨架：[packages/agent/src/tools/registry.ts](../../packages/agent/src/tools/registry.ts)，暴露 `register / getTool / hasTool / listTools` + LLMTool 投影，含 duplicate 保护。MCP 集成时把本地工具先 register 进去 + 注入 MCP 工具，前端改读 `GET /api/tools` 的任务 **延到 07-mcp-integration.md**（MCP 整体实施时顺带完成）。
 **触发时机**：骨架已完成；完全动态化留给 Phase 3.5 / MCP 集成
+
+**实际修复（完全）**：Phase 3.5 按 [07-mcp-integration.md](07-mcp-integration.md) 执行完成：
+- 本地 5 工具 `registerLocalTools()` 注册进 `tool-registry`
+- agent 新增 `GET /api/tools` / `POST /api/call-tool`，前端 `useAIChat` 动态拉工具列表，`executeTool` 收敛为一行 fetch
+- MCP HTTP client 以 `mcp__<serverId>__<toolName>` 命名动态注入 registry；`McpServerRepo` 抽象（JsonFileRepo 实现）为 Phase 5 DB 留迁移口
 
 ### P1-3. 没有测试基础设施 ✅（2026-04-21 清）
 
@@ -104,6 +109,16 @@
 
 **触发时机**：Phase 4 的 slides 架构升级（P1-5）顺带完成
 
+### P2-4. MCP 凭证明文存 `data/mcp.json`（Phase 5 必须加密）
+
+**位置**：`packages/agent/src/mcp-server-repo/json-file-repo.ts`（有 2 处 `TODO(phase-5): encrypt ... headers before writing` 标记）
+
+**影响**：`data/mcp.json` 里的 `Authorization: Bearer <token>` 明文可读。`.gitignore` 防止入库，但本地备份、云同步、grep 日志等场景仍会泄露。Phase 3.5 单机 dev 环境可接受。
+
+**修复方案**：Phase 5 引入 SQLite 时，把 `mcp_servers.headers_encrypted` 列加 AEAD（aes-256-gcm + 随机 IV，master key 从环境变量或 OS keychain 读），`JsonFileRepo` 换成 `DrizzleRepo` 时顺带完成。
+
+**触发时机**：Phase 5 启动时必须做，**不得**推迟到 Phase 5 之后。
+
 ---
 
 ## P3 — 非阻塞，有机会再清
@@ -140,12 +155,14 @@
 **修复方案**：改成白名单——只记录 `filename` 在 `window.location.origin` 下的错误。
 **触发时机**：Phase 3 完整 error 治理时
 
-### P3-5. 工具名前缀约定不统一
+### P3-5. 工具名前缀约定不统一 ✅
 
 **现状**：本地工具（`read_slides`）、MCP 工具（`mcp__<server>__<tool>`）有不同前缀；未来 SDK 工具（如 `agent_*`）可能冲突。
 **影响**：将来扩展命名空间时会麻烦。
 **修复方案**：在 agent 后端定义 `ToolNamespace` 概念，前端不感知。tool registry 骨架已建（[packages/agent/src/tools/registry.ts](../../packages/agent/src/tools/registry.ts)），MCP 集成时正式落定 namespace 规范。
 **触发时机**：07-mcp-integration.md 做 MCP 工具动态注入时
+
+**Phase 3.5 已落定 `mcp__<id>__<tool>` 规范**（见 [07-mcp-integration.md](07-mcp-integration.md)）。
 
 ### P3-7. Slidev 工具栏图标走离线预生成（UnoCSS 上游 bug 的 workaround）
 
@@ -205,3 +222,4 @@
 | 2026-04-20 | 初始版本，Phase 2 关闭同步产出                                      | 项目组 |
 | 2026-04-21 | Phase 3 关闭：P1-1 / P1-2 骨架 / P1-3 / P1-4 / P3-3 清除；新增 P3-6 | 项目组 |
 | 2026-04-21 | 新增 P3-7：Slidev 图标用离线预生成绕 UnoCSS 66.x 自动 resolve bug，记录上游 PR 路线 | 项目组 |
+| 2026-04-21 | Phase 3.5 关闭：P1-2 完全清零；P3-5 标 ✅；新增 P2-4（MCP 凭证加密）；P2 条数 3→4 | 项目组 |
