@@ -1,6 +1,6 @@
-import type { ChatMessage, ToolCall } from './chat'
-import type { LLMTool } from './tools'
-import type { LogPayload } from './log'
+import type { ChatMessage, ToolCall } from './chat.js'
+import type { LLMTool } from './tools.js'
+import type { LogPayload } from './log.js'
 
 /**
  * API 契约：creator ↔ agent（HTTP + SSE）。
