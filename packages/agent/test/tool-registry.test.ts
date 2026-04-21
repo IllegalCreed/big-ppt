@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { __resetRegistry, getTool, hasTool, listTools, register } from '../src/tools/registry.js'
+import { __resetRegistry, getTool, hasTool, listTools, register, unregister } from '../src/tools/registry.js'
 
 beforeEach(() => {
   __resetRegistry()
@@ -50,5 +50,18 @@ describe('tool-registry', () => {
   it('returns undefined for unknown name', () => {
     expect(getTool('nonexistent')).toBeUndefined()
     expect(hasTool('nonexistent')).toBe(false)
+  })
+
+  it('unregister 删除已注册工具并返回 true', () => {
+    register({
+      name: 'tmp_tool',
+      description: 't',
+      parameters: { type: 'object', properties: {} },
+      exec: async () => 'ok',
+    })
+    expect(hasTool('tmp_tool')).toBe(true)
+    expect(unregister('tmp_tool')).toBe(true)
+    expect(hasTool('tmp_tool')).toBe(false)
+    expect(unregister('tmp_tool')).toBe(false)
   })
 })
