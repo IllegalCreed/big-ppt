@@ -8,7 +8,7 @@
 | ------ | -------------------- | ------------------------------ |
 | **P1** | Phase 3 关闭前必须清 | 5（已清 4，P1-5 延到 Phase 4） |
 | **P2** | Phase 4 关闭前必须清 | 3                              |
-| **P3** | 非阻塞，有机会再清   | 6                              |
+| **P3** | 非阻塞，有机会再清   | 7                              |
 
 ---
 
@@ -147,6 +147,42 @@
 **修复方案**：在 agent 后端定义 `ToolNamespace` 概念，前端不感知。tool registry 骨架已建（[packages/agent/src/tools/registry.ts](../../packages/agent/src/tools/registry.ts)），MCP 集成时正式落定 namespace 规范。
 **触发时机**：07-mcp-integration.md 做 MCP 工具动态注入时
 
+### P3-7. Slidev 工具栏图标走离线预生成（UnoCSS 上游 bug 的 workaround）
+
+**位置**：
+
+- [packages/slidev/scripts/gen-icons.mjs](../../packages/slidev/scripts/gen-icons.mjs)（离线扫 `@slidev/client` 里的 `i-carbon:*` / `i-ph:*` / `i-svg-spinners:*` class，用显式 async `collections` loader 的 UnoCSS 生成 CSS）
+- [packages/slidev/style.css](../../packages/slidev/style.css)（`@import './styles/icons.css'`，Slidev 项目级全局样式入口）
+- [packages/slidev/styles/icons.css](../../packages/slidev/styles/icons.css)（生成产物，33KB，含 59 个图标的 SVG data URL）
+- [.npmrc](../../.npmrc) 的 `public-hoist-pattern[]=@iconify-json/*` 配合 iconify 包在根 `node_modules/` 顶层可见
+
+**背景**：pnpm isolated monorepo 下，`@unocss/preset-icons` 66.x 的 `collectionsNodeResolvePath` 自动解析管线彻底失效 —— 即便在 Slidev 之外的裸 Node 脚本里复现仍然 `failed to load icon`。Slidev 的 `setupUnocss` 写死了依赖这条自动路径，其 UI 工具栏（NavControls / 幻灯片导航 / Overview / Presenter 等）所有 `i-carbon:*` 类全部渲染为空。
+
+**诊断链**（关键测试点）：
+
+| 测试 | 结果 | 结论 |
+|------|------|------|
+| `@iconify/utils` 的 `loadNodeIcon('carbon', 'minimize', { cwd })` 独立跑 | ✅ 返回 SVG | Iconify 底层健康 |
+| `mlly.resolvePath('@iconify-json/carbon/icons.json', { url })` | ✅ 解析到文件 | 模块解析健康 |
+| `presetIcons({ collections: { carbon: async loader } })` 显式注入 | ✅ 生成 CSS | UnoCSS 手动模式 OK |
+| `presetIcons({ collectionsNodeResolvePath: [...] })` 自动模式 | ❌ `failed to load` | **UnoCSS 自动管线 regression** |
+| `presetIcons({})` 零配置 | ❌ `failed to load` | 同上 |
+| 用户 `setup/unocss.ts` 加第二个 `presetIcons` 显式 collections | ❌ loader 不被触发 | UnoCSS 多 preset 合并时（同名）被前者 "认领" |
+
+**当前方案**：离线预生成 → Slidev 全局 style.css @import。优点：确定、零运行时开销、Slidev 升级不影响渲染只需 `pnpm run gen-icons` 重跑。缺点：33KB 死重；新图标需要手动重跑 script。
+
+**上游修复路线**（Anthony Fu 同时维护 UnoCSS 和 Slidev，沟通成本低）：
+
+1. **minimal repro**：独立 repo，仅 `package.json` + `test.mjs` 复现 `presetIcons({ collectionsNodeResolvePath })` 失败，带 UnoCSS 66.6.8 / Node 22 / pnpm 10 版本信息
+2. **二分定位**：往回试 UnoCSS 65.x → 64.x，找到 regression commit
+3. **issue 首选给 UnoCSS**：[unocss/unocss](https://github.com/unocss/unocss/issues) —— 这是真正的 bug 源头
+4. **备用 PR 给 Slidev**：让 `setupUnocss()` 显式传 `collections: { carbon: async loader, ... }` 当 fallback —— 即便 UnoCSS 不修，Slidev 也更鲁棒
+5. **沟通渠道**：GitHub issue / Discord slidev 频道 / Anthony Fu 个人 GitHub（他响应通常一周内）
+
+**清除时机**：上游 UnoCSS 修 + 升级后删除 gen-icons 流程。删除范围：`scripts/gen-icons.mjs` / `style.css` / `styles/` 目录 / `.npmrc` 的 `public-hoist-pattern`（如果其他依赖也不需要） / slidev 的 `@iconify-json/*` dependencies（恢复成 transitive）。
+
+---
+
 ### P3-6. creator 有 11 条 `any` 警告（Phase 2 遗留）
 
 **位置**：
@@ -168,3 +204,4 @@
 | ---------- | ------------------------------------------------------------------- | ------ |
 | 2026-04-20 | 初始版本，Phase 2 关闭同步产出                                      | 项目组 |
 | 2026-04-21 | Phase 3 关闭：P1-1 / P1-2 骨架 / P1-3 / P1-4 / P3-3 清除；新增 P3-6 | 项目组 |
+| 2026-04-21 | 新增 P3-7：Slidev 图标用离线预生成绕 UnoCSS 66.x 自动 resolve bug，记录上游 PR 路线 | 项目组 |

@@ -8,10 +8,14 @@
     "dev-open": "slidev --open --port 3031",
     "build": "slidev build",
     "export": "slidev export",
-    "preview": "slidev --port 3031"
+    "preview": "slidev --port 3031",
+    "gen-icons": "node scripts/gen-icons.mjs"
   },
   "dependencies": {
     "@antdv-next/x": "^0.3.0",
+    "@iconify-json/carbon": "^1.2.20",
+    "@iconify-json/ph": "^1.2.2",
+    "@iconify-json/svg-spinners": "^1.2.4",
     "@slidev/cli": "^52.14.2",
     "@slidev/theme-default": "latest",
     "@slidev/theme-seriph": "latest",

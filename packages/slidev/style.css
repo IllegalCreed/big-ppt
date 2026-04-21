@@ -1,0 +1,7 @@
+/*
+ * Slidev 项目级全局样式入口。
+ * 主要作用：注入 packages/slidev/styles/icons.css（离线预生成的工具栏图标 CSS），
+ * 绕过 UnoCSS 66.x + pnpm monorepo 下 presetIcons collectionsNodeResolvePath 失效的问题。
+ * 图标清单见 scripts/gen-icons.mjs。
+ */
+@import './styles/icons.css';
