@@ -4,31 +4,15 @@
   "private": true,
   "packageManager": "pnpm@10.29.2",
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "type-check": "turbo run type-check",
-    "legacy:slidev": "slidev",
-    "legacy:slidev-open": "slidev --open",
-    "legacy:slidev-build": "slidev build",
-    "legacy:slidev-export": "slidev export",
-    "legacy:creator": "concurrently \"vite --config vite.config.creator.ts\" \"slidev --port 3031\""
-  },
-  "dependencies": {
-    "@antdv-next/x": "^0.3.0",
-    "@slidev/cli": "^52.14.2",
-    "@slidev/theme-default": "latest",
-    "@slidev/theme-seriph": "latest",
-    "antdv-next": "^1.2.0",
-    "chart.js": "^4.5.1",
-    "vue": "^3.5.29",
-    "vue-chartjs": "^5.3.3"
+    "type-check": "turbo run type-check"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
     "prettier": "^3.8.3",
     "turbo": "^2.9.6",
     "typescript": "^5.7.2"

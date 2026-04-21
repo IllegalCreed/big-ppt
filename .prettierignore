@@ -7,7 +7,3 @@ logs/**
 pnpm-lock.yaml
 packages/slidev/slides.md
 packages/slidev/slides.md.bak
-# 根目录旧产物（Step 6 删除前不要格式化）
-slides.md
-slides.md.bak
-creator/**
