@@ -13,3 +13,11 @@ export interface McpServerRepo {
   update(id: string, patch: McpServerPatch): Promise<McpServerConfig>
   delete(id: string): Promise<void>
 }
+
+/** 仓库找不到对应 id 时抛出的专用错误,路由层据此返回 404 而非 500 */
+export class McpRepoNotFoundError extends Error {
+  constructor(public readonly serverId: string) {
+    super(`MCP server ${serverId} not found`)
+    this.name = 'McpRepoNotFoundError'
+  }
+}

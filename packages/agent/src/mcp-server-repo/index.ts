@@ -18,3 +18,4 @@ export function __resetRepoForTesting(): void {
 }
 
 export type { McpServerRepo, McpServerConfig, McpServerPatch } from './types.js'
+export { McpRepoNotFoundError } from './types.js'

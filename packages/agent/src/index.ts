@@ -6,6 +6,7 @@ import { slides } from './routes/slides.js'
 import { templates } from './routes/templates.js'
 import { log } from './routes/log.js'
 import { tools as toolsRoute } from './routes/tools.js'
+import { mcp as mcpRoute } from './routes/mcp.js'
 import { registerLocalTools } from './tools/local/index.js'
 import { getRegistry } from './mcp-registry/index.js'
 
@@ -33,6 +34,7 @@ app.route('/api', slides)
 app.route('/api', templates)
 app.route('/api', log)
 app.route('/api', toolsRoute)
+app.route('/api', mcpRoute)
 
 const port = Number(process.env.AGENT_PORT ?? 4000)
 

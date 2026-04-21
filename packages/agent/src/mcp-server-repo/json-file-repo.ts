@@ -4,6 +4,7 @@ import fsSync from 'node:fs'
 import path from 'node:path'
 import type { McpServerConfig } from '@big-ppt/shared'
 import type { McpServerRepo, McpServerPatch } from './types.js'
+import { McpRepoNotFoundError } from './types.js'
 import { PRESET_MCP_SERVERS } from './presets.js'
 
 export class JsonFileRepo implements McpServerRepo {
@@ -35,7 +36,7 @@ export class JsonFileRepo implements McpServerRepo {
     let result!: McpServerConfig
     await this.enqueueWrite(async (all) => {
       const idx = all.findIndex((c) => c.id === id)
-      if (idx < 0) throw new Error(`MCP server ${id} not found`)
+      if (idx < 0) throw new McpRepoNotFoundError(id)
       // TODO(phase-5): encrypt patch.headers before writing
       const merged: McpServerConfig = {
         ...all[idx]!,
