@@ -23,13 +23,16 @@ docs/
 ### 2. 编写需求文档
 
 **docs/requirements/vision.md** — 项目愿景：
+
 - 核心愿景：AI 对话 + 公司模板 = 专业幻灯片
 - 目标用户、核心场景、技术栈、成功标准
 
 **docs/requirements/requirements.md** — 功能需求：
+
 - API Key 管理、对话生成、模板系统、编辑迭代、导出部署等
 
 **docs/requirements/roadmap.md** — 路线图：
+
 - Phase 1：项目基础 + 模板（当前）
 - Phase 2：AI 集成 + 对话 UI
 - Phase 3：编辑迭代 + 导出部署
@@ -63,6 +66,7 @@ templates/
 ```
 
 每套模板的 `README.md` 记录：
+
 - 模板名称、适用场景、配色方案
 - 包含的页面类型及用途说明
 - 使用注意事项
@@ -81,6 +85,7 @@ templates/
 ```
 
 内容要点：
+
 - 模板套索引：列出所有可用模板及其适用场景
 - 页面类型清单：每种页面的用途和 layout 说明
 - 生成流程：选模板套 → 选页面 → 组合 → 填充内容 → 输出 slides.md
@@ -99,16 +104,16 @@ public/
 
 ## 涉及的文件
 
-| 操作 | 文件 |
-|------|------|
-| 新建 | `docs/plans/.gitkeep` |
-| 新建 | `docs/requirements/vision.md` |
-| 新建 | `docs/requirements/requirements.md` |
-| 新建 | `docs/requirements/roadmap.md` |
-| 新建 | `templates/README.md` |
+| 操作 | 文件                                           |
+| ---- | ---------------------------------------------- |
+| 新建 | `docs/plans/.gitkeep`                          |
+| 新建 | `docs/requirements/vision.md`                  |
+| 新建 | `docs/requirements/requirements.md`            |
+| 新建 | `docs/requirements/roadmap.md`                 |
+| 新建 | `templates/README.md`                          |
 | 新建 | `templates/company-standard/README.md`（占位） |
-| 新建 | `.claude/skills/slide-generator.md` |
-| 新建 | `public/.gitkeep` |
+| 新建 | `.claude/skills/slide-generator.md`            |
+| 新建 | `public/.gitkeep`                              |
 
 ## 验证
 

@@ -9,7 +9,7 @@ export function useSlideStore() {
     // 按 --- 分页，跳过空段
     return content.value
       .split(/\n---\n/)
-      .map(p => p.trim())
+      .map((p) => p.trim())
       .filter(Boolean)
   })
 

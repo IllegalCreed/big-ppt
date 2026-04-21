@@ -6,12 +6,12 @@ const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
 const PROVIDERS = [
-  { key: 'zhipu',    name: '智谱 (GLM)',      defaultModel: 'GLM-5.1' },
-  { key: 'deepseek', name: 'DeepSeek',         defaultModel: 'deepseek-chat' },
-  { key: 'openai',   name: 'OpenAI',           defaultModel: 'gpt-4o' },
-  { key: 'moonshot', name: 'Moonshot (Kimi)',   defaultModel: 'moonshot-v1-8k' },
-  { key: 'qwen',     name: '千问 (Qwen)',      defaultModel: 'qwen-plus' },
-  { key: 'custom',   name: '自定义',            defaultModel: '' },
+  { key: 'zhipu', name: '智谱 (GLM)', defaultModel: 'GLM-5.1' },
+  { key: 'deepseek', name: 'DeepSeek', defaultModel: 'deepseek-chat' },
+  { key: 'openai', name: 'OpenAI', defaultModel: 'gpt-4o' },
+  { key: 'moonshot', name: 'Moonshot (Kimi)', defaultModel: 'moonshot-v1-8k' },
+  { key: 'qwen', name: '千问 (Qwen)', defaultModel: 'qwen-plus' },
+  { key: 'custom', name: '自定义', defaultModel: '' },
 ]
 
 const settings = ref<LLMSettings>(loadSettings())
@@ -19,13 +19,15 @@ const settings = ref<LLMSettings>(loadSettings())
 function loadSettings(): LLMSettings {
   const raw = localStorage.getItem('llm-settings')
   if (raw) {
-    try { return JSON.parse(raw) } catch {}
+    try {
+      return JSON.parse(raw)
+    } catch {}
   }
   return { provider: 'zhipu', apiKey: '', model: 'GLM-5.1' }
 }
 
 function onProviderChange() {
-  const p = PROVIDERS.find(p => p.key === settings.value.provider)
+  const p = PROVIDERS.find((p) => p.key === settings.value.provider)
   if (p && p.defaultModel) {
     settings.value.model = p.defaultModel
   }
@@ -40,9 +42,12 @@ function close() {
   emit('update:open', false)
 }
 
-watch(() => props.open, (val) => {
-  if (val) settings.value = loadSettings()
-})
+watch(
+  () => props.open,
+  (val) => {
+    if (val) settings.value = loadSettings()
+  },
+)
 </script>
 
 <template>
@@ -66,20 +71,12 @@ watch(() => props.open, (val) => {
 
           <div class="form-group">
             <label>API Key</label>
-            <input
-              v-model="settings.apiKey"
-              type="password"
-              placeholder="输入你的 API Key"
-            />
+            <input v-model="settings.apiKey" type="password" placeholder="输入你的 API Key" />
           </div>
 
           <div class="form-group">
             <label>模型</label>
-            <input
-              v-model="settings.model"
-              type="text"
-              placeholder="模型名称"
-            />
+            <input v-model="settings.model" type="text" placeholder="模型名称" />
           </div>
         </div>
 

@@ -24,13 +24,14 @@ const TOOL_STATUS_MAP: Record<string, string> = {
 const MAX_ITERATIONS = 20
 const MAX_CONTEXT_MESSAGES = 20
 
-
 // --- Settings (localStorage) ---
 
 function getSettings(): LLMSettings {
   const raw = localStorage.getItem('llm-settings')
   if (raw) {
-    try { return JSON.parse(raw) } catch {}
+    try {
+      return JSON.parse(raw)
+    } catch {}
   }
   return { provider: 'zhipu', apiKey: '', model: 'GLM-5.1' }
 }
@@ -39,7 +40,7 @@ function getHeaders(): Record<string, string> {
   const settings = getSettings()
   return {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${settings.apiKey}`,
+    Authorization: `Bearer ${settings.apiKey}`,
   }
 }
 
@@ -57,7 +58,8 @@ function trimMessages(messages: ChatMessage[]): ChatMessage[] {
 
   const summary: ChatMessage = {
     role: 'system',
-    content: '[ Earlier conversation history has been trimmed. The current slides.md is available via read_slides tool. ]',
+    content:
+      '[ Earlier conversation history has been trimmed. The current slides.md is available via read_slides tool. ]',
   }
   const recent = messages.slice(-MAX_CONTEXT_MESSAGES)
   return [system, summary, ...recent]
@@ -209,7 +211,7 @@ async function callLLMWithRetry(
     if (err.message?.includes('API Key')) throw err
 
     if (retries > 0) {
-      await new Promise(r => setTimeout(r, 2000))
+      await new Promise((r) => setTimeout(r, 2000))
       return callLLMWithRetry(messages, signal, onTextChunk, retries - 1)
     }
     throw err
@@ -220,9 +222,7 @@ async function callLLMWithRetry(
 
 export function useAIChat() {
   // 发送给 LLM 的完整消息（含 system、tool、tool_result）
-  const messages = ref<ChatMessage[]>([
-    { role: 'system', content: buildSystemPrompt() },
-  ])
+  const messages = ref<ChatMessage[]>([{ role: 'system', content: buildSystemPrompt() }])
 
   // 展示在聊天 UI 的消息（只含 user + assistant 文字）
   const chatMessages = ref<ChatBubble[]>([])
@@ -243,7 +243,9 @@ export function useAIChat() {
   async function sendMessage(userText: string) {
     if (status.value !== 'idle') return
 
-    const session = (globalThis.crypto?.randomUUID?.() || `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    const session =
+      globalThis.crypto?.randomUUID?.() ||
+      `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setCurrentSession(session)
     const t0 = Date.now()
     logEvent({
@@ -305,7 +307,7 @@ export function useAIChat() {
           content_length: (content || '').length,
           content_preview: truncate(content, 300),
           tool_calls_count: toolCalls.length,
-          tool_call_names: toolCalls.map(t => t.function.name),
+          tool_call_names: toolCalls.map((t) => t.function.name),
           duration_ms: Date.now() - turnT0,
           payload: { content, tool_calls: toolCalls },
         })
@@ -339,13 +341,17 @@ export function useAIChat() {
               kind: 'tool_call',
               tool: tc.function.name,
               args: truncate(tc.function.arguments, 500),
-              payload: { tool_call_id: tc.id, name: tc.function.name, arguments: tc.function.arguments },
+              payload: {
+                tool_call_id: tc.id,
+                name: tc.function.name,
+                arguments: tc.function.arguments,
+              },
             })
 
             let result: string
             try {
               result = await executeTool(tc)
-              const idx = toolSteps.value.findIndex(s => s.key === step.key)
+              const idx = toolSteps.value.findIndex((s) => s.key === step.key)
               if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'success' }
               logEvent({
                 session,
@@ -360,7 +366,7 @@ export function useAIChat() {
               })
             } catch (err: any) {
               result = JSON.stringify({ success: false, error: err.message })
-              const idx = toolSteps.value.findIndex(s => s.key === step.key)
+              const idx = toolSteps.value.findIndex((s) => s.key === step.key)
               if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'error', error: err.message }
               logEvent({
                 session,
@@ -408,7 +414,13 @@ export function useAIChat() {
         return
       }
 
-      logEvent({ session, kind: 'session_end', reason: 'max_iterations', turns: MAX_ITERATIONS, duration_ms: Date.now() - t0 })
+      logEvent({
+        session,
+        kind: 'session_end',
+        reason: 'max_iterations',
+        turns: MAX_ITERATIONS,
+        duration_ms: Date.now() - t0,
+      })
 
       // 超过最大轮次
       const timeoutMsg = '生成超时（工具调用轮次过多），请尝试简化需求或重新开始。'
@@ -417,15 +429,23 @@ export function useAIChat() {
     } catch (err: any) {
       // 归档进行中步骤为 error，避免丢失可视化上下文
       if (toolSteps.value.length > 0) {
-        const finalized = toolSteps.value.map(s =>
+        const finalized = toolSteps.value.map((s) =>
           s.status === 'loading'
-            ? { ...s, status: 'error' as const, error: err.name === 'AbortError' ? '已取消' : (err.message || '中断') }
+            ? {
+                ...s,
+                status: 'error' as const,
+                error: err.name === 'AbortError' ? '已取消' : err.message || '中断',
+              }
             : s,
         )
         if (err.name === 'AbortError') {
           chatMessages.value.push({ role: 'assistant', content: '', toolSteps: finalized })
         } else {
-          chatMessages.value.push({ role: 'assistant', content: `出错了：${err.message}`, toolSteps: finalized })
+          chatMessages.value.push({
+            role: 'assistant',
+            content: `出错了：${err.message}`,
+            toolSteps: finalized,
+          })
         }
         toolSteps.value = []
       } else if (err.name !== 'AbortError') {
@@ -435,11 +455,22 @@ export function useAIChat() {
       if (err.name === 'AbortError') {
         status.value = 'cancelled'
         statusText.value = '已取消'
-        logEvent({ session, kind: 'session_end', reason: 'cancelled', duration_ms: Date.now() - t0 })
+        logEvent({
+          session,
+          kind: 'session_end',
+          reason: 'cancelled',
+          duration_ms: Date.now() - t0,
+        })
       } else {
         status.value = 'error'
         statusText.value = err.message || '未知错误'
-        logEvent({ session, kind: 'session_end', reason: 'error', error: err.message, duration_ms: Date.now() - t0 })
+        logEvent({
+          session,
+          kind: 'session_end',
+          reason: 'error',
+          error: err.message,
+          duration_ms: Date.now() - t0,
+        })
       }
       streamingContent.value = ''
     } finally {
@@ -469,7 +500,7 @@ export function useAIChat() {
   /** 重试上一条用户消息：在 chatMessages 里找最后一条 user 消息，再次 sendMessage */
   function retryLastUserMessage() {
     if (status.value !== 'idle') return
-    const lastUser = [...chatMessages.value].reverse().find(m => m.role === 'user')
+    const lastUser = [...chatMessages.value].reverse().find((m) => m.role === 'user')
     if (!lastUser) {
       appendLocalMessage('没有可重试的用户消息。')
       return

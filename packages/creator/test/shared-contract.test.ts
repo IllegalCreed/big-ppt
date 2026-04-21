@@ -46,7 +46,14 @@ describe('@big-ppt/shared contract', () => {
   })
 
   it('AgentStatus union includes all known states', () => {
-    const states: AgentStatus[] = ['idle', 'thinking', 'calling_tool', 'streaming', 'error', 'cancelled']
+    const states: AgentStatus[] = [
+      'idle',
+      'thinking',
+      'calling_tool',
+      'streaming',
+      'error',
+      'cancelled',
+    ]
     expect(states).toHaveLength(6)
   })
 

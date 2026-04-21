@@ -4,11 +4,11 @@
 
 ## 总览
 
-| 级别 | 含义 | 条数 |
-|------|------|------|
-| **P1** | Phase 3 关闭前必须清 | 5 |
-| **P2** | Phase 4 关闭前必须清 | 3 |
-| **P3** | 非阻塞，有机会再清 | 5 |
+| 级别   | 含义                 | 条数 |
+| ------ | -------------------- | ---- |
+| **P1** | Phase 3 关闭前必须清 | 5    |
+| **P2** | Phase 4 关闭前必须清 | 3    |
+| **P3** | 非阻塞，有机会再清   | 5    |
 
 ---
 
@@ -24,6 +24,7 @@
 ### P1-2. 工具系统完全静态
 
 **位置**：
+
 - [creator/src/prompts/tools.ts](../../creator/src/prompts/tools.ts)（`as const` 字面量数组）
 - [creator/src/composables/useAIChat.ts:94-129](../../creator/src/composables/useAIChat.ts)（`executeTool` 是 switch）
 
@@ -36,6 +37,7 @@
 **现状**：无 `tsconfig.json` / 无 `vitest.config.ts` / 无 `test/` 目录  
 **影响**：2100 行代码零测试，Phase 3 重构不敢动。  
 **修复方案**：
+
 - 根 `tsconfig.json` + `packages/*/tsconfig.json`（monorepo）
 - 添加 `vitest` + 至少覆盖：
   - logger 的 session / payload 字段路由
@@ -56,10 +58,11 @@
 
 **位置**：[slides.md](../../slides.md)（生成出的 8 页 800 行，其中 >70% 是重复 CSS）  
 **影响**：
+
 - AI 每页重抄 CSS → 浪费 token / 延长生成时间（实测 Turn 3 花了 303s 生成 16KB）
 - 模板改样式要改 N 页
 - 大 deck 超出模型输出窗口  
-**修复方案**：
+  **修复方案**：
 - 全局 CSS 抽到 `packages/slidev/global.css` 和 `style.css`
 - 每种布局做成命名 component（`<CoverSlide>` / `<TocSlide>` / `<TwoCol>` / `<DataSlide>`），Slidev 的 layouts 就是这个机制
 - AI 只生成"结构 + 内容"，不再抄 CSS
@@ -89,6 +92,7 @@
 **位置**：`#d00d14` / `"Microsoft YaHei"` / 红色滤镜 filter 表达式，散布在 [templates/company-standard/](../../templates/company-standard/) 每个模板和 [slides.md](../../slides.md) 生成结果里  
 **影响**：改色、改字体需要改 N 处；多模板套系时无法复用。  
 **修复方案**：
+
 - `templates/<theme>/tokens.css`（或 `tokens.json`）声明 `--brand-primary` / `--brand-font-family` / `--logo-filter-primary` 等
 - 模板 CSS 用 var() 引用
 
@@ -137,6 +141,6 @@
 
 ## 变更记录
 
-| 日期 | 变更 | 操作人 |
-|------|------|--------|
+| 日期       | 变更                           | 操作人 |
+| ---------- | ------------------------------ | ------ |
 | 2026-04-20 | 初始版本，Phase 2 关闭同步产出 | 项目组 |

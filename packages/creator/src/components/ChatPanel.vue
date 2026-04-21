@@ -81,11 +81,22 @@ const SLASH_COMMANDS: SlashCommand[] = [
         for (const e of events) {
           const ts = new Date(e.ts).toLocaleTimeString()
           if (e.kind === 'user_message') lines.push(`[${ts}] 👤 ${e.text}`)
-          else if (e.kind === 'llm_request') lines.push(`[${ts}] 🧠 LLM 请求（${e.messages_count} 条上下文 / ${e.tools_count} 个工具）`)
-          else if (e.kind === 'llm_response') lines.push(`[${ts}] 💬 LLM 响应（${e.duration_ms}ms，${e.tool_calls_count} 个 tool call）`)
-          else if (e.kind === 'tool_call') lines.push(`[${ts}] 🔧 调用 \`${e.tool}\` ${e.args || ''}`)
-          else if (e.kind === 'tool_result') lines.push(`[${ts}] ${e.success ? '✓' : '✗'} \`${e.tool}\` ${e.duration_ms}ms${e.error ? ' · ' + e.error : ''}`)
-          else if (e.kind === 'session_end') lines.push(`[${ts}] 🏁 结束（${e.reason}，总耗时 ${e.duration_ms}ms）`)
+          else if (e.kind === 'llm_request')
+            lines.push(
+              `[${ts}] 🧠 LLM 请求（${e.messages_count} 条上下文 / ${e.tools_count} 个工具）`,
+            )
+          else if (e.kind === 'llm_response')
+            lines.push(
+              `[${ts}] 💬 LLM 响应（${e.duration_ms}ms，${e.tool_calls_count} 个 tool call）`,
+            )
+          else if (e.kind === 'tool_call')
+            lines.push(`[${ts}] 🔧 调用 \`${e.tool}\` ${e.args || ''}`)
+          else if (e.kind === 'tool_result')
+            lines.push(
+              `[${ts}] ${e.success ? '✓' : '✗'} \`${e.tool}\` ${e.duration_ms}ms${e.error ? ' · ' + e.error : ''}`,
+            )
+          else if (e.kind === 'session_end')
+            lines.push(`[${ts}] 🏁 结束（${e.reason}，总耗时 ${e.duration_ms}ms）`)
         }
         appendLocalMessage(lines.join('\n'))
       } catch (err: any) {
@@ -109,19 +120,24 @@ const SLASH_COMMANDS: SlashCommand[] = [
 
 const slashItems = (info?: { query?: string }) => {
   const q = (info?.query ?? '').toLowerCase()
-  return SLASH_COMMANDS
-    .filter(c => c.value.startsWith(q))
-    .map(c => ({
-      value: c.value,
-      label: h('div', { style: 'display: flex; gap: 12px; align-items: center; font-family: -apple-system, sans-serif;' }, [
+  return SLASH_COMMANDS.filter((c) => c.value.startsWith(q)).map((c) => ({
+    value: c.value,
+    label: h(
+      'div',
+      {
+        style:
+          'display: flex; gap: 12px; align-items: center; font-family: -apple-system, sans-serif;',
+      },
+      [
         h('span', { style: 'color: #1677ff; font-weight: 600;' }, c.label),
         h('span', { style: 'color: #999; font-size: 12px;' }, c.description),
-      ]),
-    }))
+      ],
+    ),
+  }))
 }
 
 function handleSlashSelect(value: string) {
-  const cmd = SLASH_COMMANDS.find(c => c.value === value)
+  const cmd = SLASH_COMMANDS.find((c) => c.value === value)
   senderRef.value?.clear()
   if (cmd) cmd.run()
 }
@@ -142,11 +158,13 @@ function handleSenderChange(value: string, onTrigger: (info: any) => void) {
 
 function renderToolChain(steps: ToolStep[]) {
   return h(ThoughtChain, {
-    items: steps.map(s => ({
+    items: steps.map((s) => ({
       key: s.key,
       title: s.label,
       description: s.argsPreview || undefined,
-      content: s.error ? h('div', { style: 'color: #ff4d4f; font-size: 12px;' }, s.error) : undefined,
+      content: s.error
+        ? h('div', { style: 'color: #ff4d4f; font-size: 12px;' }, s.error)
+        : undefined,
       status: s.status,
       collapsible: !!s.error,
     })),
@@ -217,7 +235,7 @@ function handleSubmit(message: string) {
   // 如果刚好完整匹配某条指令（用户直接输完按 enter，没走候选列表）
   if (trimmed.startsWith('/')) {
     const name = trimmed.slice(1).split(/\s+/)[0]
-    const cmd = SLASH_COMMANDS.find(c => c.value === name)
+    const cmd = SLASH_COMMANDS.find((c) => c.value === name)
     if (cmd) {
       cmd.run()
       return
@@ -245,11 +263,7 @@ function handleCancel() {
 
     <!-- 消息列表 -->
     <div class="message-list">
-      <Bubble.List
-        :items="bubbleItems"
-        :role="roles"
-        :auto-scroll="true"
-      />
+      <Bubble.List :items="bubbleItems" :role="roles" :auto-scroll="true" />
     </div>
 
     <!-- 输入框（包 Suggestion 做斜杠指令自动补全） -->
@@ -300,8 +314,13 @@ function handleCancel() {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 
 .status-text {

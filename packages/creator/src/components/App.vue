@@ -52,11 +52,7 @@ function onMouseDown(e: MouseEvent) {
       <div class="panel-left" :style="{ width: leftWidth + '%' }">
         <ChatPanel />
       </div>
-      <div
-        class="divider"
-        :class="{ active: isDragging }"
-        @mousedown="onMouseDown"
-      />
+      <div class="divider" :class="{ active: isDragging }" @mousedown="onMouseDown" />
       <div class="panel-right">
         <SlidePreview />
       </div>
@@ -74,7 +70,7 @@ function onMouseDown(e: MouseEvent) {
   display: flex;
   flex-direction: column;
   background: #f5f5f5;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .toolbar {

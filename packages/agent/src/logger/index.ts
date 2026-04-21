@@ -43,12 +43,17 @@ export function handleLogEvent(raw: LogPayload): LogEventResult {
     const filename = `${seq}-${kindSafe}.json`
     fs.writeFileSync(path.join(payloadDir, filename), JSON.stringify(payload, null, 2))
     ;(indexFields as Record<string, unknown>).payload_file = `payloads/${session}/${filename}`
-    ;(indexFields as Record<string, unknown>).payload_bytes = Buffer.byteLength(JSON.stringify(payload))
+    ;(indexFields as Record<string, unknown>).payload_bytes = Buffer.byteLength(
+      JSON.stringify(payload),
+    )
   }
 
   const line = JSON.stringify({ ts: new Date().toISOString(), ...indexFields })
   fs.appendFileSync(currentLogFile(), `${line}\n`)
-  return { success: true, session: typeof indexFields.session === 'string' ? indexFields.session : undefined }
+  return {
+    success: true,
+    session: typeof indexFields.session === 'string' ? indexFields.session : undefined,
+  }
 }
 
 export interface LogLatestResult {

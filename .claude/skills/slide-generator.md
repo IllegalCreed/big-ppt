@@ -23,6 +23,7 @@ user-invokable: true
 ### Step 1: 理解需求
 
 用户会告诉你：
+
 - 使用哪个模板套（目录名，如 `company-standard`）
 - 演示主题和内容要求
 - 目标受众、大致时长等
@@ -32,6 +33,7 @@ user-invokable: true
 ### Step 2: 读取 DESIGN.md
 
 读取用户指定模板套目录下的 `DESIGN.md`。这个文件包含：
+
 - 视觉风格与氛围定义
 - 完整配色方案（主色、辅助色、背景色、文字色、强调色）
 - 字体规范（字体族、字号层级、字重、行高、字间距）
@@ -64,7 +66,7 @@ user-invokable: true
 ```markdown
 ---
 theme: seriph
-title: {{演示标题}}
+title: { { 演示标题 } }
 class: text-center
 transition: slide-left
 ---
@@ -98,6 +100,6 @@ transition: slide-left
 
 读取 `templates/README.md` 获取完整列表。当前可用：
 
-| 模板套 | 目录 | 适用场景 |
-|--------|------|----------|
+| 模板套       | 目录                          | 适用场景                     |
+| ------------ | ----------------------------- | ---------------------------- |
 | 公司标准汇报 | `templates/company-standard/` | 日常汇报、季度总结、年终述职 |

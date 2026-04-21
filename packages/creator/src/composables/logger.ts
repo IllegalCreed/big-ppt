@@ -33,8 +33,12 @@ export function logEvent(data: LogPayload): void {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       keepalive: true,
-    }).catch(() => { /* ignore */ })
-  } catch { /* ignore */ }
+    }).catch(() => {
+      /* ignore */
+    })
+  } catch {
+    /* ignore */
+  }
 }
 
 export function truncate(str: string | undefined, n = 200): string {

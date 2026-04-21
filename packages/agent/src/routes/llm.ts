@@ -55,10 +55,7 @@ llm.post('/chat/completions', async (c) => {
       body,
     })
   } catch (err) {
-    return c.json(
-      { error: { message: `upstream fetch failed: ${(err as Error).message}` } },
-      502,
-    )
+    return c.json({ error: { message: `upstream fetch failed: ${(err as Error).message}` } }, 502)
   }
 
   // Pass-through Response 保留流式语义（上游是 text/event-stream 时直接透传给前端）

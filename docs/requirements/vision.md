@@ -26,15 +26,15 @@
 
 ## 技术栈
 
-| 层面 | 技术 |
-|------|------|
-| 演示框架 | Slidev |
-| UI 框架 | Vue 3 |
-| 构建工具 | Vite |
-| CSS 引擎 | UnoCSS |
-| AI 集成 | Claude API / OpenAI API |
-| 包管理器 | pnpm |
-| 部署 | 阿里云服务器 |
+| 层面     | 技术                    |
+| -------- | ----------------------- |
+| 演示框架 | Slidev                  |
+| UI 框架  | Vue 3                   |
+| 构建工具 | Vite                    |
+| CSS 引擎 | UnoCSS                  |
+| AI 集成  | Claude API / OpenAI API |
+| 包管理器 | pnpm                    |
+| 部署     | 阿里云服务器            |
 
 ## 成功标准
 
