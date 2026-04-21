@@ -1,12 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, test, expectTypeOf } from 'vitest'
 import type {
   AgentStatus,
+  CallToolRequest,
+  CallToolResponse,
   ChatBubble,
   ChatMessage,
+  CreateMcpServerRequest,
+  GetMcpServersResponse,
+  GetToolsResponse,
   LLMTool,
   LogPayload,
+  McpServerConfig,
+  McpServerState,
+  McpServerStatus,
+  McpServerWithStatus,
   ToolCall,
   ToolStep,
+  UpdateMcpServerRequest,
 } from '@big-ppt/shared'
 
 /**
@@ -64,4 +74,46 @@ describe('@big-ppt/shared contract', () => {
     expect(bubble.toolSteps![0]!.status).toBe('loading')
     expect(payload.kind).toBe('user_message')
   })
+})
+
+test('McpServerWithStatus = McpServerConfig & { status }', () => {
+  const x: McpServerWithStatus = {
+    id: 'demo',
+    displayName: 'Demo',
+    description: '',
+    url: 'https://example.com',
+    headers: {},
+    enabled: false,
+    preset: false,
+    status: { state: 'disabled' },
+  }
+  expectTypeOf(x).toMatchTypeOf<McpServerConfig>()
+  expectTypeOf(x.status).toEqualTypeOf<McpServerStatus>()
+})
+
+test('CreateMcpServerRequest 的 headers/description/badge 可选', () => {
+  const minimal: CreateMcpServerRequest = {
+    id: 'x',
+    displayName: 'X',
+    url: 'https://x',
+  }
+  expectTypeOf(minimal).toMatchTypeOf<CreateMcpServerRequest>()
+})
+
+test('UpdateMcpServerRequest 所有字段可选', () => {
+  const empty: UpdateMcpServerRequest = {}
+  expectTypeOf(empty).toMatchTypeOf<UpdateMcpServerRequest>()
+})
+
+test('CallToolResponse.result 是字符串', () => {
+  const r: CallToolResponse = { success: true, result: 'ok' }
+  expectTypeOf(r.result).toEqualTypeOf<string | undefined>()
+})
+
+test('McpServerState 是 4 个字面量的联合', () => {
+  expectTypeOf<McpServerState>().toEqualTypeOf<'disabled' | 'connecting' | 'ok' | 'error'>()
+})
+
+test('GetToolsResponse.tools 是 LLMTool[]', () => {
+  expectTypeOf<GetToolsResponse['tools']>().toEqualTypeOf<LLMTool[] | undefined>()
 })
