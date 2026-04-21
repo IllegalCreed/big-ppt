@@ -7,6 +7,7 @@ import { templates } from './routes/templates.js'
 import { log } from './routes/log.js'
 import { tools as toolsRoute } from './routes/tools.js'
 import { registerLocalTools } from './tools/local/index.js'
+import { getRegistry } from './mcp-registry/index.js'
 
 const app = new Hono()
 
@@ -48,4 +49,8 @@ registerLocalTools()
 
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`[agent] listening on http://localhost:${info.port}`)
+  void getRegistry()
+    .initialize()
+    .then(() => console.log('[agent] MCP registry initialized'))
+    .catch((err) => console.warn('[agent] MCP init partial failure:', (err as Error).message))
 })
