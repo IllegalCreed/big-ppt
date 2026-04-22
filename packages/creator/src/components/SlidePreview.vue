@@ -45,70 +45,76 @@ function present() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #e8e8e8;
+  background: var(--color-bg-surface-2);
 }
 
 .preview-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   height: 36px;
-  background: #fafafa;
-  border-bottom: 1px solid #e8e8e8;
+  background: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
 }
 
 .preview-title {
-  font-size: 13px;
-  color: #666;
-  font-weight: 500;
+  font-size: var(--fs-base);
+  color: var(--color-fg-tertiary);
+  font-weight: var(--fw-medium);
 }
 
 .preview-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .preview-btn {
-  padding: 2px 10px;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
-  background: #fff;
-  font-size: 12px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  font-size: var(--fs-sm);
   cursor: pointer;
-  color: #333;
+  color: var(--color-fg-secondary);
+  font-family: inherit;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
 }
 
 .preview-btn:hover {
-  border-color: #1677ff;
-  color: #1677ff;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 .present-btn {
-  background: #1677ff;
-  color: #fff;
-  border-color: #1677ff;
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  border-color: var(--color-accent);
 }
 
 .present-btn:hover {
-  background: #4096ff;
-  border-color: #4096ff;
-  color: #fff;
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+  color: var(--color-accent-fg);
 }
 
 .preview-frame {
   flex: 1;
-  padding: 12px;
+  padding: var(--space-4);
   display: flex;
 }
 
 .slidev-iframe {
   width: 100%;
   height: 100%;
-  border: none;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  box-shadow: var(--shadow-sm);
 }
 </style>
