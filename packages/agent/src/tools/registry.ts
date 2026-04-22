@@ -35,6 +35,10 @@ export function hasTool(name: string): boolean {
   return registry.has(name)
 }
 
+export function unregister(name: string): boolean {
+  return registry.delete(name)
+}
+
 /** 仅测试用：清空注册表 */
 export function __resetRegistry(): void {
   registry.clear()

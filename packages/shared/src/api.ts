@@ -107,4 +107,87 @@ export interface ToolExecResult {
   error?: string
 }
 
+// === MCP server 配置(后端持久化) ===
+
+export interface McpServerConfig {
+  /** 稳定 id,同时作为 `mcp__<id>__<tool>` 的前缀,必须符合 [a-zA-Z0-9_-]+ */
+  id: string
+  displayName: string
+  description: string
+  /** StreamableHTTP endpoint,如 https://open.bigmodel.cn/api/mcp/web_search_prime/mcp */
+  url: string
+  /** 连接时透传的 HTTP headers(含 Authorization) */
+  headers: Record<string, string>
+  enabled: boolean
+  /** 预置(代码里 seed)/ 用户新增。预置不可删,只可禁用 */
+  preset: boolean
+  badge?: string
+}
+
+export type McpServerState = 'disabled' | 'connecting' | 'ok' | 'error'
+
+export interface McpServerStatus {
+  state: McpServerState
+  toolCount?: number
+  error?: string
+  /** ISO string */
+  connectedAt?: string
+}
+
+export interface McpServerWithStatus extends McpServerConfig {
+  status: McpServerStatus
+}
+
+// === /api/mcp/servers ===
+
+export interface GetMcpServersResponse {
+  success: boolean
+  servers?: McpServerWithStatus[]
+  error?: string
+}
+
+export interface CreateMcpServerRequest {
+  id: string
+  displayName: string
+  description?: string
+  url: string
+  headers?: Record<string, string>
+  badge?: string
+}
+
+export interface UpdateMcpServerRequest {
+  enabled?: boolean
+  headers?: Record<string, string>
+  displayName?: string
+  description?: string
+  badge?: string
+}
+
+export interface MutateMcpServerResponse {
+  success: boolean
+  error?: string
+}
+
+// === /api/tools ===
+
+export interface GetToolsResponse {
+  success: boolean
+  tools?: LLMTool[]
+  error?: string
+}
+
+// === /api/call-tool ===
+
+export interface CallToolRequest {
+  name: string
+  args: Record<string, unknown>
+}
+
+export interface CallToolResponse {
+  success: boolean
+  /** 统一序列化成字符串,前端原样喂回 `tool` role 的 content */
+  result?: string
+  error?: string
+}
+
 export type { ChatMessage, ToolCall, LLMTool, LogPayload }

@@ -5,6 +5,10 @@ import { llm } from './routes/llm.js'
 import { slides } from './routes/slides.js'
 import { templates } from './routes/templates.js'
 import { log } from './routes/log.js'
+import { tools as toolsRoute } from './routes/tools.js'
+import { mcp as mcpRoute } from './routes/mcp.js'
+import { registerLocalTools } from './tools/local/index.js'
+import { getRegistry } from './mcp-registry/index.js'
 
 const app = new Hono()
 
@@ -29,6 +33,8 @@ app.route('/api/llm', llm)
 app.route('/api', slides)
 app.route('/api', templates)
 app.route('/api', log)
+app.route('/api', toolsRoute)
+app.route('/api', mcpRoute)
 
 const port = Number(process.env.AGENT_PORT ?? 4000)
 
@@ -40,6 +46,13 @@ try {
   process.exit(1)
 }
 
+// 注册本地工具到 agent tool-registry
+registerLocalTools()
+
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`[agent] listening on http://localhost:${info.port}`)
+  void getRegistry()
+    .initialize()
+    .then(() => console.log('[agent] MCP registry initialized'))
+    .catch((err) => console.warn('[agent] MCP init partial failure:', (err as Error).message))
 })
