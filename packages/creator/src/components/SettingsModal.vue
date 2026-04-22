@@ -151,23 +151,189 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.modal-content { background: #fff; border-radius: 12px; width: 520px; max-width: 92vw; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 6px 24px rgba(0,0,0,0.15); }
-.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid #f0f0f0; }
-.modal-header h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.close-btn { border: none; background: none; font-size: 20px; cursor: pointer; color: #999; }
-.close-btn:hover { color: #333; }
-.modal-tabs { display: flex; border-bottom: 1px solid #f0f0f0; }
-.modal-tabs button { flex: 1; padding: 10px; border: none; background: none; cursor: pointer; font-size: 13px; color: #666; display: flex; align-items: center; justify-content: center; gap: 6px; }
-.modal-tabs button.active { color: #1677ff; border-bottom: 2px solid #1677ff; }
-.mcp-count { font-size: 11px; background: #1677ff; color: #fff; padding: 1px 6px; border-radius: 8px; }
-.modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
-.form-group { display: flex; flex-direction: column; gap: 6px; }
-.form-group label { font-size: 13px; font-weight: 500; color: #333; }
-.form-group input, .form-group select { padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; outline: none; }
-.form-group input:focus, .form-group select:focus { border-color: #1677ff; }
-.modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 10px; border-top: 1px solid #f0f0f0; margin-top: auto; }
-.btn-secondary { padding: 6px 16px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; }
-.btn-primary { padding: 6px 16px; border: none; border-radius: 6px; background: #1677ff; color: #fff; cursor: pointer; font-size: 14px; }
-.btn-primary:hover { background: #4096ff; }
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(70, 54, 30, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-lg);
+  width: 560px;
+  max-width: 92vw;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-sans);
+  color: var(--color-fg-secondary);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--color-fg-primary);
+  font-family: var(--font-serif);
+  letter-spacing: 0.02em;
+}
+
+.close-btn {
+  border: none;
+  background: none;
+  font-size: var(--fs-xl);
+  cursor: pointer;
+  color: var(--color-fg-muted);
+  padding: 0 var(--space-1);
+  line-height: var(--lh-tight);
+  font-family: inherit;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.close-btn:hover {
+  color: var(--color-fg-primary);
+}
+
+.modal-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.modal-tabs button {
+  flex: 1;
+  padding: var(--space-3);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: var(--fs-base);
+  color: var(--color-fg-tertiary);
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border-bottom: 2px solid transparent;
+  transition:
+    color var(--dur-fast) var(--ease-out),
+    border-bottom-color var(--dur-fast) var(--ease-out);
+}
+
+.modal-tabs button:hover {
+  color: var(--color-fg-secondary);
+}
+
+.modal-tabs button.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+.mcp-count {
+  font-size: var(--fs-xs);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-tight);
+}
+
+.modal-body {
+  padding: var(--space-5) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  overflow-y: auto;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.form-group label {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  color: var(--color-fg-secondary);
+}
+
+.form-group input,
+.form-group select {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
+  color: var(--color-fg-primary);
+  background: var(--color-bg-elevated);
+  font-family: inherit;
+  outline: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+  margin-top: auto;
+}
+
+.btn-secondary {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  color: var(--color-fg-secondary);
+  cursor: pointer;
+  font-size: var(--fs-md);
+  font-family: inherit;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.btn-secondary:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.btn-primary {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  cursor: pointer;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  font-family: inherit;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+}
 </style>

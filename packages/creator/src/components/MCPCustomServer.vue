@@ -93,15 +93,151 @@ watch(
 </template>
 
 <style scoped>
-.mcp-custom { border-top: 1px dashed #eee; padding-top: 12px; }
-.mcp-custom__toggle { border: none; background: none; cursor: pointer; font-size: 13px; color: #666; padding: 0; }
-.mcp-custom__body { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
-.mcp-custom__row { display: flex; align-items: center; gap: 10px; font-size: 12px; }
-.mcp-custom__row code { color: #666; flex: 1; overflow: hidden; text-overflow: ellipsis; }
-.mcp-custom__empty { color: #999; font-size: 12px; }
-.mcp-custom__form { display: flex; flex-direction: column; gap: 6px; }
-.mcp-custom__form input { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 13px; }
-.mcp-custom__headers { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
-.mcp-custom__header-row { font-size: 11px; color: #666; }
-.mcp-custom__submit { padding: 6px 12px; background: #1677ff; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+.mcp-custom {
+  border-top: 1px dashed var(--color-border);
+  padding-top: var(--space-4);
+}
+
+.mcp-custom__toggle {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: var(--fs-base);
+  color: var(--color-fg-tertiary);
+  padding: 0;
+  font-family: inherit;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.mcp-custom__toggle:hover {
+  color: var(--color-accent);
+}
+
+.mcp-custom__body {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.mcp-custom__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mcp-custom__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+  color: var(--color-fg-secondary);
+}
+
+.mcp-custom__row code {
+  color: var(--color-fg-tertiary);
+  font-family: var(--font-mono);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcp-custom__row button {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-fg-tertiary);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.mcp-custom__row button:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.mcp-custom__empty {
+  color: var(--color-fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.mcp-custom__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mcp-custom__form input {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
+  color: var(--color-fg-primary);
+  background: var(--color-bg-elevated);
+  font-family: inherit;
+  outline: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.mcp-custom__form input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.mcp-custom__headers {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: var(--space-2);
+}
+
+.mcp-custom__headers button {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  color: var(--color-fg-secondary);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.mcp-custom__headers button:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.mcp-custom__header-row {
+  font-size: var(--fs-sm);
+  color: var(--color-fg-tertiary);
+  font-family: var(--font-mono);
+}
+
+.mcp-custom__submit {
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  font-family: inherit;
+  align-self: flex-start;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.mcp-custom__submit:hover {
+  background: var(--color-accent-hover);
+}
 </style>
