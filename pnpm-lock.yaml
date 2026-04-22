@@ -63,6 +63,9 @@ importers:
       antdv-next:
         specifier: ^1.2.0
         version: 1.2.0(vue@3.5.32(typescript@6.0.3))
+      lucide-vue-next:
+        specifier: ^1.0.0
+        version: 1.0.0(vue@3.5.32(typescript@6.0.3))
       vue:
         specifier: ^3.5.32
         version: 3.5.32(typescript@6.0.3)
@@ -3597,6 +3600,11 @@ packages:
 
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
+
+  lucide-vue-next@1.0.0:
+    resolution: {integrity: sha512-V6SPvx1IHTj/UY+FrIYWV5faISsPSb8BnWSFDxAtezWKvWc9ZZ40PDrdu1/Qb5vg4lHWr1hs1BAMGVGm6V1Xdg==}
+    peerDependencies:
+      vue: '>=3.0.1'
 
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
@@ -9264,6 +9272,10 @@ snapshots:
   lru-cache@5.1.1:
     dependencies:
       yallist: 3.1.1
+
+  lucide-vue-next@1.0.0(vue@3.5.32(typescript@6.0.3)):
+    dependencies:
+      vue: 3.5.32(typescript@6.0.3)
 
   lz-string@1.5.0: {}
 
