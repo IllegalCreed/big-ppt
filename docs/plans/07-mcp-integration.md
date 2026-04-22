@@ -991,7 +991,6 @@ git commit -m "feat(creator): 切换到 GET /api/tools + POST /api/call-tool 动
 - Create: `packages/agent/src/mcp-server-repo/json-file-repo.ts`
 - Create: `packages/agent/src/mcp-server-repo/index.ts`
 - Create: `packages/agent/data/.gitignore`
-- Create: `packages/agent/data/.gitkeep`
 - Modify: [packages/agent/src/workspace.ts](../../packages/agent/src/workspace.ts) (只加一个 paths 字段)
 - Create: `packages/agent/test/mcp-server-repo.test.ts`
 
