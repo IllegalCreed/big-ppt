@@ -4,11 +4,11 @@
 
 ## 总览
 
-| 级别   | 含义                 | 条数                           |
-| ------ | -------------------- | ------------------------------ |
-| **P1** | Phase 3 关闭前必须清 | 5（已清 4，P1-5 延到 Phase 4） |
-| **P2** | Phase 4 关闭前必须清 | 4                              |
-| **P3** | 非阻塞，有机会再清   | 7                              |
+| 级别   | 含义                 | 条数                                               |
+| ------ | -------------------- | -------------------------------------------------- |
+| **P1** | Phase 3 关闭前必须清 | 5（已清 4，P1-5 延到 Phase 4）                     |
+| **P2** | Phase 4 关闭前必须清 | 4                                                  |
+| **P3** | 非阻塞，有机会再清   | 9（P3-NEW：字体自托管 / chrome-devtools 视觉回归） |
 
 ---
 
@@ -33,6 +33,7 @@
 **触发时机**：骨架已完成；完全动态化留给 Phase 3.5 / MCP 集成
 
 **实际修复（完全）**：Phase 3.5 按 [07-mcp-integration.md](07-mcp-integration.md) 执行完成：
+
 - 本地 5 工具 `registerLocalTools()` 注册进 `tool-registry`
 - agent 新增 `GET /api/tools` / `POST /api/call-tool`，前端 `useAIChat` 动态拉工具列表，`executeTool` 收敛为一行 fetch
 - MCP HTTP client 以 `mcp__<serverId>__<toolName>` 命名动态注入 registry；`McpServerRepo` 抽象（JsonFileRepo 实现）为 Phase 5 DB 留迁移口
@@ -177,14 +178,14 @@
 
 **诊断链**（关键测试点）：
 
-| 测试 | 结果 | 结论 |
-|------|------|------|
-| `@iconify/utils` 的 `loadNodeIcon('carbon', 'minimize', { cwd })` 独立跑 | ✅ 返回 SVG | Iconify 底层健康 |
-| `mlly.resolvePath('@iconify-json/carbon/icons.json', { url })` | ✅ 解析到文件 | 模块解析健康 |
-| `presetIcons({ collections: { carbon: async loader } })` 显式注入 | ✅ 生成 CSS | UnoCSS 手动模式 OK |
-| `presetIcons({ collectionsNodeResolvePath: [...] })` 自动模式 | ❌ `failed to load` | **UnoCSS 自动管线 regression** |
-| `presetIcons({})` 零配置 | ❌ `failed to load` | 同上 |
-| 用户 `setup/unocss.ts` 加第二个 `presetIcons` 显式 collections | ❌ loader 不被触发 | UnoCSS 多 preset 合并时（同名）被前者 "认领" |
+| 测试                                                                     | 结果                | 结论                                         |
+| ------------------------------------------------------------------------ | ------------------- | -------------------------------------------- |
+| `@iconify/utils` 的 `loadNodeIcon('carbon', 'minimize', { cwd })` 独立跑 | ✅ 返回 SVG         | Iconify 底层健康                             |
+| `mlly.resolvePath('@iconify-json/carbon/icons.json', { url })`           | ✅ 解析到文件       | 模块解析健康                                 |
+| `presetIcons({ collections: { carbon: async loader } })` 显式注入        | ✅ 生成 CSS         | UnoCSS 手动模式 OK                           |
+| `presetIcons({ collectionsNodeResolvePath: [...] })` 自动模式            | ❌ `failed to load` | **UnoCSS 自动管线 regression**               |
+| `presetIcons({})` 零配置                                                 | ❌ `failed to load` | 同上                                         |
+| 用户 `setup/unocss.ts` 加第二个 `presetIcons` 显式 collections           | ❌ loader 不被触发  | UnoCSS 多 preset 合并时（同名）被前者 "认领" |
 
 **当前方案**：离线预生成 → Slidev 全局 style.css @import。优点：确定、零运行时开销、Slidev 升级不影响渲染只需 `pnpm run gen-icons` 重跑。缺点：33KB 死重；新图标需要手动重跑 script。
 
@@ -197,6 +198,37 @@
 5. **沟通渠道**：GitHub issue / Discord slidev 频道 / Anthony Fu 个人 GitHub（他响应通常一周内）
 
 **清除时机**：上游 UnoCSS 修 + 升级后删除 gen-icons 流程。删除范围：`scripts/gen-icons.mjs` / `style.css` / `styles/` 目录 / `.npmrc` 的 `public-hoist-pattern`（如果其他依赖也不需要） / slidev 的 `@iconify-json/*` dependencies（恢复成 transitive）。
+
+---
+
+### P3-8. 字体未自托管（Phase 3.6 遗留）
+
+**位置**：[packages/creator/src/styles/tokens.css](../../packages/creator/src/styles/tokens.css) 的 `--font-sans` / `--font-serif` / `--font-mono` 全部走 system font stack
+
+**影响**：Inter / Source Serif 4 / Noto Serif SC 不是所有系统都预装。Windows 用户可能回退到 Microsoft YaHei + Georgia，观感与设计稿有轻度偏差；离线场景无 Google/Adobe Fonts CDN。Phase 3.6 单机 dev 环境可接受。
+
+**修复方案**：Phase 5 部署前评估：
+
+- `@fontsource/inter` + `@fontsource/source-serif-4` + `@fontsource/noto-serif-sc`（NPM 自托管）
+- 或在 Nginx / CDN 托管 `.woff2`，`index.html` 显式 `<link rel="preload">`
+
+**触发时机**：Phase 5 部署前
+
+---
+
+### P3-9. 前端视觉回归无自动化（Phase 3.6 遗留）
+
+**位置**：全局 UI 层
+
+**影响**：Phase 3.6 引入 design tokens 后，任何 token 改动可能波及 20+ 文件的显示；目前仅靠人眼对比截图。Phase 4 将大量增加组件，缺视觉回归工具会让 tokens 调整的代价升高。
+
+**修复方案**：
+
+- 引入 Playwright + `toHaveScreenshot()`（截图快照比对）
+- 关键页面：主视图 / 设置 LLM tab / 设置 MCP tab（三种状态）/ 滑动 divider
+- CI 在 PR 上跑，失败生成 diff 图
+
+**触发时机**：Phase 4 前期，配合"逐页编辑"UI 密度提升一起做
 
 ---
 
@@ -217,9 +249,10 @@
 
 ## 变更记录
 
-| 日期       | 变更                                                                | 操作人 |
-| ---------- | ------------------------------------------------------------------- | ------ |
-| 2026-04-20 | 初始版本，Phase 2 关闭同步产出                                      | 项目组 |
-| 2026-04-21 | Phase 3 关闭：P1-1 / P1-2 骨架 / P1-3 / P1-4 / P3-3 清除；新增 P3-6 | 项目组 |
-| 2026-04-21 | 新增 P3-7：Slidev 图标用离线预生成绕 UnoCSS 66.x 自动 resolve bug，记录上游 PR 路线 | 项目组 |
-| 2026-04-21 | Phase 3.5 关闭：P1-2 完全清零；P3-5 标 ✅；新增 P2-4（MCP 凭证加密）；P2 条数 3→4 | 项目组 |
+| 日期       | 变更                                                                                                                                                                                                                        | 操作人 |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 2026-04-20 | 初始版本，Phase 2 关闭同步产出                                                                                                                                                                                              | 项目组 |
+| 2026-04-21 | Phase 3 关闭：P1-1 / P1-2 骨架 / P1-3 / P1-4 / P3-3 清除；新增 P3-6                                                                                                                                                         | 项目组 |
+| 2026-04-21 | 新增 P3-7：Slidev 图标用离线预生成绕 UnoCSS 66.x 自动 resolve bug，记录上游 PR 路线                                                                                                                                         | 项目组 |
+| 2026-04-21 | Phase 3.5 关闭：P1-2 完全清零；P3-5 标 ✅；新增 P2-4（MCP 凭证加密）；P2 条数 3→4                                                                                                                                           | 项目组 |
+| 2026-04-22 | Phase 3.6 完成：creator design tokens + DESIGN.md 落地，Lumideck · 幻光千叶 品牌上线；新增 P3-8（字体自托管）+ P3-9（视觉回归）；P3 条数 7→9；注：P2-3（slidev templates tokens）独立于 creator，仍保留待 Phase 4 P1-5 清除 | 项目组 |
