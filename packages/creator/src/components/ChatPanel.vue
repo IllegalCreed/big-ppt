@@ -125,12 +125,15 @@ const slashItems = (info?: { query?: string }) => {
     label: h(
       'div',
       {
-        style:
-          'display: flex; gap: 12px; align-items: center; font-family: -apple-system, sans-serif;',
+        style: 'display: flex; gap: 12px; align-items: center; font-family: var(--font-sans);',
       },
       [
-        h('span', { style: 'color: #1677ff; font-weight: 600;' }, c.label),
-        h('span', { style: 'color: #999; font-size: 12px;' }, c.description),
+        h('span', { style: 'color: var(--color-accent); font-weight: 600;' }, c.label),
+        h(
+          'span',
+          { style: 'color: var(--color-fg-muted); font-size: var(--fs-sm);' },
+          c.description,
+        ),
       ],
     ),
   }))
@@ -163,7 +166,13 @@ function renderToolChain(steps: ToolStep[]) {
       title: s.label,
       description: s.argsPreview || undefined,
       content: s.error
-        ? h('div', { style: 'color: #ff4d4f; font-size: 12px;' }, s.error)
+        ? h(
+            'div',
+            {
+              style: 'color: var(--color-danger); font-size: var(--fs-sm);',
+            },
+            s.error,
+          )
         : undefined,
       status: s.status,
       collapsible: !!s.error,
@@ -291,25 +300,25 @@ function handleCancel() {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #fff;
+  background: var(--color-bg-surface);
 }
 
 .status-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: #e6f4ff;
-  border-bottom: 1px solid #91caff;
-  font-size: 13px;
-  color: #1677ff;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-accent-soft);
+  border-bottom: 1px solid var(--color-accent);
+  font-size: var(--fs-base);
+  color: var(--color-accent-hover);
 }
 
 .status-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #1677ff;
+  background: var(--color-accent);
   animation: pulse 1.5s ease-in-out infinite;
 }
 
@@ -328,28 +337,32 @@ function handleCancel() {
 }
 
 .cancel-btn {
-  padding: 2px 8px;
-  border: 1px solid #1677ff;
-  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #1677ff;
-  font-size: 12px;
+  color: var(--color-accent-hover);
+  font-size: var(--fs-sm);
+  font-family: inherit;
   cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .cancel-btn:hover {
-  background: #1677ff;
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
 }
 
 .message-list {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: var(--space-5);
 }
 
 .sender-area {
-  padding: 12px 16px;
-  border-top: 1px solid #f0f0f0;
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--color-border-subtle);
 }
 </style>
