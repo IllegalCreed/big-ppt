@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
 import { Download, Play, RefreshCw } from 'lucide-vue-next'
 import { useSlideStore } from '../composables/useSlideStore'
 
 const slideStore = useSlideStore()
-const iframeKey = ref(0)
+
+// Slidev 原生支持 URL path `/:page` 跳到指定页；带 `?t=token` 在 token 变化时强制 iframe 重载
+// （Vue 看到 src 改变就会重新挂载 iframe）。
+const iframeSrc = computed(
+  () => `http://localhost:3031/${slideStore.currentPage.value}?t=${slideStore.refreshToken.value}`,
+)
+const presentSrc = computed(() => `http://localhost:3031/${slideStore.currentPage.value}`)
 
 function refresh() {
   slideStore.refresh()
-  iframeKey.value++
 }
 
 function exportFile() {
@@ -16,7 +21,7 @@ function exportFile() {
 }
 
 function present() {
-  window.open('http://localhost:3031', '_blank')
+  window.open(presentSrc.value, '_blank')
 }
 </script>
 
@@ -54,8 +59,7 @@ function present() {
     </div>
     <div class="preview-frame">
       <iframe
-        :key="iframeKey"
-        src="http://localhost:3031"
+        :src="iframeSrc"
         class="slidev-iframe"
         allow="clipboard-write; screen-wake-lock"
       />

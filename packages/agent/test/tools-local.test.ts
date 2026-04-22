@@ -18,6 +18,7 @@ beforeEach(() => {
   fs.writeFileSync(path.join(templatesDir, 'README.md'), 'USAGE\n')
   process.env.BIG_PPT_SLIDES_PATH = path.join(slidevDir, 'slides.md')
   process.env.BIG_PPT_TEMPLATES_DIR = templatesDir
+  process.env.BIG_PPT_HISTORY_DIR = path.join(tmpRoot, 'slides-history')
   __resetPathsForTesting()
   __resetRegistry()
   registerLocalTools()
@@ -26,19 +27,24 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.BIG_PPT_SLIDES_PATH
   delete process.env.BIG_PPT_TEMPLATES_DIR
+  delete process.env.BIG_PPT_HISTORY_DIR
   __resetPathsForTesting()
   __resetRegistry()
   fs.rmSync(tmpRoot, { recursive: true, force: true })
 })
 
 describe('registerLocalTools', () => {
-  it('注册 5 个本地工具', () => {
+  it('注册 9 个本地工具（含四件套）', () => {
     expect(hasTool('read_slides')).toBe(true)
     expect(hasTool('write_slides')).toBe(true)
     expect(hasTool('edit_slides')).toBe(true)
+    expect(hasTool('create_slide')).toBe(true)
+    expect(hasTool('update_slide')).toBe(true)
+    expect(hasTool('delete_slide')).toBe(true)
+    expect(hasTool('reorder_slides')).toBe(true)
     expect(hasTool('list_templates')).toBe(true)
     expect(hasTool('read_template')).toBe(true)
-    expect(listTools()).toHaveLength(5)
+    expect(listTools()).toHaveLength(9)
   })
 
   it('read_slides 返回 slides.md 原文', async () => {
@@ -82,5 +88,51 @@ describe('registerLocalTools', () => {
     const raw = await getTool('read_template')!.exec({ name: '../../../etc/passwd' })
     const parsed = JSON.parse(raw)
     expect(parsed.success).toBe(false)
+  })
+
+  // LLM（尤其 GLM）常把 integer 参数包成字符串 —— 工具层要宽容
+  describe('integer args 宽容 coerce', () => {
+    beforeEach(async () => {
+      await getTool('write_slides')!.exec({
+        content: '---\nlayout: cover\n---\n\n# P1\n\n---\nlayout: content\n---\n\n# P2\n',
+      })
+    })
+
+    it('create_slide 接受字符串 "end" 和字符串 "4"', async () => {
+      const r1 = JSON.parse(
+        await getTool('create_slide')!.exec({ index: 'end', layout: 'content', body: 'new' }),
+      )
+      expect(r1.success).toBe(true)
+      expect(r1.index).toBe(3)
+      const r2 = JSON.parse(
+        await getTool('create_slide')!.exec({ index: '2', layout: 'content', body: 'middle' }),
+      )
+      expect(r2.success).toBe(true)
+      expect(r2.index).toBe(2)
+    })
+
+    it('update_slide 接受字符串 index "1"', async () => {
+      const r = JSON.parse(
+        await getTool('update_slide')!.exec({ index: '1', body: '# changed' }),
+      )
+      expect(r.success).toBe(true)
+    })
+
+    it('delete_slide 接受字符串 index "2"', async () => {
+      const r = JSON.parse(await getTool('delete_slide')!.exec({ index: '2' }))
+      expect(r.success).toBe(true)
+    })
+
+    it('reorder_slides 接受字符串元素数组 ["2","1"]', async () => {
+      const r = JSON.parse(await getTool('reorder_slides')!.exec({ order: ['2', '1'] }))
+      expect(r.success).toBe(true)
+    })
+
+    it('create_slide index 非整数字符串仍拒绝', async () => {
+      const r = JSON.parse(
+        await getTool('create_slide')!.exec({ index: 'foo', layout: 'content' }),
+      )
+      expect(r.success).toBe(false)
+    })
   })
 })

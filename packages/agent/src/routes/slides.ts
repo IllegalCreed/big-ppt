@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { editSlides, readSlides, restoreSlides, writeSlides } from '../slides-store/index.js'
+import { readSlides, redoSlides, restoreSlides } from '../slides-store/index.js'
 
 export const slides = new Hono()
 
@@ -22,31 +22,7 @@ slides.get('/read-slides', (c) => {
   }
 })
 
-slides.post('/write-slides', async (c) => {
-  try {
-    const { content } = await c.req.json<{ content?: string }>()
-    if (!content) return c.json({ success: false, error: 'content 不能为空' }, 400)
-    writeSlides(content)
-    return c.json({ success: true })
-  } catch (err) {
-    return c.json({ success: false, error: (err as Error).message }, 500)
-  }
-})
-
-slides.post('/edit-slides', async (c) => {
-  try {
-    const { old_string, new_string } = await c.req.json<{
-      old_string?: string
-      new_string?: string
-    }>()
-    if (!old_string) return c.json({ success: false, error: 'old_string 不能为空' }, 400)
-    const result = editSlides(old_string, new_string ?? '')
-    return c.json(result, result.success ? 200 : 200)
-  } catch (err) {
-    return c.json({ success: false, error: (err as Error).message }, 500)
-  }
-})
-
+// /undo 斜杠指令：回到上一个历史版本
 slides.post('/restore-slides', (c) => {
   try {
     const result = restoreSlides()
@@ -59,6 +35,24 @@ slides.post('/restore-slides', (c) => {
 slides.get('/restore-slides', (c) => {
   try {
     const result = restoreSlides()
+    return c.json(result, result.success ? 200 : 404)
+  } catch (err) {
+    return c.json({ success: false, error: (err as Error).message }, 500)
+  }
+})
+
+// /redo 斜杠指令：前进到下一个历史版本
+slides.post('/redo-slides', (c) => {
+  try {
+    const result = redoSlides()
+    return c.json(result, result.success ? 200 : 404)
+  } catch (err) {
+    return c.json({ success: false, error: (err as Error).message }, 500)
+  }
+})
+slides.get('/redo-slides', (c) => {
+  try {
+    const result = redoSlides()
     return c.json(result, result.success ? 200 : 404)
   } catch (err) {
     return c.json({ success: false, error: (err as Error).message }, 500)

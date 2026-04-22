@@ -21,7 +21,7 @@ function findMonorepoRoot(start: string = process.cwd()): string {
 export interface Paths {
   root: string
   slidesPath: string
-  slidesBak: string
+  historyDir: string
   templatesDir: string
   logsDir: string
   mcpConfigPath: string
@@ -40,6 +40,9 @@ export function getPaths(): Paths {
   const slidesPath = process.env.BIG_PPT_SLIDES_PATH
     ? path.resolve(process.env.BIG_PPT_SLIDES_PATH)
     : path.join(root, 'packages/slidev/slides.md')
+  const historyDir = process.env.BIG_PPT_HISTORY_DIR
+    ? path.resolve(process.env.BIG_PPT_HISTORY_DIR)
+    : path.join(root, 'packages/agent/data/slides-history')
   const templatesDir = process.env.BIG_PPT_TEMPLATES_DIR
     ? path.resolve(process.env.BIG_PPT_TEMPLATES_DIR)
     : path.join(root, 'packages/slidev/templates/company-standard')
@@ -52,7 +55,7 @@ export function getPaths(): Paths {
   cached = {
     root,
     slidesPath,
-    slidesBak: `${slidesPath}.bak`,
+    historyDir,
     templatesDir,
     logsDir,
     mcpConfigPath,

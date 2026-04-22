@@ -13,13 +13,44 @@ import type {
 } from '@big-ppt/shared'
 import { buildSystemPrompt } from '../prompts/buildSystemPrompt'
 import { logEvent, setCurrentSession, truncate } from './logger'
+import { useSlideStore } from './useSlideStore'
+
+/**
+ * 工具调用成功后，从 args / result 中提取"被改/新增"页的 index，返回给 caller 去 setPage。
+ * 所有返回的 index 都是 1-based，与 slideStore.currentPage 对齐。
+ */
+function extractFocusPage(toolName: string, args: Record<string, unknown>, resultText: string): number | null {
+  switch (toolName) {
+    case 'create_slide': {
+      // result: { success, index }
+      try {
+        const parsed = JSON.parse(resultText) as { index?: unknown }
+        if (typeof parsed.index === 'number') return parsed.index
+      } catch { /* ignore */ }
+      return null
+    }
+    case 'update_slide':
+    case 'delete_slide': {
+      const raw = args.index
+      if (typeof raw === 'number') return raw
+      if (typeof raw === 'string' && /^-?\d+$/.test(raw.trim())) return Number(raw.trim())
+      return null
+    }
+    default:
+      return null
+  }
+}
 
 export type { ToolStep, LLMSettings }
 
 const TOOL_STATUS_MAP: Record<string, string> = {
   read_slides: '正在读取当前幻灯片...',
   write_slides: '正在生成幻灯片...',
-  edit_slides: '正在修改幻灯片...',
+  edit_slides: '正在替换文本...',
+  create_slide: '正在新增页面...',
+  update_slide: '正在修改当前页...',
+  delete_slide: '正在删除页面...',
+  reorder_slides: '正在重新排序...',
   read_template: '正在读取模板...',
   list_templates: '正在查询可用模板...',
 }
@@ -95,7 +126,7 @@ function trimMessages(messages: ChatMessage[]): ChatMessage[] {
 
 // --- 工具执行 ---
 
-async function executeTool(call: ToolCall): Promise<string> {
+async function executeTool(call: ToolCall, turnId: string): Promise<string> {
   let args: Record<string, unknown>
   try {
     args = JSON.parse(call.function.arguments || '{}')
@@ -108,7 +139,7 @@ async function executeTool(call: ToolCall): Promise<string> {
   const res = await fetch('/api/call-tool', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: call.function.name, args } satisfies CallToolRequest),
+    body: JSON.stringify({ name: call.function.name, args, turnId } satisfies CallToolRequest),
   })
   const json = (await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }))) as CallToolResponse
   if (!res.ok || !json.success) {
@@ -221,9 +252,10 @@ async function callLLMWithRetry(
 ): Promise<{ toolCalls: ToolCall[]; content: string }> {
   try {
     return await callLLMStream(messages, signal, toolsList, onTextChunk)
-  } catch (err: any) {
-    if (err.name === 'AbortError') throw err
-    if (err.message?.includes('API Key')) throw err
+  } catch (err) {
+    const e = err as { name?: string; message?: string }
+    if (e.name === 'AbortError') throw err
+    if (e.message?.includes('API Key')) throw err
     if (retries > 0) {
       await new Promise((r) => setTimeout(r, 2000))
       return callLLMWithRetry(messages, signal, toolsList, onTextChunk, retries - 1)
@@ -235,6 +267,8 @@ async function callLLMWithRetry(
 // --- Composable ---
 
 export function useAIChat() {
+  const slideStore = useSlideStore()
+
   // 发送给 LLM 的完整消息（含 system、tool、tool_result）
   const messages = ref<ChatMessage[]>([{ role: 'system', content: buildSystemPrompt() }])
 
@@ -260,8 +294,11 @@ export function useAIChat() {
     let liveTools: LLMTool[]
     try {
       liveTools = await ensureTools()
-    } catch (err: any) {
-      chatMessages.value.push({ role: 'assistant', content: `无法加载工具列表:${err.message}` })
+    } catch (err) {
+      chatMessages.value.push({
+        role: 'assistant',
+        content: `无法加载工具列表:${(err as Error).message}`,
+      })
       return
     }
 
@@ -269,6 +306,11 @@ export function useAIChat() {
       globalThis.crypto?.randomUUID?.() ||
       `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setCurrentSession(session)
+    // 每次 user message 一个 turnId。整个 for 循环内所有 tool_call 共用，
+    // agent 侧据此把同轮多次写合并为一条 history（/undo /redo 按轮次粒度）。
+    const turnId =
+      globalThis.crypto?.randomUUID?.() ||
+      `t-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const t0 = Date.now()
     logEvent({
       session,
@@ -372,9 +414,15 @@ export function useAIChat() {
 
             let result: string
             try {
-              result = await executeTool(tc)
+              result = await executeTool(tc, turnId)
               const idx = toolSteps.value.findIndex((s) => s.key === step.key)
               if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'success' }
+              // 工具执行成功后，尝试定位被改/新增的页到预览
+              try {
+                const parsedArgs = JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>
+                const focus = extractFocusPage(tc.function.name, parsedArgs, result)
+                if (focus !== null) slideStore.setPage(focus)
+              } catch { /* args 不是合法 JSON 就跳过 */ }
               logEvent({
                 session,
                 turn: i + 1,
@@ -386,19 +434,20 @@ export function useAIChat() {
                 duration_ms: Date.now() - toolT0,
                 payload: { result },
               })
-            } catch (err: any) {
-              result = JSON.stringify({ success: false, error: err.message })
+            } catch (err) {
+              const e = err as Error
+              result = JSON.stringify({ success: false, error: e.message })
               const idx = toolSteps.value.findIndex((s) => s.key === step.key)
-              if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'error', error: err.message }
+              if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'error', error: e.message }
               logEvent({
                 session,
                 turn: i + 1,
                 kind: 'tool_result',
                 tool: tc.function.name,
                 success: false,
-                error: err.message,
+                error: e.message,
                 duration_ms: Date.now() - toolT0,
-                payload: { error: err.message, stack: err.stack },
+                payload: { error: e.message, stack: e.stack },
               })
             }
 
@@ -448,7 +497,9 @@ export function useAIChat() {
       const timeoutMsg = '生成超时（工具调用轮次过多），请尝试简化需求或重新开始。'
       chatMessages.value.push({ role: 'assistant', content: timeoutMsg })
       status.value = 'idle'
-    } catch (err: any) {
+    } catch (err) {
+      const e = err as Error
+      const isAbort = e.name === 'AbortError'
       // 归档进行中步骤为 error，避免丢失可视化上下文
       if (toolSteps.value.length > 0) {
         const finalized = toolSteps.value.map((s) =>
@@ -456,25 +507,25 @@ export function useAIChat() {
             ? {
                 ...s,
                 status: 'error' as const,
-                error: err.name === 'AbortError' ? '已取消' : err.message || '中断',
+                error: isAbort ? '已取消' : e.message || '中断',
               }
             : s,
         )
-        if (err.name === 'AbortError') {
+        if (isAbort) {
           chatMessages.value.push({ role: 'assistant', content: '', toolSteps: finalized })
         } else {
           chatMessages.value.push({
             role: 'assistant',
-            content: `出错了：${err.message}`,
+            content: `出错了：${e.message}`,
             toolSteps: finalized,
           })
         }
         toolSteps.value = []
-      } else if (err.name !== 'AbortError') {
-        chatMessages.value.push({ role: 'assistant', content: `出错了：${err.message}` })
+      } else if (!isAbort) {
+        chatMessages.value.push({ role: 'assistant', content: `出错了：${e.message}` })
       }
 
-      if (err.name === 'AbortError') {
+      if (isAbort) {
         status.value = 'cancelled'
         statusText.value = '已取消'
         logEvent({
@@ -485,12 +536,12 @@ export function useAIChat() {
         })
       } else {
         status.value = 'error'
-        statusText.value = err.message || '未知错误'
+        statusText.value = e.message || '未知错误'
         logEvent({
           session,
           kind: 'session_end',
           reason: 'error',
-          error: err.message,
+          error: e.message,
           duration_ms: Date.now() - t0,
         })
       }

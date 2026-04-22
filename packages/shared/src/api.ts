@@ -38,21 +38,18 @@ export interface ReadSlidesResponse {
   error?: string
 }
 
-// === /api/write-slides ===
-export interface WriteSlidesRequest {
-  content: string
-}
+/**
+ * write_slides 工具的响应类型（HTTP 路由已在 Phase 4 Step 11 删除，现仅用于 tool exec 返回值）。
+ */
 export interface WriteSlidesResponse {
   success: boolean
   bytes?: number
   error?: string
 }
 
-// === /api/edit-slides ===
-export interface EditSlidesRequest {
-  old_string: string
-  new_string: string
-}
+/**
+ * edit_slides 工具的响应类型（HTTP 路由已在 Phase 4 Step 11 删除，现仅用于 tool exec 返回值）。
+ */
 export interface EditSlidesResponse {
   success: boolean
   replaced?: number
@@ -60,9 +57,73 @@ export interface EditSlidesResponse {
 }
 
 // === /api/restore-slides ===
+/** 当前 slides.md 在历史栈中的位置（1-based），用于前端展示 "第 N / M 版" */
+export interface HistoryPosition {
+  /** 1-based index */
+  index: number
+  total: number
+}
 export interface RestoreSlidesResponse {
   success: boolean
-  restored_from?: string
+  message?: string
+  position?: HistoryPosition
+  error?: string
+}
+
+// === /api/redo-slides ===
+export interface RedoSlidesResponse {
+  success: boolean
+  message?: string
+  position?: HistoryPosition
+  error?: string
+}
+
+// === 四件套工具（走 POST /api/call-tool，下列类型供参考 / 前端可选 import） ===
+
+export interface CreateSlideArgs {
+  /** 1-based 插入位置；"end" 或省略则追加到末尾 */
+  index?: number | 'end'
+  /** layout 名（如 cover / toc / content / two-col / data / image-content / back-cover） */
+  layout: string
+  /** layout 所需的额外 frontmatter 键值对（与 layout 合并） */
+  frontmatter?: Record<string, unknown>
+  /** markdown 正文 */
+  body?: string
+}
+export interface CreateSlideResult {
+  success: boolean
+  /** 新页的 1-based 位置 */
+  index?: number
+  error?: string
+}
+
+export interface UpdateSlideArgs {
+  /** 1-based 目标页位置 */
+  index: number
+  frontmatter?: Record<string, unknown>
+  body?: string
+  /** true 时完全替换 frontmatter，false/缺省合并 */
+  replaceFrontmatter?: boolean
+}
+export interface UpdateSlideResult {
+  success: boolean
+  error?: string
+}
+
+export interface DeleteSlideArgs {
+  index: number
+}
+export interface DeleteSlideResult {
+  success: boolean
+  error?: string
+}
+
+export interface ReorderSlidesArgs {
+  /** 长度等于当前页数，每个元素是 1..N 的排列 */
+  order: number[]
+}
+export interface ReorderSlidesResult {
+  success: boolean
   error?: string
 }
 
@@ -181,6 +242,12 @@ export interface GetToolsResponse {
 export interface CallToolRequest {
   name: string
   args: Record<string, unknown>
+  /**
+   * 客户端轮次 id（可选）。同一个 user message 触发的所有 tool_call 共用同一个 turnId，
+   * agent 会把同一 turnId 的多次写入合并为 **一条** history 条目（/undo /redo 按轮次粒度）。
+   * 不传则每次 tool_call 都算独立条目。
+   */
+  turnId?: string
 }
 
 export interface CallToolResponse {

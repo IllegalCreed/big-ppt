@@ -108,7 +108,7 @@
 
 ---
 
-## Phase 4：编辑与迭代
+## Phase 4：编辑与迭代 ✅
 
 **目标**：支持通过对话对已生成的幻灯片进行逐页精细调整。
 
@@ -118,12 +118,15 @@
 - slides.md 架构升级：全局 CSS 抽到 `global.css` + layout 组件，AI 不再每页重抄 CSS
 - 布局切换、样式调整、单页增删
 - 预览侧支持单页定位 / 高亮
+- **附加**：`slides-history/` 环形缓冲（20 层）+ /undo /redo 轮次聚合 + UI 位置提示；工具层 integer 参数宽容 coerce
 
-**验收条件**：
+**验收条件**（全部满足才算关闭）：
 
-- [ ] 对 8 页幻灯片做"把第 3 页改成两栏"的指令，耗时 < 30 秒
-- [ ] AI 不再一次性重写整个 slides.md（单次 tool_call 只改一页）
-- [ ] slides.md 总行数下降 50% 以上（CSS 外移）
+- [x] 对 8 页幻灯片做"把第 3 页改成两栏"的指令，耗时 < 30 秒
+- [x] AI 不再一次性重写整个 slides.md（单次 tool_call 只改一页）
+- [x] slides.md 总行数下降 50% 以上（800 → 90 行，−88.75%）
+
+**状态**：已完成（2026-04-22 关闭，关闭报告见 [09-phase4-edit-iterate.md](../plans/09-phase4-edit-iterate.md)）
 
 **依赖**：Phase 3 完成
 
@@ -136,10 +139,11 @@
 **交付物**：
 
 - 后端 `packages/agent` 引入 **SQLite + Drizzle ORM**（单机零运维、类型安全）；agent 启动时自动建 schema + 跑 migration
-- 三张核心表：
+- 四张核心表：
   - `users(id, email, password_hash, created_at, updated_at)`
-  - `decks(id, user_id, title, status, created_at, updated_at)` — status ∈ draft/published
-  - `deck_versions(id, deck_id, content, message, author_id, created_at)` — append-only，每次 save 一条，天然版本历史
+  - `decks(id, user_id, title, theme_id, current_version_id, status, created_at, updated_at)` — status ∈ draft/published；`theme_id` 预留多 theme；`current_version_id` 支持"切回历史版本继续迭代"
+  - `deck_versions(id, deck_id, content, message, author_id, created_at)` — append-only，每次 save 一条；restore = 新建 version 指向历史 content，保留完整时间线，支持 Git 风格分叉
+  - `deck_chats(id, deck_id, role ∈ {system,user,assistant,tool}, content, tool_call_id, created_at)` — append-only 独立链，**不与 deck_versions 关联**。语义（2026-04-22 Q&A 确立）：切版本时**保留对话**，只移动 `decks.current_version_id`。AI 下一轮能感知当前 slides 是 V5 且记得之前在 V6/V7 上的尝试（用户"改主意了"的心智）
 - 认证：`/api/auth/register` / `/api/auth/login` / `/api/auth/me`，session cookie（httpOnly + SameSite=Lax），密码用 argon2 存
 - API Key 从前端 localStorage 搬到后端 `users.llm_settings`（加密存 ，同步清 P3-2）
 - deck 操作 API：`GET /api/decks` / `POST /api/decks` / `GET /api/decks/:id` / `PUT /api/decks/:id` / `DELETE /api/decks/:id` / `GET /api/decks/:id/versions` / `POST /api/decks/:id/restore/:versionId`
@@ -152,8 +156,10 @@
 - [ ] 新用户能注册 → 登录 → 建 deck → 用对话生成 → 保存 → 登出 → 重登看到 deck 列表带正确 title
 - [ ] Deck 详情页的"历史版本"面板显示所有历史记录，点击某条可预览 + 一键回滚（回滚 = 新建一条 version 指向该历史 content，保留完整时间线）
 - [ ] 同一用户不同 deck 可切换（切换时 agent 把对应 content 写入 slides.md，Slidev 自动热更新）
+- [ ] **切回历史版本 V5 后，AI 下一轮对话能感知当前 slides 是 V5 且理解用户之前在 V6/V7 上的尝试**（靠 `deck_chats` append-only + 每轮 LLM 调用前注入最新 slides.md）
+- [ ] **每轮 LLM 调用前 system prompt 或 tool 必自动反映最新 slides.md 内容**（Phase 4 已强化"修改前必 read_slides"习惯，Phase 5 延续）
 - [ ] API Key 后端化后，前端 localStorage 不再存敏感信息；清账 P3-2
-- [ ] `pnpm test` 新增 DB 层测试：repository CRUD + migration round-trip + 版本 append-only 不变性
+- [ ] `pnpm test` 新增 DB 层测试：repository CRUD + migration round-trip + 版本 append-only 不变性 + deck_chats 跨版本保留
 
 **状态**：待开始
 
@@ -263,3 +269,5 @@
 | 2026-04-21 | Phase 3 关闭（9 步迁移，P1-1/P1-2 骨架/P1-3/P1-4 技术债清除）                                        | 按 06-phase3-monorepo-agent.md 计划执行完成，验收条件全部满足                                     |
 | 2026-04-21 | Phase 5/6/7 重排：插入"用户系统+DB+历史版本"（5）与"多用户并发+Deck 运行时"（6），原导出部署顺延为 7 | 用户提出用户系统 / 历史版本 / 多用户并行需求；Slidev 单实例是关键瓶颈，必须先解好才能上分享与部署 |
 | 2026-04-21 | Phase 3.5 关闭：MCP 集成 + 本地工具 register 进 agent registry + 前端 GET /api/tools 动态化 | 按 07-mcp-integration.md 执行完成，P1-2 完全清零 |
+| 2026-04-22 | Phase 3.6 关闭：creator design tokens + DESIGN.md；品牌身份 Lumideck · 幻光千叶；P3-8/P3-9 新增 | 按 08-phase36-frontend-polish.md 执行完成 |
+| 2026-04-22 | Phase 4 关闭：P1-5 / P2-1 / P2-2 / P2-3 / P3-6 清零；slides.md 800→90 行；四件套工具 + /undo /redo 轮次聚合；Phase 5 补 `deck_chats` 表 + 切版本保留对话验收条件 | 按 09-phase4-edit-iterate.md 执行完成，路线图 3 条验收条件全部达标 |

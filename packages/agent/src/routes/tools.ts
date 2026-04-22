@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { getTool, listTools } from '../tools/registry.js'
+import { runInTurn } from '../slides-store/history.js'
 import type { CallToolRequest, CallToolResponse, GetToolsResponse } from '@big-ppt/shared'
 
 export const tools = new Hono()
@@ -12,10 +13,12 @@ tools.get('/tools', (c) => {
 tools.post('/call-tool', async (c) => {
   let name: string | undefined
   let args: Record<string, unknown> = {}
+  let turnId: string | undefined
   try {
     const body = await c.req.json<Partial<CallToolRequest>>()
     name = body.name
     args = body.args ?? {}
+    turnId = typeof body.turnId === 'string' && body.turnId ? body.turnId : undefined
   } catch {
     const resp: CallToolResponse = { success: false, error: '请求体必须是合法 JSON' }
     return c.json(resp, 400)
@@ -30,7 +33,8 @@ tools.post('/call-tool', async (c) => {
     return c.json(resp, 404)
   }
   try {
-    const result = await tool.exec(args)
+    const runner = (): Promise<string> => tool.exec(args)
+    const result = turnId ? await runInTurn(turnId, runner) : await runner()
     const resp: CallToolResponse = { success: true, result }
     return c.json(resp)
   } catch (err) {

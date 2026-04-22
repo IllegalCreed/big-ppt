@@ -41,12 +41,12 @@ class: data-slide
   overflow: hidden;
   padding: 48px 60px;
   box-sizing: border-box;
-  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  font-family: var(--ff-brand);
 }
 
 /* ── 顶部红色标题 ── */
 .content-title {
-  color: #d00d14;
+  color: var(--c-brand);
   font-size: 40px;
   font-weight: 900;
   letter-spacing: 4px;
@@ -76,7 +76,7 @@ class: data-slide
 
 .metric-card {
   padding: 18px 20px;
-  background: linear-gradient(180deg, #d00d14 0%, #c00b11 60%, #a8090e 100%);
+  background: var(--c-brand-gradient);
   color: #ffffff;
   text-align: center;
 }

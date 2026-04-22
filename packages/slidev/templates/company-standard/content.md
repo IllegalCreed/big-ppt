@@ -21,12 +21,12 @@ class: content-slide
   overflow: hidden;
   padding: 48px 60px;
   box-sizing: border-box;
-  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  font-family: var(--ff-brand);
 }
 
 /* ── 顶部红色标题 ── */
 .content-title {
-  color: #d00d14;
+  color: var(--c-brand);
   font-size: 40px;
   font-weight: 900;
   letter-spacing: 4px;

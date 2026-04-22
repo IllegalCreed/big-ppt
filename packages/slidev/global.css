@@ -1,0 +1,18 @@
+/*
+ * Slidev 跨主题通用样式入口。
+ *
+ * 目前只做一件事：`@import` 当前激活主题的 tokens.css。Phase 8 多主题时，
+ * 这里可通过构建时软链 / 替换切换主题 tokens（见规划文件 抉择 2）。
+ *
+ * layouts 和 slides.md 的 `<style>` 不再硬编码 hex / font-family / filter，
+ * 一律使用 var(--c-*) / var(--ff-*) 消费这里的 token。
+ */
+
+@import './templates/company-standard/tokens.css';
+
+/* 跨 layout 通用基底 —— 给所有 .slidev-layout 一个默认字体，避免每个 layout 重复声明 */
+.slidev-layout {
+  font-family: var(--ff-brand);
+  color: var(--c-fg-primary);
+  background: var(--c-bg-page);
+}

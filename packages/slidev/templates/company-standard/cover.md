@@ -37,7 +37,7 @@ class: cover-slide
   display: flex;
   flex-direction: column;
   justify-content: center;
-  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  font-family: var(--ff-brand);
 }
 
 /* ── 右上角 logo ── */
@@ -50,7 +50,7 @@ class: cover-slide
 }
 .logo-mark {
   height: 44px;
-  filter: invert(87%) sepia(98%) saturate(4811%) hue-rotate(352deg) brightness(82%) contrast(100%);
+  filter: var(--logo-red-filter);
 }
 .logo-text {
   height: 44px;
@@ -61,7 +61,7 @@ class: cover-slide
 .title-block {
   position: relative;
   padding: 32px 0;
-  background: linear-gradient(180deg, #d00d14 0%, #c00b11 60%, #a8090e 100%);
+  background: var(--c-brand-gradient);
   overflow: hidden;
 }
 

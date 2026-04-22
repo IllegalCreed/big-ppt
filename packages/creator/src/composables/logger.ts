@@ -48,29 +48,41 @@ export function truncate(str: string | undefined, n = 200): string {
 
 // --- 全局错误捕获 ---
 
+/**
+ * Vue errorHandler / warnHandler 的 instance 参数在 Vue 官方类型里是 `ComponentPublicInstance | null`，
+ * 但我们只读 `$options.__name / $options.name` 两个字段，用 unknown + 安全解构即可，
+ * 无需引入具体类型依赖。
+ */
+type VueInstanceLike = { $options?: { __name?: string; name?: string } } | null | undefined
+
+function getComponentName(instance: VueInstanceLike): string {
+  return instance?.$options?.__name ?? instance?.$options?.name ?? 'unknown'
+}
+
 export function installErrorHandlers(app: App): void {
   // Vue 组件渲染 / 生命周期错误
-  app.config.errorHandler = (err: any, instance: any, info: string) => {
+  app.config.errorHandler = (err: unknown, instance, info: string) => {
+    const e = err as { message?: string; stack?: string } | null | undefined
     logEvent({
       kind: 'browser_error',
       source: 'vue',
-      message: err?.message || String(err),
-      stack: truncate(err?.stack, 2000),
+      message: e?.message || String(err),
+      stack: truncate(e?.stack, 2000),
       info,
-      component: instance?.$options?.__name || instance?.$options?.name || 'unknown',
+      component: getComponentName(instance as VueInstanceLike),
     })
     // 仍然打印到 console，方便本地开发
     console.error('[Vue error]', err, info)
   }
 
   // Vue 警告（开发模式专用，生产会被 tree-shake 掉）
-  app.config.warnHandler = (msg: string, instance: any, trace: string) => {
+  app.config.warnHandler = (msg: string, instance, trace: string) => {
     logEvent({
       kind: 'browser_warn',
       source: 'vue',
       message: msg,
       trace: truncate(trace, 1500),
-      component: instance?.$options?.__name || instance?.$options?.name || 'unknown',
+      component: getComponentName(instance as VueInstanceLike),
     })
     console.warn('[Vue warn]', msg, trace)
   }

@@ -6,9 +6,9 @@
 
 | 级别   | 含义                 | 条数                                               |
 | ------ | -------------------- | -------------------------------------------------- |
-| **P1** | Phase 3 关闭前必须清 | 5（已清 4，P1-5 延到 Phase 4）                     |
-| **P2** | Phase 4 关闭前必须清 | 4                                                  |
-| **P3** | 非阻塞，有机会再清   | 9（P3-NEW：字体自托管 / chrome-devtools 视觉回归） |
+| **P1** | Phase 3 关闭前必须清 | 5（全部清除：Phase 3 清 4 条，Phase 4 清 P1-5）    |
+| **P2** | Phase 4 关闭前必须清 | 4（已清 3：P2-1/P2-2/P2-3；P2-4 留 Phase 5）       |
+| **P3** | 非阻塞，有机会再清   | 9（Phase 4 清 P3-6；P3-NEW 字体自托管 / 视觉回归） |
 
 ---
 
@@ -64,51 +64,61 @@
 **实际修复**：迁入 [packages/slidev/components/](../../packages/slidev/components/)，Slidev 的 `components/` 目录约定自动导入生效。
 **触发时机**：Phase 3 monorepo 拆分时 — 已完成
 
-### P1-5. `slides.md` 单文件架构 + CSS 重复 ⏸（延到 Phase 4）
+### P1-5. `slides.md` 单文件架构 + CSS 重复 ✅（2026-04-22 清）
 
-**位置**：[packages/slidev/slides.md](../../packages/slidev/slides.md)（8 页 800 行，其中 >70% 是重复 CSS）
-**影响**：
+**原位置**：[packages/slidev/slides.md](../../packages/slidev/slides.md)（8 页 800 行，其中 >70% 是重复 CSS）
+**实际修复**（Phase 4 Step 3/4/5 完成）：
 
-- AI 每页重抄 CSS → 浪费 token / 延长生成时间（实测 Turn 3 花了 303s 生成 16KB）
-- 模板改样式要改 N 页
-- 大 deck 超出模型输出窗口
+- `templates/<theme>/tokens.css` 集中品牌变量（`--c-brand` / `--ff-brand` / `--logo-red-filter` / `--c-brand-gradient` 等）
+- `packages/slidev/global.css` 做入口 `@import` tokens.css + `.slidev-layout` 基底
+- 7 个 Slidev 原生 layouts：cover / toc / content / two-col / data / image-content / back-cover（放 `packages/slidev/layouts/*.vue`）
+- 3 个 L* 内部复用组件：LCoverLogo / LTitleBlock / LMetricCard（只被 layouts import，AI prompt 不暴露）
+- slides.md 从 **800 → 90 行（−88.75%）**，0 处 `<style>` 块、0 处 hex 硬编码
 
-**修复方案**：
-
-- 全局 CSS 抽到 `packages/slidev/global.css` 和 `style.css`
-- 每种布局做成命名 component（`<CoverSlide>` / `<TocSlide>` / `<TwoCol>` / `<DataSlide>`），Slidev 的 layouts 就是这个机制
-- AI 只生成"结构 + 内容"，不再抄 CSS
-
-**触发时机**：Phase 4 开始前必须做（Phase 4 的"逐页编辑"依赖此结构）。Phase 3 scope 已围栏排除。
+**触发时机**：已于 [09-phase4-edit-iterate.md](09-phase4-edit-iterate.md) Step 3-5 完成
 
 ---
 
 ## P2 — Phase 4 关闭前必须清
 
-### P2-1. `write_slides` / `edit_slides` 策略撑不住编辑场景
+### P2-1. `write_slides` / `edit_slides` 策略撑不住编辑场景 ✅（2026-04-22 清）
 
-**位置**：[packages/agent/src/routes/slides.ts](../../packages/agent/src/routes/slides.ts) + [packages/agent/src/slides-store/](../../packages/agent/src/slides-store/)；prompt 里鼓励 write_slides 重写
-**影响**：Phase 4 用户要"改第 5 页"，AI 仍倾向 write_slides 整体覆盖 → 慢、易错、覆盖其他页。
-**修复方案**：工具拆分为 `create_slide(index, content)` / `update_slide(index, content)` / `delete_slide(index)` / `reorder_slides(order)`；prompt 强制"局部修改必须用 update_slide"。
-**触发时机**：Phase 4 第一迭代
+**原位置**：[packages/agent/src/routes/slides.ts](../../packages/agent/src/routes/slides.ts) + [packages/agent/src/slides-store/](../../packages/agent/src/slides-store/)；prompt 里鼓励 write_slides 重写
+**实际修复**（Phase 4 Step 6 + 8 完成）：
 
-### P2-2. `slides.md.bak` 只有 1 层深
+- slides-store 新增四件套：`createSlide({index, layout, frontmatter, body})` / `updateSlide({index, frontmatter?, body?, replaceFrontmatter?})` / `deleteSlide(index)` / `reorderSlides(order)`
+- 工具 registry 从 5 → 9 条（四件套 + 原 5 条）
+- `writeSlides` 加**store 层护栏**：已有 ≥1 页时返回 error 引导用四件套（不依赖 prompt 自律）
+- prompt 重写教 AI 粒度判定：小改 edit_slides / 整页改 update_slide / 增删 create|delete_slide / 排序 reorder
+- **Step 8.5 实测补丁**：工具层 `coerceIndex/coerceInt/coerceIntArray` 宽容 LLM（尤其 GLM）把 integer 传成字符串；prompt 加"换 layout 必 replaceFrontmatter=true"硬规则防脏数据
+- 实测 4 个修改场景 AI **0 次** write_slides 调用
 
-**位置**：[packages/agent/src/slides-store/index.ts](../../packages/agent/src/slides-store/index.ts) 的 `backupSlides()`
-**影响**：`/undo` 连续两次无效（第二次恢复回同一状态）。Phase 4 多轮编辑时会很痛。
-**修复方案**：`slides.md.history/<ts>-<op>.md` 环形缓冲（保留最近 N 个），`/undo` 步进回退；顺便加 `/redo`。
-**触发时机**：Phase 4 编辑能力上线前
+**触发时机**：已于 [09-phase4-edit-iterate.md](09-phase4-edit-iterate.md) Step 6-8.5 完成
 
-### P2-3. 没有 design tokens
+### P2-2. `slides.md.bak` 只有 1 层深 ✅（2026-04-22 清）
 
-**位置**：`#d00d14` / `"Microsoft YaHei"` / 红色滤镜 filter 表达式，散布在 [packages/slidev/templates/company-standard/](../../packages/slidev/templates/company-standard/) 每个模板和 [slides.md](../../packages/slidev/slides.md) 生成结果里
-**影响**：改色、改字体需要改 N 处；多模板套系时无法复用。
-**修复方案**：
+**原位置**：[packages/agent/src/slides-store/index.ts](../../packages/agent/src/slides-store/index.ts) 的 `backupSlides()`（已删）
+**实际修复**（Phase 4 Step 1 + 1.5 完成）：
 
-- `templates/<theme>/tokens.css`（或 `tokens.json`）声明 `--brand-primary` / `--brand-font-family` / `--logo-filter-primary` 等
-- 模板 CSS 用 var() 引用
+- 新 [packages/agent/src/slides-store/history.ts](../../packages/agent/src/slides-store/history.ts)：线性版本栈 + 环形缓冲（默认 20 层，`BIG_PPT_HISTORY_MAX` env 可调）
+- 物理存储：`packages/agent/data/slides-history/<hash>/<ts>-<op>.md`（hash = `sha1(slidesPath).slice(0, 8)`，为 Phase 5 deckId 预留）
+- `pointer.json` 维护 `currentIndex` / `files[]` / `lastTurnId`，支持 /undo 步进 + /redo
+- **轮次聚合（Step 1.5）**：用 `AsyncLocalStorage` 在 `/api/call-tool` 入口 `runInTurn(turnId, fn)` 包裹 tool.exec；同一 user message 内多次 appendHistory 合并为**一条** history 条目 —— /undo 一次回整轮不卡中间态
+- /undo /redo API 返回 `{ message, position: { index, total } }`，UI 显示"已撤销到第 N / M 版"
 
-**触发时机**：Phase 4 的 slides 架构升级（P1-5）顺带完成
+**触发时机**：已于 [09-phase4-edit-iterate.md](09-phase4-edit-iterate.md) Step 1 + 1.5 完成
+
+### P2-3. 没有 design tokens ✅（2026-04-22 清）
+
+**原位置**：`#d00d14`（21 处）/ `"Microsoft YaHei"`（8 处）/ 红色 filter 表达式（8 处）散布在 [packages/slidev/templates/company-standard/](../../packages/slidev/templates/company-standard/) 和 [slides.md](../../packages/slidev/slides.md)
+**实际修复**（Phase 4 Step 3 完成）：
+
+- [packages/slidev/templates/company-standard/tokens.css](../../packages/slidev/templates/company-standard/tokens.css) 集中声明所有品牌 token：`--c-brand` / `--c-brand-mid` / `--c-brand-deep` / `--c-brand-gradient` / `--ff-brand` / `--logo-red-filter` / `--c-fg-*` / `--c-bg-*`
+- [packages/slidev/global.css](../../packages/slidev/global.css) 做主入口 `@import` + `.slidev-layout` 基底
+- [packages/slidev/style.css](../../packages/slidev/style.css) 在 icons.css 后追加 `@import './global.css'`
+- 7 个模板 md 全量替换为 `var(--*)` 引用；slides.md 和所有 templates（除 DESIGN.md / README.md 文档引用）里 `#d00d14` 计数 0
+
+**触发时机**：已于 [09-phase4-edit-iterate.md](09-phase4-edit-iterate.md) Step 3 完成
 
 ### P2-4. MCP 凭证明文存 `data/mcp.json`（Phase 5 必须加密）
 
@@ -232,18 +242,23 @@
 
 ---
 
-### P3-6. creator 有 11 条 `any` 警告（Phase 2 遗留）
+### P3-6. creator 有 11 条 `any` 警告（Phase 2 遗留） ✅（2026-04-22 清）
 
-**位置**：
+**原位置**：
+- `packages/creator/src/components/ChatPanel.vue` 5 处（SlashCommand 类型 / bubbleItems `any[]` / onTrigger / catch）
+- `packages/creator/src/composables/logger.ts` 3 处（Vue errorHandler/warnHandler 签名）
+- `packages/creator/src/composables/useAIChat.ts` 3 处（catch 分支）
 
-- `packages/creator/src/components/ChatPanel.vue` 5 处
-- `packages/creator/src/composables/logger.ts` 3 处（Vue errorHandler/warnHandler 签名等）
-- `packages/creator/src/composables/useAIChat.ts` 3 处（catch(err: any)、SSE delta 解析等）
+**实际修复**（Phase 4 Step 9 完成）：
 
-**现状**：`pnpm exec turbo run lint` 报 0 errors / 11 warnings，全部 `@typescript-eslint/no-explicit-any`
-**影响**：类型安全度有折扣；实际逻辑都对，LLM stream 解析、errorHandler 签名等处用 any 是实务惯例。
-**修复方案**：渐进替换，按影响面大小；catch 签名可改 `unknown`，SSE delta 可加 interface。
-**触发时机**：Phase 4 第一次修改到相关文件时顺带清理
+- ChatPanel 抽出 [useSlashCommands composable](../../packages/creator/src/composables/useSlashCommands.ts)，斜杠指令代码从 120 行内联缩到 4 行调用；bubbleItems 改成 `BubbleItem[]` 接口
+- logger.ts 用 `unknown` + `VueInstanceLike` 类型别名接住 errorHandler/warnHandler 的 instance，不再 any
+- useAIChat.ts 4 个 catch 分支改 `catch (err)` + `const e = err as Error`
+- shared-contract.test.ts 清 2 条 unused import
+
+**结果**：`pnpm -F @big-ppt/creator lint` **0 errors / 0 warnings**（从 15 → 0）
+
+**触发时机**：已于 [09-phase4-edit-iterate.md](09-phase4-edit-iterate.md) Step 9 完成
 
 ---
 
@@ -256,3 +271,4 @@
 | 2026-04-21 | 新增 P3-7：Slidev 图标用离线预生成绕 UnoCSS 66.x 自动 resolve bug，记录上游 PR 路线                                                                                                                                         | 项目组 |
 | 2026-04-21 | Phase 3.5 关闭：P1-2 完全清零；P3-5 标 ✅；新增 P2-4（MCP 凭证加密）；P2 条数 3→4                                                                                                                                           | 项目组 |
 | 2026-04-22 | Phase 3.6 完成：creator design tokens + DESIGN.md 落地，Lumideck · 幻光千叶 品牌上线；新增 P3-8（字体自托管）+ P3-9（视觉回归）；P3 条数 7→9；注：P2-3（slidev templates tokens）独立于 creator，仍保留待 Phase 4 P1-5 清除 | 项目组 |
+| 2026-04-22 | Phase 4 完成：P1-5 / P2-1 / P2-2 / P2-3 / P3-6 清除；slides.md 800→90 行；四件套工具 + /undo /redo 轮次聚合 + 单页预览定位；工具层 integer 宽容 coerce；creator lint 0 errors / 0 warnings | 项目组 |

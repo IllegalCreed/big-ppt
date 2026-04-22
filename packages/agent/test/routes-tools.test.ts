@@ -22,12 +22,14 @@ beforeEach(() => {
   fs.mkdirSync(path.join(slidevDir, 'templates/company-standard'), { recursive: true })
   fs.writeFileSync(path.join(slidevDir, 'slides.md'), '# t\n')
   process.env.BIG_PPT_SLIDES_PATH = path.join(slidevDir, 'slides.md')
+  process.env.BIG_PPT_HISTORY_DIR = path.join(tmpRoot, 'slides-history')
   __resetPathsForTesting()
   __resetRegistry()
 })
 
 afterEach(() => {
   delete process.env.BIG_PPT_SLIDES_PATH
+  delete process.env.BIG_PPT_HISTORY_DIR
   __resetPathsForTesting()
   __resetRegistry()
   fs.rmSync(tmpRoot, { recursive: true, force: true })
@@ -41,14 +43,22 @@ describe('GET /api/tools', () => {
     expect(json).toEqual({ success: true, tools: [] })
   })
 
-  it('注册本地工具后返回 5 项', async () => {
+  it('注册本地工具后返回 9 项（含四件套）', async () => {
     registerLocalTools()
     const res = await buildApp().request('/api/tools')
     const json = await res.json()
-    expect(json.tools).toHaveLength(5)
-    expect(json.tools.map((t: any) => t.function.name).sort()).toEqual(
-      ['edit_slides', 'list_templates', 'read_slides', 'read_template', 'write_slides'],
-    )
+    expect(json.tools).toHaveLength(9)
+    expect(json.tools.map((t: any) => t.function.name).sort()).toEqual([
+      'create_slide',
+      'delete_slide',
+      'edit_slides',
+      'list_templates',
+      'read_slides',
+      'read_template',
+      'reorder_slides',
+      'update_slide',
+      'write_slides',
+    ])
   })
 })
 

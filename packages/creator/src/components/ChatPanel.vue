@@ -4,6 +4,7 @@ import { Bubble, Sender, Suggestion, ThoughtChain } from '@antdv-next/x'
 import type { SenderRef } from '@antdv-next/x'
 import type { ToolStep } from '../composables/useAIChat'
 import { useAIChat } from '../composables/useAIChat'
+import { useSlashCommands } from '../composables/useSlashCommands'
 
 const {
   chatMessages,
@@ -21,140 +22,12 @@ const {
 
 const senderRef = ref<SenderRef | null>(null)
 
-// --- 斜杠指令 ---
-
-interface SlashCommand {
-  value: string
-  label: string
-  description: string
-  run: () => void | Promise<void>
-}
-
-const SLASH_COMMANDS: SlashCommand[] = [
-  {
-    value: 'clear',
-    label: '/clear',
-    description: '清空当前对话记录',
-    run: () => {
-      clearHistory()
-      appendLocalMessage('对话已清空。')
-    },
-  },
-  {
-    value: 'retry',
-    label: '/retry',
-    description: '重试上一条用户消息',
-    run: () => retryLastUserMessage(),
-  },
-  {
-    value: 'undo',
-    label: '/undo',
-    description: '恢复到上一次修改前的 slides.md',
-    run: async () => {
-      try {
-        const res = await fetch('/api/restore-slides', { method: 'POST' })
-        const data = await res.json()
-        appendLocalMessage(data.success ? `✅ ${data.message}` : `❌ ${data.error}`)
-      } catch (err: any) {
-        appendLocalMessage(`❌ 恢复失败：${err.message}`)
-      }
-    },
-  },
-  {
-    value: 'log',
-    label: '/log',
-    description: '查看最近一次会话的日志摘要',
-    run: async () => {
-      try {
-        const res = await fetch('/api/log/latest')
-        const data = await res.json()
-        if (!data.success) {
-          appendLocalMessage(`❌ ${data.error}`)
-          return
-        }
-        const events = data.events as any[]
-        if (events.length === 0) {
-          appendLocalMessage('还没有会话日志。')
-          return
-        }
-        const lines = [`**会话 \`${data.session.slice(0, 8)}\` 共 ${events.length} 个事件：**`, '']
-        for (const e of events) {
-          const ts = new Date(e.ts).toLocaleTimeString()
-          if (e.kind === 'user_message') lines.push(`[${ts}] 👤 ${e.text}`)
-          else if (e.kind === 'llm_request')
-            lines.push(
-              `[${ts}] 🧠 LLM 请求（${e.messages_count} 条上下文 / ${e.tools_count} 个工具）`,
-            )
-          else if (e.kind === 'llm_response')
-            lines.push(
-              `[${ts}] 💬 LLM 响应（${e.duration_ms}ms，${e.tool_calls_count} 个 tool call）`,
-            )
-          else if (e.kind === 'tool_call')
-            lines.push(`[${ts}] 🔧 调用 \`${e.tool}\` ${e.args || ''}`)
-          else if (e.kind === 'tool_result')
-            lines.push(
-              `[${ts}] ${e.success ? '✓' : '✗'} \`${e.tool}\` ${e.duration_ms}ms${e.error ? ' · ' + e.error : ''}`,
-            )
-          else if (e.kind === 'session_end')
-            lines.push(`[${ts}] 🏁 结束（${e.reason}，总耗时 ${e.duration_ms}ms）`)
-        }
-        appendLocalMessage(lines.join('\n'))
-      } catch (err: any) {
-        appendLocalMessage(`❌ 读取日志失败：${err.message}`)
-      }
-    },
-  },
-  {
-    value: 'help',
-    label: '/help',
-    description: '列出所有可用指令',
-    run: () => {
-      const lines = ['**可用斜杠指令：**', '']
-      for (const c of SLASH_COMMANDS) {
-        lines.push(`- \`${c.label}\` — ${c.description}`)
-      }
-      appendLocalMessage(lines.join('\n'))
-    },
-  },
-]
-
-const slashItems = (info?: { query?: string }) => {
-  const q = (info?.query ?? '').toLowerCase()
-  return SLASH_COMMANDS.filter((c) => c.value.startsWith(q)).map((c) => ({
-    value: c.value,
-    label: h(
-      'div',
-      {
-        style: 'display: flex; gap: 12px; align-items: center; font-family: var(--font-sans);',
-      },
-      [
-        h('span', { style: 'color: var(--color-accent); font-weight: 600;' }, c.label),
-        h(
-          'span',
-          { style: 'color: var(--color-fg-muted); font-size: var(--fs-sm);' },
-          c.description,
-        ),
-      ],
-    ),
-  }))
-}
+// 斜杠指令（/clear / /retry / /undo / /redo / /log / /help）
+const slash = useSlashCommands({ clearHistory, appendLocalMessage, retryLastUserMessage })
 
 function handleSlashSelect(value: string) {
-  const cmd = SLASH_COMMANDS.find((c) => c.value === value)
   senderRef.value?.clear()
-  if (cmd) cmd.run()
-}
-
-function handleSenderChange(value: string, onTrigger: (info: any) => void) {
-  if (value === '') {
-    onTrigger(false)
-    return
-  }
-  if (value.startsWith('/')) {
-    onTrigger({ query: value.slice(1).toLowerCase() })
-  } else {
-    onTrigger(false)
-  }
+  slash.handleSlashSelect(value)
 }
 
 // --- Bubble 列表 ---
@@ -180,8 +53,15 @@ function renderToolChain(steps: ToolStep[]) {
   })
 }
 
+interface BubbleItem {
+  key: string
+  role: 'user' | 'ai' | 'ai-chain'
+  content: unknown
+  loading?: boolean
+}
+
 const bubbleItems = computed(() => {
-  const items: any[] = []
+  const items: BubbleItem[] = []
 
   for (const [i, msg] of chatMessages.value.entries()) {
     if (msg.role === 'user') {
@@ -240,19 +120,8 @@ function handleSubmit(message: string) {
   const trimmed = message.trim()
   if (!trimmed) return
   senderRef.value?.clear()
-
-  // 如果刚好完整匹配某条指令（用户直接输完按 enter，没走候选列表）
-  if (trimmed.startsWith('/')) {
-    const name = trimmed.slice(1).split(/\s+/)[0]
-    const cmd = SLASH_COMMANDS.find((c) => c.value === name)
-    if (cmd) {
-      cmd.run()
-      return
-    }
-    appendLocalMessage(`未知指令 \`${trimmed}\`。输入 \`/help\` 查看全部指令。`)
-    return
-  }
-
+  // 斜杠指令：直接输完按 enter 没走候选列表的情况，由 composable 处理
+  if (slash.handleSlashSubmit(trimmed)) return
   sendMessage(trimmed)
 }
 
@@ -277,7 +146,7 @@ function handleCancel() {
 
     <!-- 输入框（包 Suggestion 做斜杠指令自动补全） -->
     <div class="sender-area">
-      <Suggestion :items="slashItems" :block="true" @select="handleSlashSelect">
+      <Suggestion :items="slash.slashItems" :block="true" @select="handleSlashSelect">
         <template #default="{ onTrigger, onKeyDown }">
           <Sender
             ref="senderRef"
@@ -285,7 +154,7 @@ function handleCancel() {
             placeholder="描述你想要的幻灯片，或输入 / 查看指令..."
             :submit-type="'enter'"
             :on-key-down="onKeyDown"
-            @change="(val: string) => handleSenderChange(val, onTrigger)"
+            @change="(val: string) => slash.handleSenderChange(val, onTrigger)"
             @submit="handleSubmit"
             @cancel="handleCancel"
           />

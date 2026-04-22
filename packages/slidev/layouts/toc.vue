@@ -1,43 +1,50 @@
----
-layout: none
-class: toc-slide
----
+<!--
+  company-standard 目录 layout。
+  frontmatter 字段：
+    items   : string[] —— 目录项文本数组（必填）。示例：items: ["Q1 关键目标", "数据背景", "重点项目", "风险与依赖"]
+    active  : number   —— 1-based 当前高亮项；未设置或 0 则全部高亮（用作总览页）
+-->
+<script setup lang="ts">
+withDefaults(
+  defineProps<{
+    items?: string[]
+    active?: number
+  }>(),
+  { items: () => [], active: 0 },
+)
+</script>
 
-<div class="toc-root">
-  <!-- 左侧红色色块 -->
-  <div class="toc-left-block">
-    <div class="toc-left-texture"></div>
-    <div class="cross-h"></div>
-    <div class="cross-v"></div>
-    <div class="toc-zh">目<br/>录</div>
-    <div class="toc-en">CONTENTS</div>
+<template>
+  <div class="slidev-layout toc-slide">
+    <div class="toc-root">
+      <div class="toc-left-block">
+        <div class="toc-left-texture"></div>
+        <div class="cross-h"></div>
+        <div class="cross-v"></div>
+        <div class="toc-zh">目<br />录</div>
+        <div class="toc-en">CONTENTS</div>
+      </div>
+      <div class="toc-divider"></div>
+      <div class="toc-right">
+        <div
+          v-for="(item, idx) in items"
+          :key="idx"
+          class="toc-item"
+          :class="{ inactive: active > 0 && active !== idx + 1 }"
+        >
+          <span class="toc-num">{{ idx + 1 }}</span>
+          <span class="toc-label">{{ item }}</span>
+        </div>
+      </div>
+    </div>
   </div>
+</template>
 
-  <!-- 红色竖分割线 -->
-  <div class="toc-divider"></div>
-
-  <!-- 右侧目录列表 -->
-  <div class="toc-right">
-    <div class="toc-item active">
-      <span class="toc-num">1</span>
-      <span class="toc-label">{{章节1}}</span>
-    </div>
-    <div class="toc-item inactive">
-      <span class="toc-num">2</span>
-      <span class="toc-label">{{章节2}}</span>
-    </div>
-    <div class="toc-item inactive">
-      <span class="toc-num">3</span>
-      <span class="toc-label">{{章节3}}</span>
-    </div>
-  </div>
-</div>
-
-<style>
+<style scoped>
 .toc-root {
   position: absolute;
   inset: 0;
-  background: #ffffff;
+  background: var(--c-bg-page);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -46,8 +53,6 @@ class: toc-slide
   gap: 20px;
   font-family: var(--ff-brand);
 }
-
-/* ── 左侧红色色块 ── */
 .toc-left-block {
   position: relative;
   width: 350px;
@@ -56,7 +61,6 @@ class: toc-slide
   background: var(--c-brand-gradient);
   overflow: hidden;
 }
-
 .toc-left-texture {
   position: absolute;
   inset: 0;
@@ -68,8 +72,6 @@ class: toc-slide
   mix-blend-mode: screen;
   pointer-events: none;
 }
-
-/* 十字分割线 */
 .cross-h {
   position: absolute;
   top: 90%;
@@ -86,8 +88,6 @@ class: toc-slide
   width: 1px;
   background: #ffffff;
 }
-
-/* 左上"目录" */
 .toc-zh {
   position: absolute;
   top: 48%;
@@ -99,8 +99,6 @@ class: toc-slide
   letter-spacing: 4px;
   z-index: 2;
 }
-
-/* 右下"CONTENTS" */
 .toc-en {
   position: absolute;
   bottom: 12%;
@@ -111,8 +109,6 @@ class: toc-slide
   letter-spacing: 3px;
   z-index: 2;
 }
-
-/* ── 红色竖分割线 ── */
 .toc-divider {
   width: 3px;
   align-self: center;
@@ -120,8 +116,6 @@ class: toc-slide
   background: var(--c-brand);
   flex-shrink: 0;
 }
-
-/* ── 右侧目录列表 ── */
 .toc-right {
   flex: 1;
   display: flex;
@@ -130,20 +124,15 @@ class: toc-slide
   padding-left: 36px;
   gap: 30px;
 }
-
-/* 共用条目样式 */
 .toc-item {
   display: flex;
   align-items: center;
   border: 2px solid var(--c-brand);
 }
-
 .toc-item.inactive {
   opacity: 0.2;
   border-color: rgba(208, 13, 20, 0.4);
 }
-
-/* 序号方块 */
 .toc-num {
   display: flex;
   align-items: center;
@@ -156,13 +145,11 @@ class: toc-slide
   background: var(--c-brand);
   flex-shrink: 0;
 }
-
-/* 标签文字 */
 .toc-label {
   flex: 1;
   font-size: 22px;
   font-weight: 600;
-  color: #333;
+  color: var(--c-fg-primary);
   letter-spacing: 2px;
   padding: 10px 16px;
 }

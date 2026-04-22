@@ -33,12 +33,12 @@ class: image-content-slide
   overflow: hidden;
   padding: 48px 60px;
   box-sizing: border-box;
-  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  font-family: var(--ff-brand);
 }
 
 /* ── 顶部红色标题 ── */
 .content-title {
-  color: #d00d14;
+  color: var(--c-brand);
   font-size: 40px;
   font-weight: 900;
   letter-spacing: 4px;
@@ -58,7 +58,7 @@ class: image-content-slide
   flex: 0 0 45%;
   aspect-ratio: 4 / 3;
   background: #f5f5f5;
-  border: 4px solid #d00d14;
+  border: 4px solid var(--c-brand);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -77,13 +77,13 @@ class: image-content-slide
 }
 
 .text-title {
-  color: #d00d14;
+  color: var(--c-brand);
   font-size: 30px;
   font-weight: 700;
   letter-spacing: 2px;
   margin: 0 0 20px 0;
   padding-bottom: 12px;
-  border-bottom: 2px solid #d00d14;
+  border-bottom: 2px solid var(--c-brand);
 }
 
 .text-body {

@@ -1,12 +1,10 @@
 import { describe, expect, it, test, expectTypeOf } from 'vitest'
 import type {
   AgentStatus,
-  CallToolRequest,
   CallToolResponse,
   ChatBubble,
   ChatMessage,
   CreateMcpServerRequest,
-  GetMcpServersResponse,
   GetToolsResponse,
   LLMTool,
   LogPayload,

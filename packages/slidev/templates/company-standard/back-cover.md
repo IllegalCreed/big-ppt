@@ -35,7 +35,7 @@ class: back-cover-slide
   justify-content: center;
   align-items: center;
   padding-top: 120px;
-  font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
+  font-family: var(--ff-brand);
 }
 
 /* ── 中央红色结束语区 ── */
@@ -43,7 +43,7 @@ class: back-cover-slide
   position: relative;
   width: 100%;
   padding: 40px 0;
-  background: linear-gradient(180deg, #d00d14 0%, #c00b11 60%, #a8090e 100%);
+  background: var(--c-brand-gradient);
   overflow: hidden;
 }
 
@@ -92,7 +92,7 @@ class: back-cover-slide
 
 .footer-mark {
   height: 24px;
-  filter: invert(87%) sepia(98%) saturate(4811%) hue-rotate(352deg) brightness(82%) contrast(100%);
+  filter: var(--logo-red-filter);
 }
 
 .footer-text {
