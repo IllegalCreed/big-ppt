@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { Download, Play, RefreshCw } from 'lucide-vue-next'
 import { useSlideStore } from '../composables/useSlideStore'
 
 const slideStore = useSlideStore()
@@ -22,11 +23,33 @@ function present() {
 <template>
   <div class="preview-panel">
     <div class="preview-toolbar">
-      <span class="preview-title">幻灯片预览</span>
+      <div class="preview-title-group">
+        <span class="preview-dot" />
+        <span class="preview-title">幻灯片预览</span>
+      </div>
       <div class="preview-actions">
-        <button class="preview-btn" @click="refresh">刷新</button>
-        <button class="preview-btn" @click="exportFile">导出 .md</button>
-        <button class="preview-btn present-btn" @click="present">放映</button>
+        <button
+          type="button"
+          class="icon-btn"
+          title="刷新预览"
+          aria-label="刷新预览"
+          @click="refresh"
+        >
+          <RefreshCw :size="16" :stroke-width="1.8" />
+        </button>
+        <button
+          type="button"
+          class="icon-btn"
+          title="导出 .md"
+          aria-label="导出 .md"
+          @click="exportFile"
+        >
+          <Download :size="16" :stroke-width="1.8" />
+        </button>
+        <button type="button" class="cta-btn" title="全屏放映" @click="present">
+          <Play :size="14" :stroke-width="2" fill="currentColor" />
+          <span>放映</span>
+        </button>
       </div>
     </div>
     <div class="preview-frame">
@@ -52,55 +75,81 @@ function present() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-3);
-  height: 36px;
+  padding: 0 var(--space-4);
+  height: 44px;
   background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
 }
 
+.preview-title-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.preview-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
 .preview-title {
   font-size: var(--fs-base);
-  color: var(--color-fg-tertiary);
+  color: var(--color-fg-secondary);
   font-weight: var(--fw-medium);
+  letter-spacing: 0.02em;
 }
 
 .preview-actions {
   display: flex;
-  gap: var(--space-2);
+  align-items: center;
+  gap: var(--space-1);
 }
 
-.preview-btn {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-surface);
-  font-size: var(--fs-sm);
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-fg-tertiary);
   cursor: pointer;
-  color: var(--color-fg-secondary);
-  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition:
-    border-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out);
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
-.preview-btn:hover {
-  border-color: var(--color-accent);
+.icon-btn:hover {
+  background: var(--color-bg-subtle);
   color: var(--color-accent);
-  background: var(--color-accent-soft);
 }
 
-.present-btn {
+.cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-3);
+  margin-left: var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
   background: var(--color-accent);
   color: var(--color-accent-fg);
-  border-color: var(--color-accent);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
-.present-btn:hover {
+.cta-btn:hover {
   background: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
-  color: var(--color-accent-fg);
 }
 
 .preview-frame {

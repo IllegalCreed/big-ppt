@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ConfigProvider, theme, type ThemeConfig } from 'antdv-next'
+import { Settings, Sparkles } from 'lucide-vue-next'
 import ChatPanel from './ChatPanel.vue'
 import SlidePreview from './SlidePreview.vue'
 import SettingsModal from './SettingsModal.vue'
@@ -64,15 +65,26 @@ function onMouseDown(e: MouseEvent) {
   <ConfigProvider :theme="antdTheme">
     <div class="app-root">
       <header class="toolbar">
-        <div class="toolbar-left">
-          <h1 class="app-title">
-            <span class="app-title__en">Lumideck</span>
-            <span class="app-title__sep">·</span>
-            <span class="app-title__cn">幻光千叶</span>
-          </h1>
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <Sparkles :size="18" :stroke-width="1.8" />
+          </div>
+          <div class="brand-text">
+            <div class="brand-title">Lumideck</div>
+            <div class="brand-subtitle">幻光千叶</div>
+          </div>
         </div>
-        <div class="toolbar-right">
-          <button class="toolbar-btn" @click="showSettings = true">设置</button>
+
+        <div class="toolbar-actions">
+          <button
+            type="button"
+            class="icon-btn"
+            title="设置"
+            aria-label="设置"
+            @click="showSettings = true"
+          >
+            <Settings :size="18" :stroke-width="1.8" />
+          </button>
         </div>
       </header>
 
@@ -84,7 +96,6 @@ function onMouseDown(e: MouseEvent) {
         <div class="panel-right">
           <SlidePreview />
         </div>
-        <!-- 拖动时覆盖 iframe，防止捕获鼠标事件 -->
         <div v-if="isDragging" class="drag-overlay" />
       </main>
 
@@ -107,70 +118,84 @@ function onMouseDown(e: MouseEvent) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-5);
-  height: 48px;
+  padding: 0 var(--space-6);
+  height: 56px;
   background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
 }
 
-.toolbar-left {
+.brand {
   display: flex;
   align-items: center;
   gap: var(--space-3);
 }
 
-.app-title {
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
-  margin: 0;
-  color: var(--color-fg-primary);
+.brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
   display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-2);
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 1px rgba(193, 95, 60, 0.12);
+  flex-shrink: 0;
 }
 
-.app-title__en {
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: var(--lh-tight);
+  padding-top: 1px;
+}
+
+.brand-title {
   font-family: var(--font-serif);
+  font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
+  color: var(--color-fg-primary);
   letter-spacing: 0.01em;
 }
 
-.app-title__sep {
-  color: var(--color-fg-muted);
-  font-weight: var(--fw-regular);
-}
-
-.app-title__cn {
+.brand-subtitle {
   font-family: var(--font-sans);
+  font-size: 11px;
   font-weight: var(--fw-medium);
-  letter-spacing: 0.06em;
+  color: var(--color-fg-tertiary);
+  letter-spacing: 0.08em;
+  margin-top: 2px;
 }
 
-.toolbar-right {
+.toolbar-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
-.toolbar-btn {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--color-border);
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
   border-radius: var(--radius-md);
-  background: var(--color-bg-surface);
+  color: var(--color-fg-tertiary);
   cursor: pointer;
-  font-size: var(--fs-base);
-  color: var(--color-fg-secondary);
-  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition:
-    border-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    background var(--dur-fast) var(--ease-out);
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
-.toolbar-btn:hover {
-  border-color: var(--color-accent);
+.icon-btn:hover {
+  background: var(--color-bg-subtle);
   color: var(--color-accent);
+}
+
+.icon-btn:active {
   background: var(--color-accent-soft);
 }
 
