@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import type { LLMSettings, McpServerWithStatus, UpdateMcpServerRequest } from '@big-ppt/shared'
+import { Check, Copy, Eye, EyeOff, X } from 'lucide-vue-next'
 import { useMCP } from '../composables/useMCP'
 import MCPCatalogItem from './MCPCatalogItem.vue'
 import MCPCustomServer from './MCPCustomServer.vue'
@@ -8,21 +9,35 @@ import MCPCustomServer from './MCPCustomServer.vue'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
-const PROVIDERS = [
-  { key: 'zhipu', name: '智谱 (GLM)', defaultModel: 'GLM-5.1' },
-  { key: 'deepseek', name: 'DeepSeek', defaultModel: 'deepseek-chat' },
-  { key: 'openai', name: 'OpenAI', defaultModel: 'gpt-4o' },
-  { key: 'moonshot', name: 'Moonshot (Kimi)', defaultModel: 'moonshot-v1-8k' },
-  { key: 'qwen', name: '千问 (Qwen)', defaultModel: 'qwen-plus' },
-  { key: 'custom', name: '自定义', defaultModel: '' },
+interface ProviderMeta {
+  key: LLMSettings['provider']
+  name: string
+  avatar: string
+  defaultModel: string
+}
+
+const PROVIDERS: ProviderMeta[] = [
+  { key: 'zhipu', name: '智谱 GLM', avatar: '智', defaultModel: 'GLM-5.1' },
+  { key: 'deepseek', name: 'DeepSeek', avatar: 'D', defaultModel: 'deepseek-chat' },
+  { key: 'openai', name: 'OpenAI', avatar: 'O', defaultModel: 'gpt-4o' },
+  { key: 'moonshot', name: 'Kimi', avatar: 'K', defaultModel: 'moonshot-v1-8k' },
+  { key: 'qwen', name: '千问 Qwen', avatar: '千', defaultModel: 'qwen-plus' },
+  { key: 'custom', name: '自定义', avatar: '+', defaultModel: '' },
 ]
 
 const activeTab = ref<'llm' | 'mcp'>('llm')
 const settings = ref<LLMSettings>(loadSettings())
+const showApiKey = ref(false)
+const copiedKey = ref(false)
 const { servers, refresh, create, update, remove } = useMCP()
 
 const presetServers = computed<McpServerWithStatus[]>(() => servers.value.filter((s) => s.preset))
 const customServers = computed<McpServerWithStatus[]>(() => servers.value.filter((s) => !s.preset))
+const enabledMcpCount = computed(() => servers.value.filter((s) => s.enabled).length)
+const currentProviderHint = computed(() => {
+  const p = PROVIDERS.find((x) => x.key === settings.value.provider)
+  return p?.defaultModel ? `默认：${p.defaultModel}` : ''
+})
 
 function loadSettings(): LLMSettings {
   const raw = localStorage.getItem('llm-settings')
@@ -34,14 +49,27 @@ function loadSettings(): LLMSettings {
   return { provider: 'zhipu', apiKey: '', model: 'GLM-5.1' }
 }
 
-function onProviderChange() {
-  const p = PROVIDERS.find((p) => p.key === settings.value.provider)
-  if (p && p.defaultModel) settings.value.model = p.defaultModel
+function selectProvider(p: ProviderMeta) {
+  settings.value.provider = p.key
+  if (p.defaultModel) settings.value.model = p.defaultModel
 }
 
 function saveLlm() {
   localStorage.setItem('llm-settings', JSON.stringify(settings.value))
   emit('update:open', false)
+}
+
+async function copyKey() {
+  if (!settings.value.apiKey) return
+  try {
+    await navigator.clipboard.writeText(settings.value.apiKey)
+    copiedKey.value = true
+    setTimeout(() => {
+      copiedKey.value = false
+    }, 1500)
+  } catch {
+    // ignore
+  }
 }
 
 function close() {
@@ -94,55 +122,144 @@ onMounted(() => {
       <div class="modal-content">
         <div class="modal-header">
           <h3>设置</h3>
-          <button class="close-btn" @click="close">&times;</button>
-        </div>
-
-        <div class="modal-tabs">
-          <button :class="{ active: activeTab === 'llm' }" @click="activeTab = 'llm'">LLM</button>
-          <button :class="{ active: activeTab === 'mcp' }" @click="activeTab = 'mcp'">
-            MCP Servers
-            <span v-if="servers.filter((s) => s.enabled).length > 0" class="mcp-count">
-              {{ servers.filter((s) => s.enabled).length }}
-            </span>
+          <button type="button" class="close-btn" aria-label="关闭" @click="close">
+            <X :size="18" :stroke-width="1.8" />
           </button>
         </div>
 
+        <div class="modal-tabs-wrap">
+          <div class="seg-tabs" role="tablist">
+            <div class="seg-indicator" :class="{ 'seg-indicator--right': activeTab === 'mcp' }" />
+            <button
+              type="button"
+              class="seg-tab"
+              :class="{ active: activeTab === 'llm' }"
+              role="tab"
+              :aria-selected="activeTab === 'llm'"
+              @click="activeTab = 'llm'"
+            >
+              LLM
+            </button>
+            <button
+              type="button"
+              class="seg-tab"
+              :class="{ active: activeTab === 'mcp' }"
+              role="tab"
+              :aria-selected="activeTab === 'mcp'"
+              @click="activeTab = 'mcp'"
+            >
+              MCP Servers
+              <span v-if="enabledMcpCount > 0" class="seg-count">{{ enabledMcpCount }}</span>
+            </button>
+          </div>
+        </div>
+
         <div v-if="activeTab === 'llm'" class="modal-body">
-          <div class="form-group">
-            <label>API 提供商</label>
-            <select v-model="settings.provider" @change="onProviderChange">
-              <option v-for="p in PROVIDERS" :key="p.key" :value="p.key">{{ p.name }}</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>API Key</label>
-            <input v-model="settings.apiKey" type="password" placeholder="输入你的 API Key" />
-          </div>
-          <div class="form-group">
-            <label>模型</label>
-            <input v-model="settings.model" type="text" placeholder="模型名称" />
-          </div>
+          <section class="form-section">
+            <header class="section-header">
+              <span class="section-title">API 提供商</span>
+              <span class="section-hint">选择内置供应商或自定义接入</span>
+            </header>
+            <div class="provider-grid">
+              <button
+                v-for="p in PROVIDERS"
+                :key="p.key"
+                type="button"
+                class="provider-card"
+                :class="{ active: settings.provider === p.key }"
+                @click="selectProvider(p)"
+              >
+                <span class="provider-avatar">{{ p.avatar }}</span>
+                <span class="provider-name">{{ p.name }}</span>
+                <span v-if="settings.provider === p.key" class="provider-check">
+                  <Check :size="14" :stroke-width="2.4" />
+                </span>
+              </button>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <header class="section-header">
+              <span class="section-title">API Key</span>
+              <span class="section-hint">仅存储于本地浏览器</span>
+            </header>
+            <div class="input-group">
+              <input
+                v-model="settings.apiKey"
+                :type="showApiKey ? 'text' : 'password'"
+                placeholder="sk-..."
+                autocomplete="off"
+                class="input-group__input"
+              />
+              <button
+                type="button"
+                class="input-group__action"
+                :title="showApiKey ? '隐藏' : '显示'"
+                :aria-label="showApiKey ? '隐藏' : '显示'"
+                @click="showApiKey = !showApiKey"
+              >
+                <EyeOff v-if="showApiKey" :size="16" :stroke-width="1.8" />
+                <Eye v-else :size="16" :stroke-width="1.8" />
+              </button>
+              <button
+                type="button"
+                class="input-group__action"
+                :title="copiedKey ? '已复制' : '复制'"
+                :aria-label="copiedKey ? '已复制' : '复制'"
+                :disabled="!settings.apiKey"
+                @click="copyKey"
+              >
+                <Check v-if="copiedKey" :size="16" :stroke-width="2" />
+                <Copy v-else :size="16" :stroke-width="1.8" />
+              </button>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <header class="section-header">
+              <span class="section-title">模型名称</span>
+              <span v-if="currentProviderHint" class="section-hint">{{ currentProviderHint }}</span>
+            </header>
+            <input v-model="settings.model" type="text" placeholder="模型名称" class="input-bare" />
+          </section>
+
           <div class="modal-footer">
-            <button class="btn-secondary" @click="close">取消</button>
-            <button class="btn-primary" @click="saveLlm">保存</button>
+            <button type="button" class="btn-secondary" @click="close">取消</button>
+            <button type="button" class="btn-primary" @click="saveLlm">保存</button>
           </div>
         </div>
 
         <div v-else class="modal-body">
-          <MCPCatalogItem
-            v-for="srv in presetServers"
-            :key="srv.id"
-            :server="srv"
-            :llm="settings"
-            @update="handleUpdate(srv.id, $event)"
-          />
-          <MCPCustomServer
-            :custom-servers="customServers"
-            @create="handleCreate"
-            @remove="handleRemove"
-          />
+          <section class="form-section">
+            <header class="section-header">
+              <span class="section-title">预置服务</span>
+              <span class="section-hint">开关启用，勾选复用 LLM Key</span>
+            </header>
+            <div class="mcp-list">
+              <MCPCatalogItem
+                v-for="srv in presetServers"
+                :key="srv.id"
+                :server="srv"
+                :llm="settings"
+                @update="handleUpdate(srv.id, $event)"
+              />
+            </div>
+          </section>
+
+          <section class="form-section">
+            <header class="section-header">
+              <span class="section-title">自定义 MCP</span>
+              <span class="section-hint">进阶：手动接入 StreamableHTTP MCP Server</span>
+            </header>
+            <MCPCustomServer
+              :custom-servers="customServers"
+              @create="handleCreate"
+              @remove="handleRemove"
+            />
+          </section>
+
           <div class="modal-footer">
-            <button class="btn-secondary" @click="close">关闭</button>
+            <button type="button" class="btn-secondary" @click="close">关闭</button>
           </div>
         </div>
       </div>
@@ -159,14 +276,15 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  padding: var(--space-6);
 }
 
 .modal-content {
   background: var(--color-bg-elevated);
   border-radius: var(--radius-lg);
-  width: 560px;
-  max-width: 92vw;
-  max-height: 90vh;
+  width: 600px;
+  max-width: 100%;
+  max-height: 92vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -179,106 +297,269 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-6);
-  border-bottom: 1px solid var(--color-border-subtle);
+  padding: var(--space-5) var(--space-6);
 }
 
 .modal-header h3 {
   margin: 0;
-  font-size: var(--fs-lg);
+  font-size: var(--fs-xl);
   font-weight: var(--fw-semibold);
   color: var(--color-fg-primary);
   font-family: var(--font-serif);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .close-btn {
+  width: 32px;
+  height: 32px;
   border: none;
-  background: none;
-  font-size: var(--fs-xl);
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-fg-tertiary);
   cursor: pointer;
-  color: var(--color-fg-muted);
-  padding: 0 var(--space-1);
-  line-height: var(--lh-tight);
-  font-family: inherit;
-  transition: color var(--dur-fast) var(--ease-out);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .close-btn:hover {
+  background: var(--color-bg-subtle);
   color: var(--color-fg-primary);
 }
 
-.modal-tabs {
+/* ---- Segmented Pill Tabs ---- */
+.modal-tabs-wrap {
   display: flex;
-  border-bottom: 1px solid var(--color-border-subtle);
+  justify-content: center;
+  padding: 0 var(--space-6) var(--space-4);
 }
 
-.modal-tabs button {
-  flex: 1;
-  padding: var(--space-3);
+.seg-tabs {
+  position: relative;
+  display: inline-flex;
+  padding: 4px;
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-pill);
+}
+
+.seg-indicator {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  height: calc(100% - 8px);
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-xs);
+  transition: transform 260ms var(--ease-out);
+}
+
+.seg-indicator--right {
+  transform: translateX(100%);
+}
+
+.seg-tab {
+  position: relative;
+  z-index: 1;
+  min-width: 128px;
+  padding: 8px var(--space-4);
   border: none;
-  background: none;
-  cursor: pointer;
-  font-size: var(--fs-base);
+  background: transparent;
   color: var(--color-fg-tertiary);
+  font-size: var(--fs-md);
   font-family: inherit;
-  display: flex;
+  cursor: pointer;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  border-bottom: 2px solid transparent;
-  transition:
-    color var(--dur-fast) var(--ease-out),
-    border-bottom-color var(--dur-fast) var(--ease-out);
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
-.modal-tabs button:hover {
-  color: var(--color-fg-secondary);
+.seg-tab.active {
+  color: var(--color-fg-primary);
+  font-weight: var(--fw-medium);
 }
 
-.modal-tabs button.active {
-  color: var(--color-accent);
-  border-bottom-color: var(--color-accent);
-}
-
-.mcp-count {
-  font-size: var(--fs-xs);
+.seg-count {
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
   background: var(--color-accent);
   color: var(--color-accent-fg);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-pill);
-  font-weight: var(--fw-medium);
-  line-height: var(--lh-tight);
 }
 
+/* ---- Body & Sections ---- */
 .modal-body {
-  padding: var(--space-5) var(--space-6);
+  padding: 0 var(--space-6) var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-6);
   overflow-y: auto;
 }
 
-.form-group {
+.form-section {
   display: flex;
   flex-direction: column;
+  gap: var(--space-3);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.section-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--color-fg-primary);
+}
+
+.section-hint {
+  font-size: var(--fs-sm);
+  color: var(--color-fg-muted);
+}
+
+/* ---- Provider Grid ---- */
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2);
 }
 
-.form-group label {
-  font-size: var(--fs-base);
-  font-weight: var(--fw-medium);
-  color: var(--color-fg-secondary);
+.provider-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 
-.form-group input,
-.form-group select {
+.provider-card:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-subtle);
+}
+
+.provider-card.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  box-shadow: 0 0 0 3px rgba(193, 95, 60, 0.08);
+}
+
+.provider-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-hover);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-sm);
+  flex-shrink: 0;
+}
+
+.provider-card.active .provider-avatar {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+}
+
+.provider-name {
+  flex: 1;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  color: var(--color-fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-check {
+  color: var(--color-accent);
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+/* ---- Input Group (API Key) ---- */
+.input-group {
+  display: flex;
+  align-items: stretch;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.input-group:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.input-group__input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-fg-primary);
+  font-size: var(--fs-md);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.input-group__action {
+  width: 34px;
+  border: none;
+  background: transparent;
+  color: var(--color-fg-tertiary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--color-border-subtle);
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.input-group__action:hover:not(:disabled) {
+  background: var(--color-bg-subtle);
+  color: var(--color-accent);
+}
+
+.input-group__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---- Bare Input ---- */
+.input-bare {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  font-size: var(--fs-md);
-  color: var(--color-fg-primary);
   background: var(--color-bg-elevated);
+  color: var(--color-fg-primary);
+  font-size: var(--fs-md);
   font-family: inherit;
   outline: none;
   transition:
@@ -286,23 +567,30 @@ onMounted(() => {
     box-shadow var(--dur-fast) var(--ease-out);
 }
 
-.form-group input:focus,
-.form-group select:focus {
+.input-bare:focus {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 
+/* ---- MCP List ---- */
+.mcp-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---- Footer Buttons ---- */
 .modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
-  padding-top: var(--space-3);
+  padding-top: var(--space-4);
   border-top: 1px solid var(--color-border-subtle);
-  margin-top: auto;
+  margin-top: var(--space-2);
 }
 
 .btn-secondary {
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-5);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg-surface);
@@ -321,7 +609,7 @@ onMounted(() => {
 }
 
 .btn-primary {
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-5);
   border: none;
   border-radius: var(--radius-md);
   background: var(--color-accent);
