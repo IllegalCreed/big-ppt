@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, provide, ref } from 'vue'
+import { nextTick, onMounted, provide, ref, watch } from 'vue'
 import { ArrowLeft, History, LogOut, Settings, Sparkles } from 'lucide-vue-next'
 import ChatPanel from './ChatPanel.vue'
 import SlidePreview from './SlidePreview.vue'
@@ -14,6 +14,7 @@ import {
 import { DECK_CHAT_CONTEXT, type DeckChatContext } from '../composables/useAIChat'
 import { useSlideStore } from '../composables/useSlideStore'
 import { useAuth } from '../composables/useAuth'
+import { ApiError } from '../api/client'
 
 const props = defineProps<{
   deck: Deck
@@ -22,8 +23,74 @@ const props = defineProps<{
 const emit = defineEmits<{ 'exit-to-list': [] }>()
 
 const { currentUser, logout } = useAuth()
-const { listChats, appendChat } = useDecks()
+const { listChats, appendChat, updateDeck } = useDecks()
 const slideStore = useSlideStore()
+
+// ── 标题 inline 编辑 ───────────────────────────────────────────────────────
+const displayTitle = ref(props.deck.title)
+const isEditingTitle = ref(false)
+const editingTitle = ref('')
+const savingTitle = ref(false)
+const titleError = ref('')
+const titleInputRef = ref<HTMLInputElement | null>(null)
+
+watch(
+  () => props.deck.title,
+  (v) => {
+    if (!isEditingTitle.value) displayTitle.value = v
+  },
+)
+
+function startEditTitle() {
+  if (isEditingTitle.value) return
+  editingTitle.value = displayTitle.value
+  titleError.value = ''
+  isEditingTitle.value = true
+  void nextTick(() => {
+    titleInputRef.value?.focus()
+    titleInputRef.value?.select()
+  })
+}
+
+async function commitTitle() {
+  if (!isEditingTitle.value || savingTitle.value) return
+  const next = editingTitle.value.trim()
+  if (!next) {
+    titleError.value = '标题不能为空'
+    void nextTick(() => titleInputRef.value?.focus())
+    return
+  }
+  if (next.length > 200) {
+    titleError.value = '标题最长 200 字'
+    void nextTick(() => titleInputRef.value?.focus())
+    return
+  }
+  if (next === displayTitle.value) {
+    isEditingTitle.value = false
+    titleError.value = ''
+    return
+  }
+  savingTitle.value = true
+  try {
+    const updated = await updateDeck(props.deck.id, { title: next })
+    displayTitle.value = updated.title
+    // 同步 props.deck.title，父组件 state 引用同一对象，返回列表时拿到新标题
+    props.deck.title = updated.title
+    isEditingTitle.value = false
+    titleError.value = ''
+  } catch (err) {
+    titleError.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
+    void nextTick(() => titleInputRef.value?.focus())
+  } finally {
+    savingTitle.value = false
+  }
+}
+
+function cancelEditTitle() {
+  isEditingTitle.value = false
+  titleError.value = ''
+  editingTitle.value = displayTitle.value
+}
 
 // ── Chat 上下文：provide 时先给空数组，等 listChats 返回后就地 mutate。
 //    ChatPanel 由 v-if="historyLoaded" 延迟挂载，inject 时一定能看到填好的数组。
@@ -120,13 +187,39 @@ onMounted(() => {
             <Sparkles :size="18" :stroke-width="1.8" />
           </div>
           <div class="brand-text">
-            <div class="deck-title" :title="deck.title">{{ deck.title }}</div>
-            <div class="deck-subtitle">Lumideck · 编辑中</div>
+            <input
+              v-if="isEditingTitle"
+              ref="titleInputRef"
+              v-model="editingTitle"
+              type="text"
+              class="deck-title-input"
+              :class="{ 'is-saving': savingTitle, 'is-error': !!titleError }"
+              :disabled="savingTitle"
+              maxlength="200"
+              @keydown.enter.prevent="commitTitle"
+              @keydown.esc.prevent="cancelEditTitle"
+              @blur="commitTitle"
+            />
+            <div
+              v-else
+              class="deck-title"
+              :title="`${displayTitle} · 双击重命名`"
+              @dblclick="startEditTitle"
+            >
+              {{ displayTitle }}
+            </div>
+            <div class="deck-subtitle">
+              <template v-if="titleError">
+                <span class="title-error">{{ titleError }}</span>
+              </template>
+              <template v-else>Lumideck · 编辑中</template>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="toolbar-actions">
+        <span v-if="currentUser" class="user-email">{{ currentUser.email }}</span>
         <button
           type="button"
           class="icon-btn"
@@ -136,7 +229,6 @@ onMounted(() => {
         >
           <History :size="18" :stroke-width="1.8" />
         </button>
-        <span v-if="currentUser" class="user-email">{{ currentUser.email }}</span>
         <button
           type="button"
           class="icon-btn"
@@ -248,6 +340,50 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: var(--radius-sm);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.deck-title:hover {
+  background: var(--color-bg-subtle);
+}
+
+.deck-title-input {
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--color-fg-primary);
+  letter-spacing: 0.01em;
+  width: 260px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+  transition: opacity var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
+.deck-title-input.is-saving {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.deck-title-input.is-error {
+  border-color: #B4472C;
+  box-shadow: 0 0 0 3px rgba(180, 71, 44, 0.14);
+}
+
+.title-error {
+  color: #B4472C;
+}
+
+.brand-text .deck-subtitle {
+  margin-top: 6px;
 }
 
 .deck-subtitle {
