@@ -1,3 +1,7 @@
+// 最先加载 .env.local / .env，保证后续模块能读到 DATABASE_URL / APIKEY_MASTER_KEY 等
+import { config as loadDotenv } from 'dotenv'
+loadDotenv({ path: ['.env.local', '.env'] })
+
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { getPaths } from './workspace.js'
@@ -7,10 +11,15 @@ import { templates } from './routes/templates.js'
 import { log } from './routes/log.js'
 import { tools as toolsRoute } from './routes/tools.js'
 import { mcp as mcpRoute } from './routes/mcp.js'
+import { auth } from './routes/auth.js'
+import { authOptional, type AuthVars } from './middleware/auth.js'
 import { registerLocalTools } from './tools/local/index.js'
 import { getRegistry } from './mcp-registry/index.js'
 
-const app = new Hono()
+const app = new Hono<{ Variables: AuthVars }>()
+
+// 所有请求先走 authOptional：有 session cookie 就注入 user/session 到 ctx，没有也不拦
+app.use('*', authOptional)
 
 app.get('/', (c) => c.text('Big-PPT Agent'))
 app.get('/healthz', (c) => {
@@ -29,6 +38,7 @@ app.get('/healthz', (c) => {
 })
 
 // 业务路由：挂载到 /api 前缀下
+app.route('/api/auth', auth)
 app.route('/api/llm', llm)
 app.route('/api', slides)
 app.route('/api', templates)

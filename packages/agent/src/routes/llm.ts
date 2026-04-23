@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import type { AuthVars } from '../middleware/auth.js'
+import { decryptApiKey } from '../crypto/apikey.js'
 
 const PROVIDERS: Record<string, { name: string; baseURL: string; defaultModel: string }> = {
   zhipu: {
@@ -28,20 +30,49 @@ const PROVIDERS: Record<string, { name: string; baseURL: string; defaultModel: s
   },
 }
 
-function selectBaseURL(): string {
-  const key = process.env.LLM_PROVIDER ?? 'zhipu'
-  return PROVIDERS[key]?.baseURL ?? PROVIDERS.zhipu!.baseURL
+type StoredLlmSettings = {
+  provider?: string
+  apiKey?: string
+  baseUrl?: string
+  model?: string
 }
 
-export const llm = new Hono()
+function resolveUpstream(settings: StoredLlmSettings): { url: string } {
+  if (settings.baseUrl) {
+    return { url: `${settings.baseUrl.replace(/\/$/, '')}/chat/completions` }
+  }
+  const provider = settings.provider ?? 'zhipu'
+  const base = PROVIDERS[provider]?.baseURL ?? PROVIDERS.zhipu!.baseURL
+  return { url: `${base}/chat/completions` }
+}
+
+export const llm = new Hono<{ Variables: AuthVars }>()
 
 /**
- * LLM 流式代理：转发前端的 /api/llm/chat/completions 到上游 OpenAI-兼容 endpoint，
- * 透传 SSE 流（body 是 ReadableStream，上下游共用 Web Streams，不做中间解析）。
+ * LLM 流式代理（Phase 5 起必须登录 + 服务端加密 API Key）：
+ * 前端只发 POST body，agent 用当前用户的 llm_settings 解密后加 Authorization 转发上游。
  */
 llm.post('/chat/completions', async (c) => {
-  const upstreamUrl = `${selectBaseURL()}/chat/completions`
-  const auth = c.req.header('Authorization') ?? ''
+  const user = c.get('user')
+  if (!user) return c.json({ error: { message: 'unauthorized' } }, 401)
+  if (!user.llmSettings) {
+    return c.json({ error: { message: '请先在设置中配置 LLM API Key' } }, 400)
+  }
+
+  let settings: StoredLlmSettings
+  try {
+    settings = JSON.parse(decryptApiKey(user.llmSettings)) as StoredLlmSettings
+  } catch (err) {
+    return c.json(
+      { error: { message: `LLM 配置解密失败：${(err as Error).message}` } },
+      500,
+    )
+  }
+  if (!settings.apiKey) {
+    return c.json({ error: { message: 'LLM 配置无 apiKey，请在设置中重新填入' } }, 400)
+  }
+
+  const { url: upstreamUrl } = resolveUpstream(settings)
   const body = await c.req.text()
 
   let upstream: Response
@@ -50,7 +81,7 @@ llm.post('/chat/completions', async (c) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: auth,
+        Authorization: `Bearer ${settings.apiKey}`,
       },
       body,
     })

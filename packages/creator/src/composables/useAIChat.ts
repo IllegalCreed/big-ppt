@@ -83,28 +83,66 @@ export function __clearToolsCacheForTesting() {
   toolsLoadPromise = null
 }
 
-// --- Settings (localStorage) ---
+// --- Settings (backend source of truth; 缓存 model / provider 用于发 body 和日志) ---
 
-function getSettings(): LLMSettings {
-  const raw = localStorage.getItem('llm-settings')
-  if (raw) {
-    try {
-      return JSON.parse(raw)
-    } catch {}
+type CachedSettings = {
+  provider: string
+  model: string
+  baseUrl?: string | undefined
+  hasApiKey: boolean
+}
+
+const DEFAULT_CACHED: CachedSettings = { provider: 'zhipu', model: 'GLM-5.1', hasApiKey: false }
+let cachedSettings: CachedSettings = DEFAULT_CACHED
+let settingsLoaded = false
+let settingsLoadPromise: Promise<void> | null = null
+
+async function loadSettingsOnce(): Promise<void> {
+  if (settingsLoaded) return
+  if (!settingsLoadPromise) {
+    settingsLoadPromise = (async () => {
+      try {
+        const res = await fetch('/api/auth/llm-settings', {
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        })
+        if (res.ok) {
+          const data = (await res.json()) as Partial<CachedSettings> & { provider: string | null; model: string | null }
+          cachedSettings = {
+            provider: data.provider ?? DEFAULT_CACHED.provider,
+            model: data.model ?? DEFAULT_CACHED.model,
+            baseUrl: data.baseUrl ?? undefined,
+            hasApiKey: !!data.hasApiKey,
+          }
+        }
+      } catch {
+        // 未登录 / 网络错误：留默认值
+      } finally {
+        settingsLoaded = true
+      }
+    })()
   }
-  return { provider: 'zhipu', apiKey: '', model: 'GLM-5.1' }
+  await settingsLoadPromise
+}
+
+/** 设置面板保存后调用，强制下次请求前重新拉取 */
+export function invalidateLlmSettingsCache() {
+  settingsLoaded = false
+  settingsLoadPromise = null
 }
 
 function getHeaders(): Record<string, string> {
-  const settings = getSettings()
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${settings.apiKey}`,
-  }
+  // API Key 在服务端，前端不再带 Authorization；session cookie 通过 credentials:'include' 自动带
+  return { 'Content-Type': 'application/json' }
 }
 
 function getModel(): string {
-  return getSettings().model || 'GLM-5.1'
+  return cachedSettings.model || 'GLM-5.1'
+}
+
+function getSettings(): LLMSettings {
+  // 兼容外部 getSettings 导出（SettingsModal 早期代码还在引用）；apiKey 不从前端暴露
+  return { provider: cachedSettings.provider as LLMSettings['provider'], apiKey: '', model: cachedSettings.model }
 }
 
 // --- Messages 管理 ---
@@ -158,6 +196,7 @@ async function callLLMStream(
 ): Promise<{ toolCalls: ToolCall[]; content: string }> {
   const response = await fetch('/api/llm/chat/completions', {
     method: 'POST',
+    credentials: 'include',
     headers: getHeaders(),
     body: JSON.stringify({
       model: getModel(),
@@ -290,6 +329,16 @@ export function useAIChat() {
 
   async function sendMessage(userText: string) {
     if (status.value !== 'idle') return
+
+    // 首次发送前拉一次 llm-settings（包含当前 model / provider）；后续用缓存
+    await loadSettingsOnce()
+    if (!cachedSettings.hasApiKey) {
+      chatMessages.value.push({
+        role: 'assistant',
+        content: '尚未配置 LLM API Key，请点击右上角 ⚙️ 设置中填写。',
+      })
+      return
+    }
 
     let liveTools: LLMTool[]
     try {

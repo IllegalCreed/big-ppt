@@ -3,6 +3,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import type { LLMSettings, McpServerWithStatus, UpdateMcpServerRequest } from '@big-ppt/shared'
 import { Check, Copy, Eye, EyeOff, X } from 'lucide-vue-next'
 import { useMCP } from '../composables/useMCP'
+import { useAuth } from '../composables/useAuth'
+import { invalidateLlmSettingsCache } from '../composables/useAIChat'
+import { api, ApiError } from '../api/client'
 import MCPCatalogItem from './MCPCatalogItem.vue'
 import MCPCustomServer from './MCPCustomServer.vue'
 
@@ -25,11 +28,17 @@ const PROVIDERS: ProviderMeta[] = [
   { key: 'custom', name: '自定义', avatar: '+', defaultModel: '' },
 ]
 
+const DEFAULT_SETTINGS: LLMSettings = { provider: 'zhipu', apiKey: '', model: 'GLM-5.1' }
+
 const activeTab = ref<'llm' | 'mcp'>('llm')
-const settings = ref<LLMSettings>(loadSettings())
+const settings = ref<LLMSettings>({ ...DEFAULT_SETTINGS })
+const hasStoredApiKey = ref(false)
 const showApiKey = ref(false)
 const copiedKey = ref(false)
+const saving = ref(false)
+const saveError = ref('')
 const { servers, refresh, create, update, remove } = useMCP()
+const { saveLlmSettings } = useAuth()
 
 const presetServers = computed<McpServerWithStatus[]>(() => servers.value.filter((s) => s.preset))
 const customServers = computed<McpServerWithStatus[]>(() => servers.value.filter((s) => !s.preset))
@@ -39,14 +48,28 @@ const currentProviderHint = computed(() => {
   return p?.defaultModel ? `默认：${p.defaultModel}` : ''
 })
 
-function loadSettings(): LLMSettings {
-  const raw = localStorage.getItem('llm-settings')
-  if (raw) {
-    try {
-      return JSON.parse(raw)
-    } catch {}
+async function loadSettings() {
+  try {
+    const data = await api.get<{
+      provider: string | null
+      model: string | null
+      baseUrl: string | null
+      hasApiKey: boolean
+    }>('/api/auth/llm-settings')
+    settings.value = {
+      provider: (data.provider as LLMSettings['provider']) ?? DEFAULT_SETTINGS.provider,
+      apiKey: '', // 从不回传，留空让用户选择是否覆盖
+      model: data.model ?? DEFAULT_SETTINGS.model,
+    }
+    hasStoredApiKey.value = !!data.hasApiKey
+  } catch (err) {
+    // 未登录或网络错误：用默认值，不弹错
+    if (!(err instanceof ApiError && err.status === 401)) {
+      saveError.value = `加载设置失败：${(err as Error).message}`
+    }
+    settings.value = { ...DEFAULT_SETTINGS }
+    hasStoredApiKey.value = false
   }
-  return { provider: 'zhipu', apiKey: '', model: 'GLM-5.1' }
 }
 
 function selectProvider(p: ProviderMeta) {
@@ -54,9 +77,29 @@ function selectProvider(p: ProviderMeta) {
   if (p.defaultModel) settings.value.model = p.defaultModel
 }
 
-function saveLlm() {
-  localStorage.setItem('llm-settings', JSON.stringify(settings.value))
-  emit('update:open', false)
+async function saveLlm() {
+  if (saving.value) return
+  saveError.value = ''
+  if (!settings.value.apiKey && !hasStoredApiKey.value) {
+    saveError.value = '请填写 API Key'
+    return
+  }
+  saving.value = true
+  try {
+    await saveLlmSettings({
+      provider: settings.value.provider,
+      apiKey: settings.value.apiKey, // 空串 → 后端保留原 key
+      model: settings.value.model,
+    })
+    invalidateLlmSettingsCache()
+    hasStoredApiKey.value = true
+    settings.value.apiKey = ''
+    emit('update:open', false)
+  } catch (err) {
+    saveError.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
+  } finally {
+    saving.value = false
+  }
 }
 
 async function copyKey() {
@@ -105,7 +148,7 @@ watch(
   () => props.open,
   async (val) => {
     if (val) {
-      settings.value = loadSettings()
+      await loadSettings()
       await refresh()
     }
   },
@@ -181,13 +224,15 @@ onMounted(() => {
           <section class="form-section">
             <header class="section-header">
               <span class="section-title">API Key</span>
-              <span class="section-hint">仅存储于本地浏览器</span>
+              <span class="section-hint">
+                {{ hasStoredApiKey ? '已保存（服务端加密）。如需更换请重新输入' : '服务端 AES-256-GCM 加密存储，不回传' }}
+              </span>
             </header>
             <div class="input-group">
               <input
                 v-model="settings.apiKey"
                 :type="showApiKey ? 'text' : 'password'"
-                placeholder="sk-..."
+                :placeholder="hasStoredApiKey ? '留空表示不修改' : 'sk-...'"
                 autocomplete="off"
                 class="input-group__input"
               />
@@ -223,9 +268,13 @@ onMounted(() => {
             <input v-model="settings.model" type="text" placeholder="模型名称" class="input-bare" />
           </section>
 
+          <p v-if="saveError" class="form-error">{{ saveError }}</p>
+
           <div class="modal-footer">
-            <button type="button" class="btn-secondary" @click="close">取消</button>
-            <button type="button" class="btn-primary" @click="saveLlm">保存</button>
+            <button type="button" class="btn-secondary" :disabled="saving" @click="close">取消</button>
+            <button type="button" class="btn-primary" :disabled="saving" @click="saveLlm">
+              {{ saving ? '保存中...' : '保存' }}
+            </button>
           </div>
         </div>
 
@@ -407,6 +456,16 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+.form-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: rgba(180, 71, 44, 0.08);
+  border: 1px solid rgba(180, 71, 44, 0.25);
+  border-radius: var(--radius-md);
+  color: #B4472C;
+  font-size: var(--fs-sm);
 }
 
 .section-header {
