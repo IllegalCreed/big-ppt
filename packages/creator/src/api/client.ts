@@ -16,8 +16,8 @@ export class ApiError extends Error {
 }
 
 export class AuthRequiredError extends ApiError {
-  constructor(body: unknown) {
-    super(401, body, 'unauthorized')
+  constructor(body: unknown, message?: string) {
+    super(401, body, message ?? 'unauthorized')
   }
 }
 
@@ -49,12 +49,12 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
   const payload: unknown = isJson ? await res.json().catch(() => ({})) : await res.text().catch(() => '')
 
   if (!res.ok) {
-    if (res.status === 401) throw new AuthRequiredError(payload)
-    const msg =
+    const serverMsg =
       typeof payload === 'object' && payload && 'error' in payload
         ? String((payload as { error: unknown }).error)
-        : `HTTP ${res.status}`
-    throw new ApiError(res.status, payload, msg)
+        : null
+    if (res.status === 401) throw new AuthRequiredError(payload, serverMsg ?? 'unauthorized')
+    throw new ApiError(res.status, payload, serverMsg ?? `HTTP ${res.status}`)
   }
 
   return payload as T

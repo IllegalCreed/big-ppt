@@ -13,11 +13,11 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3030,
+    port: Number(process.env.CREATOR_PORT ?? 3030),
     strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: process.env.AGENT_ORIGIN ?? 'http://localhost:4000',
         changeOrigin: true,
         // /api/slidev-preview/* 需要 WebSocket（Vite HMR）转发
         ws: true,
