@@ -12,7 +12,9 @@
     "test:watch": "dotenv -e .env.test.local -- vitest",
     "lint": "eslint src test",
     "db:push": "dotenv -e .env.development.local -e .env.local -- drizzle-kit push",
-    "db:push:test": "dotenv -e .env.test.local -- drizzle-kit push"
+    "db:push:test": "dotenv -e .env.test.local -- drizzle-kit push",
+    "init-db": "node scripts/init-db.mjs",
+    "init-test-db": "node scripts/init-test-db.mjs"
   },
   "dependencies": {
     "@big-ppt/shared": "workspace:*",
