@@ -383,7 +383,7 @@ onMounted(() => {
 }
 
 .brand-text .deck-subtitle {
-  margin-top: 6px;
+  margin-top: 2px;
 }
 
 .deck-subtitle {
