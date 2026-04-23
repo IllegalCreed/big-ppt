@@ -22,7 +22,7 @@ export const deleteSlideTool: ToolDef = {
     if (index === null) {
       return JSON.stringify({ success: false, error: 'index 必须是整数' })
     }
-    const result = deleteSlide(index)
+    const result = await deleteSlide(index)
     return JSON.stringify(result)
   },
 }

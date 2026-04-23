@@ -41,7 +41,7 @@ export const createSlideTool: ToolDef = {
         ? (args.frontmatter as Record<string, unknown>)
         : undefined
     const body = typeof args.body === 'string' ? args.body : ''
-    const result = createSlide({ index, layout, frontmatter, body })
+    const result = await createSlide({ index, layout, frontmatter, body })
     return JSON.stringify(result)
   },
 }

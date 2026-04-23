@@ -3,6 +3,7 @@ import { getPaths } from '../workspace.js'
 import { similarity } from '../utils/similarity.js'
 import { appendHistory, redo, undo, type HistoryActionResult } from './history.js'
 import { parseSlides, serializeSlides, type SlidePage } from './pages.js'
+import { persistVersionIfActive } from './persist.js'
 
 export function readSlides(): string {
   const { slidesPath } = getPaths()
@@ -30,11 +31,12 @@ function readParsed(): SlidePage[] {
   }
 }
 
-function writeParsed(pages: SlidePage[], op: string): void {
+async function writeParsed(pages: SlidePage[], op: string): Promise<void> {
   const { slidesPath } = getPaths()
   const out = serializeSlides({ pages })
-  appendHistory(op, out)
+  appendHistory(op, out) // Phase 4 ring buffer（/undo /redo）
   fs.writeFileSync(slidesPath, out, 'utf-8')
+  await persistVersionIfActive(out, op) // Phase 5 deck_versions（audit + 回滚）
 }
 
 /**
@@ -43,7 +45,7 @@ function writeParsed(pages: SlidePage[], op: string): void {
  * 护栏：如果 slides.md 已含 ≥1 页，拒绝执行并引导使用四件套。首次生成场景下
  * slides.md 要么不存在要么是空壳（无分页），writeSlides 才允许通过。
  */
-export function writeSlides(content: string): MutationResult {
+export async function writeSlides(content: string): Promise<MutationResult> {
   const pages = readParsed()
   if (pages.length > 0) {
     return {
@@ -54,6 +56,7 @@ export function writeSlides(content: string): MutationResult {
   const { slidesPath } = getPaths()
   appendHistory('write', content)
   fs.writeFileSync(slidesPath, content, 'utf-8')
+  await persistVersionIfActive(content, 'write')
   return { success: true }
 }
 
@@ -63,7 +66,7 @@ export interface EditResult {
 }
 
 /** 精确替换：old_string 在文件中必须唯一匹配。建议用于"页内改一个词 / 数字"场景。 */
-export function editSlides(oldString: string, newString: string): EditResult {
+export async function editSlides(oldString: string, newString: string): Promise<EditResult> {
   if (!oldString) return { success: false, error: 'old_string 不能为空' }
   const { slidesPath } = getPaths()
   const content = fs.readFileSync(slidesPath, 'utf-8')
@@ -97,6 +100,7 @@ export function editSlides(oldString: string, newString: string): EditResult {
   const newContent = content.replace(oldString, newString)
   appendHistory('edit', newContent)
   fs.writeFileSync(slidesPath, newContent, 'utf-8')
+  await persistVersionIfActive(newContent, 'edit')
   return { success: true }
 }
 
@@ -107,12 +111,12 @@ export function editSlides(oldString: string, newString: string): EditResult {
  * @param opts.frontmatter 额外 frontmatter 键值对（layout 会被自动合入）
  * @param opts.body       markdown 正文
  */
-export function createSlide(opts: {
+export async function createSlide(opts: {
   index?: number | 'end'
   layout: string
   frontmatter?: Record<string, unknown>
   body?: string
-}): CreateSlideResult {
+}): Promise<CreateSlideResult> {
   if (!opts.layout || typeof opts.layout !== 'string') {
     return { success: false, error: 'layout 不能为空' }
   }
@@ -139,7 +143,7 @@ export function createSlide(opts: {
   pages.splice(insertAt, 0, newPage)
   // 重新编号 index 字段
   pages.forEach((p, i) => (p.index = i))
-  writeParsed(pages, 'create')
+  await writeParsed(pages, 'create')
   return { success: true, index: insertAt + 1 }
 }
 
@@ -150,12 +154,12 @@ export function createSlide(opts: {
  * @param opts.body             新 body（若传则整段替换当前 body）
  * @param opts.replaceFrontmatter true = 完全替换 frontmatter；false/缺省 = 合并（undefined 字段保留，新字段覆盖同名）
  */
-export function updateSlide(opts: {
+export async function updateSlide(opts: {
   index: number
   frontmatter?: Record<string, unknown>
   body?: string
   replaceFrontmatter?: boolean
-}): MutationResult {
+}): Promise<MutationResult> {
   const pages = readParsed()
   if (!Number.isInteger(opts.index) || opts.index < 1 || opts.index > pages.length) {
     return {
@@ -175,11 +179,11 @@ export function updateSlide(opts: {
   if (opts.body !== undefined) {
     target.body = opts.body
   }
-  writeParsed(pages, 'update')
+  await writeParsed(pages, 'update')
   return { success: true }
 }
 
-export function deleteSlide(index: number): MutationResult {
+export async function deleteSlide(index: number): Promise<MutationResult> {
   const pages = readParsed()
   if (!Number.isInteger(index) || index < 1 || index > pages.length) {
     return { success: false, error: `index 超出范围：应为 1..${pages.length}，收到 ${index}` }
@@ -189,7 +193,7 @@ export function deleteSlide(index: number): MutationResult {
   }
   pages.splice(index - 1, 1)
   pages.forEach((p, i) => (p.index = i))
-  writeParsed(pages, 'delete')
+  await writeParsed(pages, 'delete')
   return { success: true }
 }
 
@@ -197,7 +201,7 @@ export function deleteSlide(index: number): MutationResult {
  * 按给定顺序重排页面。
  * @param order 长度等于当前页数的数组，每个元素是 1..N 的排列（无重复、无缺失）
  */
-export function reorderSlides(order: number[]): MutationResult {
+export async function reorderSlides(order: number[]): Promise<MutationResult> {
   const pages = readParsed()
   if (!Array.isArray(order)) {
     return { success: false, error: 'order 必须是数组' }
@@ -220,7 +224,7 @@ export function reorderSlides(order: number[]): MutationResult {
   }
   const reordered = order.map((v) => pages[v - 1]!)
   reordered.forEach((p, i) => (p.index = i))
-  writeParsed(reordered, 'reorder')
+  await writeParsed(reordered, 'reorder')
   return { success: true }
 }
 

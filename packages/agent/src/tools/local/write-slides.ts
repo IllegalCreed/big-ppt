@@ -23,7 +23,7 @@ export const writeSlidesTool: ToolDef = {
       const resp: WriteSlidesResponse = { success: false, error: 'content 不能为空' }
       return JSON.stringify(resp)
     }
-    const result = writeSlides(content)
+    const result = await writeSlides(content)
     const resp: WriteSlidesResponse = result.success
       ? { success: true, bytes: Buffer.byteLength(content, 'utf-8') }
       : { success: false, error: result.error }

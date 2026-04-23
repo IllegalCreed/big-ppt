@@ -29,6 +29,20 @@ function getPool(): mysql.Pool {
       connectionLimit: 10,
       waitForConnections: true,
       namedPlaceholders: true,
+      // 客户端统一用 UTC 序列化 JS Date；避免与服务端会话时区不一致
+      // 造成 DATETIME 比较错位（实测：锁的 heartbeat 会被误判为永远过期）
+      timezone: 'Z',
+    })
+
+    // 每条新连接创建时把会话时区改为 UTC，保证 NOW() / 存储 / 比较都在同一基准。
+    // mysql2/promise Pool 的 'connection' 事件依然派发 callback-based Connection，
+    // 所以用 callback 形式的 query。
+    type RawConn = { query: (sql: string, cb: (err: Error | null) => void) => void }
+    _pool.on('connection', (rawConn) => {
+      const conn = rawConn as unknown as RawConn
+      conn.query("SET time_zone = '+00:00'", (err) => {
+        if (err) console.error('[db] failed to set session time_zone:', err.message)
+      })
     })
   }
   return _pool

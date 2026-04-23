@@ -16,7 +16,7 @@ export const editSlidesTool: ToolDef = {
   exec: async (args) => {
     const oldString = typeof args.old_string === 'string' ? args.old_string : ''
     const newString = typeof args.new_string === 'string' ? args.new_string : ''
-    const result = editSlides(oldString, newString)
+    const result = await editSlides(oldString, newString)
     return JSON.stringify(result)
   },
 }

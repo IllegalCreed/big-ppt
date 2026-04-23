@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { getTool, listTools } from '../tools/registry.js'
-import { runInTurn } from '../slides-store/history.js'
+import { setTurnId } from '../context.js'
 import type { CallToolRequest, CallToolResponse, GetToolsResponse } from '@big-ppt/shared'
 
 export const tools = new Hono()
@@ -33,8 +33,9 @@ tools.post('/call-tool', async (c) => {
     return c.json(resp, 404)
   }
   try {
-    const runner = (): Promise<string> => tool.exec(args)
-    const result = turnId ? await runInTurn(turnId, runner) : await runner()
+    // 把 turnId 注入请求级 context，slides-store 的 appendHistory 与 persistVersion 都会读到
+    if (turnId) setTurnId(turnId)
+    const result = await tool.exec(args)
     const resp: CallToolResponse = { success: true, result }
     return c.json(resp)
   } catch (err) {

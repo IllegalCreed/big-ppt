@@ -42,7 +42,7 @@ export const updateSlideTool: ToolDef = {
         : undefined
     const body = typeof args.body === 'string' ? args.body : undefined
     const replaceFrontmatter = args.replaceFrontmatter === true
-    const result = updateSlide({ index, frontmatter, body, replaceFrontmatter })
+    const result = await updateSlide({ index, frontmatter, body, replaceFrontmatter })
     return JSON.stringify(result)
   },
 }

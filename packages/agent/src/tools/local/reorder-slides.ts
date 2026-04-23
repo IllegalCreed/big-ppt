@@ -23,7 +23,7 @@ export const reorderSlidesTool: ToolDef = {
     if (order === null) {
       return JSON.stringify({ success: false, error: 'order 必须是整数数组' })
     }
-    const result = reorderSlides(order)
+    const result = await reorderSlides(order)
     return JSON.stringify(result)
   },
 }

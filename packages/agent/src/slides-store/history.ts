@@ -1,9 +1,9 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { HistoryPosition } from '@big-ppt/shared'
 import { getPaths } from '../workspace.js'
+import { getRequestContext } from '../context.js'
 
 /**
  * 线性版本栈模型：
@@ -23,15 +23,8 @@ interface Pointer {
   lastTurnId: string | null
 }
 
-const turnContext = new AsyncLocalStorage<string>()
-
-/** 在指定 turn 上下文里运行 fn；fn 内部调用的 appendHistory 会按 turn 聚合 */
-export function runInTurn<T>(turnId: string, fn: () => T): T {
-  return turnContext.run(turnId, fn)
-}
-
 function getCurrentTurnId(): string | null {
-  return turnContext.getStore() ?? null
+  return getRequestContext().turnId
 }
 
 function getMaxHistory(): number {

@@ -12,14 +12,19 @@ import { log } from './routes/log.js'
 import { tools as toolsRoute } from './routes/tools.js'
 import { mcp as mcpRoute } from './routes/mcp.js'
 import { auth } from './routes/auth.js'
+import { decksRoute } from './routes/decks.js'
+import { lockRoute } from './routes/lock.js'
 import { authOptional, type AuthVars } from './middleware/auth.js'
+import { requestContextMiddleware } from './middleware/request-context.js'
 import { registerLocalTools } from './tools/local/index.js'
 import { getRegistry } from './mcp-registry/index.js'
 
 const app = new Hono<{ Variables: AuthVars }>()
 
-// 所有请求先走 authOptional：有 session cookie 就注入 user/session 到 ctx，没有也不拦
+// 先 authOptional 解 session cookie 到 ctx.var，再 requestContextMiddleware 把
+// user/session/activeDeck 包进 AsyncLocalStorage 供下游 slides-store 读取。
 app.use('*', authOptional)
+app.use('*', requestContextMiddleware)
 
 app.get('/', (c) => c.text('Big-PPT Agent'))
 app.get('/healthz', (c) => {
@@ -39,6 +44,8 @@ app.get('/healthz', (c) => {
 
 // 业务路由：挂载到 /api 前缀下
 app.route('/api/auth', auth)
+app.route('/api', decksRoute)
+app.route('/api', lockRoute)
 app.route('/api/llm', llm)
 app.route('/api', slides)
 app.route('/api', templates)
