@@ -21,11 +21,11 @@ import { mcp as mcpRoute } from './routes/mcp.js'
 import { auth } from './routes/auth.js'
 import { decksRoute } from './routes/decks.js'
 import { lockRoute } from './routes/lock.js'
-import { authOptional, type AuthVars, validateSessionFromCookie } from './middleware/auth.js'
+import { authOptional, type AuthVars } from './middleware/auth.js'
+import { authorizeSlidevAccess } from './slidev-proxy-auth.js'
 import { requestContextMiddleware } from './middleware/request-context.js'
 import { registerLocalTools } from './tools/local/index.js'
 import { getRegistry } from './mcp-registry/index.js'
-import { isHeldBy } from './slidev-lock.js'
 
 const app = new Hono<{ Variables: AuthVars }>()
 
@@ -104,18 +104,6 @@ slidevProxy.on('error', (err, _req, res) => {
     }
   }
 })
-
-/** 反代前置鉴权：要求有效 session + 必须是当前锁持有者 */
-async function authorizeSlidevAccess(
-  cookieHeader: string | undefined,
-): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
-  const row = await validateSessionFromCookie(cookieHeader)
-  if (!row) return { ok: false, status: 401, message: 'unauthorized' }
-  if (!isHeldBy(row.session.id)) {
-    return { ok: false, status: 403, message: 'slidev 实例当前未被你占用；请先 activate-deck' }
-  }
-  return { ok: true }
-}
 
 const honoListener = getRequestListener(app.fetch)
 
