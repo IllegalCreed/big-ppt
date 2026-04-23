@@ -81,6 +81,8 @@ registerLocalTools()
 const SLIDEV_ORIGIN = process.env.SLIDEV_ORIGIN ?? 'http://localhost:3031'
 const SLIDEV_PROXY_PREFIX = '/api/slidev-preview'
 
+// Slidev 启动时配了 `--base /api/slidev-preview/`，它生成的 HTML / HMR WS
+// 路径都带这个前缀；代理这里不要 strip，原样透传给 Slidev 让它自己路由。
 const slidevProxy = httpProxy.createProxyServer({
   target: SLIDEV_ORIGIN,
   ws: true,
@@ -97,11 +99,6 @@ slidevProxy.on('error', (err, _req, res) => {
     }
   }
 })
-
-function stripPrefix(url: string | undefined): string {
-  if (!url) return '/'
-  return url.slice(SLIDEV_PROXY_PREFIX.length) || '/'
-}
 
 /** 反代前置鉴权：要求有效 session + 必须是当前锁持有者 */
 async function authorizeSlidevAccess(
@@ -125,7 +122,6 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: auth.message }))
       return
     }
-    req.url = stripPrefix(req.url)
     slidevProxy.web(req, res)
     return
   }
@@ -143,7 +139,6 @@ server.on('upgrade', async (req, socket, head) => {
     socket.destroy()
     return
   }
-  req.url = stripPrefix(req.url)
   slidevProxy.ws(req, socket, head)
 })
 
