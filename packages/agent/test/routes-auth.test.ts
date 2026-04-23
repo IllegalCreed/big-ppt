@@ -41,6 +41,23 @@ async function postJson(app: Hono, path: string, body: unknown, cookie?: string)
 }
 
 describe('routes/auth', () => {
+  it('register: 非法 JSON body → 走 catch 回退到 {} → 400（邮箱空）', async () => {
+    const app = makeApp()
+    const res = await app.request('/api/auth/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{invalid-json',
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('logout: 未登录（无 session）也返回 200，仅清 cookie', async () => {
+    const app = makeApp()
+    const res = await postJson(app, '/api/auth/logout', {})
+    expect(res.status).toBe(200)
+    expect(res.headers.get('set-cookie')).toMatch(/lumideck_session=/)
+  })
+
   it('register: 邮箱格式非法 → 400', async () => {
     const app = makeApp()
     const res = await postJson(app, '/api/auth/register', { email: 'not-an-email', password: 'pw123456' })
@@ -144,9 +161,7 @@ describe('routes/auth', () => {
     expect(decrypted).toMatchObject({ provider: 'zhipu', apiKey: 'sk-real-key', model: 'GLM-5.1' })
   })
 
-  it('llm-settings PUT: 空 apiKey 被拒绝（契约）', async () => {
-    // routes/auth.ts 里 `if (!apiKey) return 400`，无论是否已有 llm_settings，
-    // 空 apiKey 都应拒绝。测试独立验证这一点。
+  it('llm-settings PUT: 空 apiKey + 无旧值 → 400', async () => {
     const app = makeApp()
     const { cookie } = await createLoggedInUser('llm-empty@a.com')
     const res = await app.request('/api/auth/llm-settings', {
@@ -156,6 +171,97 @@ describe('routes/auth', () => {
     })
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: 'apiKey 为空' })
+  })
+
+  it('llm-settings PUT: 空 apiKey + 已有旧值 → 200 + 保留旧 apiKey 只换 provider/model', async () => {
+    const app = makeApp()
+    const { cookie, user } = await createLoggedInUser('llm-keep@a.com')
+    // 先存一组
+    await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ provider: 'zhipu', apiKey: 'key-original', model: 'GLM-5.1' }),
+    })
+    // 第二次空 apiKey，期望复用旧 apiKey + 新 provider/model
+    const res = await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ provider: 'openai', apiKey: '', model: 'gpt-4o' }),
+    })
+    expect(res.status).toBe(200)
+
+    const db = getDb()
+    const [u] = await db.select().from(users).where(eq(users.id, user.id)).limit(1)
+    const decrypted = JSON.parse(decryptApiKey(u!.llmSettings!))
+    expect(decrypted).toMatchObject({ provider: 'openai', apiKey: 'key-original', model: 'gpt-4o' })
+  })
+
+  it('llm-settings PUT: 旧 llm_settings 是畸形密文 → 500', async () => {
+    const app = makeApp()
+    const { cookie, user } = await createLoggedInUser('llm-corrupt@a.com')
+    // 直接写一个非法密文进 DB
+    const db = getDb()
+    await db.update(users).set({ llmSettings: 'not-a-v1-ciphertext' }).where(eq(users.id, user.id))
+    const res = await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ provider: 'openai', apiKey: '' }),
+    })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toMatch(/旧配置解密失败/)
+  })
+
+  it('llm-settings GET: 未登录 → 401', async () => {
+    const app = makeApp()
+    const res = await app.request('/api/auth/llm-settings')
+    expect(res.status).toBe(401)
+  })
+
+  it('llm-settings GET: 无设置 → hasApiKey=false', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser('llm-get-empty@a.com')
+    const res = await app.request('/api/auth/llm-settings', { headers: { Cookie: cookie } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      provider: null,
+      model: null,
+      baseUrl: null,
+      hasApiKey: false,
+    })
+  })
+
+  it('llm-settings GET: 有设置 → 返回 provider/model/baseUrl + hasApiKey=true，不泄漏 apiKey', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser('llm-get@a.com')
+    await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({
+        provider: 'openai',
+        apiKey: 'sk-TOP-SECRET',
+        model: 'gpt-4o',
+        baseUrl: 'https://example.com/v1',
+      }),
+    })
+    const res = await app.request('/api/auth/llm-settings', { headers: { Cookie: cookie } })
+    const body = await res.json()
+    expect(body).toEqual({
+      provider: 'openai',
+      model: 'gpt-4o',
+      baseUrl: 'https://example.com/v1',
+      hasApiKey: true,
+    })
+    expect(JSON.stringify(body)).not.toContain('sk-TOP-SECRET')
+  })
+
+  it('llm-settings GET: 密文损坏 → 500', async () => {
+    const app = makeApp()
+    const { cookie, user } = await createLoggedInUser('llm-get-corrupt@a.com')
+    const db = getDb()
+    await db.update(users).set({ llmSettings: 'garbage' }).where(eq(users.id, user.id))
+    const res = await app.request('/api/auth/llm-settings', { headers: { Cookie: cookie } })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toMatch(/解密失败/)
   })
 
   it('llm-settings GET（经 me）: hasLlmSettings 反映 DB 状态', async () => {

@@ -46,6 +46,35 @@ describe('composables/useAuth', () => {
     expect(currentUser.value).toBeNull()
   })
 
+  it('register 成功写入 currentUser', async () => {
+    server.use(
+      http.post('/api/auth/register', () =>
+        HttpResponse.json(
+          { user: { id: 2, email: 'reg@a.com', hasLlmSettings: false } },
+          { status: 201 },
+        ),
+      ),
+    )
+    const { register, currentUser } = useAuth()
+    const user = await register('reg@a.com', 'pw123456')
+    expect(user.email).toBe('reg@a.com')
+    expect(currentUser.value?.email).toBe('reg@a.com')
+  })
+
+  it('saveLlmSettings 成功后 currentUser.hasLlmSettings 变 true', async () => {
+    server.use(
+      http.post('/api/auth/login', () =>
+        HttpResponse.json({ user: { id: 3, email: 's@a.com', hasLlmSettings: false } }),
+      ),
+      http.put('/api/auth/llm-settings', () => HttpResponse.json({ ok: true })),
+    )
+    const { login, saveLlmSettings, currentUser } = useAuth()
+    await login('s@a.com', 'pw')
+    expect(currentUser.value?.hasLlmSettings).toBe(false)
+    await saveLlmSettings({ provider: 'zhipu', apiKey: 'k', model: 'GLM-5.1' })
+    expect(currentUser.value?.hasLlmSettings).toBe(true)
+  })
+
   it('logout 清 currentUser（无论 API 成功失败）', async () => {
     server.use(
       http.post('/api/auth/login', () =>
