@@ -1,16 +1,54 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { LogOut, Settings, Sparkles } from 'lucide-vue-next'
-import ChatPanel from '../components/ChatPanel.vue'
-import SlidePreview from '../components/SlidePreview.vue'
-import SettingsModal from '../components/SettingsModal.vue'
+import { onMounted, provide, ref } from 'vue'
+import { ArrowLeft, History, LogOut, Settings, Sparkles } from 'lucide-vue-next'
+import ChatPanel from './ChatPanel.vue'
+import SlidePreview from './SlidePreview.vue'
+import SettingsModal from './SettingsModal.vue'
+import VersionTimeline from './VersionTimeline.vue'
+import {
+  useDecks,
+  type Deck,
+  type DeckChat,
+  type DeckVersion,
+} from '../composables/useDecks'
+import { DECK_CHAT_CONTEXT, type DeckChatContext } from '../composables/useAIChat'
+import { useSlideStore } from '../composables/useSlideStore'
 import { useAuth } from '../composables/useAuth'
 
-const router = useRouter()
-const { currentUser, logout } = useAuth()
+const props = defineProps<{
+  deck: Deck
+  currentVersion: DeckVersion | null
+}>()
+const emit = defineEmits<{ 'exit-to-list': [] }>()
 
-const showSettings = ref(false)
+const { currentUser, logout } = useAuth()
+const { listChats, appendChat } = useDecks()
+const slideStore = useSlideStore()
+
+// ── Chat 上下文：provide 时先给空数组，等 listChats 返回后就地 mutate。
+//    ChatPanel 由 v-if="historyLoaded" 延迟挂载，inject 时一定能看到填好的数组。
+const chatCtx: DeckChatContext = {
+  initialHistory: [],
+  persistChat: async (role, content, toolCallId) => {
+    await appendChat(props.deck.id, { role, content, toolCallId })
+  },
+}
+provide(DECK_CHAT_CONTEXT, chatCtx)
+
+const historyLoaded = ref(false)
+
+async function loadInitialChats() {
+  try {
+    const chats = await listChats(props.deck.id)
+    chatCtx.initialHistory = chats
+      .filter((c): c is DeckChat & { role: 'user' | 'assistant' } => c.role === 'user' || c.role === 'assistant')
+      .map((c) => ({ role: c.role, content: c.content }))
+  } finally {
+    historyLoaded.value = true
+  }
+}
+
+// ── 左右分栏拖拽 ───────────────────────────────────────────────────────────
 const leftWidth = ref(40)
 const isDragging = ref(false)
 const mainRef = ref<HTMLElement | null>(null)
@@ -18,7 +56,6 @@ const mainRef = ref<HTMLElement | null>(null)
 function onMouseDown(e: MouseEvent) {
   isDragging.value = true
   e.preventDefault()
-
   const startX = e.clientX
   const startWidth = leftWidth.value
   const containerWidth = mainRef.value!.offsetWidth
@@ -42,26 +79,63 @@ function onMouseDown(e: MouseEvent) {
   document.addEventListener('mouseup', onMouseUp)
 }
 
-async function onLogout() {
-  await logout()
-  await router.replace('/login')
+// ── 顶栏按钮 ───────────────────────────────────────────────────────────────
+const showSettings = ref(false)
+const showTimeline = ref(false)
+
+function onTimelineRestored() {
+  // 回滚成功后强制 iframe 重载，Slidev 会读到新的 slides.md
+  slideStore.refresh()
 }
+
+async function onLogout() {
+  emit('exit-to-list') // 先释放锁再跳 login
+  setTimeout(() => {
+    void logout().then(() => {
+      window.location.href = '/login'
+    })
+  }, 100)
+}
+
+onMounted(() => {
+  void loadInitialChats()
+})
 </script>
 
 <template>
-  <div class="app-root">
+  <div class="editor-root">
     <header class="toolbar">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true">
-          <Sparkles :size="18" :stroke-width="1.8" />
-        </div>
-        <div class="brand-text">
-          <div class="brand-title">Lumideck</div>
-          <div class="brand-subtitle">幻光千叶</div>
+      <div class="brand-block">
+        <button
+          type="button"
+          class="icon-btn"
+          title="返回列表"
+          aria-label="返回列表"
+          @click="emit('exit-to-list')"
+        >
+          <ArrowLeft :size="18" :stroke-width="1.8" />
+        </button>
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <Sparkles :size="18" :stroke-width="1.8" />
+          </div>
+          <div class="brand-text">
+            <div class="deck-title" :title="deck.title">{{ deck.title }}</div>
+            <div class="deck-subtitle">Lumideck · 编辑中</div>
+          </div>
         </div>
       </div>
 
       <div class="toolbar-actions">
+        <button
+          type="button"
+          class="icon-btn"
+          title="版本历史"
+          aria-label="版本历史"
+          @click="showTimeline = !showTimeline"
+        >
+          <History :size="18" :stroke-width="1.8" />
+        </button>
         <span v-if="currentUser" class="user-email">{{ currentUser.email }}</span>
         <button
           type="button"
@@ -75,7 +149,7 @@ async function onLogout() {
         <button
           type="button"
           class="icon-btn"
-          title="退出登录"
+          title="退出登录（释放占用）"
           aria-label="退出登录"
           @click="onLogout"
         >
@@ -86,7 +160,9 @@ async function onLogout() {
 
     <main class="main-content" ref="mainRef">
       <div class="panel-left" :style="{ width: leftWidth + '%' }">
-        <ChatPanel />
+        <!-- 等历史加载完再挂 ChatPanel，避免 useAIChat 初始化时 initialHistory 还是空数组 -->
+        <ChatPanel v-if="historyLoaded" />
+        <div v-else class="loading-inline">加载对话历史...</div>
       </div>
       <div class="divider" :class="{ active: isDragging }" @mousedown="onMouseDown" />
       <div class="panel-right">
@@ -96,11 +172,18 @@ async function onLogout() {
     </main>
 
     <SettingsModal v-model:open="showSettings" />
+    <VersionTimeline
+      :deck-id="deck.id"
+      :current-version-id="currentVersion?.id ?? null"
+      :open="showTimeline"
+      @close="showTimeline = false"
+      @restored="onTimelineRestored"
+    />
   </div>
 </template>
 
 <style scoped>
-.app-root {
+.editor-root {
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -120,10 +203,18 @@ async function onLogout() {
   flex-shrink: 0;
 }
 
+.brand-block {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .brand {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
 }
 
 .brand-mark {
@@ -144,18 +235,22 @@ async function onLogout() {
   flex-direction: column;
   line-height: var(--lh-tight);
   padding-top: 1px;
+  min-width: 0;
 }
 
-.brand-title {
+.deck-title {
   font-family: var(--font-serif);
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
   color: var(--color-fg-primary);
   letter-spacing: 0.01em;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.brand-subtitle {
-  font-family: var(--font-sans);
+.deck-subtitle {
   font-size: 11px;
   font-weight: var(--fw-medium);
   color: var(--color-fg-tertiary);
@@ -211,6 +306,12 @@ async function onLogout() {
   min-width: 320px;
   display: flex;
   flex-direction: column;
+}
+
+.loading-inline {
+  padding: var(--space-6);
+  color: var(--color-fg-tertiary);
+  font-size: var(--fs-sm);
 }
 
 .divider {

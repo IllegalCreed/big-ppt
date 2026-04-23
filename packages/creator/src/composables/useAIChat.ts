@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { inject, ref, computed, type InjectionKey } from 'vue'
 import type {
   AgentStatus,
   CallToolRequest,
@@ -14,6 +14,18 @@ import type {
 import { buildSystemPrompt } from '../prompts/buildSystemPrompt'
 import { logEvent, setCurrentSession, truncate } from './logger'
 import { useSlideStore } from './useSlideStore'
+
+/**
+ * 由 DeckEditorCanvas 通过 provide() 注入。useAIChat 在 setup 时 inject 拿到：
+ * - `initialHistory`: deck_chats 里 user/assistant 消息，页面打开时 prefill 到气泡
+ * - `persistChat`: 每次用户发言 / assistant 最终回复 / 工具结果，都写回 deck_chats
+ */
+export type DeckChatContext = {
+  initialHistory: ChatBubble[]
+  persistChat: (role: 'user' | 'assistant' | 'tool', content: string, toolCallId?: string) => Promise<void>
+}
+
+export const DECK_CHAT_CONTEXT: InjectionKey<DeckChatContext> = Symbol('DECK_CHAT_CONTEXT')
 
 /**
  * 工具调用成功后，从 args / result 中提取"被改/新增"页的 index，返回给 caller 去 setPage。
@@ -307,12 +319,16 @@ async function callLLMWithRetry(
 
 export function useAIChat() {
   const slideStore = useSlideStore()
+  const deckCtx = inject(DECK_CHAT_CONTEXT, null)
 
   // 发送给 LLM 的完整消息（含 system、tool、tool_result）
+  // 注意：恢复 deck 时只 prefill UI 气泡不注入 LLM 上下文 —— 旧 tool_call 会跟
+  // tool_call_id 不匹配，LLM 可能幻觉。新对话从空上下文开始，AI 遇到不确定的
+  // 通过 read_slides 等工具重新探测当前状态。
   const messages = ref<ChatMessage[]>([{ role: 'system', content: buildSystemPrompt() }])
 
   // 展示在聊天 UI 的消息（只含 user + assistant 文字）
-  const chatMessages = ref<ChatBubble[]>([])
+  const chatMessages = ref<ChatBubble[]>(deckCtx ? [...deckCtx.initialHistory] : [])
 
   const status = ref<AgentStatus>('idle')
   const statusText = ref('')
@@ -373,6 +389,12 @@ export function useAIChat() {
     // 添加用户消息
     messages.value.push({ role: 'user', content: userText })
     chatMessages.value.push({ role: 'user', content: userText })
+    // 异步持久化到 deck_chats；失败只打日志不阻塞对话
+    if (deckCtx) {
+      void deckCtx.persistChat('user', userText).catch((err) => {
+        console.error('[useAIChat] persist user chat failed:', (err as Error).message)
+      })
+    }
 
     abortController = new AbortController()
     streamingContent.value = ''
@@ -505,6 +527,11 @@ export function useAIChat() {
               tool_call_id: tc.id,
               content: result,
             })
+            if (deckCtx) {
+              void deckCtx.persistChat('tool', result, tc.id).catch((err) => {
+                console.error('[useAIChat] persist tool chat failed:', (err as Error).message)
+              })
+            }
           }
           continue
         }
@@ -518,6 +545,11 @@ export function useAIChat() {
             role: 'assistant',
             content: fullContent,
             toolSteps: toolSteps.value.length > 0 ? toolSteps.value : undefined,
+          })
+        }
+        if (deckCtx && fullContent) {
+          void deckCtx.persistChat('assistant', fullContent).catch((err) => {
+            console.error('[useAIChat] persist assistant chat failed:', (err as Error).message)
           })
         }
         logEvent({
