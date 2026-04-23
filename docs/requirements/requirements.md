@@ -27,17 +27,62 @@
 
 ### FR-04 API Key 管理
 
-- 支持配置 AI 服务 API Key
-- 支持多种 AI 服务提供商
-- Key 存储在本地，不上传服务器
+- 支持配置 AI 服务 API Key（OpenAI / DeepSeek / 智谱等兼容接口）
+- 支持多种 AI 服务提供商，可配置 provider / baseUrl / model
+- **存储位置按阶段演进**：
+  - Phase 1–4：浏览器 localStorage（纯单机开发期，便捷优先）
+  - Phase 5 起：agent 后端 `users.llm_settings`，AES-256-GCM 加密，master key 从 `APIKEY_MASTER_KEY` 环境变量读；前端 localStorage 不再保留敏感信息
+- LLM 调用在服务端进行，客户端不再携带 API Key
 
-### FR-05 导出与部署
+### FR-05 导出
 
-- 导出为 PDF
-- 导出为 PPTX
-- 导出为 PNG 图片序列
+- 导出为 PDF（Phase 7）
+- 导出为 PNG 图片序列（Phase 7）
+- 导出为 PPTX（Phase 7，可选探索）
 - 本地演示模式（presenter mode）
-- 部署为 SPA 到阿里云服务器
+- 导出历史记录与重新下载
+
+### FR-06 用户账号与登录（Phase 5）
+
+- 邮箱 + 密码注册 / 登录 / 登出
+- 密码 bcrypt 哈希，明文绝不落 DB 或日志
+- HttpOnly Cookie 承载 session，服务端 sessions 表可撤销
+- `/api/auth/me` 获取当前用户信息，刷新页面保留登录态
+
+### FR-07 多 Deck 管理（Phase 5）
+
+- 登录后查看自己的 deck 列表（标题、状态、更新时间）
+- 新建、重命名、软删（status='deleted'）
+- 打开某 deck 进入编辑页，切换 deck 时系统自动处理 Slidev 实例内容切换
+- Deck 归属私有，不跨用户可见（Phase 6 起引入分享链接）
+
+### FR-08 版本历史与回滚（Phase 5）
+
+- 每次保存自动追加一条 `deck_versions` 记录（append-only）
+- 版本时间线面板展示所有历史版本与版本说明
+- 一键回滚到任意历史版本（回滚 = 移动 `current_version_id`，保留完整时间线）
+- 回滚后对话历史保留连续（`deck_chats` 独立于 `deck_versions`，AI 能理解"改主意了"的心智）
+
+### FR-09 单实例并发控制（Phase 5）
+
+- 同一时刻只允许一个用户占用 Slidev 实例编辑
+- 第二个用户尝试进入已占用 deck 时显示等待页：当前占用者、锁定时长、最近活跃时间
+- 等待页每 5 秒轮询锁状态，释放后自动跳转
+- 占用中客户端每 30 秒发送心跳刷新 `last_heartbeat_at`
+- 主动释放（点击"结束编辑"按钮 / 窗口关闭）立即放行
+- 心跳超时（默认 5 分钟）自动判定释放，防止用户强退留下死锁
+
+### FR-10 部署与上线
+
+- 单实例上线（Phase 5.5）：域名 + HTTPS + systemd 或 Docker compose + MySQL 生产部署 + 密钥下发 + DB 定时备份 + healthcheck
+- 多实例上线（Phase 6 尾段）：反代按 session 路由 + 滚动灰度切换
+- 部署到阿里云服务器，不依赖第三方 BaaS
+
+### FR-11 导入（Phase 8）
+
+- Markdown 导入（粘贴或 URL 拉取）
+- PPTX 导入（可选探索）
+- 导入预览页让用户确认后才落库
 
 ## 非功能需求
 
@@ -49,9 +94,12 @@
 
 ### NFR-02 安全性
 
-- API Key 仅存储在用户本地
+- API Key 按阶段存储（见 FR-04）：Phase 1–4 本地 localStorage，Phase 5+ 服务端 AES-256-GCM 加密存储
+- 用户密码 bcrypt 哈希存储，明文绝不落 DB 或日志
+- Session cookie 使用 HttpOnly + SameSite=Lax + Secure（生产）
 - 生成的幻灯片内容不经过第三方服务器（除 AI API 调用外）
-- 不包含敏感信息泄露风险
+- 数据库连接密码、master key、session secret 等敏感信息通过环境变量下发，**绝不进 git**
+- 每次 commit 前人工 `git status` 确认无 `.env.*.local` / `*.local` 被追踪
 
 ### NFR-03 可维护性
 

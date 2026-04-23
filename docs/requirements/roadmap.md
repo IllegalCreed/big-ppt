@@ -4,7 +4,10 @@
 >
 > - Phase 1-2 实际交付：[docs/plans/01](../plans/01-project-init.md) / [02](../plans/02-ai-integration.md) / [03](../plans/03-chat-ui-fixes.md) / [05](../plans/05-phase2-closeout.md)
 > - Phase 3 计划与关闭：[docs/plans/06-phase3-monorepo-agent.md](../plans/06-phase3-monorepo-agent.md) / [06-phase3-closeout.md](../plans/06-phase3-closeout.md)
-> - MCP 集成（Phase 3.5 待启动）：[docs/plans/04-mcp-integration.md](../plans/04-mcp-integration.md) 已置顶废弃；新计划见未来的 `07-mcp-integration.md`
+> - Phase 3.5 MCP 集成：[docs/plans/07-mcp-integration.md](../plans/07-mcp-integration.md)（原 04 已废弃）
+> - Phase 3.6 前端打磨：[docs/plans/08-phase36-frontend-polish.md](../plans/08-phase36-frontend-polish.md)
+> - Phase 4 编辑与迭代：[docs/plans/09-phase4-edit-iterate.md](../plans/09-phase4-edit-iterate.md)
+> - Phase 5 用户系统+Deck+单实例锁：[docs/plans/10-phase5-user-deck-versions.md](../plans/10-phase5-user-deck-versions.md)
 > - 技术债：[docs/plans/99-tech-debt.md](../plans/99-tech-debt.md)
 
 ---
@@ -132,34 +135,55 @@
 
 ---
 
-## Phase 5：用户系统 + Deck 管理 + 历史版本（单用户路径）
+## Phase 5：用户系统 + Deck 管理 + 历史版本 + 单实例占用锁
 
-**目标**：把"文件系统的 `slides.md`"升级成"数据库里的 deck 对象"，每次保存自动入版本历史。**Slidev 仍是单实例**，但 deck 切换时 agent 改写那一份 slides.md。先把数据模型打通，多用户并发留到 Phase 6。
+**目标**：把"文件系统的 `slides.md`"升级成"数据库里的 deck 对象"，每次保存自动入版本历史。**Slidev 仍是单实例**，deck 切换时 agent 改写那一份 slides.md。同时引入**单实例占用锁 + 等待页机制**，让 Phase 5.5 可以直接单实例上线——多实例并发留到 Phase 6。
+
+**技术栈选型（2026-04-23 调整）**：
+
+- 数据库 **MySQL**（复用 `quiz-monorepo` 所在 MySQL 实例，新建 `lumideck` 数据库），**非 SQLite**（为 Phase 5.5 云端部署和 Phase 6 多实例共享存储铺路）
+- ORM **Drizzle**，开发期 `drizzle-kit push`（零 migration 心智），上线前再切 `generate`
+- 密码哈希 **bcrypt**（与 quiz-backend 一致，复用经验），**非 argon2**
+- Session: HttpOnly Cookie + 服务端 `sessions` 表（stateful，便于撤销）
 
 **交付物**：
 
-- 后端 `packages/agent` 引入 **SQLite + Drizzle ORM**（单机零运维、类型安全）；agent 启动时自动建 schema + 跑 migration
-- 四张核心表：
-  - `users(id, email, password_hash, created_at, updated_at)`
-  - `decks(id, user_id, title, theme_id, current_version_id, status, created_at, updated_at)` — status ∈ draft/published；`theme_id` 预留多 theme；`current_version_id` 支持"切回历史版本继续迭代"
-  - `deck_versions(id, deck_id, content, message, author_id, created_at)` — append-only，每次 save 一条；restore = 新建 version 指向历史 content，保留完整时间线，支持 Git 风格分叉
+- 后端 `packages/agent` 引入 Drizzle + mysql2 + bcrypt + cookie；`drizzle-kit push` 初始化 schema
+- **五张核心表**：
+  - `users(id, email, password_hash, llm_settings[AES-GCM 加密], created_at, updated_at)`
+  - `sessions(id, user_id, active_deck_id, last_heartbeat_at, expires_at, created_at)` — stateful session；`last_heartbeat_at` 客户端每 30s 刷新，超时用于判断单实例锁释放
+  - `slidev_lock(id=1 单行, holder_session_id, holder_user_id, holder_deck_id, locked_at, last_heartbeat_at)` — 全局单实例占用锁
+  - `decks(id, user_id, title, theme_id, current_version_id, status, created_at, updated_at)` — status ∈ active/archived/deleted；`theme_id` 预留多 theme；`current_version_id` 支持"切回历史版本继续迭代"
+  - `deck_versions(id, deck_id, content, message, author_id, created_at)` — append-only，每次 save 一条；restore = 移动 `decks.current_version_id`，不新增 version，保留完整时间线
   - `deck_chats(id, deck_id, role ∈ {system,user,assistant,tool}, content, tool_call_id, created_at)` — append-only 独立链，**不与 deck_versions 关联**。语义（2026-04-22 Q&A 确立）：切版本时**保留对话**，只移动 `decks.current_version_id`。AI 下一轮能感知当前 slides 是 V5 且记得之前在 V6/V7 上的尝试（用户"改主意了"的心智）
-- 认证：`/api/auth/register` / `/api/auth/login` / `/api/auth/me`，session cookie（httpOnly + SameSite=Lax），密码用 argon2 存
-- API Key 从前端 localStorage 搬到后端 `users.llm_settings`（加密存 ，同步清 P3-2）
-- deck 操作 API：`GET /api/decks` / `POST /api/decks` / `GET /api/decks/:id` / `PUT /api/decks/:id` / `DELETE /api/decks/:id` / `GET /api/decks/:id/versions` / `POST /api/decks/:id/restore/:versionId`
-- 前端新增页面：登录 / 注册 / Deck 列表 / Deck 编辑（现有 Creator UI 收到 deck id 参数）/ 版本时间轴面板
-- 打开某 deck 时：agent 把 `deck_versions` 最新一条的 content 落地成 `packages/slidev/slides.md`（互斥锁：同一时刻只有一个"活跃 deck"）
+- 认证：`/api/auth/register` / `/api/auth/login` / `/api/auth/logout` / `/api/auth/me`，session cookie（HttpOnly + SameSite=Lax + Secure 生产），密码 bcrypt rounds=10
+- API Key 从前端 localStorage 搬到后端 `users.llm_settings`（AES-256-GCM 加密，master key 从 `APIKEY_MASTER_KEY` 环境变量读；同步清 P3-2）
+- LLM 代理：API Key 只在服务端解密使用，不再信任客户端 header
+- deck 操作 API：`GET /api/decks` / `POST /api/decks` / `GET /api/decks/:id` / `PUT /api/decks/:id` / `DELETE /api/decks/:id`（软删）
+- 版本 API：`GET /api/decks/:id/versions` / `POST /api/decks/:id/versions`（新增版本，自动成为 current）/ `POST /api/decks/:id/restore/:versionId`
+- 对话 API：`GET /api/decks/:id/chats` / `POST /api/decks/:id/chats`
+- **单实例占用锁 API**：
+  - `POST /api/activate-deck/:id`：原子抢占（`UPDATE slidev_lock WHERE holder IS NULL OR holder = me OR heartbeat 超时`，用 affectedRows 判断）；成功则 mirror 内容到 `packages/slidev/slides.md`；冲突返回 **409 + holder 信息**
+  - `POST /api/release-deck`：自己占用时释放，不占用返回 200 幂等
+  - `POST /api/heartbeat`：刷新 `sessions.last_heartbeat_at` 和 `slidev_lock.last_heartbeat_at`
+  - `GET /api/lock-status`：`{ locked, holder?, isMe }`，前端等待页轮询用
+  - 默认超时阈值：5 分钟无心跳自动判定释放
+- 前端新增页面（首次引入 Vue Router）：登录 / 注册 / Deck 列表 / Deck 编辑（现有 Creator UI 收到 deck id 参数）/ 版本时间轴面板 / **OccupiedWaitingPage**（占用冲突时显示"当前被 xxx 使用中，锁定于 xx 分钟前"+ 手动重试 + 5s 轮询自动跳转）
+- 聊天持久化：每次发言、工具回包都 POST 到 `/api/decks/:id/chats`；打开 deck 时 GET 加载历史
 - 所有 creator 的读写 slides API（`/api/read-slides` / `/api/write-slides` 等）接入 deck 上下文：写操作同时新建一条 deck_version，不再直接覆盖文件
+- `slides-store` 7 个函数签名保持不变，内部实现从 fs 改成读写 `deck_versions` + mirror 到 `packages/slidev/slides.md`
 
 **验收条件**：
 
 - [ ] 新用户能注册 → 登录 → 建 deck → 用对话生成 → 保存 → 登出 → 重登看到 deck 列表带正确 title
-- [ ] Deck 详情页的"历史版本"面板显示所有历史记录，点击某条可预览 + 一键回滚（回滚 = 新建一条 version 指向该历史 content，保留完整时间线）
+- [ ] Deck 详情页的"历史版本"面板显示所有历史记录，点击某条可预览 + 一键回滚（回滚 = 移动 `current_version_id`，保留完整时间线）
 - [ ] 同一用户不同 deck 可切换（切换时 agent 把对应 content 写入 slides.md，Slidev 自动热更新）
 - [ ] **切回历史版本 V5 后，AI 下一轮对话能感知当前 slides 是 V5 且理解用户之前在 V6/V7 上的尝试**（靠 `deck_chats` append-only + 每轮 LLM 调用前注入最新 slides.md）
 - [ ] **每轮 LLM 调用前 system prompt 或 tool 必自动反映最新 slides.md 内容**（Phase 4 已强化"修改前必 read_slides"习惯，Phase 5 延续）
 - [ ] API Key 后端化后，前端 localStorage 不再存敏感信息；清账 P3-2
-- [ ] `pnpm test` 新增 DB 层测试：repository CRUD + migration round-trip + 版本 append-only 不变性 + deck_chats 跨版本保留
+- [ ] **单实例占用冲突场景**：两个浏览器登录两个账号 → A 占用 deck → B 登录进 `/decks/:id` 看到等待页 → A 主动释放 → B 自动跳转编辑页
+- [ ] **心跳超时释放**：A 占用后关闭标签页 → 5 分钟后心跳超时 → B 的轮询自动进入
+- [ ] `pnpm test` 新增 DB 层测试：repository CRUD + schema push 幂等 + 版本 append-only 不变性 + deck_chats 跨版本保留 + 锁竞争并发安全
 
 **状态**：待开始
 
@@ -167,16 +191,58 @@
 
 **不做什么**（范围围栏，防蔓延）：
 
-- ❌ 多用户同时在线（**Phase 6**，MVP 先按"一次一个活跃 deck"串行）
+- ❌ 多用户**同时编辑各自 deck**（**Phase 6**，Phase 5 保证同一时刻只一人占用 Slidev）
+- ❌ Slidev 进程池、多实例运行时隔离（**Phase 6**）
 - ❌ 导出（PDF/PPTX）— 延 Phase 7
-- ❌ 云端部署 — 延 Phase 7
-- ❌ Deck 分享链接、权限、协同编辑 — 延 Phase 6
+- ❌ 导入（Markdown / PPTX）— 延 Phase 8
+- ❌ Deck 分享链接、权限、协同编辑 — 延 Phase 6 / Phase 9+
 
 ---
 
-## Phase 6：多用户并发 + Deck 运行时隔离
+## Phase 5.5：首次部署（单实例上线）
 
-**目标**：解决 Slidev 单实例天花板，让多用户可以真正并行编辑自己的 deck。同时上"公开分享"场景（只读链接，不占编辑实例）。
+**目标**：把 Phase 5 完成的单用户+占用锁版本真正放到服务器上跑起来，提供对内可用的 MVP，验证端到端链路。
+
+**交付物**：
+
+- 服务器环境准备：域名 + HTTPS（Caddy 或 Nginx，任选其一）
+- 进程编排（二选一，看部署偏好）：
+  - 方案 A：systemd 管 agent 进程 + creator 静态托管 + slidev dev 子进程
+  - 方案 B：docker compose（agent / creator(nginx 静态) / slidev / mysql 四件套）
+- MySQL 生产部署位置（复用既有实例 or 独立 docker/托管）
+- 密钥下发：`SESSION_SECRET` / `APIKEY_MASTER_KEY` / `DATABASE_URL` 通过环境变量或 secret 管理工具下发，**绝不进 git**
+- DB 备份：mysqldump 定时归档（`deck_versions` 是核心数据），保留 N 天
+- Healthcheck：agent 暴露 `/healthz`，含 DB 连接 + Slidev 状态检查
+- 最小日志监控：至少标准输出 + 轮转，能 tail 看近期错误
+- 单实例下"使用中"体验打磨：等待页文案、估算等待时间、队列位置（可选）
+- 首次生产部署 runbook 记录到 `docs/plans/11-phase55-first-deploy.md`（待创建）
+
+**验收条件**：
+
+- [ ] 公网域名可访问，HTTPS 证书正确
+- [ ] 注册 → 登录 → 建 deck → 编辑 → 登出 → 重登全流程通
+- [ ] 第二个浏览器登录另一个账号，进入相同 deck 看到等待页
+- [ ] agent 崩溃/重启后，数据全在，用户重新登录能继续
+- [ ] DB 备份文件每日一份，可恢复
+- [ ] **无任何敏感文件出现在 git 历史**（.env.*.local / 密钥 / 密码）
+
+**状态**：待开始
+
+**依赖**：Phase 5 完成
+
+**不做什么**：
+
+- ❌ 多实例并发（Phase 6）
+- ❌ CDN / 多地区部署
+- ❌ 自动化 CI/CD 流水线（Phase 9+）
+
+---
+
+## Phase 6：多 Slidev 实例 + 多用户并发 + 多实例部署切换
+
+**目标**：解决 Slidev 单实例天花板，让多用户可以真正并行编辑自己的 deck。同时上"公开分享"场景（只读链接，不占编辑实例）。多实例版本的部署切换并入本 Phase 尾段，不单独开 Phase 6.5。
+
+**前置 spike**：Phase 6 开头先做一轮服务器承载能力实测（单 Slidev dev 进程稳态内存/CPU 占用，当前服务器规格能并发几个实例），结果决定进程池上限与排队策略。
 
 **核心架构**（A + B 混合）：
 
@@ -196,12 +262,14 @@
 
 **交付物**：
 
+- 服务器容量 spike 报告（内存/CPU 实测 + 可并发实例数结论）落到 `docs/plans/12-phase6-capacity-spike.md`
 - `packages/agent` 新增 **`deck-runtime` 模块**：
   - 进程池管理器（Map<deckId, { proc, port, lastUsed }>）
   - on-demand spawn：用户进编辑页 → 分配空闲端口 → `slidev` 子进程（slides 指向临时文件 `runtime/decks/<deckId>.md`）
-  - 空闲回收：每个实例 5 分钟无活动自动 SIGTERM；上限 10，超限时 LRU 踢最老的
+  - 空闲回收：每个实例 5 分钟无活动自动 SIGTERM；上限由 spike 结果决定（预估 5-10），超限时 LRU 踢最老的
   - 健康检查：实例崩溃自动重拉；`/healthz/runtime` 暴露池状态
 - 前端 `SlidePreview.vue` 的 iframe URL 不再写死 `:3031`，改为从 agent 的 `/api/decks/:id/editor` 响应里取动态端口（或走 agent 的 reverse proxy 路径）
+- 拆除 Phase 5 的 `slidev_lock` 单实例约束（保留表但放宽语义，或改为按实例粒度的 lease）
 - Deck 编辑实时保存（debounce 2s）→ 写到 `runtime/decks/<deckId>.md` → slidev HMR 自然生效 → 同时 append `deck_versions`
 - **发布 / 分享**：
   - `POST /api/decks/:id/publish` → agent 跑 `slidev build`，产物存到 `storage/decks/<deckId>/<versionId>/dist/`
@@ -209,52 +277,100 @@
   - `deck_shares(id, deck_id, token, version_id, expires_at, created_at)` 表管理分享链接
 - 并发控制：同一用户可同时编辑多 deck（上限 3）；同一 deck 同一时刻只允许一个 tab 编辑（其他 tab 显示"编辑中"提示）
 - 新增 `@big-ppt/shared` 类型：`DeckRuntimeStatus` / `DeckShareInfo`
+- **多实例部署切换**（并入本 Phase 尾段）：
+  - 反代按 user session 路由到对应 Slidev 实例
+  - 灰度切换：先在 staging 跑通，再滚动切 prod
+  - 从单实例部署平滑升级，不中断现有用户
 
 **验收条件**：
 
+- [ ] 容量 spike 报告完成，上限数字有实测依据
 - [ ] 三个不同用户同时登录、各自进入自己的 deck 编辑页，HMR 预览各自独立，互不干扰
-- [ ] 超过 10 个 deck 进入编辑态时，最老的自动被回收，用户重新进入时再 spawn（<5s）
+- [ ] 超过上限的 deck 进入编辑态时，最老的自动被回收，用户重新进入时再 spawn（<5s）
 - [ ] `/decks/:id/share/:token` 不占用进程池；关掉 agent dev 模式下的 slidev 子进程后，分享页仍可访问
-- [ ] 压测：10 个 deck 同时活跃、100 req/s 打分享页，agent 内存 < 2GB
+- [ ] 压测：上限数量 deck 同时活跃 + 100 req/s 打分享页，agent 内存 < 2GB
 - [ ] 进程崩溃 / OOM 自动重拉，不丢用户已保存的 content（因为源在 DB）
+- [ ] 生产环境从单实例版本切到多实例版本，用户无感知中断
 
 **状态**：待开始
 
-**依赖**：Phase 5 完成（数据模型必须先稳）
+**依赖**：Phase 5.5 完成（生产单实例版本必须先稳跑一段时间）
 
 **不做什么**：
 
-- ❌ 多人实时协同编辑同一 deck（CRDT / OT）— 复杂度太高，留 Phase 8+ 或永不做
-- ❌ 跨服务器分布式进程池 — 单机 10 实例已够内部 50 用户场景
+- ❌ 多人实时协同编辑同一 deck（CRDT / OT）— 复杂度太高，留 Phase 9+ 或永不做
+- ❌ 跨服务器分布式进程池 — 单机上限实例已够内部 50 用户场景
 
 ---
 
-## Phase 7：导出与部署
+## Phase 7：导出
 
-**目标**：完善导出功能，把 Phase 5/6 的架构上云。
+**目标**：让用户把 deck 带离系统——离线演示、归档、发给不登录的人看。
 
 **交付物**：
 
-- PDF 导出（Playwright 无头渲染）
-- PPTX 导出（探索 `pptxgenjs` 或 slidev 插件）
-- 部署：agent + slidev build 产物 → 阿里云服务器（Docker compose：agent + nginx 静态托管）
-- 域名 / HTTPS / 登录页
-- 本地演示模式优化（离线单 deck 快速启动）
+- **PDF 导出**（优先）：调用 Slidev 原生 `slidev export`（基于 Playwright），后端触发任务，产物存 `storage/exports/<deckId>/<versionId>.pdf`，前端下载
+- **图片序列导出**（PNG 每页一张）：`slidev export --format png`
+- PPTX 导出（**可选，探索性**）：评估 `pptxgenjs` / slidev 插件 / LibreOffice headless 可行性，成本可控再做
+- 导出历史：`deck_exports(id, deck_id, version_id, format, path, created_at)`
+- 前端 Deck 编辑页加"导出"下拉菜单
+
+**验收条件**：
+
+- [ ] PDF 导出耗时 < 20 秒，视觉与预览一致
+- [ ] 导出页可查看历史导出记录，可重新下载
+- [ ] 导出进程隔离于编辑实例，不影响正在编辑的用户
+
+**状态**：待开始
 
 **依赖**：Phase 6 完成
 
+**不做什么**：
+
+- ❌ PPTX 导出如成本过高（>5 天工时）则延到 Phase 9+
+
 ---
 
-## Phase 8：远期可能
+## Phase 8：导入
+
+**目标**：降低新用户冷启动成本——已有 Markdown / PPTX 资料可以一键变 deck。
+
+**交付物**：
+
+- **Markdown 导入**（优先）：粘贴或上传 `.md` → 校验 Slidev 语法 → 新建 deck + 初始 version
+- 从 URL 拉取 Markdown（如 GitHub raw）
+- **PPTX 导入**（可选，探索性）：评估 pandoc / python-pptx / LibreOffice headless 将 .pptx 转 md 的质量
+- 导入预览页：展示解析结果，用户确认后落库
+- 失败场景处理：解析错误提示行号、保留原文让用户手动修
+
+**验收条件**：
+
+- [ ] 粘贴标准 Slidev md 能完整导入，页数准确
+- [ ] 粘贴非 Slidev 标准 md（如普通博客）能"尽力而为"转成 deck，给出警告提示
+
+**状态**：待开始
+
+**依赖**：Phase 7 完成（或与 P7 并行）
+
+**不做什么**：
+
+- ❌ PPTX 导入如效果差（>30% 页面需手动修）则延到 Phase 9+
+
+---
+
+## Phase 9+：远期可能
 
 **可能方向**：
 
-- 多人实时协同（CRDT）
+- 多人实时协同编辑同一 deck（CRDT / OT）
 - 多语言支持
 - 团队共享模板
-- `slides.md.history` 环形缓冲升级（P2-2 已随 Phase 5 的 deck_versions 天然解决，可复盘是否还需要文件级 undo）
-- 自定义主题编辑器
+- 主题系统与自定义主题编辑器
+- 分享链接的权限扩展（访客评论、过期策略、访问日志）
+- 嵌入到其他站点（iframe / OEmbed）
 - 更多模板套系（不止 company-standard）
+- 自动化 CI/CD 流水线（GitHub Actions 自动部署）
+- `slides.md.history` 环形缓冲升级（P2-2 已随 Phase 5 的 deck_versions 天然解决，可复盘是否还需要文件级 undo）
 
 ---
 
@@ -271,3 +387,4 @@
 | 2026-04-21 | Phase 3.5 关闭：MCP 集成 + 本地工具 register 进 agent registry + 前端 GET /api/tools 动态化 | 按 07-mcp-integration.md 执行完成，P1-2 完全清零 |
 | 2026-04-22 | Phase 3.6 关闭：creator design tokens + DESIGN.md；品牌身份 Lumideck · 幻光千叶；P3-8/P3-9 新增 | 按 08-phase36-frontend-polish.md 执行完成 |
 | 2026-04-22 | Phase 4 关闭：P1-5 / P2-1 / P2-2 / P2-3 / P3-6 清零；slides.md 800→90 行；四件套工具 + /undo /redo 轮次聚合；Phase 5 补 `deck_chats` 表 + 切版本保留对话验收条件 | 按 09-phase4-edit-iterate.md 执行完成，路线图 3 条验收条件全部达标 |
+| 2026-04-23 | Phase 5 技术栈 SQLite+argon2 → **MySQL+bcrypt**（drizzle push 模式）；Phase 5 范围追加**单实例占用锁**（`slidev_lock` + heartbeat + 等待页）；新增 **Phase 5.5** 首次单实例部署；Phase 6 改为"多实例 + 多用户并发 + 多实例部署切换"合并；原 Phase 7（导出+部署）拆为 **Phase 7 导出** 和 **Phase 8 导入**；原 Phase 8 远期重编号为 Phase 9+ | 用户希望 Phase 5 完成后就具备单实例上线条件；MySQL 便于后续多实例共享存储；bcrypt 与既有 quiz-backend 经验复用 |
