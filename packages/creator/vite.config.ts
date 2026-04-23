@@ -19,6 +19,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:4000',
         changeOrigin: true,
+        // /api/slidev-preview/* 需要 WebSocket（Vite HMR）转发
+        ws: true,
       },
     },
   },

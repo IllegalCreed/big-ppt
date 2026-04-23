@@ -109,15 +109,7 @@ export const deckChats = mysqlTable(
   }),
 )
 
-/** 全局单实例占用锁（单行表，id 恒为 1） */
-export const slidevLock = mysqlTable('slidev_lock', {
-  id: int('id').primaryKey(), // 应用层保证只存 id=1 的单行
-  holderSessionId: varchar('holder_session_id', { length: 32 }),
-  holderUserId: int('holder_user_id'),
-  holderDeckId: int('holder_deck_id'),
-  lockedAt: datetime('locked_at'),
-  lastHeartbeatAt: datetime('last_heartbeat_at'),
-})
+// 单实例占用锁已改为 agent 进程内存（见 src/slidev-lock.ts），不落 DB。
 
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
@@ -129,4 +121,3 @@ export type DeckVersion = typeof deckVersions.$inferSelect
 export type NewDeckVersion = typeof deckVersions.$inferInsert
 export type DeckChat = typeof deckChats.$inferSelect
 export type NewDeckChat = typeof deckChats.$inferInsert
-export type SlidevLock = typeof slidevLock.$inferSelect

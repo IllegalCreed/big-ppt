@@ -55,3 +55,28 @@ export const requireAuth: MiddlewareHandler<{ Variables: AuthVars }> = async (c,
   await next()
 }
 
+/**
+ * 给原生 http upgrade 事件 / 非 Hono 路径用的 session 验证 helper。
+ * 返回 (user, session) 或 null；不依赖 Hono Context。
+ */
+export async function validateSessionFromCookie(cookieHeader: string | undefined): Promise<{
+  user: User
+  session: Session
+} | null> {
+  if (!cookieHeader) return null
+  const parsed = cookie.parse(cookieHeader)
+  const sid = parsed[SESSION_COOKIE]
+  if (!sid) return null
+
+  const db = getDb()
+  const rows = await db
+    .select({ session: sessions, user: users })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(eq(sessions.id, sid))
+    .limit(1)
+  const row = rows[0]
+  if (!row || row.session.expiresAt.getTime() <= Date.now()) return null
+  return row
+}
+

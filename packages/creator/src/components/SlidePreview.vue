@@ -5,12 +5,13 @@ import { useSlideStore } from '../composables/useSlideStore'
 
 const slideStore = useSlideStore()
 
-// Slidev 原生支持 URL path `/:page` 跳到指定页；带 `?t=token` 在 token 变化时强制 iframe 重载
-// （Vue 看到 src 改变就会重新挂载 iframe）。
+// 走 agent 反代（/api/slidev-preview/*），agent 校验 session cookie + 当前是锁持有者才放行。
+// 这样外网拿到 URL 没登录/没占用锁的用户看不到别人的 deck。
+// `?t=token` 在 token 变化时强制 iframe 重载（Vue 看到 src 改变就会重新挂载 iframe）。
 const iframeSrc = computed(
-  () => `http://localhost:3031/${slideStore.currentPage.value}?t=${slideStore.refreshToken.value}`,
+  () => `/api/slidev-preview/${slideStore.currentPage.value}?t=${slideStore.refreshToken.value}`,
 )
-const presentSrc = computed(() => `http://localhost:3031/${slideStore.currentPage.value}`)
+const presentSrc = computed(() => `/api/slidev-preview/${slideStore.currentPage.value}`)
 
 function refresh() {
   slideStore.refresh()
