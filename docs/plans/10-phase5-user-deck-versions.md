@@ -1,9 +1,16 @@
 # Phase 5 — 用户系统 + Deck + 版本 + 单实例占用锁 实施文档
 
-> **状态**：待开始（2026-04-23 规划完成）
+> **状态**：✅ 已关闭（2026-04-23）
 > **规划文件**：`~/.claude/plans/docs-deck-deck-slidev-lucky-locket.md`（用户 local，含完整推理与讨论记录）
 > **前置阶段**：Phase 4（2026-04-22 已关闭，见 [09](09-phase4-edit-iterate.md)）
+> **后续阶段**：Phase 5 补测轨道（见 [11](11-phase5-tests-and-env-split.md)）、Phase 5.5（待开始）
 > **路线图**：[roadmap.md Phase 5](../requirements/roadmap.md)
+>
+> **执行期偏离 plan 的重要决定**（见下方 "执行期偏离纪录"）：
+> - 单实例占用锁从 `slidev_lock` 表迁到 **agent 内存对象**（见 src/slidev-lock.ts）
+> - 新增 **Slidev 反代鉴权**（agent 代理 `/api/slidev-preview/*`，未登录 401 / 非锁持有者 403），Slidev 原生端口不再直接暴露
+> - Deck 编辑页标题 **双击原地改名**（UX 便利）
+> - `deck_versions` 表追加 `turn_id` 字段（本 plan schema 部分已有描述，代码最终落地）
 
 **Goal**：把"文件系统的 slides.md"升级成"数据库里的 deck 对象"，每次保存自动入版本历史，对话历史独立于版本 append-only 持久化。同时引入**单 Slidev 实例占用锁 + 等待页机制**，让 Phase 5.5 可以直接单实例部署上线。API Key 从 localStorage 搬到后端加密存储。
 
@@ -147,53 +154,53 @@ GET    /api/read-slides            → 读 active deck current version（不读 
 
 ### 5A — DB + Auth 底座（半天~一天）
 
-- [ ] `packages/agent/.env.example` 占位符（`DATABASE_URL` / `SESSION_SECRET` / `APIKEY_MASTER_KEY`）
-- [ ] `packages/agent/.env.local` 本地真实值（**不 commit**）；生成 32 字节随机 `SESSION_SECRET` / `APIKEY_MASTER_KEY`
-- [ ] 安装依赖：`pnpm --filter agent add drizzle-orm mysql2 bcrypt cookie` + `drizzle-kit @types/bcrypt` 作 devDep
-- [ ] `packages/agent/src/db/schema.ts`（先只 `users` + `sessions`）+ `drizzle.config.ts`
-- [ ] `pnpm --filter agent drizzle-kit push` 初始化 DB
-- [ ] `packages/agent/src/crypto/apikey.ts`（AES-GCM 加解密）
-- [ ] `packages/agent/src/middleware/auth.ts`（解 session cookie，注入 `ctx.var.user`）
-- [ ] `packages/agent/src/routes/auth.ts`（register / login / logout / me / llm-settings）
-- [ ] [packages/agent/src/index.ts](../../packages/agent/src/index.ts) 挂载新 routes + auth middleware
-- [ ] LLM 代理改：API Key 从 `ctx.var.user.llm_settings` 解密后使用，不信任客户端 header
-- [ ] 前端安装 vue-router；改 [packages/creator/src/main.ts](../../packages/creator/src/main.ts) 和 App.vue → RouterView
-- [ ] 新增 `packages/creator/src/pages/LoginPage.vue` / `RegisterPage.vue`
-- [ ] `packages/creator/src/api/client.ts` 封装（统一 `credentials:'include'`，401 跳 /login）
-- [ ] `packages/creator/src/composables/useAIChat.ts` 去掉 localStorage 读 key，改后端代理
-- [ ] **验证**：注册 → 登录 → 刷新 `/auth/me` 仍返回用户 → 配 LLM 设置 → 对话能通
-- [ ] **commit**：`feat(phase-5a): 引入 MySQL + Drizzle + auth + session；API Key 后端加密`
+- [x] `packages/agent/.env.example` 占位符（`DATABASE_URL` / `SESSION_SECRET` / `APIKEY_MASTER_KEY`）
+- [x] `packages/agent/.env.local` 本地真实值（**不 commit**）；生成 32 字节随机 `SESSION_SECRET` / `APIKEY_MASTER_KEY`
+- [x] 安装依赖：`pnpm --filter agent add drizzle-orm mysql2 bcrypt cookie` + `drizzle-kit @types/bcrypt` 作 devDep
+- [x] `packages/agent/src/db/schema.ts`（先只 `users` + `sessions`）+ `drizzle.config.ts`
+- [x] `pnpm --filter agent drizzle-kit push` 初始化 DB
+- [x] `packages/agent/src/crypto/apikey.ts`（AES-GCM 加解密）
+- [x] `packages/agent/src/middleware/auth.ts`（解 session cookie，注入 `ctx.var.user`）
+- [x] `packages/agent/src/routes/auth.ts`（register / login / logout / me / llm-settings）
+- [x] [packages/agent/src/index.ts](../../packages/agent/src/index.ts) 挂载新 routes + auth middleware
+- [x] LLM 代理改：API Key 从 `ctx.var.user.llm_settings` 解密后使用，不信任客户端 header
+- [x] 前端安装 vue-router；改 [packages/creator/src/main.ts](../../packages/creator/src/main.ts) 和 App.vue → RouterView
+- [x] 新增 `packages/creator/src/pages/LoginPage.vue` / `RegisterPage.vue`
+- [x] `packages/creator/src/api/client.ts` 封装（统一 `credentials:'include'`，401 跳 /login）
+- [x] `packages/creator/src/composables/useAIChat.ts` 去掉 localStorage 读 key，改后端代理
+- [x] **验证**：注册 → 登录 → 刷新 `/auth/me` 仍返回用户 → 配 LLM 设置 → 对话能通
+- [x] **commit**：`feat(phase-5a): 引入 MySQL + Drizzle + auth + session；API Key 后端加密`
 
 ### 5B — Deck 模型 + CRUD + 单实例占用锁（一天）
 
-- [ ] schema 追加 `decks` / `deck_versions` / `deck_chats` / `slidev_lock`，`sessions` 加 `active_deck_id` + `last_heartbeat_at`
-- [ ] `drizzle-kit push`；seed `INSERT INTO slidev_lock (id) VALUES (1)`
-- [ ] `packages/agent/src/routes/decks.ts`：CRUD + versions + restore + chats
-- [ ] `packages/agent/src/routes/lock.ts`（或合进 decks.ts）：activate-deck / release-deck / heartbeat / lock-status
-- [ ] 锁原子抢占：`UPDATE slidev_lock SET holder_... WHERE id=1 AND (holder_session_id IS NULL OR holder_session_id = :me OR last_heartbeat_at < NOW() - INTERVAL 5 MINUTE)`，用 affectedRows 判成败
-- [ ] [packages/agent/src/slides-store/index.ts](../../packages/agent/src/slides-store/index.ts) 重写：7 个函数先验证 ctx.session 是锁持有者 → 读 current version → 操作 → 写新 version → 更新 `current_version_id` → mirror 到 fs
-- [ ] [packages/agent/src/routes/slides.ts](../../packages/agent/src/routes/slides.ts) `/api/read-slides` 走 DB
-- [ ] **验证**：
+- [x] schema 追加 `decks` / `deck_versions` / `deck_chats` / `slidev_lock`，`sessions` 加 `active_deck_id` + `last_heartbeat_at`
+- [x] `drizzle-kit push`；seed `INSERT INTO slidev_lock (id) VALUES (1)`
+- [x] `packages/agent/src/routes/decks.ts`：CRUD + versions + restore + chats
+- [x] `packages/agent/src/routes/lock.ts`（或合进 decks.ts）：activate-deck / release-deck / heartbeat / lock-status
+- [x] 锁原子抢占：`UPDATE slidev_lock SET holder_... WHERE id=1 AND (holder_session_id IS NULL OR holder_session_id = :me OR last_heartbeat_at < NOW() - INTERVAL 5 MINUTE)`，用 affectedRows 判成败
+- [x] [packages/agent/src/slides-store/index.ts](../../packages/agent/src/slides-store/index.ts) 重写：7 个函数先验证 ctx.session 是锁持有者 → 读 current version → 操作 → 写新 version → 更新 `current_version_id` → mirror 到 fs
+- [x] [packages/agent/src/routes/slides.ts](../../packages/agent/src/routes/slides.ts) `/api/read-slides` 走 DB
+- [x] **验证**：
   - curl 创建 deck → activate → 编辑 → `SELECT * FROM deck_versions` 看版本链 → restore → `packages/slidev/slides.md` 与 current version 一致
   - 另起一个 curl 会话（不同 cookie）activate 同一 deck → 应 409 带 holder 信息
   - 主会话 release-deck → 第二个会话 activate 立即成功
-- [ ] **commit**：`feat(phase-5b): Deck CRUD + 版本历史 + 单实例占用锁（slidev_lock + heartbeat）`
+- [x] **commit**：`feat(phase-5b): Deck CRUD + 版本历史 + 单实例占用锁（slidev_lock + heartbeat）`
 
 ### 5C — 前端 Deck UX + 占用状态体验（一天）
 
-- [ ] 路由加 `/decks` / `/decks/:id`
-- [ ] `packages/creator/src/pages/DeckListPage.vue`：列表 + 新建 + 重命名 + 软删
-- [ ] `packages/creator/src/pages/DeckEditorPage.vue`：进入时 POST `/api/activate-deck/:id`
+- [x] 路由加 `/decks` / `/decks/:id`
+- [x] `packages/creator/src/pages/DeckListPage.vue`：列表 + 新建 + 重命名 + 软删
+- [x] `packages/creator/src/pages/DeckEditorPage.vue`：进入时 POST `/api/activate-deck/:id`
   - 成功 → 装载现有编辑界面（从 App.vue 主体移植）+ 启动心跳定时器（30s 调 `/api/heartbeat`，离开/窗口关闭时 `/api/release-deck`）
   - 409 → 渲染 `<OccupiedWaitingPage>`：显示占用者信息 + 锁定时长 + 最后活跃时间 + 手动重试 + 5s 轮询 `/api/lock-status` 自动跳转
-- [ ] `packages/creator/src/components/VersionTimeline.vue`：侧栏/抽屉，列 versions，点击 restore，高亮 current
-- [ ] [packages/creator/src/composables/useAIChat.ts](../../packages/creator/src/composables/useAIChat.ts) 改：打开 deck 时 GET chats 加载历史；每次发言、每次工具回包都 POST 到 `/api/decks/:id/chats`
-- [ ] 顶栏状态条：占用中 → "使用中"+释放按钮；被他人占用 → 禁用编辑
-- [ ] **验证**：
+- [x] `packages/creator/src/components/VersionTimeline.vue`：侧栏/抽屉，列 versions，点击 restore，高亮 current
+- [x] [packages/creator/src/composables/useAIChat.ts](../../packages/creator/src/composables/useAIChat.ts) 改：打开 deck 时 GET chats 加载历史；每次发言、每次工具回包都 POST 到 `/api/decks/:id/chats`
+- [x] 顶栏状态条：占用中 → "使用中"+释放按钮；被他人占用 → 禁用编辑
+- [x] **验证**：
   - 多 deck 切换 → 刷新浏览器所有状态保留
   - 版本时间线回滚后聊天历史连续（deck_chats 独立于 version）
   - 两浏览器两账号：A 占用 → B 看到等待页 → A 关标签页 → 5 分钟后心跳超时 B 自动进入；A 主动释放 → B 立刻进入
-- [ ] **commit**：`feat(phase-5c): Deck UX + 版本时间线 + 占用等待页 + 聊天持久化`
+- [x] **commit**：`feat(phase-5c): Deck UX + 版本时间线 + 占用等待页 + 聊天持久化`
 
 ---
 
@@ -267,3 +274,49 @@ mysql -D lumideck -e "SELECT id,deck_id,created_at,LEFT(content,40) FROM deck_ve
 | 密码哈希 | bcrypt（与 quiz-backend 一致） |
 | Drizzle 迁移 | 开发期 `push`，上线前再切 `generate` |
 | Session | HttpOnly Cookie + 服务端表（stateful） |
+
+---
+
+## 执行期偏离纪录（2026-04-23）
+
+五点偏离 plan 的决定，都是实施中即时讨论拍板：
+
+### 1. 单实例锁从 DB 表改成 agent 内存对象
+- **原计划**：`slidev_lock` 表 + 原子 `UPDATE ... WHERE holder IS NULL OR ...`
+- **实际**：[src/slidev-lock.ts](../../packages/agent/src/slidev-lock.ts)，模块级 `currentLock: LockHolder | null`
+- **原因**：Node 单线程天然原子；不引入循环外键 + DATETIME 时区坑；agent 重启时锁自然清零（用户 ctrl+R 重连即可）；Phase 6 多实例架构也不会沿用这张表
+- 代价：重启不保留。可接受
+- 影响：`drizzle-kit push` 执行过程中删掉了已建好的 `slidev_lock` 表；schema.ts 里只留 5 张表
+
+### 2. 新增 Slidev 反代鉴权（原 plan 未覆盖的安全漏洞）
+- **背景**：用户发现 Slidev 原生跑在 `:3031`，iframe 直连，**完全没有访问控制**。dev 模式在 localhost 没事，但 Phase 5.5 一上公网就泄露所有 deck 预览
+- **解决**：agent 新增 [src/slidev-proxy-auth.ts](../../packages/agent/src/slidev-proxy-auth.ts) 反代 `/api/slidev-preview/*`，未登录 401，非锁持有者 403；生产 Slidev 绑 `127.0.0.1:3031`，仅 agent 可访问
+- 顺带踩坑：Slidev HTML 里是绝对路径 `/@vite/client` / `/node_modules/...` / `#slidev/slides`，需要 `base` 配置把所有内部路径前缀化到 `/api/slidev-preview/`
+
+### 3. Deck 编辑页标题双击原地改名（新 UX）
+- 用户提出：要编辑标题只能返回列表不合理
+- 实现：[components/DeckEditorCanvas.vue](../../packages/creator/src/components/DeckEditorCanvas.vue) 双击 → input；Enter 保存 / Esc 取消 / blur 自动保存；错误文案放副标题行
+
+### 4. deck_versions 加 turn_id 字段
+- **原计划**：只有 `message` 字段
+- **实际**：加 `turn_id VARCHAR(64)`，同一用户 turn 里多次 tool_call 写的版本共享 turnId，前端 VersionTimeline 折叠显示为 "同轮 N 次修改"
+- 兼顾 Phase 4 的轮次聚合语义
+
+### 5. 历史按钮位置调整
+- 用户审美反馈：历史按钮挪到用户邮箱右边（工具区分组），双击 input 样式简化（只留错误行，去掉 "Enter 保存 · Esc 取消" 辅助文字）
+
+---
+
+## 交付 commit 列表
+
+| Phase | Commit |
+|---|---|
+| Pre-5A | `docs(phase-5): 同步 P5 调整到路线图、愿景、需求；新增 10-phase5 计划` |
+| 5A | `feat(phase-5a): 引入 MySQL + Drizzle + 用户系统 + 后端加密 API Key` |
+| 5B | `feat(phase-5b): Deck CRUD + 版本历史 + 单实例占用锁（slidev_lock + heartbeat）` |
+| 5B-refactor | `refactor(phase-5b): 锁搬进内存 + Slidev 反代鉴权，收紧预览访问` |
+| 5C | `feat(phase-5c): Deck UX 全链路 — 列表/编辑/版本时间线/占用等待页` |
+| 5C-fix | `fix(phase-5c): Slidev 反代路径前缀化，让 iframe 真的能渲染` |
+| 5C-UX | `feat(phase-5c): 编辑页标题双击改名 + 历史按钮移到邮箱右边` |
+| 5C-polish | `style(phase-5c): 副标题与 input 间距回到 2px，贴合整体节奏` |
+

@@ -6,9 +6,9 @@
 
 | 级别   | 含义                 | 条数                                               |
 | ------ | -------------------- | -------------------------------------------------- |
-| **P1** | Phase 3 关闭前必须清 | 5（全部清除：Phase 3 清 4 条，Phase 4 清 P1-5）    |
-| **P2** | Phase 4 关闭前必须清 | 4（已清 3：P2-1/P2-2/P2-3；P2-4 留 Phase 5）       |
-| **P3** | 非阻塞，有机会再清   | 9（Phase 4 清 P3-6；P3-NEW 字体自托管 / 视觉回归） |
+| **P1** | Phase 3 关闭前必须清 | 5（全部清除：Phase 3 清 4 条，Phase 4 清 P1-5）                   |
+| **P2** | Phase 4 关闭前必须清 | 4（已清 3：P2-1/P2-2/P2-3；**P2-4 留 Phase 5.5**）                |
+| **P3** | 非阻塞，有机会再清   | 9（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归）    |
 
 ---
 
@@ -120,15 +120,15 @@
 
 **触发时机**：已于 [09-phase4-edit-iterate.md](09-phase4-edit-iterate.md) Step 3 完成
 
-### P2-4. MCP 凭证明文存 `data/mcp.json`（Phase 5 必须加密）
+### P2-4. MCP 凭证明文存 `data/mcp.json`（❌ Phase 5 未清，挪到 Phase 5.5）
 
 **位置**：`packages/agent/src/mcp-server-repo/json-file-repo.ts`（有 2 处 `TODO(phase-5): encrypt ... headers before writing` 标记）
 
 **影响**：`data/mcp.json` 里的 `Authorization: Bearer <token>` 明文可读。`.gitignore` 防止入库，但本地备份、云同步、grep 日志等场景仍会泄露。Phase 3.5 单机 dev 环境可接受。
 
-**修复方案**：Phase 5 引入 SQLite 时，把 `mcp_servers.headers_encrypted` 列加 AEAD（aes-256-gcm + 随机 IV，master key 从环境变量或 OS keychain 读），`JsonFileRepo` 换成 `DrizzleRepo` 时顺带完成。
+**修复方案**：Phase 5 引入 MySQL 时**未**顺带做（Phase 5 优先级放在 auth + deck CRUD + 单实例锁 + 补测轨道，MCP 迁仓成本超出预算）。现行计划：Phase 5.5 部署前把 MCP 配置从 `JsonFileRepo` 迁到 DB，复用 `crypto/apikey.ts` 已有的 AES-256-GCM helper（[packages/agent/src/crypto/apikey.ts](../../packages/agent/src/crypto/apikey.ts)）。
 
-**触发时机**：Phase 5 启动时必须做，**不得**推迟到 Phase 5 之后。
+**触发时机**：**Phase 5.5 部署前必须清**。生产环境 `data/mcp.json` 明文是真实泄漏面。
 
 ---
 
@@ -141,12 +141,16 @@
 **修复方案**：跟踪 `@antdv-next/x` 升级到 0.4+，重新测试 `contentRender` 路径能否不走 slot。
 **触发时机**：看库维护节奏，不主动投入
 
-### P3-2. localStorage 存 API Key
+### P3-2. localStorage 存 API Key ✅（2026-04-23 清）
 
-**位置**：[packages/creator/src/components/SettingsModal.vue](../../packages/creator/src/components/SettingsModal.vue) `llm-settings`
-**影响**：原型阶段可接受；XSS 即泄漏。
-**修复方案**：Phase 5 部署前必须改为 agent 服务存（加密 / 环境变量）；前端只存"已配置"标志位。agent 已独立进程，接口可直接加在 `/api/settings`。
-**触发时机**：Phase 5 部署前必须改
+**实际修复**：Phase 5A 完成
+- 新增 [packages/agent/src/crypto/apikey.ts](../../packages/agent/src/crypto/apikey.ts) AES-256-GCM 加解密，master key 从 `APIKEY_MASTER_KEY` 环境变量读
+- `users.llm_settings` 列存密文（JSON: `{provider, apiKey, baseUrl, model}`）
+- `/api/auth/llm-settings` PUT 接口加密写入；GET 只返 `{provider, model, baseUrl, hasApiKey}` 不泄漏 apiKey
+- 前端 [SettingsModal.vue](../../packages/creator/src/components/SettingsModal.vue) 去掉 `localStorage` 读写 API Key 的分支
+- LLM 代理 [routes/llm.ts](../../packages/agent/src/routes/llm.ts) 从 `ctx.user.llm_settings` 解密后取 key，不再信任客户端 Authorization header
+
+**触发时机**：Phase 5A（2026-04-23 commit `df142f5`）
 
 ### P3-3. 没有 lint / format ✅（2026-04-21 清）
 
@@ -272,3 +276,4 @@
 | 2026-04-21 | Phase 3.5 关闭：P1-2 完全清零；P3-5 标 ✅；新增 P2-4（MCP 凭证加密）；P2 条数 3→4                                                                                                                                           | 项目组 |
 | 2026-04-22 | Phase 3.6 完成：creator design tokens + DESIGN.md 落地，Lumideck · 幻光千叶 品牌上线；新增 P3-8（字体自托管）+ P3-9（视觉回归）；P3 条数 7→9；注：P2-3（slidev templates tokens）独立于 creator，仍保留待 Phase 4 P1-5 清除 | 项目组 |
 | 2026-04-22 | Phase 4 完成：P1-5 / P2-1 / P2-2 / P2-3 / P3-6 清除；slides.md 800→90 行；四件套工具 + /undo /redo 轮次聚合 + 单页预览定位；工具层 integer 宽容 coerce；creator lint 0 errors / 0 warnings | 项目组 |
+| 2026-04-23 | Phase 5 完成：P3-2 清除（localStorage API Key → 后端 AES-256-GCM 加密存 `users.llm_settings`）；P2-4 MCP 凭证加密**未**在 Phase 5 做，挪到 Phase 5.5 部署前必须清；Phase 5 补测轨道落地后总测试数 262（agent 208 + creator 49 + E2E 5）、coverage 门槛 agent 90/85 + creator 75/65 都过 | 项目组 |

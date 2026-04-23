@@ -8,6 +8,7 @@
 > - Phase 3.6 前端打磨：[docs/plans/08-phase36-frontend-polish.md](../plans/08-phase36-frontend-polish.md)
 > - Phase 4 编辑与迭代：[docs/plans/09-phase4-edit-iterate.md](../plans/09-phase4-edit-iterate.md)
 > - Phase 5 用户系统+Deck+单实例锁：[docs/plans/10-phase5-user-deck-versions.md](../plans/10-phase5-user-deck-versions.md)
+> - Phase 5 补测轨道（env 分层+单元/集成/E2E+coverage）：[docs/plans/11-phase5-tests-and-env-split.md](../plans/11-phase5-tests-and-env-split.md)
 > - 技术债：[docs/plans/99-tech-debt.md](../plans/99-tech-debt.md)
 
 ---
@@ -175,17 +176,17 @@
 
 **验收条件**：
 
-- [ ] 新用户能注册 → 登录 → 建 deck → 用对话生成 → 保存 → 登出 → 重登看到 deck 列表带正确 title
-- [ ] Deck 详情页的"历史版本"面板显示所有历史记录，点击某条可预览 + 一键回滚（回滚 = 移动 `current_version_id`，保留完整时间线）
-- [ ] 同一用户不同 deck 可切换（切换时 agent 把对应 content 写入 slides.md，Slidev 自动热更新）
-- [ ] **切回历史版本 V5 后，AI 下一轮对话能感知当前 slides 是 V5 且理解用户之前在 V6/V7 上的尝试**（靠 `deck_chats` append-only + 每轮 LLM 调用前注入最新 slides.md）
-- [ ] **每轮 LLM 调用前 system prompt 或 tool 必自动反映最新 slides.md 内容**（Phase 4 已强化"修改前必 read_slides"习惯，Phase 5 延续）
-- [ ] API Key 后端化后，前端 localStorage 不再存敏感信息；清账 P3-2
-- [ ] **单实例占用冲突场景**：两个浏览器登录两个账号 → A 占用 deck → B 登录进 `/decks/:id` 看到等待页 → A 主动释放 → B 自动跳转编辑页
-- [ ] **心跳超时释放**：A 占用后关闭标签页 → 5 分钟后心跳超时 → B 的轮询自动进入
-- [ ] `pnpm test` 新增 DB 层测试：repository CRUD + schema push 幂等 + 版本 append-only 不变性 + deck_chats 跨版本保留 + 锁竞争并发安全
+- [x] 新用户能注册 → 登录 → 建 deck → 用对话生成 → 保存 → 登出 → 重登看到 deck 列表带正确 title
+- [x] Deck 详情页的"历史版本"面板显示所有历史记录，点击某条可预览 + 一键回滚（回滚 = 移动 `current_version_id`，保留完整时间线）
+- [x] 同一用户不同 deck 可切换（切换时 agent 把对应 content 写入 slides.md，Slidev 自动热更新）
+- [x] **切回历史版本 V5 后，AI 下一轮对话能感知当前 slides 是 V5 且理解用户之前在 V6/V7 上的尝试**（靠 `deck_chats` append-only + 每轮 LLM 调用前注入最新 slides.md）
+- [x] **每轮 LLM 调用前 system prompt 或 tool 必自动反映最新 slides.md 内容**（Phase 4 已强化"修改前必 read_slides"习惯，Phase 5 延续）
+- [x] API Key 后端化后，前端 localStorage 不再存敏感信息；清账 P3-2
+- [x] **单实例占用冲突场景**：两个浏览器登录两个账号 → A 占用 deck → B 登录进 `/decks/:id` 看到等待页 → A 主动释放 → B 自动跳转编辑页
+- [x] **心跳超时释放**：A 占用后关闭标签页 → 5 分钟后心跳超时 → B 的轮询自动进入（实施期锁改内存对象，见 plan 10 偏离纪录）
+- [x] `pnpm test` 新增 DB 层测试：repository CRUD + schema push 幂等 + 版本 append-only 不变性 + deck_chats 跨版本保留 + 锁竞争并发安全（Phase 5 补测轨道交付，见 [plan 11](../plans/11-phase5-tests-and-env-split.md)）
 
-**状态**：待开始
+**状态**：✅ 已完成（2026-04-23 关闭，关闭报告见 [10-phase5-user-deck-versions.md](../plans/10-phase5-user-deck-versions.md) 和 [11-phase5-tests-and-env-split.md](../plans/11-phase5-tests-and-env-split.md)）
 
 **依赖**：Phase 4 完成
 
@@ -388,3 +389,5 @@
 | 2026-04-22 | Phase 3.6 关闭：creator design tokens + DESIGN.md；品牌身份 Lumideck · 幻光千叶；P3-8/P3-9 新增 | 按 08-phase36-frontend-polish.md 执行完成 |
 | 2026-04-22 | Phase 4 关闭：P1-5 / P2-1 / P2-2 / P2-3 / P3-6 清零；slides.md 800→90 行；四件套工具 + /undo /redo 轮次聚合；Phase 5 补 `deck_chats` 表 + 切版本保留对话验收条件 | 按 09-phase4-edit-iterate.md 执行完成，路线图 3 条验收条件全部达标 |
 | 2026-04-23 | Phase 5 技术栈 SQLite+argon2 → **MySQL+bcrypt**（drizzle push 模式）；Phase 5 范围追加**单实例占用锁**（`slidev_lock` + heartbeat + 等待页）；新增 **Phase 5.5** 首次单实例部署；Phase 6 改为"多实例 + 多用户并发 + 多实例部署切换"合并；原 Phase 7（导出+部署）拆为 **Phase 7 导出** 和 **Phase 8 导入**；原 Phase 8 远期重编号为 Phase 9+ | 用户希望 Phase 5 完成后就具备单实例上线条件；MySQL 便于后续多实例共享存储；bcrypt 与既有 quiz-backend 经验复用 |
+| 2026-04-23 | Phase 5 关闭（Pre-5A + 5A + 5B + 5B-refactor + 5C + 5C-fix + 5C-UX + 5C-polish，共 8 条 commit）。实施期偏离：单实例锁从 `slidev_lock` 表改为 agent 进程内存对象；新增 Slidev 反代鉴权（`/api/slidev-preview/*` + 非锁持有者 403）防止预览泄露；deck 编辑页标题双击 inline 改名 | 内存锁天然原子 + 绕开循环外键/时区坑；Slidev `:3031` 原生对外暴露是 P5.5 上线前的硬漏洞；UX 细节 |
+| 2026-04-23 | Phase 5 补测轨道关闭（docs + 8 条 commit = 9 条）。env 拆成 development/test/production 三层（dotenv-cli 驱动）；新增 `packages/e2e` workspace（Playwright + chromium）；agent 覆盖率 lines 94.63 / branches 86.15（90/85 门槛过），creator 80.82 / 72.22（75/65 门槛过）；测试数 148 → **262**（agent 208 + creator 49 + E2E 5） | 用户明确要求单测 + 集成测 + E2E 全覆盖；测试 DB 隔离需要 env 分层；覆盖率门槛变为 CI gate 基础 |
