@@ -4,13 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "dotenv -e .env.development.local -e .env.local -- tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "dotenv -e .env.production.local -- node dist/index.js",
     "type-check": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint src test"
+    "test": "dotenv -e .env.test.local -- vitest run",
+    "test:watch": "dotenv -e .env.test.local -- vitest",
+    "lint": "eslint src test",
+    "db:push": "dotenv -e .env.development.local -e .env.local -- drizzle-kit push",
+    "db:push:test": "dotenv -e .env.test.local -- drizzle-kit push"
   },
   "dependencies": {
     "@big-ppt/shared": "workspace:*",
@@ -28,6 +30,7 @@
     "@types/bcrypt": "^6.0.0",
     "@types/http-proxy": "^1.17.17",
     "@types/node": "^22.10.2",
+    "dotenv-cli": "^11.0.0",
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.2.1",
     "tsx": "^4.19.2",

@@ -1,8 +1,11 @@
 import { config } from 'dotenv'
 import { defineConfig } from 'drizzle-kit'
 
-// 优先 .env.local（本地覆盖），再 .env（可选默认）
-config({ path: ['.env.local', '.env'] })
+// 同 src/index.ts 的策略：pnpm db:push / db:push:test 已经用 dotenv-cli 注入；
+// 直接 `pnpm exec drizzle-kit push` 时兜底读 .env.development.local / .env.local
+if (!process.env.DATABASE_URL) {
+  config({ path: ['.env.development.local', '.env.local'] })
+}
 
 if (!process.env.DATABASE_URL) {
   throw new Error(

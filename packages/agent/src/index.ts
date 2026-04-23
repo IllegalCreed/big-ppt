@@ -1,6 +1,11 @@
-// 最先加载 .env.local / .env，保证后续模块能读到 DATABASE_URL / APIKEY_MASTER_KEY 等
+// 环境变量加载策略：
+//   - 正常走 pnpm dev/start 时，dotenv-cli 已经把 .env.{env}.local 注入到 process.env；
+//     此时 DATABASE_URL 已存在，下面的守卫跳过，避免二次加载覆盖。
+//   - 直接跑 `tsx src/index.ts`（非 pnpm 入口）时兜底读本地 .env.development.local / .env.local。
 import { config as loadDotenv } from 'dotenv'
-loadDotenv({ path: ['.env.local', '.env'] })
+if (!process.env.DATABASE_URL) {
+  loadDotenv({ path: ['.env.development.local', '.env.local'] })
+}
 
 import http from 'node:http'
 import httpProxy from 'http-proxy'
