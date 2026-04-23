@@ -11,7 +11,7 @@ const IV_LEN = 12
 const KEY_LEN = 32
 const VERSION = 'v1'
 
-function getMasterKey(): Buffer {
+function defaultGetMasterKey(): Buffer {
   const hex = process.env.APIKEY_MASTER_KEY
   if (!hex) {
     throw new Error(
@@ -24,6 +24,16 @@ function getMasterKey(): Buffer {
     )
   }
   return Buffer.from(hex, 'hex')
+}
+
+// 测试用注入点：默认走环境变量；单测可通过 __setMasterKeyGetterForTesting
+// 传入固定 Buffer，避免污染 process.env
+let _keyGetter: () => Buffer = defaultGetMasterKey
+const getMasterKey = (): Buffer => _keyGetter()
+
+/** @internal 仅供测试使用。传 null 恢复默认 env 读取策略 */
+export function __setMasterKeyGetterForTesting(fn: (() => Buffer) | null): void {
+  _keyGetter = fn ?? defaultGetMasterKey
 }
 
 export function encryptApiKey(plaintext: string): string {

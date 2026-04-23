@@ -74,3 +74,8 @@ export function isHeldBy(sessionId: string): boolean {
   sweepStale()
   return currentLock?.sessionId === sessionId
 }
+
+/** @internal 仅供测试：清掉模块级单例锁，保证每个 test case 独立状态 */
+export function __resetForTesting(): void {
+  currentLock = null
+}
