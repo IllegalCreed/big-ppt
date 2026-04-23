@@ -60,3 +60,11 @@ export function decryptApiKey(blob: string): string {
   const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()])
   return plaintext.toString('utf8')
 }
+
+/**
+ * 判断某字符串是否是本模块生成的 `v1:iv:ct:tag` 密文格式。
+ * 用于向后兼容：老版本的 mcp.json 里 headers value 是明文，迁移时能区分。
+ */
+export function isEncryptedBlob(s: unknown): boolean {
+  return typeof s === 'string' && /^v1:[^:]+:[^:]+:[^:]+$/.test(s)
+}

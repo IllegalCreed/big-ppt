@@ -7,29 +7,60 @@ import { Check, ChevronDown, Copy, Eye, EyeOff } from 'lucide-vue-next'
 const props = defineProps<{ server: McpServerWithStatus; llm: LLMSettings }>()
 const emit = defineEmits<{ update: [patch: UpdateMcpServerRequest] }>()
 
-const bearerFromAuth = (h: string | undefined) =>
-  h?.startsWith('Bearer ') ? h.slice(7) : (h ?? '')
+const REDACTED_VALUE = '***'
 
-const apiKey = ref(bearerFromAuth(props.server.headers.Authorization))
-const reuseLlmKey = ref(
-  apiKey.value !== '' && apiKey.value === props.llm.apiKey && props.server.id.startsWith('zhipu-'),
-)
+/**
+ * 后端 GET /mcp/servers 会把 headers 的 value 脱敏为 `***`（Authorization 值变
+ * `Bearer ***`），避免明文暴露。前端语义：
+ * - input 初始化为空串 + 占位符提示"已设置（留空保留原值）"
+ * - hasExistingKey = 后端告知当前已有非空 key
+ * - applyKey() 发送时：若用户没填且 hasExistingKey，就发 `Bearer ***` → 后端
+ *   识别为"保留旧值"；否则发新值
+ */
+const authHeaderValue = computed(() => props.server.headers.Authorization ?? '')
+const hasExistingKey = computed(() => authHeaderValue.value !== '')
+
+const apiKey = ref('') // 用户当前在 input 里打的新值；空 = 不改
+const reuseLlmKey = ref(false) // 脱敏后无法再自动判断是否等于 LLM key
 const showKey = ref(false)
 const copied = ref(false)
 const expanded = ref(false)
 
 watch(
   () => props.server.headers.Authorization,
-  (v) => (apiKey.value = bearerFromAuth(v)),
+  () => {
+    // 后端刷新（例如保存后重新拉列表），清空本地输入让占位符重新显示
+    apiKey.value = ''
+  },
 )
 
 const canReuse = computed(
   () =>
     props.server.id.startsWith('zhipu-') && props.llm.provider === 'zhipu' && !!props.llm.apiKey,
 )
-const effectiveKey = computed(() =>
-  reuseLlmKey.value && canReuse.value ? props.llm.apiKey : apiKey.value,
-)
+
+/**
+ * 返回要发给后端的 Authorization header 值：
+ * - 勾了"复用 LLM Key" → 直接用 LLM 明文（`Bearer xxx`）
+ * - 用户在 input 里填了新值 → 新值（`Bearer xxx`）
+ * - input 空且后端已有 key → 返回 `***`（整个 value，和后端 GET 脱敏值一致）
+ *   后端识别 value === '***' 且 key 在旧 headers 里 → 保留原值
+ * - input 空且后端没 key → 空串（清空 header）
+ */
+function buildAuthValue(): string {
+  if (reuseLlmKey.value && canReuse.value && props.llm.apiKey) {
+    return `Bearer ${props.llm.apiKey}`
+  }
+  if (apiKey.value !== '') return `Bearer ${apiKey.value}`
+  if (hasExistingKey.value) return REDACTED_VALUE
+  return ''
+}
+
+/** 是否有可用的 key（真的或保留的）供启用按钮判断 */
+const hasUsableKey = computed(() => {
+  if (reuseLlmKey.value && canReuse.value) return !!props.llm.apiKey
+  return apiKey.value !== '' || hasExistingKey.value
+})
 
 const avatarChar = computed(() => {
   const src = props.server.displayName || props.server.id
@@ -66,24 +97,27 @@ const statusText = computed(() => {
 })
 
 function applyKey() {
+  const auth = buildAuthValue()
   emit('update', {
-    headers: effectiveKey.value ? { Authorization: `Bearer ${effectiveKey.value}` } : {},
+    headers: auth ? { Authorization: auth } : {},
   })
 }
 
 function toggleEnabled(v: boolean) {
-  if (v && !effectiveKey.value) {
+  if (v && !hasUsableKey.value) {
     expanded.value = true
     alert('请先填入 API Key 或勾选"复用 LLM Key"')
     return
   }
+  const auth = buildAuthValue()
   emit('update', {
     enabled: v,
-    headers: effectiveKey.value ? { Authorization: `Bearer ${effectiveKey.value}` } : {},
+    headers: auth ? { Authorization: auth } : {},
   })
 }
 
 async function copyKey() {
+  // 用户刚填的新值可复制；后端已存的脱敏值不能复制
   if (!apiKey.value) return
   try {
     await navigator.clipboard.writeText(apiKey.value)
@@ -151,7 +185,7 @@ async function copyKey() {
         <input
           v-model="apiKey"
           :type="showKey ? 'text' : 'password'"
-          placeholder="粘贴此 MCP 的 API Key"
+          :placeholder="hasExistingKey ? '已设置 · 留空保留原值' : '粘贴此 MCP 的 API Key'"
           class="mcp-card__key-input"
           @blur="applyKey"
         />

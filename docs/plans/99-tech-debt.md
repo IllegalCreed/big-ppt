@@ -7,7 +7,7 @@
 | 级别   | 含义                 | 条数                                               |
 | ------ | -------------------- | -------------------------------------------------- |
 | **P1** | Phase 3 关闭前必须清 | 5（全部清除：Phase 3 清 4 条，Phase 4 清 P1-5）                   |
-| **P2** | Phase 4 关闭前必须清 | 4（已清 3：P2-1/P2-2/P2-3；**P2-4 留 Phase 5.5**）                |
+| **P2** | Phase 4 关闭前必须清 | 4（**全部清除**：P2-1/P2-2/P2-3 Phase 4 清；**P2-4 2026-04-23 提前清**） |
 | **P3** | 非阻塞，有机会再清   | 9（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归）    |
 
 ---
@@ -120,15 +120,29 @@
 
 **触发时机**：已于 [09-phase4-edit-iterate.md](09-phase4-edit-iterate.md) Step 3 完成
 
-### P2-4. MCP 凭证明文存 `data/mcp.json`（❌ Phase 5 未清，挪到 Phase 5.5）
+### P2-4. MCP 凭证明文存 `data/mcp.json` ✅（2026-04-23 清）
 
-**位置**：`packages/agent/src/mcp-server-repo/json-file-repo.ts`（有 2 处 `TODO(phase-5): encrypt ... headers before writing` 标记）
+**实际修复**：
+- `JsonFileRepo.persist/load` 里用 `crypto/apikey.ts` 的 AES-256-GCM helper 对
+  headers 的 value 单独加解密：磁盘上 value 变 `v1:iv:ct:tag`，内存里保持明文
+  交给 `mcp-registry` 连 HTTP 用。key 名（`Authorization` / `X-Api-Key`）保留
+  便于运维 grep，但 **value 不会在任何 JSON dump 里出现**
+- 向后兼容：读到非 `v1:` 开头的明文 value 原样接受（适配老 `data/mcp.json`），
+  下次 persist 时自动迁移为密文
+- 单条解密失败降级为空串 + warn，避免整个 MCP 列表无法加载
+- **顺带修一个 Phase 5 遗留漏洞**：`/api/mcp/servers` 没挂 `requireAuth`，
+  未登录也能拿到 headers。改为强制登录，且 GET 响应把 headers value 脱敏为
+  `***`；PATCH 支持 `***` 语义 = 保留旧值（同 llm-settings 空 apiKey 模式）
+- 前端 `MCPCatalogItem.vue`：input 空 + 已有旧 key 时 placeholder
+  提示"已设置 · 留空保留原值"，不再渲染脱敏值到输入框；勾"复用 LLM Key"
+  和用户重新填值两条路径发真值
 
-**影响**：`data/mcp.json` 里的 `Authorization: Bearer <token>` 明文可读。`.gitignore` 防止入库，但本地备份、云同步、grep 日志等场景仍会泄露。Phase 3.5 单机 dev 环境可接受。
+**新增测试**（11 cases）：
+- `mcp-server-repo.test.ts`：3 条（持久化加密 / 兼容旧明文 / 内存仍明文）
+- `routes-mcp.test.ts`：7 条（未登录 401 × 2 / GET 脱敏 × 2 / PATCH *** 保留 /
+  覆盖旧值 / 磁盘无明文 / 兼容老文件）
 
-**修复方案**：Phase 5 引入 MySQL 时**未**顺带做（Phase 5 优先级放在 auth + deck CRUD + 单实例锁 + 补测轨道，MCP 迁仓成本超出预算）。现行计划：Phase 5.5 部署前把 MCP 配置从 `JsonFileRepo` 迁到 DB，复用 `crypto/apikey.ts` 已有的 AES-256-GCM helper（[packages/agent/src/crypto/apikey.ts](../../packages/agent/src/crypto/apikey.ts)）。
-
-**触发时机**：**Phase 5.5 部署前必须清**。生产环境 `data/mcp.json` 明文是真实泄漏面。
+**触发时机**：已于 2026-04-23 提前于 Phase 5.5 清完
 
 ---
 
@@ -277,3 +291,4 @@
 | 2026-04-22 | Phase 3.6 完成：creator design tokens + DESIGN.md 落地，Lumideck · 幻光千叶 品牌上线；新增 P3-8（字体自托管）+ P3-9（视觉回归）；P3 条数 7→9；注：P2-3（slidev templates tokens）独立于 creator，仍保留待 Phase 4 P1-5 清除 | 项目组 |
 | 2026-04-22 | Phase 4 完成：P1-5 / P2-1 / P2-2 / P2-3 / P3-6 清除；slides.md 800→90 行；四件套工具 + /undo /redo 轮次聚合 + 单页预览定位；工具层 integer 宽容 coerce；creator lint 0 errors / 0 warnings | 项目组 |
 | 2026-04-23 | Phase 5 完成：P3-2 清除（localStorage API Key → 后端 AES-256-GCM 加密存 `users.llm_settings`）；P2-4 MCP 凭证加密**未**在 Phase 5 做，挪到 Phase 5.5 部署前必须清；Phase 5 补测轨道落地后总测试数 262（agent 208 + creator 49 + E2E 5）、coverage 门槛 agent 90/85 + creator 75/65 都过 | 项目组 |
+| 2026-04-23 | **P2-4 提前清完**：JsonFileRepo 落盘时用 AES-256-GCM 加密 headers value（复用 `crypto/apikey.ts`），`/api/mcp/servers` 上 requireAuth + GET 脱敏 value 为 `***` + PATCH 支持 `***` 保留旧值语义；前端 `MCPCatalogItem.vue` 适配脱敏 UI；顺带修了 Phase 5 遗留的 "未登录可读 MCP headers" 漏洞；测试 +11 = 268；P2 条数 3/4 → 4/4 | 项目组 |

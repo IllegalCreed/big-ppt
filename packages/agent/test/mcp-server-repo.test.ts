@@ -65,7 +65,7 @@ describe('JsonFileRepo', () => {
     ).rejects.toThrow(/already exists/i)
   })
 
-  it('update 合并 patch 并返回新配置', async () => {
+  it('update 合并 patch 并返回新配置（内存中仍是明文）', async () => {
     const repo = new JsonFileRepo(tmpFile)
     const updated = await repo.update('zhipu-web-search', {
       enabled: true,
@@ -74,6 +74,53 @@ describe('JsonFileRepo', () => {
     expect(updated.enabled).toBe(true)
     expect(updated.headers.Authorization).toBe('Bearer abc')
     expect((await repo.get('zhipu-web-search'))!.enabled).toBe(true)
+    // 再查一次确认 list/get 返回的仍是明文（内存一致）
+    expect((await repo.get('zhipu-web-search'))!.headers.Authorization).toBe('Bearer abc')
+  })
+
+  it('持久化：headers value 在磁盘上被 AES-GCM 加密（v1: 前缀）', async () => {
+    const repo = new JsonFileRepo(tmpFile)
+    await repo.update('zhipu-web-search', {
+      headers: { Authorization: 'Bearer plaintext-secret-xyz' },
+    })
+    const onDisk = JSON.parse(fs.readFileSync(tmpFile, 'utf-8'))
+    const entry = onDisk.find((e: { id: string }) => e.id === 'zhipu-web-search')
+    expect(entry.headers.Authorization).not.toContain('plaintext-secret-xyz')
+    expect(entry.headers.Authorization.startsWith('v1:')).toBe(true)
+    // 整个文件也应不含明文
+    expect(fs.readFileSync(tmpFile, 'utf-8')).not.toContain('plaintext-secret-xyz')
+  })
+
+  it('兼容旧版明文文件：读时正常解出，下次写盘自动变密文', async () => {
+    // 手写旧版文件
+    fs.writeFileSync(
+      tmpFile,
+      JSON.stringify(
+        [
+          {
+            id: 'legacy',
+            displayName: 'L',
+            description: '',
+            url: 'https://l.example/mcp',
+            headers: { Authorization: 'Bearer legacy-plain' },
+            enabled: false,
+            preset: false,
+          },
+        ],
+        null,
+        2,
+      ),
+    )
+    const repo = new JsonFileRepo(tmpFile)
+    // list 能拿到明文（兼容读）
+    const list = await repo.list()
+    expect(list.find((c) => c.id === 'legacy')!.headers.Authorization).toBe('Bearer legacy-plain')
+    // 触发一次写盘
+    await repo.update('legacy', { enabled: true })
+    const onDisk = JSON.parse(fs.readFileSync(tmpFile, 'utf-8'))
+    const entry = onDisk.find((e: { id: string }) => e.id === 'legacy')
+    expect(entry.headers.Authorization.startsWith('v1:')).toBe(true)
+    expect(fs.readFileSync(tmpFile, 'utf-8')).not.toContain('legacy-plain')
   })
 
   it('update 不存在的 id 抛错', async () => {
