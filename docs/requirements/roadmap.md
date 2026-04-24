@@ -248,37 +248,49 @@
 
 ---
 
-## Phase 7：第二套模板内容 + UI
+## Phase 7：A 模板重命名 + B 模板内容 + 切换 UI
 
-**目标**：基于 Phase 6 架构，交付第二套视觉模板 B 及完整前端选择/切换 UI，让用户在建 deck 时可选风格、在编辑过程中可切换。
+**目标**：基于 Phase 6 架构完成三件事：(1) 把 Phase 6 交付的 A 模板从临时通用 id `company-standard` 重命名为真实所属公司 id `beitou-standard`（北投集团汇报模板）；(2) 交付第二家公司的模板 `jingyeda-standard`（竞业达汇报模板）；(3) 落地前端新建 deck 选择 + 编辑页切换完整 UI。
 
-**待决策**（Phase 7 启动时 brainstorm，限时 1-2 天）：B 模板视觉风格（建议与 company-standard 强对比 — 极简学术风 / 深色活力风 / 杂志编辑风任选）
+**命名约定**：`<公司 slug>-<用途>`（全拼音 + 小写 slug）。为同一公司未来的"festival / product-launch"等场景扩展预留对称结构。
 
-**交付物**：
+**交付物**（4 子步，串行增量，每步独立 commit + 测试）：
 
-- **B 模板设计**：DESIGN.md / tokens 规范 / logo / 视觉素材 / 缩略图
-- **B 模板实现**：
-  - `templates/<b-id>/tokens.css`
-  - layouts（数量自由，允许 5-9 个，与 A 模板不强求一致）
+- **7A：A 模板重命名 `company-standard` → `beitou-standard`**
+  - 文件系统：`packages/slidev/templates/company-standard/` 目录改名为 `beitou-standard/`（用 `git mv` 保留历史），下属子文件仅 `manifest.json` 需要改内容，其余文件（tokens.css / layout md / logo.png / DESIGN.md / README.md 等）内容保持不变
+  - `manifest.json`：`id` → `"beitou-standard"`，`name` → `"北投集团汇报模板"`，`description` / `promptPersona` 中"公司标准模板"字样同步更新
+  - 代码 + 测试：全局 rename 所有字符串硬引用（约 98 处），含资源 URL `/templates/company-standard/...` → `/templates/beitou-standard/...`
+  - DB schema：`decks.template_id` DEFAULT 从 `'company-standard'` 改为 `'beitou-standard'`（`drizzle-kit push`）
+  - DB 数据迁移：`UPDATE decks SET template_id='beitou-standard' WHERE template_id='company-standard'`
+  - **不保留 legacy alias**，硬切；`deck_versions.message` 里历史字串 "从模板 company-standard 初始化" **保持不动**（append-only 历史事实）
+
+- **7B：B 模板 `jingyeda-standard` 设计 + 实现**
+  - 启动前限时 brainstorm（1-2 天）敲定视觉风格（建议与 `beitou-standard` 强对比——极简学术风 / 深色活力风 / 杂志编辑风任选）
+  - `templates/jingyeda-standard/` 目录新建：`DESIGN.md` / `tokens.css` / logo 素材 / 缩略图
+  - layouts（数量自由 5-9 个，与 A 模板不强求一致）
   - L* 内部组件（按需）
-  - `manifest.json` 填完整
-- **前端 UI**：
+  - `manifest.json` 完整填写（含 `starterSlidesPath` 指向 3 页骨架 `starter.md`）
+
+- **7C：前端选择 / 切换 UI**
   - 新建 deck 弹窗：命名 input + 模板选择器（缩略图卡片 + 描述 + hover preview）
   - 编辑页模板切换入口（顶栏按钮 / 菜单项）
   - Confirm dialog：强调"内容将被 AI 重写、当前版本自动快照、失败可 /undo"
   - 重写进度指示（loading + 预计耗时）
   - 结果页：成功 toast / 失败错误展示 / /undo 入口直达
-- **E2E 场景**（3 条新 spec）：
-  - 新建 → 选 B 模板 → deck 初始化 → 编辑器渲染
-  - 旧 deck 切 B → confirm → AI 重写 → 内容合规
-  - 切模板 → /undo → 回到旧模板 + 旧内容
+
+- **7D：E2E 场景（3 条新 spec）**
+  - 新建 → 选 `jingyeda-standard` → deck 初始化 → 编辑器渲染
+  - 旧 deck（`beitou-standard`）切换到 `jingyeda-standard` → confirm → AI 重写 → 内容合规
+  - 切模板后 /undo → 回到旧模板 + 旧内容
 
 **验收条件**：
 
-- [ ] `pnpm e2e` 全绿
+- [ ] **7A 零回归**：rename 后 `pnpm test` 全绿，全仓 `rg "company-standard"` 仅剩 `deck_versions.message` 里的历史字串
+- [ ] **7A DB 迁移幂等**：`decks` 表所有 `company-standard` 记录均迁到 `beitou-standard`，schema DEFAULT 同步更新
+- [ ] `pnpm e2e` 全绿（原 5 条 + 新 3 条 = 8 条）
 - [ ] 两套模板双向切换可逆（/undo 回得去 + 无数据丢失）
 - [ ] 新建弹窗缩略图加载正常（首次 < 1s，懒加载）
-- [ ] 总测试数 268 → ~290
+- [ ] 总测试数 335 → ~360
 
 **状态**：待开始
 
@@ -289,6 +301,7 @@
 - ❌ 新增第三套模板
 - ❌ 用户自定义模板（永久不做或留 Phase 14+）
 - ❌ 模板市场 / 分享
+- ❌ 为旧 id `company-standard` 保留兼容别名（硬切）
 
 ---
 
@@ -587,3 +600,4 @@
 | 2026-04-23 | **Post-Phase 5 路线图重规划**：部署前插入 Phase 6（模板架构）/ Phase 7（第二套模板+UI）/ Phase 8（依赖全量升级）/ Phase 9（安全 Audit L3）四个产出周期。原 Phase 5.5 部署下沉为 **Phase 10**；原 Phase 6（多实例）→ Phase 11；原 Phase 7（导出）→ Phase 12；原 Phase 8（导入）→ Phase 13；原 Phase 9+（远期）→ Phase 14+。Phase 5 与之后所有 Phase 的"不做什么"/"依赖"编号同步更新 | 用户要求部署前做完模板扩展（第二套模板 + 切换 UI）与全量安全 review（含依赖升级为前置）。Gate 严格串行：6→7→8→9→10 不可并行（除 6 尾段可起草 7 设计稿） |
 | 2026-04-24 | Phase 6 实施计划落地：[plan 12](../plans/12-phase6-template-architecture.md) 拆 6A（manifest + starter 骨架）/ 6B（decks.template_id + createDeck 加载 starter）/ 6C（prompt 迁 agent + A/B contract test）/ 6D（switch-template 迁移流水）四步增量；manifest 新增 `starterSlidesPath`，新建 deck 即带 3 页骨架预览（封面「请填写标题」/ 内容页占位 / 封底），不再空白；`theme_id` 和 `template_id` 并存不合并；不加 feature flag | 用户确认部署前先建完整模板架构；seed 骨架痛点（新建 deck 右侧预览空白）纳入 6A/6B 一并解决；theme variant 语义留给未来 |
 | 2026-04-24 | Phase 6 关闭（4 条 commit：6A/6B/6C/6D）。实施期偏离：无重大偏离；`switch_template` 工具加入 tool registry（tools 数 9→10），LLM 重写由 `RewriteFn` 可注入 DI 替换便于单测。测试 262+6(6A) → 268+6(6B) → 274+17(6C) → 291+24(6D) ＝ **281 条 agent 本底**（281 + creator 49 + E2E 5 = 335 总数）；coverage lines 94.44 / branches 85.75 维持 90/85 门槛 | 按 plan 12 拆四步完成，无需偏离；RewriteFn DI 让 LLM 不可用场景下也能完整测试状态机 |
+| 2026-04-24 | **Phase 7 范围调整**：拆为 **7A / 7B / 7C / 7D** 四子步。7A = A 模板从临时 id `company-standard` 重命名为真实公司 id `beitou-standard`（北投集团），硬切无 alias + DB UPDATE 迁移 + schema DEFAULT 改名；7B = 第二家公司竞业达模板 `jingyeda-standard`；7C = 前端选择/切换 UI；7D = 3 条新 E2E spec。**命名约定确立**：`<公司 slug>-<用途>`（全拼音小写），预留同一公司多套场景扩展空间 | A 模板原 id `company-standard` 过于通用，第二套模板即将引入需要对称命名；硬切避免长期 legacy 债；Phase 7 开始前定死命名约定防止 B 模板命名时再返工 |
