@@ -69,7 +69,7 @@ afterEach(() => {
 })
 
 describe('registerLocalTools', () => {
-  it('注册 9 个本地工具（含四件套）', () => {
+  it('注册 10 个本地工具（含四件套 + switch_template）', () => {
     expect(hasTool('read_slides')).toBe(true)
     expect(hasTool('write_slides')).toBe(true)
     expect(hasTool('edit_slides')).toBe(true)
@@ -79,7 +79,8 @@ describe('registerLocalTools', () => {
     expect(hasTool('reorder_slides')).toBe(true)
     expect(hasTool('list_templates')).toBe(true)
     expect(hasTool('read_template')).toBe(true)
-    expect(listTools()).toHaveLength(9)
+    expect(hasTool('switch_template')).toBe(true)
+    expect(listTools()).toHaveLength(10)
   })
 
   it('read_slides 返回 slides.md 原文', async () => {

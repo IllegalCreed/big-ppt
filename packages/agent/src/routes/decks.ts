@@ -9,10 +9,28 @@ import { and, desc, eq, inArray } from 'drizzle-orm'
 import { getDb, decks, deckVersions, deckChats } from '../db/index.js'
 import type { AuthVars } from '../middleware/auth.js'
 import { getManifest, readStarter } from '../templates/registry.js'
+import {
+  createJob,
+  getJob,
+  runSwitchJob,
+  validateSwitchTarget,
+  type RewriteFn,
+} from '../template-switch-job.js'
+import { rewriteForTemplate } from '../prompts/rewriteForTemplate.js'
+import { getHolder } from '../slidev-lock.js'
 
 type UserVars = AuthVars
 
 export const decksRoute = new Hono<{ Variables: UserVars }>()
+
+// Phase 6D：switch-template 的 LLM 重写函数，生产走 rewriteForTemplate，测试可注入 mock
+let rewriteFnOverride: RewriteFn | null = null
+export function __setRewriteFnForTesting(fn: RewriteFn | null): void {
+  rewriteFnOverride = fn
+}
+function currentRewriteFn(): RewriteFn {
+  return rewriteFnOverride ?? rewriteForTemplate
+}
 
 // ─── 辅助：查当前用户的 deck，附带 ownership 检查 ───────────────────────
 
@@ -255,6 +273,65 @@ decksRoute.post('/decks/:id{[0-9]+}/restore/:vid{[0-9]+}', async (c) => {
   }
 
   return c.json({ version })
+})
+
+// ─── Template Switch ───────────────────────────────────────────────────
+
+/**
+ * 发起模板切换：校验通过后创建 job 并异步跑流水，返回 jobId 供前端轮询。
+ * 要求 body `{ targetTemplateId, confirmed: true }`，且 deck 当前若被他人占用 Slidev 则 409。
+ */
+decksRoute.post('/decks/:id{[0-9]+}/switch-template', async (c) => {
+  const user = c.get('user')
+  if (!user) return c.json({ error: 'unauthorized' }, 401)
+
+  const deckId = Number(c.req.param('id'))
+  const check = await getOwnedDeck(user.id, deckId)
+  if (!check.ok) return c.json({ error: check.error }, check.status)
+
+  type Body = { targetTemplateId?: string; confirmed?: boolean }
+  const body = await c.req.json<Body>().catch((): Body => ({}))
+  if (body.confirmed !== true) {
+    return c.json({ error: '必须带 confirmed=true 才能切换模板' }, 400)
+  }
+
+  const targetTemplateId = body.targetTemplateId?.trim() ?? ''
+  const validation = validateSwitchTarget(check.deck.templateId, targetTemplateId)
+  if (!validation.ok) return c.json({ error: validation.error }, validation.status)
+
+  // 单实例锁冲突：有人占用此 deck 且不是当前用户 → 拒绝（避免跟 mirror/活跃编辑竞态）
+  const holder = getHolder()
+  if (holder && holder.deckId === deckId && holder.userId !== user.id) {
+    return c.json(
+      {
+        error: '该 deck 正被占用',
+        holder: { userId: holder.userId, email: holder.userEmail },
+      },
+      409,
+    )
+  }
+
+  const job = createJob({
+    deckId,
+    userId: user.id,
+    from: check.deck.templateId,
+    to: targetTemplateId,
+  })
+
+  // 异步执行流水：route 立即返回 jobId，前端轮询 GET /switch-template-jobs/:id
+  void runSwitchJob(job.id, currentRewriteFn())
+
+  return c.json({ jobId: job.id, state: job.state })
+})
+
+decksRoute.get('/switch-template-jobs/:jobId', (c) => {
+  const user = c.get('user')
+  if (!user) return c.json({ error: 'unauthorized' }, 401)
+  const jobId = c.req.param('jobId')
+  const job = getJob(jobId)
+  if (!job) return c.json({ error: 'job 不存在' }, 404)
+  if (job.userId !== user.id) return c.json({ error: '无权访问该 job' }, 403)
+  return c.json({ job })
 })
 
 // ─── Chats ──────────────────────────────────────────────────────────────

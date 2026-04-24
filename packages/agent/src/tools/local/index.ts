@@ -8,6 +8,7 @@ import { deleteSlideTool } from './delete-slide.js'
 import { reorderSlidesTool } from './reorder-slides.js'
 import { listTemplatesTool } from './list-templates.js'
 import { readTemplateTool } from './read-template.js'
+import { switchTemplateTool } from './switch-template.js'
 
 export function registerLocalTools(): void {
   register(readSlidesTool)
@@ -19,4 +20,5 @@ export function registerLocalTools(): void {
   register(reorderSlidesTool)
   register(listTemplatesTool)
   register(readTemplateTool)
+  register(switchTemplateTool)
 }

@@ -43,11 +43,11 @@ describe('GET /api/tools', () => {
     expect(json).toEqual({ success: true, tools: [] })
   })
 
-  it('注册本地工具后返回 9 项（含四件套）', async () => {
+  it('注册本地工具后返回 10 项（含四件套 + switch_template）', async () => {
     registerLocalTools()
     const res = await buildApp().request('/api/tools')
     const json = await res.json()
-    expect(json.tools).toHaveLength(9)
+    expect(json.tools).toHaveLength(10)
     expect(json.tools.map((t: any) => t.function.name).sort()).toEqual([
       'create_slide',
       'delete_slide',
@@ -56,6 +56,7 @@ describe('GET /api/tools', () => {
       'read_slides',
       'read_template',
       'reorder_slides',
+      'switch_template',
       'update_slide',
       'write_slides',
     ])

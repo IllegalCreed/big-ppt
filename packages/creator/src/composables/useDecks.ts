@@ -62,6 +62,27 @@ export type ActivateConflict = {
   holder: LockHolderWire
 }
 
+export type SwitchJobState =
+  | 'pending'
+  | 'snapshotting'
+  | 'migrating'
+  | 'success'
+  | 'failed'
+
+export type SwitchJobInfo = {
+  id: string
+  deckId: number
+  userId: number
+  from: string
+  to: string
+  state: SwitchJobState
+  error?: string
+  startedAt: string
+  finishedAt?: string
+  snapshotVersionId?: number
+  newVersionId?: number
+}
+
 export function useDecks() {
   async function listDecks() {
     const res = await api.get<{ decks: Deck[] }>('/api/decks')
@@ -110,6 +131,17 @@ export function useDecks() {
     await api.post(`/api/decks/${id}/chats`, payload)
   }
 
+  async function switchTemplate(deckId: number, targetTemplateId: string) {
+    return api.post<{ jobId: string; state: SwitchJobState }>(
+      `/api/decks/${deckId}/switch-template`,
+      { targetTemplateId, confirmed: true },
+    )
+  }
+
+  async function getSwitchTemplateJob(jobId: string) {
+    return api.get<{ job: SwitchJobInfo }>(`/api/switch-template-jobs/${jobId}`)
+  }
+
   return {
     listDecks,
     getDeck,
@@ -120,6 +152,8 @@ export function useDecks() {
     restoreVersion,
     listChats,
     appendChat,
+    switchTemplate,
+    getSwitchTemplateJob,
   }
 }
 
