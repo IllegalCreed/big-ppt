@@ -9,6 +9,7 @@
 > - Phase 4 编辑与迭代：[docs/plans/09-phase4-edit-iterate.md](../plans/09-phase4-edit-iterate.md)
 > - Phase 5 用户系统+Deck+单实例锁：[docs/plans/10-phase5-user-deck-versions.md](../plans/10-phase5-user-deck-versions.md)
 > - Phase 5 补测轨道（env 分层+单元/集成/E2E+coverage）：[docs/plans/11-phase5-tests-and-env-split.md](../plans/11-phase5-tests-and-env-split.md)
+> - Phase 6 模板系统架构：[docs/plans/12-phase6-template-architecture.md](../plans/12-phase6-template-architecture.md)
 > - 技术债：[docs/plans/99-tech-debt.md](../plans/99-tech-debt.md)
 
 ---
@@ -202,14 +203,14 @@
 
 ## Phase 6：模板系统架构
 
-**目标**：扩展模板体系从"硬编码单模板"升级为"可扩展多模板 + 动态 prompt 拼装"。建立 Template Manifest 规范，落地 deck → template 关联、切换 API、AI 内容迁移流水，**为 Phase 7 交付第二套模板铺路**。
+**目标**：扩展模板体系从"硬编码单模板"升级为"可扩展多模板 + 动态 prompt 拼装"。建立 Template Manifest 规范，落地 deck → template 关联、切换 API、AI 内容迁移流水，**为 Phase 7 交付第二套模板铺路**。**实施计划见 [plan 12](../plans/12-phase6-template-architecture.md)**。
 
 **交付物**：
 
 - **Template Manifest 规范** `templates/<id>/manifest.json`：
-  - `id` / `name` / `description` / `thumbnail` / `logos` / `prompt_persona`
+  - `id` / `name` / `description` / `thumbnail` / `logos` / `prompt_persona` / `starterSlidesPath`
   - `layouts[]`：`name` / `description` / `frontmatter_schema`（JSON Schema）/ `body_guidance`
-- **company-standard 回填 manifest.json**（回填现有模板，零行为变化）
+- **company-standard 回填 manifest.json** + **3 页 starter.md 骨架**（封面「请填写标题」/ 内容页占位 / 封底致谢）—— 新建 deck 即带骨架预览，不再空白
 - **DB 迁移**：`decks` 表加 `template_id` 字段，老 deck 默认 `company-standard`
 - **后端 API**：
   - `GET /api/templates` — 返回所有 manifest（升级原 `/api/list-templates`）
@@ -229,6 +230,7 @@
 **验收条件**：
 
 - [ ] `company-standard` 挂 manifest 后 `pnpm test` 全绿（零回归）
+- [ ] **新建 deck 立即有 3 页骨架可预览**（mainTitle 占位「请填写标题」等），不再空白
 - [ ] `decks.template_id` 迁移脚本跑完，老 deck 均默认 company-standard
 - [ ] **Prompt A/B contract test**：锁 ≥10 条典型用户指令（create/update/delete/reorder 各 2 条 + edit_slides 2 条），切换前后同一 deck 同指令 AI 行为等价（不回归既有编辑能力）
 - [ ] `switch_template` API 单测：未 confirm 拒绝 / 跨用户 403 / job 状态机完整 / 失败回滚
@@ -583,3 +585,4 @@
 | 2026-04-23 | Phase 5 补测轨道关闭（docs + 8 条 commit = 9 条）。env 拆成 development/test/production 三层（dotenv-cli 驱动）；新增 `packages/e2e` workspace（Playwright + chromium）；agent 覆盖率 lines 94.63 / branches 86.15（90/85 门槛过），creator 80.82 / 72.22（75/65 门槛过）；测试数 148 → **262**（agent 208 + creator 49 + E2E 5） | 用户明确要求单测 + 集成测 + E2E 全覆盖；测试 DB 隔离需要 env 分层；覆盖率门槛变为 CI gate 基础 |
 | 2026-04-23 | P2-4 提前清：`JsonFileRepo` 用 AES-256-GCM 加密 `data/mcp.json` 里的 headers value；`/api/mcp/servers` 补 `requireAuth`（修 Phase 5 遗留未登录读 token 漏洞）+ GET 脱敏 + PATCH 支持 `***` 保留旧值；前端 `MCPCatalogItem.vue` 适配。测试 262 → 268 | 用户要求 Phase 5.5 部署前清技术债；兼顾扫出的真实安全漏洞 |
 | 2026-04-23 | **Post-Phase 5 路线图重规划**：部署前插入 Phase 6（模板架构）/ Phase 7（第二套模板+UI）/ Phase 8（依赖全量升级）/ Phase 9（安全 Audit L3）四个产出周期。原 Phase 5.5 部署下沉为 **Phase 10**；原 Phase 6（多实例）→ Phase 11；原 Phase 7（导出）→ Phase 12；原 Phase 8（导入）→ Phase 13；原 Phase 9+（远期）→ Phase 14+。Phase 5 与之后所有 Phase 的"不做什么"/"依赖"编号同步更新 | 用户要求部署前做完模板扩展（第二套模板 + 切换 UI）与全量安全 review（含依赖升级为前置）。Gate 严格串行：6→7→8→9→10 不可并行（除 6 尾段可起草 7 设计稿） |
+| 2026-04-24 | Phase 6 实施计划落地：[plan 12](../plans/12-phase6-template-architecture.md) 拆 6A（manifest + starter 骨架）/ 6B（decks.template_id + createDeck 加载 starter）/ 6C（prompt 迁 agent + A/B contract test）/ 6D（switch-template 迁移流水）四步增量；manifest 新增 `starterSlidesPath`，新建 deck 即带 3 页骨架预览（封面「请填写标题」/ 内容页占位 / 封底），不再空白；`theme_id` 和 `template_id` 并存不合并；不加 feature flag | 用户确认部署前先建完整模板架构；seed 骨架痛点（新建 deck 右侧预览空白）纳入 6A/6B 一并解决；theme variant 语义留给未来 |
