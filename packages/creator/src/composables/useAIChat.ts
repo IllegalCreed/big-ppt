@@ -17,10 +17,12 @@ import { useSlideStore } from './useSlideStore'
 
 /**
  * 由 DeckEditorCanvas 通过 provide() 注入。useAIChat 在 setup 时 inject 拿到：
+ * - `templateId`: deck 绑定的模板 id，用于按需从 agent 拉 system prompt（Phase 6C 起）
  * - `initialHistory`: deck_chats 里 user/assistant 消息，页面打开时 prefill 到气泡
  * - `persistChat`: 每次用户发言 / assistant 最终回复 / 工具结果，都写回 deck_chats
  */
 export type DeckChatContext = {
+  templateId: string
   initialHistory: ChatBubble[]
   persistChat: (role: 'user' | 'assistant' | 'tool', content: string, toolCallId?: string) => Promise<void>
 }
@@ -325,7 +327,22 @@ export function useAIChat() {
   // 注意：恢复 deck 时只 prefill UI 气泡不注入 LLM 上下文 —— 旧 tool_call 会跟
   // tool_call_id 不匹配，LLM 可能幻觉。新对话从空上下文开始，AI 遇到不确定的
   // 通过 read_slides 等工具重新探测当前状态。
-  const messages = ref<ChatMessage[]>([{ role: 'system', content: buildSystemPrompt() }])
+  //
+  // Phase 6C：system prompt 构造迁到 agent（manifest 驱动）。这里先留空，
+  // 首次 sendMessage / 恢复后的下一次 sendMessage 都会 lazy 拉一次填入 index 0。
+  const messages = ref<ChatMessage[]>([])
+  const templateId = deckCtx?.templateId ?? 'company-standard'
+
+  async function ensureSystemPrompt(): Promise<void> {
+    const first = messages.value[0]
+    if (first && first.role === 'system' && first.content) return
+    const prompt = await buildSystemPrompt(templateId)
+    if (messages.value[0]?.role === 'system') {
+      messages.value[0] = { role: 'system', content: prompt }
+    } else {
+      messages.value.unshift({ role: 'system', content: prompt })
+    }
+  }
 
   // 展示在聊天 UI 的消息（只含 user + assistant 文字）
   const chatMessages = ref<ChatBubble[]>(deckCtx ? [...deckCtx.initialHistory] : [])
@@ -352,6 +369,17 @@ export function useAIChat() {
       chatMessages.value.push({
         role: 'assistant',
         content: '尚未配置 LLM API Key，请点击右上角 ⚙️ 设置中填写。',
+      })
+      return
+    }
+
+    // Phase 6C：保证 messages[0] 是 manifest 驱动的最新 system prompt
+    try {
+      await ensureSystemPrompt()
+    } catch (err) {
+      chatMessages.value.push({
+        role: 'assistant',
+        content: `加载 system prompt 失败：${(err as Error).message}`,
       })
       return
     }
@@ -638,7 +666,8 @@ export function useAIChat() {
   }
 
   function clearHistory() {
-    messages.value = [{ role: 'system', content: buildSystemPrompt() }]
+    // 留空，下次 sendMessage 时 ensureSystemPrompt 会按当前 templateId 重新拉
+    messages.value = []
     chatMessages.value = []
     status.value = 'idle'
     statusText.value = ''

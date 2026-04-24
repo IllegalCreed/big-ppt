@@ -95,6 +95,7 @@ function cancelEditTitle() {
 // ── Chat 上下文：provide 时先给空数组，等 listChats 返回后就地 mutate。
 //    ChatPanel 由 v-if="historyLoaded" 延迟挂载，inject 时一定能看到填好的数组。
 const chatCtx: DeckChatContext = {
+  templateId: props.deck.templateId,
   initialHistory: [],
   persistChat: async (role, content, toolCallId) => {
     await appendChat(props.deck.id, { role, content, toolCallId })

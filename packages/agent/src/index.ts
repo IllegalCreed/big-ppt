@@ -15,6 +15,7 @@ import { getPaths } from './workspace.js'
 import { llm } from './routes/llm.js'
 import { slides } from './routes/slides.js'
 import { templates } from './routes/templates.js'
+import { promptsRoute } from './routes/prompts.js'
 import { log } from './routes/log.js'
 import { tools as toolsRoute } from './routes/tools.js'
 import { mcp as mcpRoute } from './routes/mcp.js'
@@ -58,6 +59,7 @@ app.route('/api', lockRoute)
 app.route('/api/llm', llm)
 app.route('/api', slides)
 app.route('/api', templates)
+app.route('/api', promptsRoute)
 app.route('/api', log)
 app.route('/api', toolsRoute)
 app.route('/api', mcpRoute)
