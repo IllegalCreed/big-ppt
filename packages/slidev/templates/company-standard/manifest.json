@@ -1,0 +1,117 @@
+{
+  "id": "company-standard",
+  "name": "公司标准模板",
+  "description": "商务正式风格，品牌红（#d00d14）主色 + 无衬线字体，适合业务汇报、OKR 共识与发布会。",
+  "thumbnail": "cover.png",
+  "logos": {
+    "primary": "logo.png",
+    "mark": "logo-mark.png",
+    "text": "logo-text.png"
+  },
+  "promptPersona": "你为使用「公司标准模板」的用户服务，请保持商务正式的叙述语气。视觉由 layout + tokens 决定，不要在 slides.md 中写 <style>、硬编码颜色或字体。AI 只负责结构与内容。",
+  "starterSlidesPath": "starter.md",
+  "layouts": [
+    {
+      "name": "cover",
+      "description": "封面页（大标题 + 副标题 + 汇报人 + 日期，适合全场开篇）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["mainTitle"],
+        "properties": {
+          "mainTitle": { "type": "string", "description": "主标题，大字白色，约 52px" },
+          "subtitle": { "type": "string", "description": "副标题（可选）" },
+          "reporter": { "type": "string", "description": "汇报人或部门（可选）" },
+          "date": { "type": "string", "description": "日期（可选，如 2026/04/24）" }
+        }
+      }
+    },
+    {
+      "name": "toc",
+      "description": "目录页（全目录 / 章节导航页两用）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "目录项数组，如 items: [\"Q1 关键目标\", \"数据背景\"]",
+            "items": { "type": "string" }
+          },
+          "active": {
+            "type": "number",
+            "description": "1-based 当前高亮项；省略则全部高亮（总目录）；设置则作为章节导航页"
+          }
+        }
+      }
+    },
+    {
+      "name": "content",
+      "description": "纯文字页（标题 + 正文要点）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["heading"],
+        "properties": {
+          "heading": { "type": "string", "description": "页标题，红色 40px" }
+        }
+      },
+      "bodyGuidance": "body 是 markdown，可用 **加粗**（会染成品牌红），● 开头的要点列表，或 markdown 列表语法。"
+    },
+    {
+      "name": "two-col",
+      "description": "两栏对比页（左右并列，常用于前后对比 / 业务与技术 / A 与 B）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["heading"],
+        "properties": {
+          "heading": { "type": "string", "description": "页标题" },
+          "leftTitle": { "type": "string", "description": "左栏小标题" },
+          "rightTitle": { "type": "string", "description": "右栏小标题" }
+        }
+      },
+      "bodyGuidance": "body 必须用 Slidev 命名 slot：`::left::` 分隔左栏，`::right::` 分隔右栏。两栏内部正文用 markdown 要点列表。"
+    },
+    {
+      "name": "data",
+      "description": "数据页（左图右指标卡，适合核心数字 + 图表对照）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["heading", "metrics"],
+        "properties": {
+          "heading": { "type": "string", "description": "页标题" },
+          "metrics": {
+            "type": "array",
+            "description": "指标卡数组 inline JSON，如 metrics: [{ \"value\": \"629\", \"unit\": \"点\", \"label\": \"年度交付总量\" }]",
+            "items": { "type": "object" }
+          }
+        }
+      },
+      "bodyGuidance": "body 放 chart 组件，可选：<BarChart :labels=\"[...]\" :values=\"[...]\" label=\"...\" /> 或 <LineChart :labels=\"[...]\" :values=\"[...]\" label=\"...\" />。"
+    },
+    {
+      "name": "image-content",
+      "description": "图文页（左图右文，适合产品截图 / 案例展示）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["heading", "image"],
+        "properties": {
+          "heading": { "type": "string", "description": "页标题" },
+          "image": { "type": "string", "description": "图片 URL（推荐 /templates/company-standard/ 下的白名单资源）" },
+          "textTitle": { "type": "string", "description": "文字区小标题" }
+        }
+      },
+      "bodyGuidance": "body 是文字正文，markdown 语法。"
+    },
+    {
+      "name": "back-cover",
+      "description": "封底致谢页（白字于红色渐变块）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "description": "结束语（白字于红色渐变块内）" },
+          "date": { "type": "string", "description": "底部日期（可选）" }
+        }
+      }
+    }
+  ]
+}

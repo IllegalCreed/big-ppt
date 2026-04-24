@@ -5,21 +5,54 @@ import path from 'node:path'
 import { __resetRegistry, getTool, hasTool, listTools } from '../src/tools/registry.js'
 import { registerLocalTools } from '../src/tools/local/index.js'
 import { __resetPathsForTesting } from '../src/workspace.js'
+import { __resetTemplateRegistryForTesting } from '../src/templates/registry.js'
 
 let tmpRoot: string
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-local-'))
   const slidevDir = path.join(tmpRoot, 'packages/slidev')
-  const templatesDir = path.join(slidevDir, 'templates/company-standard')
+  const templatesRoot = path.join(slidevDir, 'templates')
+  const templatesDir = path.join(templatesRoot, 'company-standard')
   fs.mkdirSync(templatesDir, { recursive: true })
   fs.writeFileSync(path.join(slidevDir, 'slides.md'), '# hello\n')
   fs.writeFileSync(path.join(templatesDir, 'cover.md'), '<cover>封面</cover>\n')
   fs.writeFileSync(path.join(templatesDir, 'README.md'), 'USAGE\n')
+  fs.writeFileSync(
+    path.join(templatesDir, 'manifest.json'),
+    JSON.stringify({
+      id: 'company-standard',
+      name: '公司标准模板',
+      description: 'fixture',
+      thumbnail: 'cover.png',
+      logos: { primary: 'logo.png' },
+      promptPersona: '商务正式',
+      starterSlidesPath: 'starter.md',
+      layouts: [
+        {
+          name: 'cover',
+          description: '封面',
+          frontmatterSchema: {
+            type: 'object',
+            required: ['mainTitle'],
+            properties: {
+              mainTitle: { type: 'string', description: '主标题' },
+            },
+          },
+        },
+      ],
+    }),
+  )
+  fs.writeFileSync(
+    path.join(templatesDir, 'starter.md'),
+    '---\nlayout: cover\nmainTitle: 请填写标题\n---\n',
+  )
   process.env.BIG_PPT_SLIDES_PATH = path.join(slidevDir, 'slides.md')
   process.env.BIG_PPT_TEMPLATES_DIR = templatesDir
+  process.env.BIG_PPT_TEMPLATES_ROOT = templatesRoot
   process.env.BIG_PPT_HISTORY_DIR = path.join(tmpRoot, 'slides-history')
   __resetPathsForTesting()
+  __resetTemplateRegistryForTesting()
   __resetRegistry()
   registerLocalTools()
 })
@@ -27,8 +60,10 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.BIG_PPT_SLIDES_PATH
   delete process.env.BIG_PPT_TEMPLATES_DIR
+  delete process.env.BIG_PPT_TEMPLATES_ROOT
   delete process.env.BIG_PPT_HISTORY_DIR
   __resetPathsForTesting()
+  __resetTemplateRegistryForTesting()
   __resetRegistry()
   fs.rmSync(tmpRoot, { recursive: true, force: true })
 })
@@ -71,12 +106,15 @@ describe('registerLocalTools', () => {
     expect(out).toBe('# hello\nvitest\n')
   })
 
-  it('list_templates 返回 cover.md 与 usage_guide', async () => {
+  it('list_templates 返回 cover.md 与 usage_guide 与 manifests', async () => {
     const raw = await getTool('list_templates')!.exec({})
     const parsed = JSON.parse(raw)
     expect(parsed.success).toBe(true)
     expect(parsed.templates).toEqual([{ name: 'cover.md', path: 'company-standard/cover.md' }])
     expect(parsed.usage_guide).toBe('USAGE\n')
+    expect(parsed.manifests).toHaveLength(1)
+    expect(parsed.manifests[0].id).toBe('company-standard')
+    expect(parsed.manifests[0].layouts[0].name).toBe('cover')
   })
 
   it('read_template 读 cover.md 正文', async () => {

@@ -26,6 +26,7 @@ import { authorizeSlidevAccess } from './slidev-proxy-auth.js'
 import { requestContextMiddleware } from './middleware/request-context.js'
 import { registerLocalTools } from './tools/local/index.js'
 import { getRegistry } from './mcp-registry/index.js'
+import { verifyTemplatesOrThrow } from './templates/registry.js'
 
 const app = new Hono<{ Variables: AuthVars }>()
 
@@ -66,6 +67,14 @@ const port = Number(process.env.AGENT_PORT ?? 4000)
 // 启动时 eager 解析一次 paths，尽早暴露 "monorepo root 未找到" 类错误
 try {
   getPaths()
+} catch (err) {
+  console.error((err as Error).message)
+  process.exit(1)
+}
+
+// 模板 manifest 自检：任一模板 manifest 非法或 starter.md 缺失即拒绝启动
+try {
+  verifyTemplatesOrThrow()
 } catch (err) {
   console.error((err as Error).message)
   process.exit(1)

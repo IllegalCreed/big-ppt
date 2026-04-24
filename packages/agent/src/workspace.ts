@@ -22,7 +22,10 @@ export interface Paths {
   root: string
   slidesPath: string
   historyDir: string
+  /** 单模板目录，兼容 Phase 6 之前硬编码 company-standard 的路径期望。 */
   templatesDir: string
+  /** 多模板根目录，`<templatesRoot>/<templateId>/manifest.json` + `starter.md`。 */
+  templatesRoot: string
   logsDir: string
   mcpConfigPath: string
 }
@@ -46,6 +49,9 @@ export function getPaths(): Paths {
   const templatesDir = process.env.BIG_PPT_TEMPLATES_DIR
     ? path.resolve(process.env.BIG_PPT_TEMPLATES_DIR)
     : path.join(root, 'packages/slidev/templates/company-standard')
+  const templatesRoot = process.env.BIG_PPT_TEMPLATES_ROOT
+    ? path.resolve(process.env.BIG_PPT_TEMPLATES_ROOT)
+    : path.join(root, 'packages/slidev/templates')
   const logsDir = process.env.BIG_PPT_LOGS_DIR
     ? path.resolve(process.env.BIG_PPT_LOGS_DIR)
     : path.join(root, 'logs')
@@ -57,6 +63,7 @@ export function getPaths(): Paths {
     slidesPath,
     historyDir,
     templatesDir,
+    templatesRoot,
     logsDir,
     mcpConfigPath,
   }
