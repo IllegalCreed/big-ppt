@@ -1,0 +1,28 @@
+/*
+ * jingyeda-standard theme tokens
+ *
+ * Phase 7B 新增。与 beitou-standard 的 --c-* / --ff-* 命名空间并存，
+ * 用 --jyd-* 前缀隔离，不冲突；global.css 同时 @import 两份，layout 各取所需。
+ *
+ * 命名空间：--jyd-* 为 jingyeda-standard 专属；命名同 beitou 结构但独立变量名，
+ * 未来切换主题 / 加第三套模板时，各模板的 tokens 互不影响。
+ */
+
+:root {
+  /* 品牌双主色 —— 蓝 + 绿色块硬切（与 beitou 的单色渐变形成对比） */
+  --jyd-brand-primary: #003da5;       /* 主蓝：logo J/D · 标题栏 · 封底左大块 · chart 主色 */
+  --jyd-brand-primary-deep: #002a78;  /* 深蓝：hover / 对比 / 阴影 */
+  --jyd-brand-accent: #8fc31f;        /* 辅绿：logo Y · 装饰条 · 封底右小块 · chart 辅色 */
+
+  /* 前景 / 背景 */
+  --jyd-fg-primary: #1a1a1a;
+  --jyd-fg-muted: #666666;
+  --jyd-bg-page: #ffffff;
+  --jyd-bg-subtle: #f5f5f5;
+
+  /* 字体 token */
+  /* --jyd-ff-brand：品牌字体，仿宋系（用于主标题、正文 —— 偏瘦 + 笔画细，贴原 PPT） */
+  --jyd-ff-brand: "STFangsong", "FangSong", "仿宋", "Songti SC", SimSun, serif;
+  /* --jyd-ff-ui：UI 字体，微软雅黑系（用于信息栏 / 标签 / 时间戳 等需要清晰可读的 UI 文字） */
+  --jyd-ff-ui: "Microsoft YaHei", "微软雅黑", "PingFang SC", sans-serif;
+}

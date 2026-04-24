@@ -1,0 +1,119 @@
+{
+  "id": "jingyeda-standard",
+  "name": "竞业达汇报模板",
+  "description": "商务科技风格，品牌蓝（#003DA5）+ 科技绿（#8FC31F）双色硬切版式，适合竞业达科技的业务汇报、述职述责与产品发布。",
+  "thumbnail": "assets/cover.png",
+  "logos": {
+    "primary": "logo.png",
+    "mark": "logo.png",
+    "text": "logo.png"
+  },
+  "promptPersona": "你为使用「竞业达汇报模板」的用户服务，请保持商务正式 + 科技感的叙述语气。视觉由 layout + tokens 决定，不要在 slides.md 中写 <style>、硬编码颜色或字体。AI 只负责结构与内容。",
+  "starterSlidesPath": "starter.md",
+  "layouts": [
+    {
+      "name": "jingyeda-cover",
+      "description": "封面页（顶右 logo + 中间 banner 视觉横幅 + 下方大字标题 + 四字段信息栏：汇报人 / 部门 / BU / 日期）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["mainTitle"],
+        "properties": {
+          "mainTitle": { "type": "string", "description": "主标题，黑字 48px" },
+          "subtitle": { "type": "string", "description": "副标题（自动加括号，可选）" },
+          "reporter": { "type": "string", "description": "汇报人（可选）" },
+          "department": { "type": "string", "description": "所在部门（可选）" },
+          "bu": { "type": "string", "description": "所属 BU / 业务单元（可选）" },
+          "date": { "type": "string", "description": "汇报日期（可选，如 2026/04/24）" }
+        }
+      }
+    },
+    {
+      "name": "jingyeda-toc",
+      "description": "目录页（蓝色标题栏 + 编号圆 + 绿色装饰条 + 文字项；active 时编号圈外发光绿色、文字加粗变蓝）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "目录项数组，如 items: [\"研发体系现状\", \"核心业务进展\", \"2026 工作规划\"]",
+            "items": { "type": "string" }
+          },
+          "active": {
+            "type": "number",
+            "description": "1-based 当前高亮项；省略或 0 则全部高亮（作为总目录页）；设置则作为章节导航页"
+          }
+        }
+      }
+    },
+    {
+      "name": "jingyeda-content",
+      "description": "纯文字页（顶部蓝色标题栏 + 白底正文 + 右下 logo 水印）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["heading"],
+        "properties": {
+          "heading": { "type": "string", "description": "页标题（蓝底白字 28px）" }
+        }
+      },
+      "bodyGuidance": "body 是 markdown，可用 **加粗**（会染成品牌蓝），或 markdown 要点列表 / 有序列表。"
+    },
+    {
+      "name": "jingyeda-two-col",
+      "description": "两栏对比页（左栏蓝底小标题、右栏绿底小标题，利用双主色做 A/B 语义区分；常用于前后对比 / 业务与技术 / 产品与市场）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["heading"],
+        "properties": {
+          "heading": { "type": "string", "description": "页标题" },
+          "leftTitle": { "type": "string", "description": "左栏小标题（蓝底白字）" },
+          "rightTitle": { "type": "string", "description": "右栏小标题（绿底白字）" }
+        }
+      },
+      "bodyGuidance": "body 必须用 Slidev 命名 slot：`::left::` 分左栏、`::right::` 分右栏。两栏内部用 markdown 要点列表。"
+    },
+    {
+      "name": "jingyeda-data",
+      "description": "数据页（左图表区 + 右蓝底指标卡列；图表数据色用蓝+绿双色）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["heading", "metrics"],
+        "properties": {
+          "heading": { "type": "string", "description": "页标题" },
+          "metrics": {
+            "type": "array",
+            "description": "指标卡数组 inline JSON，如 metrics: [{ \"value\": \"629\", \"unit\": \"点\", \"label\": \"年度交付总量\" }]",
+            "items": { "type": "object" }
+          }
+        }
+      },
+      "bodyGuidance": "body 放 chart 组件，可选：<BarChart :labels=\"[...]\" :values=\"[...]\" label=\"...\" /> 或 <LineChart :labels=\"[...]\" :values=\"[...]\" label=\"...\" />。"
+    },
+    {
+      "name": "jingyeda-image-content",
+      "description": "图文页（左 45% 图片带蓝色细边 + 右 55% 文字含可选 textTitle）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["heading", "image"],
+        "properties": {
+          "heading": { "type": "string", "description": "页标题" },
+          "image": { "type": "string", "description": "图片 URL（推荐 /templates/jingyeda-standard/ 下的白名单资源）" },
+          "textTitle": { "type": "string", "description": "文字区小标题（可选）" }
+        }
+      },
+      "bodyGuidance": "body 是文字正文，markdown 语法。"
+    },
+    {
+      "name": "jingyeda-back-cover",
+      "description": "封底致谢页（上白条含右上 logo + 下方三段式色块：左 60% 蓝块含结束语 + 中 12% 白缝 + 右 28% 绿块）",
+      "frontmatterSchema": {
+        "type": "object",
+        "properties": {
+          "message": { "type": "string", "description": "主结束语（默认\"谢 谢 ！\"）" },
+          "orgZh": { "type": "string", "description": "中文公司名（默认\"竞 业 达 科 技\"）" },
+          "orgEn": { "type": "string", "description": "英文公司名（默认\"JYD Technology\"）" }
+        }
+      }
+    }
+  ]
+}

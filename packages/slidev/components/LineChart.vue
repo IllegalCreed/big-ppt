@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Line } from 'vue-chartjs'
+import { computed, onMounted, ref } from 'vue'
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -30,16 +31,35 @@ const props = defineProps<{
   height?: number
 }>()
 
-const chartData = {
+/*
+ * 从最近父元素的 CSS 变量读取配色，支持多模板主题切换。
+ *   --chart-primary-border : 折线颜色 + 点填充色
+ *   --chart-primary-bg     : 折线下方填充色（含 alpha）
+ * fallback 到 beitou 的红色。
+ */
+const rootRef = ref<HTMLElement | null>(null)
+const lineColor = ref('#d00d14')
+const fillColor = ref('rgba(208, 13, 20, 0.15)')
+
+onMounted(() => {
+  if (!rootRef.value) return
+  const s = getComputedStyle(rootRef.value)
+  const bd = s.getPropertyValue('--chart-primary-border').trim()
+  const bg = s.getPropertyValue('--chart-primary-bg').trim()
+  if (bd) lineColor.value = bd
+  if (bg) fillColor.value = bg
+})
+
+const chartData = computed(() => ({
   labels: props.labels,
   datasets: [
     {
       label: props.label ?? '数值',
       data: props.values,
-      borderColor: '#d00d14',
-      backgroundColor: 'rgba(208, 13, 20, 0.15)',
+      borderColor: lineColor.value,
+      backgroundColor: fillColor.value,
       borderWidth: 3,
-      pointBackgroundColor: '#d00d14',
+      pointBackgroundColor: lineColor.value,
       pointBorderColor: '#ffffff',
       pointBorderWidth: 2,
       pointRadius: 5,
@@ -47,7 +67,7 @@ const chartData = {
       tension: 0.35,
     },
   ],
-}
+}))
 
 const chartOptions = {
   responsive: true,
@@ -83,7 +103,7 @@ const chartOptions = {
 </script>
 
 <template>
-  <div :style="{ height: `${height ?? 340}px`, width: '100%' }">
+  <div ref="rootRef" :style="{ height: `${height ?? 340}px`, width: '100%' }">
     <Line :data="chartData" :options="chartOptions" />
   </div>
 </template>

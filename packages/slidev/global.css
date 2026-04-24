@@ -9,8 +9,12 @@
  */
 
 @import './templates/company-standard/tokens.css';
+@import './templates/jingyeda-standard/tokens.css';
 
-/* 跨 layout 通用基底 —— 给所有 .slidev-layout 一个默认字体，避免每个 layout 重复声明 */
+/* 跨 layout 通用基底 —— 给所有 .slidev-layout 一个默认字体，避免每个 layout 重复声明。
+ * 注意：这里用的是 beitou/company-standard 的 --c-* 变量作为项目默认；
+ * jingyeda 的 layout 自己在组件内声明 var(--jyd-*) 不依赖这里。
+ */
 .slidev-layout {
   font-family: var(--ff-brand);
   color: var(--c-fg-primary);
