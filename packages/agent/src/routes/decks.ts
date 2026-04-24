@@ -8,7 +8,7 @@ import { Hono } from 'hono'
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import { getDb, decks, deckVersions, deckChats } from '../db/index.js'
 import type { AuthVars } from '../middleware/auth.js'
-import { DEFAULT_DECK_CONTENT } from '../deck/default-content.js'
+import { getManifest, readStarter } from '../templates/registry.js'
 
 type UserVars = AuthVars
 
@@ -47,6 +47,7 @@ decksRoute.get('/decks', async (c) => {
       id: decks.id,
       title: decks.title,
       themeId: decks.themeId,
+      templateId: decks.templateId,
       status: decks.status,
       currentVersionId: decks.currentVersionId,
       createdAt: decks.createdAt,
@@ -62,40 +63,65 @@ decksRoute.post('/decks', async (c) => {
   const user = c.get('user')
   if (!user) return c.json({ error: 'unauthorized' }, 401)
 
-  type CreateBody = { title?: string; initialContent?: string }
+  type CreateBody = { title?: string; initialContent?: string; templateId?: string }
   const body = await c.req.json<CreateBody>().catch((): CreateBody => ({}))
   const title = body.title?.trim() || '未命名幻灯片'
-  const initialContent = body.initialContent ?? DEFAULT_DECK_CONTENT
+  const templateId = body.templateId?.trim() || 'company-standard'
+
+  // 白名单校验：未知 templateId 直接拒绝，避免老 deck 后续激活时读不到 manifest
+  const manifest = getManifest(templateId)
+  if (!manifest) {
+    return c.json({ error: `未知模板 ${templateId}` }, 400)
+  }
+
+  // 未显式传 initialContent 时，默认从模板 starter.md 加载（3 页骨架）
+  let initialContent: string
+  try {
+    initialContent = body.initialContent ?? readStarter(templateId)
+  } catch (err) {
+    return c.json({ error: `读取模板 starter 失败: ${(err as Error).message}` }, 500)
+  }
 
   const db = getDb()
 
-  // 事务：插 deck → 插初始 version → 更新 deck.current_version_id
-  await db.insert(decks).values({ userId: user.id, title })
-  const [created] = await db
-    .select()
-    .from(decks)
-    .where(and(eq(decks.userId, user.id), eq(decks.title, title)))
-    .orderBy(desc(decks.id))
-    .limit(1)
-  if (!created) return c.json({ error: '创建失败' }, 500)
+  // 事务：插 deck → 插初始 version → 更新 deck.current_version_id；任一步失败整体回滚
+  let createdId: number
+  try {
+    createdId = await db.transaction(async (tx) => {
+      await tx.insert(decks).values({ userId: user.id, title, templateId })
+      const [created] = await tx
+        .select({ id: decks.id })
+        .from(decks)
+        .where(and(eq(decks.userId, user.id), eq(decks.title, title)))
+        .orderBy(desc(decks.id))
+        .limit(1)
+      if (!created) throw new Error('创建失败：deck 回查为空')
 
-  await db.insert(deckVersions).values({
-    deckId: created.id,
-    content: initialContent,
-    message: 'initial',
-    authorId: user.id,
-  })
-  const [firstVersion] = await db
-    .select({ id: deckVersions.id })
-    .from(deckVersions)
-    .where(eq(deckVersions.deckId, created.id))
-    .orderBy(desc(deckVersions.id))
-    .limit(1)
-  if (firstVersion) {
-    await db.update(decks).set({ currentVersionId: firstVersion.id }).where(eq(decks.id, created.id))
+      await tx.insert(deckVersions).values({
+        deckId: created.id,
+        content: initialContent,
+        message: `从模板 ${templateId} 初始化`,
+        authorId: user.id,
+      })
+      const [firstVersion] = await tx
+        .select({ id: deckVersions.id })
+        .from(deckVersions)
+        .where(eq(deckVersions.deckId, created.id))
+        .orderBy(desc(deckVersions.id))
+        .limit(1)
+      if (!firstVersion) throw new Error('创建失败：version 回查为空')
+
+      await tx
+        .update(decks)
+        .set({ currentVersionId: firstVersion.id })
+        .where(eq(decks.id, created.id))
+      return created.id
+    })
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500)
   }
 
-  const [withVersion] = await db.select().from(decks).where(eq(decks.id, created.id)).limit(1)
+  const [withVersion] = await db.select().from(decks).where(eq(decks.id, createdId)).limit(1)
   return c.json({ deck: withVersion }, 201)
 })
 

@@ -52,8 +52,9 @@ describe('routes/decks', () => {
     const { deck } = await res.json()
     expect(deck.title).toBe('我的新 Deck')
     expect(deck.currentVersionId).not.toBeNull()
+    expect(deck.templateId).toBe('company-standard')
 
-    // 验证 DB 有对应 version
+    // 验证 DB 有对应 version，message 来自模板初始化
     const db = getDb()
     const [v] = await db
       .select()
@@ -61,7 +62,7 @@ describe('routes/decks', () => {
       .where(eq(deckVersions.id, deck.currentVersionId))
       .limit(1)
     expect(v?.deckId).toBe(deck.id)
-    expect(v?.message).toBe('initial')
+    expect(v?.message).toBe('从模板 company-standard 初始化')
   })
 
   it('POST /decks: initialContent 自定义能落库', async () => {
@@ -73,6 +74,64 @@ describe('routes/decks', () => {
     const db = getDb()
     const [v] = await db.select().from(deckVersions).where(eq(deckVersions.id, deck.currentVersionId!)).limit(1)
     expect(v?.content).toBe(custom)
+  })
+
+  it('POST /decks: 未传 initialContent → 默认用 company-standard 的 starter.md（3 页骨架）', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser()
+    const res = await postJson(app, '/api/decks', { title: 'StarterCheck' }, cookie)
+    expect(res.status).toBe(201)
+    const { deck } = await res.json()
+    expect(deck.templateId).toBe('company-standard')
+    const db = getDb()
+    const [v] = await db
+      .select()
+      .from(deckVersions)
+      .where(eq(deckVersions.id, deck.currentVersionId!))
+      .limit(1)
+    // starter.md 至少包含三页分隔符 + 3 个 layout 标记
+    expect(v?.content).toContain('layout: cover')
+    expect(v?.content).toContain('layout: content')
+    expect(v?.content).toContain('layout: back-cover')
+    expect(v?.content).toContain('请填写标题')
+  })
+
+  it('POST /decks: 非法 templateId → 400，不落库', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser()
+    const res = await postJson(
+      app,
+      '/api/decks',
+      { title: 'X', templateId: 'does-not-exist' },
+      cookie,
+    )
+    expect(res.status).toBe(400)
+    const db = getDb()
+    const rows = await db.select().from(decks).where(eq(decks.userId, user.id))
+    expect(rows).toEqual([])
+  })
+
+  it('POST /decks: 显式传 templateId=company-standard 能写入对应字段', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser()
+    const res = await postJson(
+      app,
+      '/api/decks',
+      { title: 'Y', templateId: 'company-standard' },
+      cookie,
+    )
+    expect(res.status).toBe(201)
+    const { deck } = await res.json()
+    expect(deck.templateId).toBe('company-standard')
+  })
+
+  it('GET /decks: 列表结果携带 templateId 字段', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser()
+    await postJson(app, '/api/decks', { title: 'WithTemplateId' }, cookie)
+    const res = await app.request('/api/decks', { headers: { Cookie: cookie } })
+    const { decks: list } = await res.json()
+    expect(list[0].templateId).toBe('company-standard')
   })
 
   it('GET /decks: 只返回 active/archived，不返回 deleted', async () => {
@@ -108,6 +167,27 @@ describe('routes/decks', () => {
     const { cookie } = await createLoggedInUser()
     const res = await app.request('/api/decks/999999', { headers: { Cookie: cookie } })
     expect(res.status).toBe(404)
+  })
+
+  it('GET /decks/:id: 响应体含 templateId 字段', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id, 'withTid')
+    const res = await app.request(`/api/decks/${deck.id}`, { headers: { Cookie: cookie } })
+    const { deck: d } = await res.json()
+    expect(d.templateId).toBe('company-standard')
+  })
+
+  it('decks.template_id 在未显式传值时取 DB DEFAULT=company-standard', async () => {
+    const { user } = await createLoggedInUser()
+    const db = getDb()
+    await db.insert(decks).values({ userId: user.id, title: 'NoTemplate' })
+    const [row] = await db
+      .select()
+      .from(decks)
+      .where(and(eq(decks.userId, user.id), eq(decks.title, 'NoTemplate')))
+      .limit(1)
+    expect(row?.templateId).toBe('company-standard')
   })
 
   it('GET /decks/:id: 返回 deck + currentVersion + versions[] 按时间倒序', async () => {

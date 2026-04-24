@@ -13,6 +13,8 @@ export type Deck = {
   userId: number
   title: string
   themeId: string
+  /** 模板 id，对应 templates/<templateId>/manifest.json；新建 deck 时继承 starter.md */
+  templateId: string
   currentVersionId: number | null
   status: DeckStatus
   createdAt: string
@@ -72,7 +74,7 @@ export function useDecks() {
     )
   }
 
-  async function createDeck(input: { title?: string; initialContent?: string }) {
+  async function createDeck(input: { title?: string; initialContent?: string; templateId?: string }) {
     const res = await api.post<{ deck: Deck }>('/api/decks', input)
     return res.deck
   }

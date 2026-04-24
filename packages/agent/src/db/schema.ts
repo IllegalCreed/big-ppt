@@ -59,7 +59,12 @@ export const decks = mysqlTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     title: varchar('title', { length: 255 }).notNull(),
+    /** 与模板体系解耦的"视觉主题变体"占位字段，目前不使用，留给未来（深色/浅色/色板微调） */
     themeId: varchar('theme_id', { length: 64 }).default('default').notNull(),
+    /** 模板 id，对应 templates/<template_id>/manifest.json；新建 deck 时 starter.md 来源 */
+    templateId: varchar('template_id', { length: 64 })
+      .default('company-standard')
+      .notNull(),
     /** 指向当前激活的 version；删除 version 时置 NULL（循环 FK，建表时必须可空） */
     currentVersionId: int('current_version_id'),
     status: mysqlEnum('status', ['active', 'archived', 'deleted']).default('active').notNull(),
@@ -68,6 +73,7 @@ export const decks = mysqlTable(
   },
   (t) => ({
     userStatusIdx: index('decks_user_status_idx').on(t.userId, t.status),
+    userTemplateIdx: index('decks_user_template_idx').on(t.userId, t.templateId),
   }),
 )
 
