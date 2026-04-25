@@ -6,5 +6,9 @@ dist
 components.d.ts
 slides.md.bak
 slides-*.md
+# slides.md 是 dev 时被 agent mirror 写入的运行时产物，不进 git。
+# 仓库 track 的是 slides.example.md 骨架；package.json 的 dev script 启动前
+# 自动 cp 一份 slides.md 兜底首次运行。
+slides.md
 *.local
 .DS_Store
