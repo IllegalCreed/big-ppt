@@ -25,6 +25,7 @@
     "vue-router": "^5.0.6"
   },
   "devDependencies": {
+    "@big-ppt/agent": "workspace:*",
     "@tsconfig/node24": "^24.0.4",
     "@types/jsdom": "^28.0.1",
     "@types/node": "^24.12.2",

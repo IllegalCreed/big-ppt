@@ -1,92 +1,78 @@
+/**
+ * Phase 7D / P3-10：从 msw mock 迁到 in-process agent + lumideck_test 集成测。
+ *
+ * 端到端验证 useAuth 真实调用 /api/auth/* 端点的契约：
+ *   - register 201 + cookie 写入
+ *   - login 200 / 401 行为
+ *   - me 401（未登录）→ currentUser=null 不抛
+ *   - llm-settings PUT 后 hasLlmSettings 真翻 true
+ *   - logout 即便服务端错也清本地
+ *
+ * 这些都是过去 msw 假数据看不见的契约 bug 高发区。
+ */
 import { beforeEach, describe, expect, it } from 'vitest'
-import { http, HttpResponse, server, useMsw } from './_setup/msw'
+import { setupIntegration, createTestUser } from './_setup/integration'
 import { useAuth } from '../src/composables/useAuth'
 
-useMsw()
+setupIntegration()
 
+// useAuth 是 module-level ref，跨 test 残留。每条 test 前先 logout 清零（即便没登录也无副作用）。
 beforeEach(async () => {
-  // useAuth 内部 currentUser 是 module-level ref；logout 在 finally 里清状态，
-  // 即便 API 失败也能 reset，保证 test 间隔离。
-  server.use(http.post('/api/auth/logout', () => HttpResponse.json({ ok: true })))
-  await useAuth().logout()
+  await useAuth().logout().catch(() => {})
 })
 
-describe('composables/useAuth', () => {
-  it('login 成功写入 currentUser 且 isLoggedIn 变 true', async () => {
-    server.use(
-      http.post('/api/auth/login', () =>
-        HttpResponse.json({ user: { id: 1, email: 'a@a.com', hasLlmSettings: false } }),
-      ),
-    )
+describe('composables/useAuth (integration)', () => {
+  it('register 成功：201 + currentUser 写入 + 后续 me 200', async () => {
+    const { register, currentUser } = useAuth()
+    const u = await register('reg@a.com', 'pw123456')
+    expect(u.email).toBe('reg@a.com')
+    expect(currentUser.value?.email).toBe('reg@a.com')
+    expect(currentUser.value?.hasLlmSettings).toBe(false)
+  })
+
+  it('login 成功：先 createTestUser → login → currentUser 写入', async () => {
+    await createTestUser('a@a.com', 'pw123456')
     const { login, currentUser, isLoggedIn } = useAuth()
-    const user = await login('a@a.com', 'pw123456')
-    expect(user.email).toBe('a@a.com')
-    expect(currentUser.value).toMatchObject({ id: 1, email: 'a@a.com' })
+    const u = await login('a@a.com', 'pw123456')
+    expect(u.email).toBe('a@a.com')
+    expect(currentUser.value?.email).toBe('a@a.com')
     expect(isLoggedIn.value).toBe(true)
   })
 
-  it('login 失败（401）抛 error，currentUser 保持 null', async () => {
-    server.use(
-      http.post('/api/auth/login', () =>
-        HttpResponse.json({ error: '邮箱或密码错误' }, { status: 401 }),
-      ),
-    )
+  it('login 失败（错密码）抛 error，currentUser 保持 null', async () => {
+    await createTestUser('x@a.com', 'pw123456')
     const { login, currentUser } = useAuth()
-    await expect(login('x@a.com', 'bad')).rejects.toThrow()
+    await expect(login('x@a.com', 'wrong-password')).rejects.toThrow()
     expect(currentUser.value).toBeNull()
   })
 
-  it('fetchMe 返回 401 时把 currentUser 设为 null（不抛）', async () => {
-    server.use(
-      http.get('/api/auth/me', () => HttpResponse.json({ error: 'unauthorized' }, { status: 401 })),
-    )
+  it('fetchMe 未登录返回 401 → currentUser 设 null（不抛）', async () => {
     const { fetchMe, currentUser } = useAuth()
     const result = await fetchMe()
     expect(result).toBeNull()
     expect(currentUser.value).toBeNull()
   })
 
-  it('register 成功写入 currentUser', async () => {
-    server.use(
-      http.post('/api/auth/register', () =>
-        HttpResponse.json(
-          { user: { id: 2, email: 'reg@a.com', hasLlmSettings: false } },
-          { status: 201 },
-        ),
-      ),
-    )
-    const { register, currentUser } = useAuth()
-    const user = await register('reg@a.com', 'pw123456')
-    expect(user.email).toBe('reg@a.com')
-    expect(currentUser.value?.email).toBe('reg@a.com')
-  })
-
-  it('saveLlmSettings 成功后 currentUser.hasLlmSettings 变 true', async () => {
-    server.use(
-      http.post('/api/auth/login', () =>
-        HttpResponse.json({ user: { id: 3, email: 's@a.com', hasLlmSettings: false } }),
-      ),
-      http.put('/api/auth/llm-settings', () => HttpResponse.json({ ok: true })),
-    )
+  it('saveLlmSettings 成功后 currentUser.hasLlmSettings 翻 true', async () => {
+    await createTestUser('s@a.com', 'pw123456')
     const { login, saveLlmSettings, currentUser } = useAuth()
-    await login('s@a.com', 'pw')
+    await login('s@a.com', 'pw123456')
     expect(currentUser.value?.hasLlmSettings).toBe(false)
     await saveLlmSettings({ provider: 'zhipu', apiKey: 'k', model: 'GLM-5.1' })
     expect(currentUser.value?.hasLlmSettings).toBe(true)
+
+    // 再次 fetchMe 也应反映 hasLlmSettings=true（持久化进 DB 验证）
+    const { fetchMe } = useAuth()
+    const me = await fetchMe()
+    expect(me?.hasLlmSettings).toBe(true)
   })
 
-  it('logout 清 currentUser（无论 API 成功失败）', async () => {
-    server.use(
-      http.post('/api/auth/login', () =>
-        HttpResponse.json({ user: { id: 7, email: 'out@a.com', hasLlmSettings: true } }),
-      ),
-      http.post('/api/auth/logout', () => HttpResponse.json({ error: 'oops' }, { status: 500 })),
-    )
+  it('logout 即便服务端错也清本地 currentUser', async () => {
+    await createTestUser('out@a.com', 'pw123456')
     const { login, logout, currentUser } = useAuth()
-    await login('out@a.com', 'pw')
+    await login('out@a.com', 'pw123456')
     expect(currentUser.value).not.toBeNull()
-    // logout 实现用 try/finally 清 currentUser，但 try 块抛错时 logout 自身会 rethrow
-    await logout().catch(() => {})
+    await logout().catch(() => {}) // 真服务端正常会 200，但即便错也要清本地
     expect(currentUser.value).toBeNull()
   })
 })

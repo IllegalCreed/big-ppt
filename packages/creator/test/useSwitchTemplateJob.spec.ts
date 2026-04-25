@@ -1,182 +1,110 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { http, HttpResponse, server, useMsw } from './_setup/msw'
+/**
+ * Phase 7D / P3-10：从 msw + fake timers 迁到 in-process agent + lumideck_test 集成测。
+ *
+ * 真后端下 switch job 几十毫秒就走完整个状态机，所以 fake-timer 节奏验证不再适用
+ * （节奏 / abort / progress ratio 等纯 UI 行为留给 E2E + DeckEditorCanvas / TemplatePickerModal 单测覆盖）。
+ *
+ * 这里专测 useSwitchTemplateJob ↔ /api/decks/:id/switch-template ↔ /api/switch-template-jobs/:id 的端到端契约：
+ *   - 注入 fake RewriteFn → POST → 轮询 → success；返回字段 newVersionId 真实存在
+ *   - DB 真实落地：decks.template_id 改 + 新 version 带 templateId
+ *   - rewriteFn 抛错 → state=failed → composable error 字段抛出 throw
+ *   - 同模板切换 400（前置 validate 拦截，不创建 job）
+ */
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { eq } from 'drizzle-orm'
+import {
+  setupIntegration,
+  __setRewriteFnForTesting,
+  getDb,
+  decks,
+  deckVersions,
+  type RewriteFn,
+} from './_setup/integration'
 import { useSwitchTemplateJob } from '../src/composables/useSwitchTemplateJob'
+import { useDecks } from '../src/composables/useDecks'
 
-useMsw()
+setupIntegration()
 
-beforeEach(() => {
-  vi.useFakeTimers()
-})
 afterEach(() => {
-  vi.useRealTimers()
+  // 清测试注入，下条 test 走默认 prod RewriteFn（除非自己再注入）
+  __setRewriteFnForTesting(null)
 })
 
-describe('useSwitchTemplateJob', () => {
-  it('成功路径：POST → polling → stage 变化 → success', async () => {
-    let pollCount = 0
-    server.use(
-      http.post('/api/decks/1/switch-template', () =>
-        HttpResponse.json({ jobId: 'job-1', state: 'pending' }),
-      ),
-      http.get('/api/switch-template-jobs/job-1', () => {
-        pollCount++
-        if (pollCount === 1)
-          return HttpResponse.json({ job: { id: 'job-1', state: 'snapshotting' } })
-        if (pollCount === 2)
-          return HttpResponse.json({ job: { id: 'job-1', state: 'migrating' } })
-        return HttpResponse.json({
-          job: {
-            id: 'job-1',
-            state: 'success',
-            snapshotVersionId: 10,
-            newVersionId: 11,
-          },
-        })
-      }),
-    )
-    const job = useSwitchTemplateJob()
-    const done = job.start({ deckId: 1, targetTemplateId: 'jingyeda-standard' })
+async function registerAndCreateBeitouDeck(email: string, title = 'X') {
+  const reg = await fetch('/api/auth/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password: 'pw123456' }),
+  })
+  if (reg.status !== 201) throw new Error(`register failed: ${reg.status}`)
+  return useDecks().createDeck({ title })
+}
 
-    await vi.advanceTimersByTimeAsync(0)
-    expect(job.stage.value).toBe('pending')
-    await vi.advanceTimersByTimeAsync(1500)
-    expect(job.stage.value).toBe('snapshotting')
-    await vi.advanceTimersByTimeAsync(1500)
-    expect(job.stage.value).toBe('migrating')
-    await vi.advanceTimersByTimeAsync(1500)
+describe('useSwitchTemplateJob (integration)', () => {
+  it('成功路径：fake RewriteFn → POST → polling → success；DB.decks.template_id 同步更新', async () => {
+    __setRewriteFnForTesting((async () => '---\nlayout: cover\nmainTitle: jingyeda 切后\n---\n') as RewriteFn)
+
+    const deck = await registerAndCreateBeitouDeck('switch-ok@a.com', 'WillSwitch')
+    const job = useSwitchTemplateJob()
+    const result = await job.start({ deckId: deck.id, targetTemplateId: 'jingyeda-standard' })
+
     expect(job.stage.value).toBe('success')
-    const result = await done
-    expect(result.newVersionId).toBe(11)
+    expect(result.newVersionId).toBeTypeOf('number')
+    expect(result.snapshotVersionId).toBeTypeOf('number')
+
+    // DB：decks.template_id 改成 jingyeda-standard；新 version 带 templateId='jingyeda-standard'；snapshot 带 'beitou-standard'
+    const db = getDb()
+    const [updated] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
+    expect(updated?.templateId).toBe('jingyeda-standard')
+    expect(updated?.currentVersionId).toBe(result.newVersionId)
+
+    const [newVer] = await db.select().from(deckVersions).where(eq(deckVersions.id, result.newVersionId!)).limit(1)
+    expect(newVer?.templateId).toBe('jingyeda-standard')
+
+    const [snapVer] = await db
+      .select()
+      .from(deckVersions)
+      .where(eq(deckVersions.id, result.snapshotVersionId!))
+      .limit(1)
+    expect(snapVer?.templateId).toBe('beitou-standard')
   })
 
-  it('节奏：前 45s @ 1.5s，之后 @ 3s', async () => {
-    let pollTimes: number[] = []
-    const startNow = Date.now()
-    server.use(
-      http.post('/api/decks/1/switch-template', () =>
-        HttpResponse.json({ jobId: 'job-2', state: 'pending' }),
-      ),
-      http.get('/api/switch-template-jobs/job-2', () => {
-        pollTimes.push(Date.now() - startNow)
-        return HttpResponse.json({ job: { id: 'job-2', state: 'migrating' } })
-      }),
-    )
+  it('失败路径：RewriteFn 抛错 → composable 抛 + state=failed', async () => {
+    __setRewriteFnForTesting((async () => {
+      throw new Error('LLM mock 故意挂')
+    }) as RewriteFn)
+
+    const deck = await registerAndCreateBeitouDeck('switch-err@a.com', 'WillFail')
     const job = useSwitchTemplateJob()
-    void job.start({ deckId: 1, targetTemplateId: 'x' })
+    await expect(job.start({ deckId: deck.id, targetTemplateId: 'jingyeda-standard' })).rejects.toThrow(/LLM mock 故意挂/)
+    expect(job.stage.value).toBe('failed')
 
-    // 前 45s 应该有 ~30 次（45s / 1.5s）
-    await vi.advanceTimersByTimeAsync(45_000)
-    const firstPhaseCount = pollTimes.length
-    expect(firstPhaseCount).toBeGreaterThanOrEqual(28) // 容忍边界
-    expect(firstPhaseCount).toBeLessThanOrEqual(32)
-
-    // 之后 30s 应该只有 ~10 次（3s 节奏）
-    const beforeSlow = pollTimes.length
-    await vi.advanceTimersByTimeAsync(30_000)
-    const slowPhaseDelta = pollTimes.length - beforeSlow
-    expect(slowPhaseDelta).toBeGreaterThanOrEqual(8)
-    expect(slowPhaseDelta).toBeLessThanOrEqual(12)
-
-    job.abort()
+    // DB：template_id 未改（保留 beitou-standard）；snapshot 仍写入（带 fromTemplateId='beitou-standard'）
+    const db = getDb()
+    const [updated] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
+    expect(updated?.templateId).toBe('beitou-standard')
   })
 
-  it('超时：5 分钟无终态 → timeout error', async () => {
-    server.use(
-      http.post('/api/decks/1/switch-template', () =>
-        HttpResponse.json({ jobId: 'job-3', state: 'pending' }),
-      ),
-      http.get('/api/switch-template-jobs/job-3', () =>
-        HttpResponse.json({ job: { id: 'job-3', state: 'migrating' } }),
-      ),
-    )
+  it('同模板切换 400（前置 validate 拦截）→ composable error 字段非空', async () => {
+    const deck = await registerAndCreateBeitouDeck('same-tpl@a.com', 'Same')
     const job = useSwitchTemplateJob()
-    const done = job.start({ deckId: 1, targetTemplateId: 'x' })
-    await vi.advanceTimersByTimeAsync(5 * 60_000 + 100)
-    await expect(done).rejects.toThrow(/timeout/i)
+    await expect(
+      job.start({ deckId: deck.id, targetTemplateId: 'beitou-standard' }),
+    ).rejects.toThrow()
+    expect(job.error.value).toMatch(/目标模板与当前模板一致|400/)
   })
 
-  it('abort：调用后 fetch 不再触发', async () => {
-    let calls = 0
-    server.use(
-      http.post('/api/decks/1/switch-template', () =>
-        HttpResponse.json({ jobId: 'job-4', state: 'pending' }),
-      ),
-      http.get('/api/switch-template-jobs/job-4', () => {
-        calls++
-        return HttpResponse.json({ job: { id: 'job-4', state: 'migrating' } })
-      }),
-    )
+  it('未知目标模板 → 404；composable error 字段非空', async () => {
+    const deck = await registerAndCreateBeitouDeck('bad-tpl@a.com', 'Bad')
     const job = useSwitchTemplateJob()
-    void job.start({ deckId: 1, targetTemplateId: 'x' })
-    await vi.advanceTimersByTimeAsync(5_000)
-    const before = calls
-    job.abort()
-    await vi.advanceTimersByTimeAsync(10_000)
-    expect(calls).toBe(before)
+    await expect(
+      job.start({ deckId: deck.id, targetTemplateId: 'no-such-template' }),
+    ).rejects.toThrow()
+    expect(job.error.value).toMatch(/不存在|404/)
   })
+})
 
-  it('retry：失败后 start 再触发，jobId 替换', async () => {
-    let started = 0
-    server.use(
-      http.post('/api/decks/1/switch-template', () => {
-        started++
-        return HttpResponse.json({ jobId: `job-r${started}`, state: 'pending' })
-      }),
-      http.get(/switch-template-jobs\/job-r1/, () =>
-        HttpResponse.json({ job: { id: 'job-r1', state: 'failed', error: 'boom' } }),
-      ),
-      http.get(/switch-template-jobs\/job-r2/, () =>
-        HttpResponse.json({
-          job: {
-            id: 'job-r2',
-            state: 'success',
-            snapshotVersionId: 1,
-            newVersionId: 2,
-          },
-        }),
-      ),
-    )
-    const job = useSwitchTemplateJob()
-    const firstDone = job.start({ deckId: 1, targetTemplateId: 'x' })
-    await vi.advanceTimersByTimeAsync(1500)
-    await expect(firstDone).rejects.toThrow(/boom/)
-
-    const secondDone = job.start({ deckId: 1, targetTemplateId: 'x' })
-    await vi.advanceTimersByTimeAsync(1500)
-    const ok = await secondDone
-    expect(ok.newVersionId).toBe(2)
-    expect(started).toBe(2)
-  })
-
-  it('migrating 阶段进度条每次 poll 递增（从 0.5 起步，封顶 0.9）', async () => {
-    server.use(
-      http.post('/api/decks/1/switch-template', () =>
-        HttpResponse.json({ jobId: 'job-mig', state: 'pending' }),
-      ),
-      http.get('/api/switch-template-jobs/job-mig', () =>
-        HttpResponse.json({ job: { id: 'job-mig', state: 'migrating' } }),
-      ),
-    )
-    const job = useSwitchTemplateJob()
-    void job.start({ deckId: 1, targetTemplateId: 'x' })
-
-    // 第一次 poll：0.5 → 0.52
-    await vi.advanceTimersByTimeAsync(1500)
-    const p1 = job.progressRatio.value
-    expect(p1).toBeGreaterThanOrEqual(0.5)
-    expect(p1).toBeLessThanOrEqual(0.55)
-
-    // 第二次 poll：0.52 → 0.54（必须严格递增）
-    await vi.advanceTimersByTimeAsync(1500)
-    const p2 = job.progressRatio.value
-    expect(p2).toBeGreaterThan(p1)
-
-    // 第十次 poll 仍然没超过 0.9 上限
-    await vi.advanceTimersByTimeAsync(1500 * 10)
-    const p3 = job.progressRatio.value
-    expect(p3).toBeGreaterThan(p2)
-    expect(p3).toBeLessThanOrEqual(0.9)
-
-    job.abort()
-  })
+// 上面 4 条覆盖契约 + 端到端，下面留个轻量 reset hook（下次跑前注入回 null）
+beforeEach(() => {
+  __setRewriteFnForTesting(null)
 })

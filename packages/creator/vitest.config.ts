@@ -7,6 +7,9 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: 'jsdom',
+      // Phase 7D：集成测共享 lumideck_test DB + 全局 fetch shim，文件间必须串行；
+      // 5 个 UI msw spec 不抢 DB 但跟着串行（开销不大）
+      fileParallelism: false,
       exclude: [...configDefaults.exclude, 'e2e/**'],
       root: fileURLToPath(new URL('./', import.meta.url)),
       coverage: {
