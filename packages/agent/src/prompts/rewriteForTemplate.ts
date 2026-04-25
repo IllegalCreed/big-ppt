@@ -12,6 +12,7 @@ import { eq } from 'drizzle-orm'
 import { getDb, users } from '../db/index.js'
 import { decryptApiKey } from '../crypto/apikey.js'
 import { buildSystemPrompt } from './buildSystemPrompt.js'
+import { readStarter } from '../templates/registry.js'
 
 interface LlmSettings {
   provider?: string
@@ -75,6 +76,12 @@ export async function rewriteForTemplate(args: {
   toTemplateId: string
   userId: number
 }): Promise<string> {
+  // Phase 7D：E2E 测试模式 - 跳 LLM 直接返回目标模板的 starter.md，
+  // 让 switch-template 状态机端到端跑通而不依赖外部 LLM。仅在 BIG_PPT_TEST_REWRITE_MODE=skeleton 时生效。
+  if (process.env.BIG_PPT_TEST_REWRITE_MODE === 'skeleton') {
+    return readStarter(args.toTemplateId)
+  }
+
   const settings = await loadUserLlmSettings(args.userId)
   const { url, model } = resolveUpstream(settings)
   const systemPrompt = buildSystemPrompt({ templateId: args.toTemplateId })
