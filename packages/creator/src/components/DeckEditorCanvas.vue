@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, provide, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { ArrowLeft, History, Layers, LogOut, Settings, Sparkles } from 'lucide-vue-next'
 import ChatPanel from './ChatPanel.vue'
 import SlidePreview from './SlidePreview.vue'
@@ -211,6 +211,10 @@ async function onLogout() {
 
 onMounted(() => {
   void loadInitialChats()
+})
+
+onUnmounted(() => {
+  if (highlightTimer) clearTimeout(highlightTimer)
 })
 </script>
 
