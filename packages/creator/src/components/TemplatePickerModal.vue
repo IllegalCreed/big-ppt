@@ -4,6 +4,7 @@ import { X } from 'lucide-vue-next'
 import type { TemplateManifest } from '@big-ppt/shared'
 import { api, ApiError } from '../api/client'
 import { useDecks, type Deck } from '../composables/useDecks'
+import { useSwitchTemplateJob } from '../composables/useSwitchTemplateJob'
 import TemplateCard from './TemplateCard.vue'
 import TemplatePreviewPane from './TemplatePreviewPane.vue'
 
@@ -24,6 +25,16 @@ const emit = defineEmits<{
 }>()
 
 const { createDeck } = useDecks()
+
+type View = 'picker' | 'progress' | 'success' | 'error'
+const view = ref<View>('picker')
+const switchJob = useSwitchTemplateJob()
+const {
+  stage: switchStage,
+  progressRatio: switchProgress,
+  error: switchError,
+  result: switchResult,
+} = switchJob
 
 const manifests = ref<TemplateManifest[]>([])
 const loading = ref(false)
@@ -72,7 +83,11 @@ watch(
       title.value = '未命名幻灯片'
       submitError.value = null
       submitting.value = false
+      view.value = 'picker'
+      switchJob.abort()
       void loadManifests()
+    } else {
+      switchJob.abort()
     }
   },
   { immediate: true },
@@ -91,14 +106,28 @@ async function onPrimary() {
       emit('created', deck)
       close()
     } else {
-      // switch mode 在 Task 7C-5/6 内实现
-      throw new Error('switch mode not wired yet')
+      if (!props.deckId) throw new Error('switch mode missing deckId prop')
+      view.value = 'progress'
+      try {
+        await switchJob.start({
+          deckId: props.deckId,
+          targetTemplateId: selected.value.id,
+        })
+        view.value = 'success'
+      } catch (err) {
+        view.value = 'error'
+      }
     }
   } catch (err) {
     submitError.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
   } finally {
     submitting.value = false
   }
+}
+
+function onOverlayClick() {
+  if (view.value === 'progress') return
+  close()
 }
 
 function close() {
@@ -108,7 +137,11 @@ function close() {
 
 <template>
   <Teleport to="body" :disabled="disableTeleport">
-    <div v-if="open" class="modal-overlay" @click.self="close">
+    <div
+      v-if="open"
+      class="modal-overlay"
+      @click.self="onOverlayClick"
+    >
       <div class="modal-content">
         <div class="modal-header">
           <h3>{{ mode === 'create' ? '新建 Deck' : '切换模板' }}</h3>
@@ -117,7 +150,7 @@ function close() {
           </button>
         </div>
 
-        <div class="modal-body">
+        <div v-if="view === 'picker'" class="modal-body">
           <div v-if="mode === 'create'" class="field">
             <label for="tpl-modal-title">标题</label>
             <input
@@ -154,8 +187,17 @@ function close() {
 
           <p v-if="submitError" class="form-error">{{ submitError }}</p>
         </div>
+        <div v-else-if="view === 'progress'" class="modal-body">
+          正在切换到「{{ selected?.name }}」…
+        </div>
+        <div v-else-if="view === 'success'" class="modal-body">
+          切换完成
+        </div>
+        <div v-else-if="view === 'error'" class="modal-body">
+          切换失败
+        </div>
 
-        <div class="modal-footer">
+        <div v-if="view === 'picker'" class="modal-footer">
           <button type="button" class="btn-secondary" :disabled="submitting" @click="close">
             取消
           </button>

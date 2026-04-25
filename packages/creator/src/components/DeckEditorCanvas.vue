@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { nextTick, onMounted, provide, ref, watch } from 'vue'
-import { ArrowLeft, History, LogOut, Settings, Sparkles } from 'lucide-vue-next'
+import { ArrowLeft, History, Layers, LogOut, Settings, Sparkles } from 'lucide-vue-next'
 import ChatPanel from './ChatPanel.vue'
 import SlidePreview from './SlidePreview.vue'
 import SettingsModal from './SettingsModal.vue'
+import TemplatePickerModal from './TemplatePickerModal.vue'
 import VersionTimeline from './VersionTimeline.vue'
 import {
   useDecks,
@@ -150,6 +151,7 @@ function onMouseDown(e: MouseEvent) {
 // ── 顶栏按钮 ───────────────────────────────────────────────────────────────
 const showSettings = ref(false)
 const showTimeline = ref(false)
+const showTemplatePicker = ref(false)
 
 function onTimelineRestored() {
   // 回滚成功后强制 iframe 重载，Slidev 会读到新的 slides.md
@@ -233,6 +235,15 @@ onMounted(() => {
         <button
           type="button"
           class="icon-btn"
+          title="切换模板（AI 重写）"
+          aria-label="切换模板"
+          @click="showTemplatePicker = true"
+        >
+          <Layers :size="18" :stroke-width="1.8" />
+        </button>
+        <button
+          type="button"
+          class="icon-btn"
           title="设置"
           aria-label="设置"
           @click="showSettings = true"
@@ -265,6 +276,12 @@ onMounted(() => {
     </main>
 
     <SettingsModal v-model:open="showSettings" />
+    <TemplatePickerModal
+      v-model:open="showTemplatePicker"
+      mode="switch"
+      :deck-id="deck.id"
+      :current-template-id="deck.templateId"
+    />
     <VersionTimeline
       :deck-id="deck.id"
       :current-version-id="currentVersion?.id ?? null"
