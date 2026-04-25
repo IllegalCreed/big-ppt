@@ -99,6 +99,27 @@ describe('slides-store/persist', () => {
     expect(v?.authorId).toBeNull()
   })
 
+  it('Phase 7D fix：写入新 version 时 templateId 同步当前 deck.template_id（让 restore 能正确回滚模板）', async () => {
+    const { user } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id)
+
+    // 模拟切模板后场景：人为把 deck.template_id 改成新模板（switch-template 的效果）
+    const db = getDb()
+    await db.update(decks).set({ templateId: 'jingyeda-standard' }).where(eq(decks.id, deck.id))
+
+    // LLM 工具调用 → persist 写新 version
+    await runInRequest(ctxOf({ userId: user.id, activeDeckId: deck.id }), async () => {
+      await persistVersionIfActive('after-llm-edit', 'update_slide')
+    })
+
+    const [v] = await db
+      .select({ templateId: deckVersions.templateId })
+      .from(deckVersions)
+      .where(and(eq(deckVersions.deckId, deck.id), eq(deckVersions.content, 'after-llm-edit')))
+      .limit(1)
+    expect(v?.templateId).toBe('jingyeda-standard')
+  })
+
   it('activeDeckId 指向已软删 deck → 不写入', async () => {
     const { user } = await createLoggedInUser()
     const { deck } = await createDeckDirect(user.id)

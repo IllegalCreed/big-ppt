@@ -15,7 +15,11 @@ export async function persistVersionIfActive(content: string, op: string): Promi
 
   const db = getDb()
   const [deck] = await db
-    .select({ id: decks.id, currentVersionId: decks.currentVersionId })
+    .select({
+      id: decks.id,
+      currentVersionId: decks.currentVersionId,
+      templateId: decks.templateId,
+    })
     .from(decks)
     .where(eq(decks.id, rc.activeDeckId))
     .limit(1)
@@ -31,11 +35,15 @@ export async function persistVersionIfActive(content: string, op: string): Promi
     if (cur?.content === content) return
   }
 
+  // Phase 7D fix（2026-04-25）：把 deck 当前模板写进 version，让 /restore 能正确同步
+  // decks.template_id。漏了这一步会让 LLM 工具调用产出的 version templateId=NULL，
+  // restore 时按"NULL 不动"分支回不到原模板，导致"内容回去了但 deck 还在新模板"。
   await db.insert(deckVersions).values({
     deckId: rc.activeDeckId,
     content,
     message: op,
     turnId: rc.turnId,
+    templateId: deck.templateId,
     authorId: rc.userId,
   })
 
