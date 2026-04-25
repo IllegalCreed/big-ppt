@@ -13,6 +13,8 @@ import { randomUUID } from 'node:crypto'
 import { desc, eq } from 'drizzle-orm'
 import { getDb, decks, deckVersions } from './db/index.js'
 import { getManifest } from './templates/registry.js'
+import { mirrorSlidesContent } from './deck/mirror.js'
+import { getHolder } from './slidev-lock.js'
 
 export type SwitchJobState =
   | 'pending'
@@ -154,6 +156,14 @@ export async function runSwitchJob(
       .update(decks)
       .set({ templateId: job.to, currentVersionId: newest.id })
       .where(eq(decks.id, job.deckId))
+
+    // Phase 7D fix（2026-04-25）：DB 改完同步 mirror 到 packages/slidev/slides.md，
+    // 否则 Slidev 仍读旧文件，前端预览看不到切换效果。仅在当前实例锁正持有此 deck 时
+    // mirror，避免 background job 误覆盖别人正在编辑的 slides.md。
+    const holder = getHolder()
+    if (holder && holder.deckId === job.deckId) {
+      mirrorSlidesContent(rewritten)
+    }
 
     mutateJob(jobId, {
       state: 'success',

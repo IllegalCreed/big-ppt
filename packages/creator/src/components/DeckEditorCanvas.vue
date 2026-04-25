@@ -176,6 +176,10 @@ function onTemplateSwitched(payload: {
   // 通知父组件 refetch deck + currentVersion
   emit('template-switched')
 
+  // Phase 7D fix（2026-04-25）：切换成功后强制 iframe 重载，让 Slidev 重新读
+  // 已 mirror 的新内容；不调 refresh 的话 iframe 仍展示旧 slides，"看似切了实则没变"
+  slideStore.refresh()
+
   undoToast.value = {
     visible: true,
     templateName: payload.newTemplateName,

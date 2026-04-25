@@ -192,3 +192,65 @@ describe('runSwitchJob 边界分支', () => {
     expect(finalJob.error).toContain('LLM 返回空内容')
   })
 })
+
+describe('runSwitchJob mirror 行为（Phase 7D fix）', () => {
+  it('当前实例锁正持有此 deck → success 后 mirror 新 content 到 slidesPath（自动注入 routerMode: hash）', async () => {
+    const { tryAcquire, __resetForTesting: resetLock } = await import('../src/slidev-lock.js')
+    resetLock()
+
+    const { user } = await createLoggedInUser('mirror-yes@a.com')
+    const { deck } = await createDeckDirect(user.id, 'MirrorYes')
+
+    // 设置 BIG_PPT_SLIDES_PATH 到 tmp，避免污染真 packages/slidev/slides.md
+    const slidesFile = path.join(tmpRoot, 'mirror-out.md')
+    process.env.BIG_PPT_SLIDES_PATH = slidesFile
+    __resetPathsForTesting()
+
+    // 让进程内锁持有此 deck
+    const acq = tryAcquire({ sessionId: 'sid-mirror', userId: user.id, email: 'm@a.com', deckId: deck.id, deckTitle: 'MirrorYes' })
+    expect(acq.ok).toBe(true)
+
+    const rewritten = '---\ntitle: After\nlayout: cover\n---\n\n# new'
+    const job = createJob({ deckId: deck.id, userId: user.id, from: 'beitou-standard', to: 'alpha' })
+    await runSwitchJob(job.id, async () => rewritten)
+    expect(getJob(job.id)!.state).toBe('success')
+
+    expect(fs.existsSync(slidesFile)).toBe(true)
+    const written = fs.readFileSync(slidesFile, 'utf-8')
+    // 内容含原 rewritten + mirror 自动注入 routerMode: hash
+    expect(written).toContain('# new')
+    expect(written).toContain('routerMode: hash')
+
+    delete process.env.BIG_PPT_SLIDES_PATH
+    __resetPathsForTesting()
+    resetLock()
+  })
+
+  it('当前实例锁未持有 / 持有别的 deck → success 但不 mirror，避免误覆盖别人编辑中的 slides.md', async () => {
+    const { tryAcquire, __resetForTesting: resetLock } = await import('../src/slidev-lock.js')
+    resetLock()
+
+    const { user } = await createLoggedInUser('mirror-no@a.com')
+    const { deck } = await createDeckDirect(user.id, 'MirrorNo')
+    const { deck: otherDeck } = await createDeckDirect(user.id, 'OtherActive')
+
+    const slidesFile = path.join(tmpRoot, 'mirror-skip.md')
+    fs.writeFileSync(slidesFile, '# untouched original\n')
+    process.env.BIG_PPT_SLIDES_PATH = slidesFile
+    __resetPathsForTesting()
+
+    // 锁持有的是另一个 deck —— job 跑完不应 mirror
+    tryAcquire({ sessionId: 'sid-other', userId: user.id, email: 'm@a.com', deckId: otherDeck.id, deckTitle: 'OtherActive' })
+
+    const job = createJob({ deckId: deck.id, userId: user.id, from: 'beitou-standard', to: 'alpha' })
+    await runSwitchJob(job.id, async () => '---\ntitle: After\n---\n\n# new')
+    expect(getJob(job.id)!.state).toBe('success')
+
+    // slides.md 文件未被覆盖
+    expect(fs.readFileSync(slidesFile, 'utf-8')).toBe('# untouched original\n')
+
+    delete process.env.BIG_PPT_SLIDES_PATH
+    __resetPathsForTesting()
+    resetLock()
+  })
+})
