@@ -8,7 +8,7 @@
 | ------ | -------------------- | -------------------------------------------------- |
 | **P1** | Phase 3 关闭前必须清 | 5（全部清除：Phase 3 清 4 条，Phase 4 清 P1-5）                   |
 | **P2** | Phase 4 关闭前必须清 | 4（**全部清除**：P2-1/P2-2/P2-3 Phase 4 清；**P2-4 2026-04-23 提前清**） |
-| **P3** | 非阻塞，有机会再清   | 10（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归；**P3-10 2026-04-25 7C 暴露**）    |
+| **P3** | 非阻塞，有机会再清   | 11（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归；**P3-10 2026-04-25 7D 清**；**P3-11 2026-04-25 新增 server-ref 反代**）    |
 
 ---
 
@@ -310,6 +310,36 @@
 
 ---
 
+### P3-11. Slidev `vite-plugin-vue-server-ref` 客户端 fetch 不带 base 前缀（双层 proxy workaround）
+
+**位置**：
+
+- 上游：[`vite-plugin-vue-server-ref@1.0.0`](https://github.com/antfu/vite-plugin-vue-server-ref)（Anthony Fu 维护）`dist/index.mjs` 生成的 client 代码 `fetch('${prefix + key}', ...)`，`prefix` 是 plugin 配置的 URL 前缀（默认 `/@server-ref/`），写的是绝对路径，没拼 `import.meta.env.BASE_URL`
+- 调用方：`@slidev/client/state/{shared,snapshot,drawings}.ts` 通过 `import serverState from 'server-reactive:nav'` 触发生成 fetch
+- workaround 代码：[packages/creator/vite.config.ts](../../packages/creator/vite.config.ts) proxy `/@server-ref` `/@server-reactive` → agent；[packages/agent/src/index.ts](../../packages/agent/src/index.ts) `SLIDEV_EXTRA_PREFIXES` 数组把这俩绝对前缀也反代到 Slidev:3031
+
+**背景**：Slidev 启动加 `--base /api/slidev-preview/`，HTML / 资源路径都正确加 base，但 `vite-plugin-vue-server-ref` 注入到客户端 bundle 的 `fetch('/@server-reactive/nav', ...)` 用的是绝对路径，没考虑 base。iframe 翻页时这条 POST 就直奔 iframe 自己的 origin（creator dev `localhost:3030`），creator vite proxy 此前只代理 `/api/*`，落空 `404 Not Found`，控制台噪音。功能上**不影响翻页主路径**（只是 nav state 跨 tab / presenter 同步失效）。
+
+**当前 workaround**（2026-04-25 临时修）：
+
+- creator vite.config.ts proxy 加 `/@server-ref` `/@server-reactive` → agent
+- agent index.ts 抽 `isSlidevProxyPath()` + `SLIDEV_EXTRA_PREFIXES`，让 `/@server-ref/*` `/@server-reactive/*` 走同一套 cookie 校验 + slidev-proxy 反代到 :3031
+- Slidev 端 plugin middleware 监听的就是这两个绝对前缀（不带 base），无需 strip
+- 生产 nginx / Caddy 部署时也得镜像这两条反代（写进 Phase 10 部署 runbook 的 待办）
+
+**上游修复路线**（最终目标，Phase 8 依赖升级期 / 之后伺机提 PR）：
+
+1. **minimal repro**：独立 repo，仅 `vite + vue + vite-plugin-vue-server-ref`，配 `vite.config.ts base: '/foo/'`，跑起来看 `network` tab 客户端 fetch 是 `/@server-ref/nav` 而非 `/foo/@server-ref/nav`
+2. **PR 给 `antfu/vite-plugin-vue-server-ref`**：把 plugin 生成的客户端代码 `fetch('${prefix + key}', ...)` 改为 `fetch(\`\${import.meta.env.BASE_URL.replace(/\\/$/, '')}\${prefix + key}\`, ...)`（注意 BASE_URL 默认 `/`，要 strip 末尾 `/` 防双斜杠）
+3. **Slidev 同步升级**：plugin 修后 Slidev `setupVueServerRef` 不需要改，bump 版本即可
+
+**清除时机**：
+
+- 上游 plugin 升级 + Slidev 升级带过来后，删除 [vite.config.ts](../../packages/creator/vite.config.ts) 里 `/@server-ref` `/@server-reactive` 两条 proxy + [agent/src/index.ts](../../packages/agent/src/index.ts) 里 `SLIDEV_EXTRA_PREFIXES` 常量与 `isSlidevProxyPath()` 抽象
+- 用户决定"最后再提 PR"——Phase 8 全量升级时把这条作为 minor task 一并处理
+
+---
+
 ### P3-6. creator 有 11 条 `any` 警告（Phase 2 遗留） ✅（2026-04-22 清）
 
 **原位置**：
@@ -344,3 +374,4 @@
 | 2026-04-23 | **P2-4 提前清完**：JsonFileRepo 落盘时用 AES-256-GCM 加密 headers value（复用 `crypto/apikey.ts`），`/api/mcp/servers` 上 requireAuth + GET 脱敏 value 为 `***` + PATCH 支持 `***` 保留旧值语义；前端 `MCPCatalogItem.vue` 适配脱敏 UI；顺带修了 Phase 5 遗留的 "未登录可读 MCP headers" 漏洞；测试 +11 = 268；P2 条数 3/4 → 4/4 | 项目组 |
 | 2026-04-25 | **新增 P3-10**：Phase 7C 暴露 creator 单测过度依赖 msw mock，整套 72 测全绿但 `<img src>` 缺 `/api/` 前缀的 prod bug 直到 dev 浏览器才发现。用户提醒"给了 lumideck_test 测试库就是让你放心调后端，除了 LLM/MCP 没什么可 mock 的"。短期 7C-补丁修了 URL 路径 + agent 加 `/api/templates/:id/:filename` 静态路由 + E2E 强化（naturalWidth > 0 / HTTP 200 断言）；中期改造 creator 测用真实 agent + lumideck_test 留 Phase 7D | 项目组 |
 | 2026-04-25 | **Phase 7D 关闭**：P3-10 全清（抽 agent app 单例 + creator workspace dep + `_setup/integration.ts` in-process fetch shim + 3 个契约 spec 改造）；同期 `deck_versions` schema 加 `template_id` 列 + `routes/decks` restore 端点同步 `decks.template_id`，让 /undo 切回旧模板可逆；新增 3 条 E2E spec（新建 jingyeda / 切模板 / 切完 /undo），9 条 e2e 全绿。测试 363 unit → 368 unit + 9 e2e = 377 total | 项目组 |
+| 2026-04-25 | **新增 P3-11**：Slidev 翻页时 iframe 内 `vite-plugin-vue-server-ref` 客户端代码 `fetch('/@server-reactive/nav')` 不带 base 前缀，落到 creator dev 端口 404。临时双层 proxy workaround（creator vite + agent http server 都加 `/@server-ref` `/@server-reactive` 反代）；上游 PR 留 Phase 8 依赖升级期一并提 | 项目组 |

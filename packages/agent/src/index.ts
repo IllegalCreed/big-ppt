@@ -49,6 +49,17 @@ registerLocalTools()
 // 可用 SLIDEV_ORIGIN 指定绝对内网地址（并把 Slidev 绑到对应网卡上）。
 const SLIDEV_ORIGIN = process.env.SLIDEV_ORIGIN ?? 'http://localhost:3031'
 const SLIDEV_PROXY_PREFIX = '/api/slidev-preview'
+// Slidev 客户端内的 vite-plugin-vue-server-ref（nav / drawings 状态同步）写的是
+// 绝对路径 fetch('/@server-reactive/<key>')，没带 --base 前缀。我们一并反代到 Slidev，
+// Slidev 的 plugin 中间件按这两个绝对前缀匹配，无需 strip。
+// 上游修法见 docs/plans/99-tech-debt.md P3-11。
+const SLIDEV_EXTRA_PREFIXES = ['/@server-ref/', '/@server-reactive/']
+
+function isSlidevProxyPath(url: string | undefined): boolean {
+  if (!url) return false
+  if (url.startsWith(SLIDEV_PROXY_PREFIX)) return true
+  return SLIDEV_EXTRA_PREFIXES.some((p) => url.startsWith(p))
+}
 
 // Slidev 启动时配了 `--base /api/slidev-preview/`，它生成的 HTML / HMR WS
 // 路径都带这个前缀；代理这里不要 strip，原样透传给 Slidev 让它自己路由。
@@ -72,7 +83,7 @@ slidevProxy.on('error', (err, _req, res) => {
 const honoListener = getRequestListener(app.fetch)
 
 const server = http.createServer(async (req, res) => {
-  if (req.url?.startsWith(SLIDEV_PROXY_PREFIX)) {
+  if (isSlidevProxyPath(req.url)) {
     const auth = await authorizeSlidevAccess(req.headers.cookie)
     if (!auth.ok) {
       res.writeHead(auth.status, { 'Content-Type': 'application/json' })
@@ -86,7 +97,7 @@ const server = http.createServer(async (req, res) => {
 })
 
 server.on('upgrade', async (req, socket, head) => {
-  if (!req.url?.startsWith(SLIDEV_PROXY_PREFIX)) {
+  if (!isSlidevProxyPath(req.url)) {
     socket.destroy()
     return
   }
@@ -101,7 +112,9 @@ server.on('upgrade', async (req, socket, head) => {
 
 server.listen(port, () => {
   console.log(`[agent] listening on http://localhost:${port}`)
-  console.log(`[agent] slidev proxy → ${SLIDEV_ORIGIN} (path: ${SLIDEV_PROXY_PREFIX}/*)`)
+  console.log(
+    `[agent] slidev proxy → ${SLIDEV_ORIGIN} (paths: ${SLIDEV_PROXY_PREFIX}/* + ${SLIDEV_EXTRA_PREFIXES.join(' + ')}*)`,
+  )
   void getRegistry()
     .initialize()
     .then(() => console.log('[agent] MCP registry initialized'))
