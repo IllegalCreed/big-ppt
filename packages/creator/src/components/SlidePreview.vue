@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Download, Play, RefreshCw } from 'lucide-vue-next'
 import { useSlideStore } from '../composables/useSlideStore'
 
@@ -7,11 +7,33 @@ const slideStore = useSlideStore()
 
 // 走 agent 反代（/api/slidev-preview/*），agent 校验 session cookie + 当前是锁持有者才放行。
 // 这样外网拿到 URL 没登录/没占用锁的用户看不到别人的 deck。
-// `?t=token` 在 token 变化时强制 iframe 重载（Vue 看到 src 改变就会重新挂载 iframe）。
+//
+// Phase 7D fix（hash-mode）：iframe src 不再绑 currentPage，仅 refreshToken 触发 reload。
+// Slidev 已切到 routerMode: hash（mirror 写盘时 ensureRouterModeHash 强插），翻页通过
+// 修改 contentWindow.location.hash 实现 —— 不触发 iframe full reload，避免 LLM 工具
+// 链频繁 setPage 时画面闪烁 + 浏览器扩展 postMessage 在 contentWindow null 瞬间挂错。
+const iframeRef = ref<HTMLIFrameElement | null>(null)
+const initialPage = slideStore.currentPage.value // 仅用作 mount 时的初始 hash
 const iframeSrc = computed(
-  () => `/api/slidev-preview/${slideStore.currentPage.value}?t=${slideStore.refreshToken.value}`,
+  () => `/api/slidev-preview/?t=${slideStore.refreshToken.value}#/${initialPage}`,
 )
-const presentSrc = computed(() => `/api/slidev-preview/${slideStore.currentPage.value}`)
+const presentSrc = computed(() => `/api/slidev-preview/#/${slideStore.currentPage.value}`)
+
+// currentPage 变化 → 写 iframe hash（不重新挂载 iframe）
+watch(
+  () => slideStore.currentPage.value,
+  (page) => {
+    const win = iframeRef.value?.contentWindow
+    if (!win) return
+    try {
+      // 同源 iframe（agent 反代到本机 Slidev）能直接读写 location；hash 改不触发 reload
+      const wantHash = `#/${page}`
+      if (win.location.hash !== wantHash) win.location.hash = wantHash
+    } catch {
+      /* 跨域或卸载中忽略；下次 refresh 自然对齐 */
+    }
+  },
+)
 
 function refresh() {
   slideStore.refresh()
@@ -60,6 +82,7 @@ function present() {
     </div>
     <div class="preview-frame">
       <iframe
+        ref="iframeRef"
         :src="iframeSrc"
         class="slidev-iframe"
         allow="clipboard-write; screen-wake-lock"

@@ -89,9 +89,11 @@ export function installErrorHandlers(app: App): void {
 
   // 未捕获的 JS 错误
   window.addEventListener('error', (ev: ErrorEvent) => {
-    // 过滤扩展注入脚本（content_script.js、content_guard.js 等），非应用问题
+    // P3-4 ✅：白名单——只记 filename 在本应用 origin 下的错误。
+    // 浏览器扩展（content_script.js / content_guard.js / content_main.js …）的 filename
+    // 通常是 chrome-extension:// 或独立脚本路径，不是我们的应用代码，过滤掉避免噪音。
     const file = ev.filename || ''
-    if (/content_(script|guard)\.js/.test(file)) return
+    if (file && !file.startsWith(window.location.origin)) return
 
     logEvent({
       kind: 'browser_error',

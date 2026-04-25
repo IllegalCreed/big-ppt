@@ -2,6 +2,7 @@
 theme: seriph
 title: 新建幻灯片
 transition: slide-left
+routerMode: hash
 layout: jingyeda-cover
 mainTitle: 请填写标题
 subtitle: 可选副标题

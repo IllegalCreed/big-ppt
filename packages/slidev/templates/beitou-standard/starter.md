@@ -2,6 +2,7 @@
 theme: seriph
 title: 新建幻灯片
 transition: slide-left
+routerMode: hash
 layout: beitou-cover
 mainTitle: 请填写标题
 subtitle: 请填写副标题

@@ -8,7 +8,7 @@
 | ------ | -------------------- | -------------------------------------------------- |
 | **P1** | Phase 3 关闭前必须清 | 5（全部清除：Phase 3 清 4 条，Phase 4 清 P1-5）                   |
 | **P2** | Phase 4 关闭前必须清 | 4（**全部清除**：P2-1/P2-2/P2-3 Phase 4 清；**P2-4 2026-04-23 提前清**） |
-| **P3** | 非阻塞，有机会再清   | 11（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归；**P3-10 2026-04-25 7D 清**；**P3-11 2026-04-25 新增 server-ref 反代**）    |
+| **P3** | 非阻塞，有机会再清   | 11（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归；**P3-10 2026-04-25 7D 清**；**P3-11 2026-04-25 新增 server-ref 反代**；**P3-4 2026-04-25 hash-mode fix 顺手清**）    |
 
 ---
 
@@ -177,12 +177,11 @@
 
 **触发时机**：Phase 3 monorepo 搭建同期 — 已完成
 
-### P3-4. `content_guard.js` 扩展错误只靠文件名过滤
+### P3-4. `content_guard.js` 扩展错误只靠文件名过滤 ✅（2026-04-25 清，hash-mode fix 顺手）
 
-**位置**：[packages/creator/src/composables/logger.ts](../../packages/creator/src/composables/logger.ts) `if (/content_(script|guard)\.js/.test(file)) return`
-**影响**：名称规则易变，未来浏览器扩展用不同命名就过滤失败。
-**修复方案**：改成白名单——只记录 `filename` 在 `window.location.origin` 下的错误。
-**触发时机**：Phase 3 完整 error 治理时
+**原位置**：[packages/creator/src/composables/logger.ts](../../packages/creator/src/composables/logger.ts) `if (/content_(script|guard)\.js/.test(file)) return`
+**实际修复**：黑名单 regex 改为白名单——`window.addEventListener('error')` 里 `if (file && !file.startsWith(window.location.origin)) return`，扩展无论叫 content_main.js / content_anything.js 还是 chrome-extension:// 协议都被挡掉。同期修了 hash-mode fix 暴露 content_main.js 错误的现象。
+**触发时机**：2026-04-25 Slidev hash-mode 修复时顺带
 
 ### P3-5. 工具名前缀约定不统一 ✅
 
@@ -375,3 +374,4 @@
 | 2026-04-25 | **新增 P3-10**：Phase 7C 暴露 creator 单测过度依赖 msw mock，整套 72 测全绿但 `<img src>` 缺 `/api/` 前缀的 prod bug 直到 dev 浏览器才发现。用户提醒"给了 lumideck_test 测试库就是让你放心调后端，除了 LLM/MCP 没什么可 mock 的"。短期 7C-补丁修了 URL 路径 + agent 加 `/api/templates/:id/:filename` 静态路由 + E2E 强化（naturalWidth > 0 / HTTP 200 断言）；中期改造 creator 测用真实 agent + lumideck_test 留 Phase 7D | 项目组 |
 | 2026-04-25 | **Phase 7D 关闭**：P3-10 全清（抽 agent app 单例 + creator workspace dep + `_setup/integration.ts` in-process fetch shim + 3 个契约 spec 改造）；同期 `deck_versions` schema 加 `template_id` 列 + `routes/decks` restore 端点同步 `decks.template_id`，让 /undo 切回旧模板可逆；新增 3 条 E2E spec（新建 jingyeda / 切模板 / 切完 /undo），9 条 e2e 全绿。测试 363 unit → 368 unit + 9 e2e = 377 total | 项目组 |
 | 2026-04-25 | **新增 P3-11**：Slidev 翻页时 iframe 内 `vite-plugin-vue-server-ref` 客户端代码 `fetch('/@server-reactive/nav')` 不带 base 前缀，落到 creator dev 端口 404。临时双层 proxy workaround（creator vite + agent http server 都加 `/@server-ref` `/@server-reactive` 反代）；上游 PR 留 Phase 8 依赖升级期一并提 | 项目组 |
+| 2026-04-25 | **Slidev hash-mode fix**：用户反馈 LLM 改幻灯片时 iframe 频繁刷新 + content_main.js postMessage 报错。根因 SlidePreview iframe src 同时绑 `currentPage`，工具链 setPage 一变就 reload。修法：starter.md（beitou + jingyeda）加 `routerMode: hash` + `mirror.ts` 写盘前 `ensureRouterModeHash` 防御性插入（兼容老 deck）+ SlidePreview src 不绑 currentPage（只绑 refreshToken），翻页改写 `iframe.contentWindow.location.hash`。**P3-4 顺手清**：logger.ts 黑名单 regex 改白名单（同源 origin 才记），扩展无论叫什么都挡掉。测试 +7 mirror 单测 = agent 301 / creator 71 / e2e 9 全绿 | 项目组 |
