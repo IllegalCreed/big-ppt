@@ -40,7 +40,7 @@ beforeEach(() => {
   fs.copyFileSync(REAL_MANIFEST_PATH, path.join(csDir, 'manifest.json'))
   fs.writeFileSync(
     path.join(csDir, 'starter.md'),
-    '---\nlayout: cover\nmainTitle: 占位\n---\n',
+    '---\nlayout: beitou-cover\nmainTitle: 占位\n---\n',
   )
   process.env.BIG_PPT_TEMPLATES_ROOT = templatesRoot
   __resetPathsForTesting()
@@ -57,13 +57,13 @@ afterEach(() => {
 describe('buildSystemPrompt（A/B contract）', () => {
   it('七个 layout 段标题全部出现', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
-    expect(prompt).toContain('### `cover`')
-    expect(prompt).toContain('### `toc`')
-    expect(prompt).toContain('### `content`')
-    expect(prompt).toContain('### `two-col`')
-    expect(prompt).toContain('### `data`')
-    expect(prompt).toContain('### `image-content`')
-    expect(prompt).toContain('### `back-cover`')
+    expect(prompt).toContain('### `beitou-cover`')
+    expect(prompt).toContain('### `beitou-toc`')
+    expect(prompt).toContain('### `beitou-content`')
+    expect(prompt).toContain('### `beitou-two-col`')
+    expect(prompt).toContain('### `beitou-data`')
+    expect(prompt).toContain('### `beitou-image-content`')
+    expect(prompt).toContain('### `beitou-back-cover`')
   })
 
   it('cover layout 字段名齐：mainTitle / subtitle / reporter / date', () => {
@@ -102,13 +102,13 @@ describe('buildSystemPrompt（A/B contract）', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toMatch(/`message`/)
     // back-cover 的 date 是可选
-    const backCoverSection = prompt.split('### `back-cover`')[1] ?? ''
+    const backCoverSection = prompt.split('### `beitou-back-cover`')[1] ?? ''
     expect(backCoverSection).toMatch(/`date`.*可选/)
   })
 
   it('content layout 含 body 指引', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
-    const contentSection = prompt.split('### `content`')[1]?.split('### `')[0] ?? ''
+    const contentSection = prompt.split('### `beitou-content`')[1]?.split('### `')[0] ?? ''
     expect(contentSection).toContain('**body**')
   })
 
@@ -177,8 +177,8 @@ describe('GET /api/system-prompt', () => {
     const json = await res.json()
     expect(json.success).toBe(true)
     expect(json.templateId).toBe('beitou-standard')
-    expect(json.prompt).toContain('### `cover`')
-    expect(json.prompt).toContain('### `back-cover`')
+    expect(json.prompt).toContain('### `beitou-cover`')
+    expect(json.prompt).toContain('### `beitou-back-cover`')
   })
 
   it('mcpBadges query 拼到 prompt', async () => {

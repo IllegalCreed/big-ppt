@@ -90,9 +90,9 @@ describe('routes/decks', () => {
       .where(eq(deckVersions.id, deck.currentVersionId!))
       .limit(1)
     // starter.md 至少包含三页分隔符 + 3 个 layout 标记
-    expect(v?.content).toContain('layout: cover')
-    expect(v?.content).toContain('layout: content')
-    expect(v?.content).toContain('layout: back-cover')
+    expect(v?.content).toContain('layout: beitou-cover')
+    expect(v?.content).toContain('layout: beitou-content')
+    expect(v?.content).toContain('layout: beitou-back-cover')
     expect(v?.content).toContain('请填写标题')
   })
 

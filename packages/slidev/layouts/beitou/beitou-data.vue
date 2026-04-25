@@ -30,7 +30,7 @@ withDefaults(
           <slot />
         </div>
         <div v-if="metrics.length" class="metrics-wrap">
-          <LMetricCard
+          <LBeitouMetricCard
             v-for="(m, i) in metrics"
             :key="i"
             :value="m.value"

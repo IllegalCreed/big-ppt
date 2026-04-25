@@ -14,11 +14,11 @@ defineProps<{
 <template>
   <div class="slidev-layout back-cover-slide">
     <div class="back-cover-root">
-      <LTitleBlock padding="40px 0" class="ending-block">
+      <LBeitouTitleBlock padding="40px 0" class="ending-block">
         <h1 v-if="message">{{ message }}</h1>
-      </LTitleBlock>
+      </LBeitouTitleBlock>
       <div class="footer-area">
-        <LCoverLogo :mark-size="24" :text-size="24" />
+        <LBeitouCoverLogo :mark-size="24" :text-size="24" />
         <p v-if="date" class="footer-date">{{ date }}</p>
       </div>
     </div>

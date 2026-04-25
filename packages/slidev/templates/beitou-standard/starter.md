@@ -2,7 +2,7 @@
 theme: seriph
 title: 新建幻灯片
 transition: slide-left
-layout: cover
+layout: beitou-cover
 mainTitle: 请填写标题
 subtitle: 请填写副标题
 reporter: 请填写部门
@@ -10,7 +10,7 @@ date: YYYY/MM/DD
 ---
 
 ---
-layout: content
+layout: beitou-content
 heading: 请填写页标题
 ---
 
@@ -23,6 +23,6 @@ heading: 请填写页标题
 ● 例："把第 3 页的标题改成 'OKR 回顾'"
 
 ---
-layout: back-cover
+layout: beitou-back-cover
 message: 谢谢观看
 ---

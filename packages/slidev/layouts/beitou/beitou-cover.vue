@@ -18,11 +18,11 @@ defineProps<{
 <template>
   <div class="slidev-layout cover-slide">
     <div class="cover-root">
-      <LCoverLogo class="cover-logo" />
-      <LTitleBlock>
+      <LBeitouCoverLogo class="cover-logo" />
+      <LBeitouTitleBlock>
         <h1 v-if="mainTitle">{{ mainTitle }}</h1>
         <h2 v-if="subtitle">{{ subtitle }}</h2>
-      </LTitleBlock>
+      </LBeitouTitleBlock>
       <div v-if="reporter || date" class="cover-info">
         <p v-if="reporter" class="cover-info-line">汇报人：{{ reporter }}</p>
         <p v-if="date" class="cover-info-line">时&emsp;间：{{ date }}</p>
