@@ -272,7 +272,7 @@ describe('TemplatePickerModal · progress / success / error', () => {
       expect(events).toBeDefined()
       expect(events![0][0]).toMatchObject({
         snapshotVersionId: 9,
-        newVersionName: '竞业达汇报模板',
+        newTemplateName: '竞业达汇报模板',
       })
       expect(wrapper.emitted('update:open')).toBeDefined()
     })

@@ -22,7 +22,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:open': [value: boolean]
   created: [deck: Deck]
-  switched: [payload: { snapshotVersionId: number | null; newTemplateId: string; newTemplateName: string; newVersionName: string }]
+  switched: [payload: { snapshotVersionId: number | null; newTemplateId: string; newTemplateName: string }]
 }>()
 
 const { createDeck } = useDecks()
@@ -159,7 +159,6 @@ function onSuccessClose() {
     snapshotVersionId: snap,
     newTemplateId: selected.value!.id,
     newTemplateName: selected.value!.name,
-    newVersionName: selected.value!.name,
   })
   close()
 }
