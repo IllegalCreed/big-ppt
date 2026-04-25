@@ -38,8 +38,8 @@ export interface TemplateManifest {
   name: string
   /** 一句话介绍 */
   description: string
-  /** 相对模板目录的缩略图路径，如 `cover.png` */
-  thumbnail: string
+  /** 相对模板目录的缩略图路径，如 `cover.png`；可选，新模板未生成缩略图前可不填（见 Phase 7C） */
+  thumbnail?: string
   /** 品牌 logo 资源集；路径同样相对模板目录 */
   logos: {
     primary: string
@@ -146,7 +146,9 @@ export function validateManifest(raw: unknown): ValidateManifestResult {
   if (!isNonEmptyString(raw.id)) errors.push('id 必填（非空字符串）')
   if (!isNonEmptyString(raw.name)) errors.push('name 必填')
   if (!isNonEmptyString(raw.description)) errors.push('description 必填')
-  if (!isNonEmptyString(raw.thumbnail)) errors.push('thumbnail 必填')
+  if (raw.thumbnail !== undefined && typeof raw.thumbnail !== 'string') {
+    errors.push('thumbnail 若存在必须是字符串')
+  }
   if (!isNonEmptyString(raw.promptPersona)) errors.push('promptPersona 必填')
   if (!isNonEmptyString(raw.starterSlidesPath)) {
     errors.push('starterSlidesPath 必填')
