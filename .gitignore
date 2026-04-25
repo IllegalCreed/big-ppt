@@ -165,3 +165,4 @@ slides.md.bak
 # 手动副本不纳入版本控制
 slides?copy.md
 slides-*.md
+.superpowers/

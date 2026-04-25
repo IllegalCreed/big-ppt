@@ -271,12 +271,14 @@
   - L* 内部组件（按需）
   - `manifest.json` 完整填写（含 `starterSlidesPath` 指向 3 页骨架 `starter.md`）
 
-- **7C：前端选择 / 切换 UI**
-  - 新建 deck 弹窗：命名 input + 模板选择器（缩略图卡片 + 描述 + hover preview）
-  - 编辑页模板切换入口（顶栏按钮 / 菜单项）
-  - Confirm dialog：强调"内容将被 AI 重写、当前版本自动快照、失败可 /undo"
-  - 重写进度指示（loading + 预计耗时）
-  - 结果页：成功 toast / 失败错误展示 / /undo 入口直达
+- **7C：前端选择 / 切换 UI**（设计已收敛，详见 [plan 14](../plans/14-phase7c-template-ui.md)）
+  - **`TemplatePickerModal` 共用组件**：`mode='create'|'switch'` + `view='picker'|'progress'|'success'|'error'` 状态机；新建 deck 与切换模板复用同一组件
+  - **picker 布局**：左列模板列表 + 右大预览（为多模板扩展），`switch` 模式右侧追加内联警告条 + 危险色主按钮"切换（AI 重写）"
+  - **进度展示**：弹窗内 stage list + 进度条（`snapshotting → migrating → success`），progress 阶段禁止 Esc / 外部关闭
+  - **结果反馈**：成功 → 弹窗内成功视图 → 用户点"查看"关窗 → 编辑页底部 `UndoToast` 6s 软提醒（带 /undo 链接直跳 VersionTimeline 高亮快照版本）；失败 → 弹窗保留 + 错误详情折叠 + retry/关闭
+  - **轮询契约**：`useSwitchTemplateJob` composable 封装 POST + GET，前 45s @ 1.5s / 之后 @ 3s / 总 5min 超时；modal unmount 自动 abort
+  - **缩略图机制**：manifest 加 `thumbnail` / `tagline` 字段；`scripts/generate-template-thumbnails.ts`（playwright + slidev cli）一次性生成 PNG 提交入库；新增模板时手跑 `pnpm gen:thumbnails`
+  - **编辑页入口**：`DeckEditorCanvas` 顶栏 History 与 Settings 之间新增 `Layers` 图标 + "切换模板"按钮（沿用现有 toolbar 按钮样式 + lucide-vue-next 图标）
 
 - **7D：E2E 场景（3 条新 spec）**
   - 新建 → 选 `jingyeda-standard` → deck 初始化 → 编辑器渲染
@@ -287,12 +289,15 @@
 
 - [ ] **7A 零回归**：rename 后 `pnpm test` 全绿，全仓 `rg "company-standard"` 仅剩 `deck_versions.message` 里的历史字串
 - [ ] **7A DB 迁移幂等**：`decks` 表所有 `company-standard` 记录均迁到 `beitou-standard`，schema DEFAULT 同步更新
-- [ ] `pnpm e2e` 全绿（原 5 条 + 新 3 条 = 8 条）
+- [ ] **7C 缩略图脚本幂等**：`pnpm gen:thumbnails` 重跑后 `git diff` 仅在内容真变时显示
+- [ ] **7C `TemplatePickerModal` 单测覆盖**：`mode × view` 状态机转移 + `useSwitchTemplateJob` 节奏 / 超时 / abort / retry
+- [ ] **7C 全链路 manual**：新建走 picker / 编辑页切模板 happy + error 双路径在 dev 浏览器走通
+- [ ] `pnpm e2e` 全绿（原 5 条 + 7C 1 条冒烟 + 7D 3 条 = 9 条）
 - [ ] 两套模板双向切换可逆（/undo 回得去 + 无数据丢失）
 - [ ] 新建弹窗缩略图加载正常（首次 < 1s，懒加载）
 - [ ] 总测试数 335 → ~360
 
-**状态**：进行中。**7A ✅ 关闭**（2026-04-25）+ **7B ✅ 关闭**（视觉骨架，2026-04-24/25）；7C/7D 待启动。详见 [plan 13](../plans/13-phase7-template-rename.md)。
+**状态**：进行中。**7A ✅ 关闭**（2026-04-25）+ **7B ✅ 关闭**（视觉骨架，2026-04-24/25）；**7C 设计已收敛**（2026-04-25，brainstorm 5 问全决）→ 详见 [plan 14](../plans/14-phase7c-template-ui.md)；7D 待启动。原 [plan 13](../plans/13-phase7-template-rename.md) 仅覆盖 7A/7B。
 
 **依赖**：Phase 6 完成
 
