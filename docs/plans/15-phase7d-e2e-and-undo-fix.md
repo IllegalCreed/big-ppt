@@ -292,3 +292,86 @@ pnpm dev
 - ❌ 不写 progress 阶段后台运行能力（plan 14 已 YAGNI）
 - ❌ 不动 deckChats 表（与 deck_versions 跨版本保留语义维持）
 - ❌ 不在生产代码做模板回退兼容兜底（旧版本 NULL templateId 直接保持原 restore 行为，不做"猜测旧模板"）
+
+---
+
+## 执行期偏离（关闭后追加）
+
+- **schema bug 7D-A 是硬前置**：原 plan 把 7D-A schema 修当作普通 task，实施时发现 7D-3 双向可逆 E2E 完全建立在这个修复上，不修就跑不通。落地时 7D-A 先于 7D-D 完成
+- **`BIG_PPT_TEST_REWRITE_MODE=skeleton` 走 webServer env**：E2E 用 env 控制 skeleton mode 跳真 LLM 是低成本设计；playwright.config.ts 里 agent webServer env 直接写死，不进任何 `.env.*` 文件
+- **测试净减 1**：plan 预计 +N 创新；7D-C 把 useDecks / useAuth / useSwitchTemplateJob 三个 spec 从 msw 迁到真后端，部分 msw 专用 case 合并（72 → 71）
+- **顺手修 P3-10**：plan 14 暴露的"creator 单测过度依赖 msw mock"在 7D-C 全清，作为本 plan 副产品
+
+---
+
+## 踩坑与解决
+
+### 坑 1：deck_versions 缺 templateId 列导致 restore 后 deck.templateId 不同步
+
+- **症状**：用户切模板 → /undo → restore 旧版本，前端显示旧内容但 `decks.template_id` 仍是新模板，下次保存版本时混乱
+- **根因**：`deck_versions` 表只存 content + message，没存 templateId 快照；restore 时 routes/decks 端点未联动 `decks.template_id`
+- **修复**：commit `34a1ccb` — `deckVersions` 加 nullable `template_id` 列；`template-switch-job` snapshot 写 fromTemplateId / 新 version 写 toTemplateId；restore 端点 fallback 同步 `decks.template_id`（旧数据 NULL 不动向前兼容）
+- **防再犯**：版本表必须存"完整快照"，不只是内容；任何 deck-level 字段被切换的地方都要在 version 上反映
+- **已提炼到 CLAUDE.md**：否（属于 schema 演化历史）
+
+### 坑 2：persist 写新 version 时漏同步 deck.template_id
+
+- **症状**：切模板成功后 deck 新 version 创建，但 `decks.template_id` 没改
+- **根因**：persist 函数职责单一，没考虑联动 deck-level 字段
+- **修复**：commit `0d2a349` — persist 写新 version 时同步 `deck.template_id`
+- **防再犯**：所有"既更 version 又更 deck-level"的操作要 transaction 包；future ORM event hook 可统一处理
+- **已提炼到 CLAUDE.md**：否
+
+### 坑 3：切模板成功后预览仍是旧的（Slidev HMR 协调）
+
+- **症状**：切模板成功，DB 落地新内容，但 iframe 预览仍显示旧 layouts
+- **根因**：commit `9bd4f6e` — backend 漏 mirror（slides.md 没更新）+ frontend 漏 refresh（即使 mirror 了，前端也得手动触发 iframe 重载）
+- **修复**：先确保 mirror（agent 主动写 packages/slidev/slides.md）；再 commit `81c200d` 改回不再前端调 `slideStore.refresh()`，让 Slidev HMR 自己推（前端调反而触发 race，HMR 已经在路上）
+- **防再犯**：CLAUDE.md "Slidev 包的特殊点" 已记录"切换 deck 时让 Slidev HMR 自己处理，前端不调 refresh"
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 4：SlidePreview 切模板后 502（Slidev reload 窗口）
+
+- **症状**：切模板瞬间 iframe 报 502
+- **根因**：Slidev 收到 mirror 后会触发 reload，reload 窗口（约 200-500ms）期间 dev server 不响应；如果前端这时还 fetch iframe URL 就 502
+- **修复**：commit `c92ac31` — SlidePreview 改 probe-then-refresh：先 HEAD 探活，等到 Slidev 起好才刷 iframe
+- **防再犯**：所有"重启敏感"的服务前端访问都加 probe；CLAUDE.md "已知坑" 已收录
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 5：Slidev `/@server-reactive/nav` 翻页 404
+
+- **症状**：Slidev 翻页时 devtools 看到 `/@server-reactive/nav` 404
+- **根因**：双层 proxy（agent → slidev）让 Slidev 内部的 server-reactive endpoint 在 base path 解析时丢失前缀
+- **修复**：暂时双层 proxy workaround（agent 转发该 endpoint），登记 P3-11 后续 Slidev 升级再复检
+- **防再犯**：CLAUDE.md 已知坑 + tech-debt 双登记
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 6：theme 字段兜底白名单缺失导致 :3031 起不来
+
+- **症状**：切模板时 LLM 偶尔在 frontmatter 里塞了奇怪的 theme 字段（如 `theme: jingyeda`），Slidev 没这个 theme 启动失败
+- **根因**：rewriteForTemplate 没校验 LLM 输出的 frontmatter 字段
+- **修复**：commit `77d2b47` — theme 字段兜底白名单 + 修当前 slides.md 让 :3031 起得来；commit `8156093` — 校验 LLM 返回值合法性 + prompt 加禁止 tool_call 格式
+- **防再犯**：所有 LLM 输出落 disk 前要做 schema validation；任何允许 LLM 自由文本的字段都要白名单
+- **已提炼到 CLAUDE.md**：否（属于 LLM 输入卫生通用原则，但具体规则在 plan）
+
+### 坑 7：E2E 切模板搞乱 dev slidev
+
+- **症状**：E2E 跑切模板会写到 dev 的 `packages/slidev/slides.md`，把开发者正在看的预览搞乱
+- **根因**：mirror 路径默认 dev/test 共用
+- **修复**：commit `7b97c85` — E2E mirror 写到 `/tmp` 隔离
+- **防再犯**：所有"写 fs"的代码路径在 test env 下都要走可配置的临时目录
+- **已提炼到 CLAUDE.md**：否（已嵌入 E2E 配置）
+
+---
+
+## 测试数量落地
+
+| 阶段（commit）| agent | creator | shared | E2E | 合计 |
+| ------------- | ----- | ------- | ------ | --- | ---- |
+| 入口（plan 14 收）| 281 | 72 | 3 | 6 | 362 |
+| 7D-A (34a1ccb deckVersions.templateId 列 + restore) | 285 | 72 | 3 | 6 | 366 |
+| 7D-B (8ab7bdb skeleton mode) | 287 | 72 | 3 | 6 | 368 |
+| 7D-C (d377115 真后端契约 spec) | 294 | 71 | 3 | 6 | 374 |
+| 7D-D (89dab6e 3 条切换流 E2E) | 294 | 71 | 3 | 9 | **377** |
+
+> 最终：294 agent + 71 creator + 3 shared = **368 unit + 9 E2E = 377 total**。

@@ -1,9 +1,19 @@
-# Phase 3.5 — MCP 集成 + 工具链后端化 实施计划
+# Phase 3.5 — MCP 集成 + 工具链后端化 实施文档
 
-> **For agentic workers:** REQUIRED SUB-SKILL: 使用 `superpowers:subagent-driven-development`(推荐,每个 Task 派发独立 subagent + review 间隔)或 `superpowers:executing-plans`(在当前会话里分批 checkpoint 执行)。所有 step 使用 `- [ ]` checkbox 语法跟踪进度。
+> **状态**：✅ 已关闭（2026-04-21）
+> **前置阶段**：Phase 3 Monorepo 拆分（[06-phase3-closeout.md](06-phase3-closeout.md)）
+> **后续阶段**：Phase 3.6 前端美化（[08](08-phase36-frontend-polish.md)）→ Phase 4 编辑器
+> **路线图**：[roadmap.md Phase 3.5](../requirements/roadmap.md)
+> **执行子技能**：`superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`，所有 step 用 `- [ ]` checkbox 跟踪
+> **替代**：[04-mcp-integration.md](04-mcp-integration.md)（已废弃）
 
-**状态**:待开始
-**关联**:路线图 [Phase 3.5](../requirements/roadmap.md) · 接 [06-phase3-closeout.md](06-phase3-closeout.md) · 替代 [04-mcp-integration.md](04-mcp-integration.md)(已废弃)
+---
+
+## ⚠️ Secrets 安全红线（HARD，沿用 [CLAUDE.md 安全约定](../../CLAUDE.md#安全与提交规则)）
+
+- MCP server headers 含 token / API key 等敏感凭据：本 Phase 落地为 `JsonFileRepo` 明文存储；**Phase 5 的 P2-4 task 升级为 AES-256-GCM 加密**（已闭环）
+- `data/mcp.json` 不进 git（`.gitignore` 已覆盖 `data/`）
+- 每次 `git commit` 前 `git status` 人工检查，禁用 `git add -A`
 
 **Goal**:在独立的 `packages/agent` 服务里接入 MCP HTTP client,把"本地 5 个工具"与"启用的 MCP 工具"统一到 agent `tool-registry`,前端通过 `GET /api/tools` 动态拉取、`POST /api/call-tool` 统一执行;彻底清零 P1-2 技术债,并给 Phase 5 的"用户系统 + DB"留好迁移口。
 
@@ -2699,3 +2709,36 @@ git commit -m "feat(creator+docs): MCP Settings UI + useMCP CRUD,关闭 Phase 3.
 - 中文 commit message
 - 每 Task 一个 commit
 - 遇到 MCP SDK 签名与本文档示例不符,以 SDK README 为准,修改实现 + 测试保持一致
+
+---
+
+## 执行期偏离（关闭后追加）
+
+- **MCP headers 落地为明文**：原 plan 没强调加密，实施期决定先明文落 `data/mcp.json`，**Phase 5 的 P2-4 task 升级为 AES-256-GCM 加密**（已闭环，commit `a155c5c`）
+- **`/api/mcp/servers` 漏 `requireAuth`**：原 plan 没强调，实施期当作内部 API 直接放开；Phase 5 P2-4 顺带补上 `requireAuth` + GET 脱敏 + PATCH 支持 `***` 保留旧值（一并修了未登录可读 token 漏洞）
+
+---
+
+## 踩坑与解决
+
+### 坑 1：MCP server headers 明文存储 = 凭据泄露漏洞
+
+- **症状**：`data/mcp.json` 明文存 Bearer token / API key；任何人能 access 到该文件就拿到所有用户的 MCP 凭据
+- **根因**：本 Phase plan 没把"凭据加密"作为 MVP 范围
+- **修复**：Phase 5 的 P2-4 task — `JsonFileRepo` 升级 AES-256-GCM 加密 headers value；master key 走 `APIKEY_MASTER_KEY` env；`/api/mcp/servers` GET 脱敏（敏感 header 显示 `***`），PATCH 支持 `***` 保留旧值
+- **防再犯**：所有"用户上传的凭据"必须走加密存储；新增类似字段时先加密再存
+- **已提炼到 CLAUDE.md**：是（已纳入"安全与提交规则"）
+
+### 坑 2：`/api/mcp/servers` 未登录可读 token
+
+- **症状**：登录前直接 GET 该路由也能拿到所有 MCP servers 含 token
+- **根因**：本 Phase 实施时把它当作"内部配置 API"，没加认证
+- **修复**：Phase 5 P2-4 顺带 — 路由加 `requireAuth` middleware；GET 脱敏不返回敏感 header
+- **防再犯**：所有"返回用户敏感数据"的路由都必须 `requireAuth`；新建路由优先默认 require，再按需放开
+- **已提炼到 CLAUDE.md**：是（已纳入"安全与提交规则"）
+
+---
+
+## 测试数量落地
+
+> 本 Phase 关闭时测试基建已就位（Phase 3 留底 31 tests）。Phase 3.5 期间 agent 测试增长到约 75（Phase 4 入口数）。具体增量在 closeout 报告或 commit message 里查阅。

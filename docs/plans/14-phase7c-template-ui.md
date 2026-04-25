@@ -2888,3 +2888,82 @@ Expected: working tree clean。
 - ❌ 完整 3 条切换流 E2E（留给 Phase 7D / plan 15）
 - ❌ 用户自定义模板
 - ❌ deck 新建弹窗增加高级选项（initialContent / starterOverride）—— 保持"标题 + 模板"两字段
+
+---
+
+## 执行期偏离（关闭后追加）
+
+- **subagent-driven 模式**：本 plan 用 `superpowers:subagent-driven-development` 跑，每 task 派 implementer → spec reviewer → code reviewer 三段
+- **Plan 自身踩到 bug 时直接修 plan + 加 prevent-regression 测试**：JSDoc 关闭符 / migrating 公式 / emit 字段语义三处都是先发现 plan 自身写错，commit 修代码 + 同步修 plan
+- **超额 +8 测试**：plan 预计 +19 单测，实际 +27（加了 prevent-regression 测试）
+- **顺手修 7C-4 的 prod bug**：缩略图 URL 缺 `/api` 前缀，commit `cbf412a` 在 7C-8 期一并修
+
+---
+
+## 踩坑与解决
+
+### 坑 1：JSDoc 里 `*​/​` 字符串字面量提前关闭注释
+
+- **症状**：缩略图脚本注释里写了 `*/` 作为示例文本（描述 JSDoc 关闭符），导致整段 JSDoc 提前结束，TypeScript 报语法错误
+- **根因**：JSDoc parser 不会区分注释体里的 `*/` 是字面文本还是真关闭符
+- **修复**：commit `89ba35c` 把字面量里的 `*/` 拆成 `*​/​`（中间加零宽字符）；commit `a5612f7` 恢复中文注释 + 同时加 `scripts/tsconfig.json`
+- **防再犯**：JSDoc 注释里写代码示例时绕开 `*/` 字面量；或者用单行注释代替
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 2：Vue Test Utils 不跨 Teleport 边界 query
+
+- **症状**：`TemplatePickerModal` 用 `<Teleport to="body">`，单测 `wrapper.find('.template-picker')` 找不到
+- **根因**：VTU 2 默认在 wrapper.element 子树内查询，Teleport 把内容渲到 body 之外
+- **修复**：commit `5bb2431` — 组件加 `disableTeleport` prop，测试时传 `true` 让组件 inline render
+- **防再犯**：所有用到 Teleport 的组件单测都加 disableTeleport seam
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 3：进度条进度公式钳到 0.51 不动
+
+- **症状**：切模板进度条 migrating 阶段后期在 51% 卡住不动
+- **根因**：plan 原公式是 `0.5 + (1 - 0.5) * (1 - Math.pow(0.5, polls / 30))`，看起来是渐进 1.0 但实际数学上趋近 0.51 后变化极慢
+- **修复**：commit `8529f7c` 改公式 `0.5 + 0.5 * Math.min(polls / 30, 1)` 简单线性递增；同步修 plan 防误导后续读者
+- **防再犯**：所有"动画 / 进度"公式都跑一遍取值表验证，不能纸上推
+- **已提炼到 CLAUDE.md**：否（属于 UI 微动画细节）
+
+### 坑 4：onUnmounted 漏清 timer 导致 memory leak
+
+- **症状**：DeckEditorCanvas 切换 deck 后，旧 deck 的 highlightTimer 仍在跑
+- **根因**：onMounted 里 setTimeout 没在 onUnmounted 里 clearTimeout
+- **修复**：commit `2eb4303` 加 `onUnmounted(() => clearTimeout(highlightTimer))`
+- **防再犯**：所有组件内的 setTimeout / setInterval 必须配 onUnmounted 清理；ESLint rule 可加自定义检查
+- **已提炼到 CLAUDE.md**：否（是通用 Vue 卫生）
+
+### 坑 5：缩略图 URL 缺 `/api` 前缀（dev OK / prod 挂）
+
+- **症状**：dev 模式缩略图正常加载，prod build 后 picker 里全部 broken image
+- **根因**：dev 模式 vite proxy 把 `/list-templates` 透到 agent；prod 没有 proxy，必须自己带 `/api/` 前缀
+- **修复**：commit `cbf412a` — fetch URL 改 `/api/list-templates` 显式带前缀
+- **防再犯**：所有前端 API 调用一律走 `/api/*` 前缀，不能依赖 proxy 兜底
+- **已提炼到 CLAUDE.md**：是（已纳入"关键约定（前端）"）
+
+### 坑 6：lock 跨测污染导致 409
+
+- **症状**：E2E 一条 case 持锁后没释放，下条 case 进同 deck 看到 409
+- **根因**：lock 是 agent 进程内存对象，跨测试不会自动清
+- **修复**：commit `9c62e5c` — 加 `_test/reset-lock` 测试专用路由（仅 test env 暴露），E2E `beforeEach` 调一次
+- **防再犯**：所有"进程内 stateful"模块都要在测试 env 下暴露 reset hook
+- **已提炼到 CLAUDE.md**：是（已纳入"测试基建注意点"）
+
+---
+
+## 测试数量落地
+
+| 阶段（commit）| agent | creator | shared | E2E | 合计 |
+| ------------- | ----- | ------- | ------ | --- | ---- |
+| 入口（Phase 6 收）| 281 | 49 | — | 5 | 335 |
+| 7C-1 (c3b440d) | 281 | 49 | — | 5 | 335 |
+| 7C-2 (444f76b) | 281 | 49 | — | 5 | 335 |
+| 7C-3 (8529f7c useSwitchTemplateJob 5+1) | 281 | 55 | — | 5 | 341 |
+| 7C-4 (5bb2431 TemplatePickerModal 4) | 281 | 59 | — | 5 | 345 |
+| 7C-5 (340c8f7 + db0fc1d) | 281 | 60 | — | 5 | 346 |
+| 7C-6 (b103164 + 5bfe966) | 281 | 65 | — | 5 | 351 |
+| 7C-7 (2eb4303) | 281 | 71 | — | 5 | 357 |
+| 7C-8 (9c62e5c E2E 冒烟 + cbf412a fix) | 281 | 72 | 3 | 6 | **362** |
+
+> 实际超预期 +8（plan 预计 335 → ≥ 354）。完整 3 条切换流 E2E 留 Phase 7D / [plan 15](15-phase7d-e2e-and-undo-fix.md)。

@@ -903,3 +903,51 @@ EOF
 - ❌ Phase 7A 内**不做** beitou 视觉风格调整（Phase 7B 时也保持 beitou 视觉不变）
 - ❌ 不为旧 id `company-standard` 保留兼容别名（硬切）
 - ❌ 不在 7A 内做缩略图（thumbnail）生成机制 — 留 7C 补
+
+---
+
+## 执行期偏离（关闭后追加）
+
+- **执行顺序**：原计划 7A → 7B 串行；实际用户主动调成 7B → 7A（"先把视觉调好再做工程化"）
+- **commit 合并**：plan 13 把 7A 拆 11 个 task，实际把 7A-2/5/6/7 合并为单一 commit `cfbad77`，避免中间红测试状态
+- **`public/templates/` 副本删除**：7B 实测发现 slidev cli 默认 `vite server.fs.allow` 已放开 user root，副本完全冗余，commit `7e9e699` 顺手删
+
+---
+
+## 踩坑与解决
+
+### 坑 1：manifest.thumbnail 必填导致 agent 启动 502
+
+- **症状**：7B 加 jingyeda 时 manifest schema 把 `thumbnail` 设成 required，但当时还没截图，agent 启动 schema 校验失败 502
+- **根因**：截图脚本要 7C 才落地，但 schema 把字段当必填
+- **修复**：commit `cef6944` — manifest schema 的 `thumbnail` 改 optional
+- **防再犯**：新增字段时先 optional，数据齐了再考虑收紧；schema 校验失败要给明确错误
+- **已提炼到 CLAUDE.md**：否（一次性 schema 演进）
+
+### 坑 2：chart 组件硬编码 fallback 跨模板冲突
+
+- **症状**：beitou data 页 chart 显示 jingyeda 蓝（或反之）
+- **根因**：BarChart / LineChart 等组件 fallback 写死 `#d00d14`（beitou 红），切到 jingyeda 仍取该 fallback
+- **修复**：commit `e6918e1` — chart fallback 改中性灰，beitou-data 页面在 layout 里显式注入红色
+- **防再犯**：跨模板共享组件的 fallback 必须中性，模板独有视觉由 layout / token 注入
+- **已提炼到 CLAUDE.md**：是（已在"Slidev 包的特殊点"提到）
+
+### 坑 3：模板 id 硬编码字面量散落 ~98 处
+
+- **症状**：7A 重命名 `company-standard` → `beitou-standard` 时全仓 grep 出近百处硬编码字面量
+- **根因**：早期未做常量化
+- **修复**：commit `cfbad77` 一次性全量替换；新增 `scripts/rename-template-id.ts` 一次性 DB 数据迁移脚本（dev/prod 各跑一次，幂等）
+- **防再犯**：未来命名都遵循 `<公司 slug>-<用途>` 约定；模板 id 集中常量化（P9 仓库卫生清理时复检）
+- **已提炼到 CLAUDE.md**：否（已是历史包袱）
+
+---
+
+## 测试数量落地
+
+| 阶段 | agent | creator | E2E | 合计  |
+| ---- | ----- | ------- | --- | ----- |
+| 入口（Phase 6 收）| 281 | 49 | 5 | 335 |
+| 7B 收（视觉骨架，无新测） | 281 | 49 | 5 | 335 |
+| 7A 收（重命名，无新测） | 281 | 49 | 5 | **335** |
+
+> 本 plan 范围内不涉及新增测试（纯重构 + 视觉骨架）。7C 起测试数量增长，详见 [plan 14](14-phase7c-template-ui.md) / [plan 15](15-phase7d-e2e-and-undo-fix.md)。

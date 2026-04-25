@@ -320,3 +320,55 @@ mysql -D lumideck -e "SELECT id,deck_id,created_at,LEFT(content,40) FROM deck_ve
 | 5C-UX | `feat(phase-5c): 编辑页标题双击改名 + 历史按钮移到邮箱右边` |
 | 5C-polish | `style(phase-5c): 副标题与 input 间距回到 2px，贴合整体节奏` |
 
+---
+
+## 踩坑与解决
+
+### 坑 1：Slidev 原生端口对外暴露 = 预览泄露漏洞
+
+- **症状**：dev 模式 Slidev 跑 `:3031`，iframe 直连，**完全没有访问控制**；任何人扫到端口都能看所有 deck 预览
+- **根因**：原 plan 假设 iframe 与 agent 同源，没考虑 Slidev 端口独立的访问控制
+- **修复**：commit `f0a29b7` — agent 新增 [src/slidev-proxy-auth.ts](../../packages/agent/src/slidev-proxy-auth.ts) 反代 `/api/slidev-preview/*`，未登录 401 / 非锁持有者 403；生产 Slidev 绑 `127.0.0.1:3031`
+- **防再犯**：CLAUDE.md 架构图明确"slidev 仅 agent 反代"；`packages/slidev/package.json` dev 脚本固定 `--base /api/slidev-preview/`
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 2：Slidev HTML 绝对路径破坏反代
+
+- **症状**：反代上线后 iframe 加载白屏，devtools 看 `/@vite/client` / `/node_modules/...` 全 404
+- **根因**：Slidev 默认输出 HTML 用绝对路径，没适配 `base` 前缀
+- **修复**：commit `b8cc9ea` Step 5C-fix — Slidev dev 启动加 `--base /api/slidev-preview/`
+- **防再犯**：CLAUDE.md "Slidev 包的特殊点" 章节已记录
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 3：单实例锁 DB 表实施踩到外键 / 时区坑
+
+- **症状**：原 plan 的 `slidev_lock` 表 `UPDATE ... WHERE` 在循环外键引用 + DATETIME 时区上撞墙
+- **根因**：MySQL `sessions.id` ↔ `slidev_lock.holder_session_id` 互引；DATETIME 与 UTC unix timestamp 混用产生比较误差
+- **修复**：commit `f0a29b7` — 锁搬到 agent 进程内存对象（[src/slidev-lock.ts](../../packages/agent/src/slidev-lock.ts)），删 `slidev_lock` 表
+- **防再犯**：单进程内 atomic 状态优先用内存对象不用 DB
+- **已提炼到 CLAUDE.md**：是（已记录在"关键模块"节）
+
+### 坑 4：dev agent 重启后内存锁未清理
+
+- **症状**：dev 时 ctrl+C agent → 重启后内存锁残留，用户看到自己持锁状态错乱
+- **根因**：内存锁在 module-level state，但持锁会话已断开
+- **修复**：commit `8dc94b5` — agent 启动时如检测到旧 lock 持有者 session 已不存在，自动复位
+- **防再犯**：CLAUDE.md "已知坑" 已收录；进程级状态都要考虑重启时的复位策略
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 5：Slidev iframe 翻页触发整页 reload
+
+- **症状**：每次 PageDown / PageUp，iframe 都整页 reload 一次，闪烁明显
+- **根因**：Slidev 默认用 `history` 模式，URL 变化时 iframe `src` 改变触发刷新
+- **修复**：commit `648e2e8` — Slidev 切 `hash` 路由模式，iframe 翻页用锚点跳转零 reload
+- **防再犯**：未来 Slidev 升级时复检 `historyMode` 默认值
+- **已提炼到 CLAUDE.md**：否（属于 Slidev 配置细节，未来会变）
+
+---
+
+## 测试数量落地
+
+> 本 Phase 主轨（5A/5B/5C）只关注功能落地，测试基建在补测轨道（[plan 11](11-phase5-tests-and-env-split.md)）集中补完。
+>
+> 主轨结束时：agent 75 → 124（Phase 4 留底）；补测轨道关闭时：agent **208** + creator **49** + E2E **5** = **262**。详见 plan 11。
+

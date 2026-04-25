@@ -1,4 +1,20 @@
-# Phase 2 实施计划：AI 集成 + 对话 UI
+# Phase 2 — AI 集成 + 对话 UI 实施文档
+
+> **状态**：✅ 已关闭（2026-04-20，详见 [05-phase2-closeout.md](05-phase2-closeout.md)）
+> **前置阶段**：Phase 1（[01-project-init.md](01-project-init.md)）
+> **后续阶段**：Phase 2.1 对话 UI 修复（[03-chat-ui-fixes.md](03-chat-ui-fixes.md)）→ Phase 3 Monorepo 拆分
+> **路线图**：[roadmap.md Phase 2](../requirements/roadmap.md)
+
+> **注**：本 plan 是 Phase 2 早期文档，章节风格与 [`_TEMPLATE.md`](_TEMPLATE.md) 不完全对齐——里面"你的工作方式"、"Slidev 语法规则"、"组装规则"等节是当时为了方便 AI 阅读而内嵌的 system prompt 草稿，后续已迁移到代码层（[`packages/agent/src/prompts/`](../../packages/agent/src/prompts/)）。保留作历史记录，新 plan 请套用 `_TEMPLATE.md`。
+
+---
+
+## ⚠️ Secrets 安全红线（HARD，沿用 [CLAUDE.md 安全约定](../../CLAUDE.md#安全与提交规则)）
+
+- 本 Phase API Key 暂存浏览器 localStorage（纯单机原型期）；**Phase 5 起搬到后端 AES-256-GCM 加密**（`users.llm_settings`）
+- 每次 `git commit` 前 `git status` 人工检查，禁用 `git add -A`
+
+---
 
 ## Context
 
@@ -830,3 +846,19 @@ Slidev iframe 预览面板：
 6. 点击导出 — 确认下载的 .md 文件可以用 Slidev 正常打开
 7. 测试迭代：输入"增加一页关于项目成果的介绍" — 确认 AI 能在已有基础上修改
 8. `pnpm slidev` — 用导出的 slides.md 确认 Slidev 渲染效果一致
+
+---
+
+## 踩坑与解决
+
+> Phase 2 主轨踩到的坑都集中收录在 [03-chat-ui-fixes.md](03-chat-ui-fixes.md)（输入框不清空 / `roles` 普通对象不响应式 / 思考阶段无气泡反馈三件套）。
+>
+> 另一个值得记录的：**`vite.config.creator.ts` 长到 385 行成为"事实上的后端"**——这是 Phase 2 末识别到的最大架构问题，但当时没修，留到 Phase 3 拆 Monorepo + 独立 agent 才彻底清掉（详见 [05-phase2-closeout.md](05-phase2-closeout.md) 移交项 + [06-phase3-monorepo-agent.md](06-phase3-monorepo-agent.md) 实施）。
+
+---
+
+## 测试数量落地
+
+> 本 Phase 是 AI 集成原型期，测试基建尚未建立（无 vitest / 无 tsconfig）。零自动化测试，全部靠手动验证。
+>
+> 测试基建从 [Phase 3](06-phase3-monorepo-agent.md) 开始落地（agent 26 + creator 5 = 31 tests 起步）。

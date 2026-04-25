@@ -1,8 +1,19 @@
-# Phase 3：Monorepo 拆分 + Agent 后端 + 工具链基建
+# Phase 3 — Monorepo 拆分 + Agent 后端 + 工具链基建 实施文档
 
-> **REQUIRED SUB-SKILL:** `superpowers:executing-plans` — inline 顺序执行。
+> **状态**：✅ 已关闭（2026-04-21，9 步迁移；详见 [06-phase3-closeout.md](06-phase3-closeout.md)）
+> **前置阶段**：Phase 2（[05-phase2-closeout.md](05-phase2-closeout.md)）
+> **后续阶段**：Phase 3.5 MCP 集成（[07-mcp-integration.md](07-mcp-integration.md)）
+> **路线图**：[roadmap.md Phase 3](../requirements/roadmap.md)
+> **执行子技能**：`superpowers:executing-plans` — inline 顺序执行
 >
 > 创建日期：2026-04-21 / 关闭目标：清掉 [99-tech-debt.md](99-tech-debt.md) P1 级技术债的骨架部分（P1-1/P1-2 骨架/P1-3/P1-4），为 Phase 4 编辑器能力、Phase 5 部署做好准备。
+
+---
+
+## ⚠️ Secrets 安全红线（HARD，沿用 [CLAUDE.md 安全约定](../../CLAUDE.md#安全与提交规则)）
+
+- 本 Phase 不引入新环境变量；后续阶段（5+）才引入 `SESSION_SECRET` / `APIKEY_MASTER_KEY` / `DATABASE_URL`
+- 每次 `git commit` 前 `git status` 人工检查，禁用 `git add -A`
 
 ---
 
@@ -194,3 +205,37 @@ pnpm exec turbo run lint -- --max-warnings=0
 - slides.md.history 环形缓冲（P2-2）延 Phase 4
 - design tokens（P2-3）延 Phase 4
 - localStorage 存 apiKey（P3-2）延 Phase 5
+
+---
+
+## 执行期偏离（关闭后追加）
+
+- **MCP 集成 Step 拆出**：原计划 06 顺势带 MCP，实际拆为独立 [plan 07](07-mcp-integration.md) 再做，理由是先把 agent 后端独立出来再接 MCP 比寄生于 Vite middleware 干净
+- **超额交付 `__resetPathsForTesting()` 钩子 + `BIG_PPT_SLIDES_PATH` / `BIG_PPT_LOGS_DIR` env 覆盖**：测试隔离 + 给 Phase 5 部署铺路顺手做
+- **`/healthz` 健康检查路由**：原计划无，实际 E2E 验证用顺手加（Phase 10 部署期会复用）
+
+---
+
+## 踩坑与解决
+
+> Phase 3 主要是迁移工作，工程性踩坑较少；下面这条是迁移期识别的关键基建依赖。
+
+### 坑 1：UnoCSS presetIcons 自动 resolve 在 monorepo 解析失败
+
+- **症状**：Slidev 启动时图标 CSS 不生成，UI 图标全部消失
+- **根因**：UnoCSS 66.x 在 monorepo 下 `presetIcons({ collectionsNodeResolvePath })` 没法定位 `@iconify-json/*` 子包
+- **修复**：commit `dbac7e6` — 离线预生成图标 CSS（`packages/slidev/scripts/gen-icons.mjs`）+ `.npmrc` 加 `public-hoist-pattern[]=@iconify-json/*` 兜底
+- **防再犯**：tech-debt 记 P3-7，Phase 8 升级 UnoCSS 时复检；CLAUDE.md "已知坑" 已收录
+- **已提炼到 CLAUDE.md**：是
+
+---
+
+## 测试数量落地
+
+| 指标         | 起点 | 终点（关闭时） |
+| ------------ | ---- | -------------- |
+| agent unit   | 0    | 26             |
+| creator unit | 0    | 5              |
+| **合计**     | 0    | **31**         |
+
+> 测试基建从零搭起，覆盖工具分流 / 日志索引 / 备份策略 / 类型契约。详细分布见 [06-phase3-closeout.md](06-phase3-closeout.md)。

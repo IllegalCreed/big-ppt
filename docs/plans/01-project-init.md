@@ -1,4 +1,19 @@
-# Big-PPT 项目初始化计划
+# Phase 1 — 项目基础 + 模板 实施文档
+
+> **状态**：✅ 已关闭（2026-04 早期，作为 Lumideck 项目起点）
+> **后续阶段**：Phase 2（[02-ai-integration.md](02-ai-integration.md)）
+> **路线图**：[roadmap.md Phase 1](../requirements/roadmap.md)
+
+**Goal**：搭建项目目录与模板骨架，为后续 AI 对话集成（Phase 2）和模板渲染体系打底。本 Phase 不涉及代码功能，纯文档与目录结构搭建。
+
+---
+
+## ⚠️ Secrets 安全红线（HARD，沿用 [CLAUDE.md 安全约定](../../CLAUDE.md#安全与提交规则)）
+
+- 本 Phase 不引入任何环境变量或密钥（纯结构搭建期）
+- 每次 `git commit` 前 `git status` 人工检查，禁用 `git add -A`
+
+---
 
 ## Context
 
@@ -115,8 +130,20 @@ public/
 | 新建 | `.claude/skills/slide-generator.md`            |
 | 新建 | `public/.gitkeep`                              |
 
-## 验证
+## 验收条件
 
 - 目录结构正确创建
 - 所有 md 文件内容完整且有意义
 - `pnpm dev` 仍可正常运行
+
+---
+
+## 踩坑与解决
+
+> 本 Phase 是项目结构与文档骨架的搭建期，无显著工程性踩坑。Phase 2 起 AI 对话与模板渲染开始有踩坑记录。
+
+---
+
+## 测试数量落地
+
+> 本 Phase 不涉及测试代码（纯文档与目录搭建）。测试基建从 [Phase 3](06-phase3-monorepo-agent.md) 起落地。

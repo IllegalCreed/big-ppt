@@ -1,10 +1,19 @@
 # Phase 4 — 编辑与迭代 实施文档
 
-> **状态**：进行中（2026-04-22 启动）
-> **规划文件**：[planning notes](../../~/.claude/plans/docs-p4-cuddly-corbato.md)（用户 local）
-> **前置阶段**：Phase 3.6（2026-04-22 已关闭，见 [08](08-phase36-frontend-polish.md)）
+> **状态**：✅ 已关闭（2026-04-22，单日推进 11 步 + 实测补丁 1 步）
+> **前置阶段**：Phase 3.6（[08](08-phase36-frontend-polish.md)）
+> **后续阶段**：Phase 5 用户系统 + Deck 管理（[10](10-phase5-user-deck-versions.md)）
+> **路线图**：[roadmap.md Phase 4](../requirements/roadmap.md)
+> **规划文件**：`~/.claude/plans/docs-p4-cuddly-corbato.md`（用户 local，含完整推理）
 
 **Goal**：把 write/edit 两件套拆成 create/update/delete/reorder 四件套 + 抽离 global.css/layouts + 环形缓冲历史 + 主题 tokens + 单页预览定位。路线图验收：8 页幻灯片"改第 3 页成两栏" < 30s，slides.md 行数 −50%，AI 单次修改 0 次 write_slides。
+
+---
+
+## ⚠️ Secrets 安全红线（HARD，沿用 [CLAUDE.md 安全约定](../../CLAUDE.md#安全与提交规则)）
+
+- 本 Phase 不引入新环境变量（编辑器能力 + tokens，仍在 Vite middleware 后端化时代）
+- 每次 `git commit` 前 `git status` 人工检查，禁用 `git add -A`
 
 ---
 
@@ -175,3 +184,47 @@
 | 导出                              | 不做                                                  | Phase 7 PDF/PPTX                                                      |
 
 **roadmap.md 变更建议**（Phase 4 关闭前应补）：Phase 5 deliverables 加 `deck_chats` 表 + 相关 API + "切回历史版本后 AI 能感知是分叉尝试"的验收条件。
+
+---
+
+## 踩坑与解决
+
+### 坑 1：GLM-5.1 把 integer 包成字符串
+
+- **症状**：AI 调 `update_slide({ index: "4" })` 而不是 `index: 4`，工具层因类型校验拒绝，连续 3 次失败
+- **根因**：智谱 GLM-5.1 流式输出 tool_calls 时把 schema 里的 integer 序列化成 string；OpenAI / Claude 不会
+- **修复**：commit `4269dfc` Step 8.5 — 工具层加 `coerceIndex / coerceInt / coerceIntArray` util 宽容字符串数字；`create_slide` 额外接受 `"end"` 字面量
+- **防再犯**：所有新工具的 integer 参数走 coerce util；prompt 仍声明 integer 类型，但工具层兜底
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 2：AI 换 layout 时 frontmatter 脏数据残留
+
+- **症状**：AI 把 toc layout 换成 two-col 后，原 toc 的 `items` / `active` 字段还在 frontmatter 里，导致 Slidev 渲染异常
+- **根因**：默认 update_slide 是合并 frontmatter，不是替换；AI 没主动清理旧字段
+- **修复**：Step 8.5 — prompt 加硬规则"换 layout 时必须 `replaceFrontmatter=true`"；工具层支持该参数
+- **防再犯**：未来加新 layout 时，prompt 这条规则不动
+- **已提炼到 CLAUDE.md**：否（属于 prompt 工程坑，与 layout 切换强相关）
+
+### 坑 3：history 测试污染真实目录
+
+- **症状**：跑 `tools-local.test` / `routes-tools.test` 时真把 history 写到 `packages/agent/data/slides-history/`
+- **根因**：测试漏设 `BIG_PPT_HISTORY_DIR` env，工具层 fallback 到默认路径
+- **修复**：Step 1.5 顺手清 — 所有 history 相关测试都显式 set env 到 tmp dir
+- **防再犯**：所有新增 fs 写入路径都接受 env 覆盖 + 测试 setup 显式设置
+- **已提炼到 CLAUDE.md**：是（已纳入"测试基建注意点"）
+
+---
+
+## 测试数量落地
+
+| 指标          | 起点（Phase 3.6 收） | 终点（Phase 4 收） | 增量    |
+| ------------- | --------------------- | ------------------ | ------- |
+| agent unit    | 75                    | 124                | +49     |
+| creator unit  | 11                    | 24                 | +13     |
+| **合计**      | 86                    | **148**            | **+62** |
+| local tools   | 5                     | 9                  | +4      |
+| HTTP 路由     | 5（含 deprecated）    | 3                  | −2      |
+| slides.md 行数 | 800                   | 90                 | −88.75% |
+| `<style>` 块  | 8                     | 0                  | −100%   |
+| `#d00d14`     | 21                    | 0                  | −100%   |
+| creator lint warnings | 15            | 0                  | **−15** |

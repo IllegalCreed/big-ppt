@@ -282,3 +282,53 @@ mysql -u lumideck_test_user -p -D lumideck_test -e "SELECT COUNT(*) FROM users" 
 | 6 | `eaa9443` | `test(creator): composables + 组件测试，引入 MSW 2.x` |
 | 7 | `697f807` | `chore(coverage): 启用 @vitest/coverage-v8，agent 90/85 + creator 75/65 门槛` |
 | 8 | `90fc875` | `test(e2e): Playwright 三场景 + creator vite 支持端口/agent 注入` |
+
+---
+
+## 踩坑与解决
+
+### 坑 1：vitest 多文件并行抢 lumideck_test 数据竞争
+
+- **症状**：跑全套测试时 flaky，时不时某条 case 看到隔壁 spec 的 fixture 数据
+- **根因**：所有 spec 共享同一个 `lumideck_test` DB；vitest 默认 `fileParallelism: true` 多 worker 同时跑就互相 TRUNCATE
+- **修复**：`vitest.config.ts` 加 `fileParallelism: false`，强制单 worker 串行
+- **防再犯**：CLAUDE.md "已知坑" 已收录；任何用真 DB 的 spec 都必须在配置层禁用文件并行
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 2：dotenv-cli 与源码 dotenv 双加载冲突
+
+- **症状**：dotenv-cli 已经加载了 `.env.test.local`，源码里又 `dotenv.config()` 一次会被空对象覆盖
+- **根因**：dotenv 默认行为是已存在的 env 不覆盖，但某些库 wrapper 会强行覆盖
+- **修复**：源码加 guard `if (!process.env.DATABASE_URL) dotenv.config()`
+- **防再犯**：env 加载只走 dotenv-cli 一处，源码不主动 `config()`
+- **已提炼到 CLAUDE.md**：否（属于测试基建一次性配置）
+
+### 坑 3：Playwright 与 vitest 抢端口
+
+- **症状**：vitest watch 模式开着 + 跑 E2E，agent 端口 4000 被占
+- **根因**：vitest 集成测启 agent 是为了真请求；E2E 也要起 agent；同 4000 抢
+- **修复**：E2E 走 4100 独立端口，dev agent 仍 4000
+- **防再犯**：所有"启服务测试"的端口分配预留独立端口段
+- **已提炼到 CLAUDE.md**：否（独立端口配置已固化在 playwright.config）
+
+### 坑 4：MSW 2.x 破坏性变更
+
+- **症状**：升级 MSW 后 mock fetch 的 handler 写法不兼容
+- **根因**：MSW 2.x 完全重写 API（`rest.get` → `http.get`）
+- **修复**：固定 MSW 2.x major 版本；按新 API 重写 handlers
+- **防再犯**：`package.json` 锁 `^2.0.0`，3.0 升级前评估迁移成本
+- **已提炼到 CLAUDE.md**：否
+
+---
+
+## 测试数量落地
+
+| 指标             | 起点（Phase 5C 收） | 终点（补测轨道收） | 增量    |
+| ---------------- | ------------------- | ------------------ | ------- |
+| agent unit       | 124                 | 208                | +84     |
+| creator unit     | 24                  | 49                 | +25     |
+| E2E              | 0                   | 5                  | +5      |
+| **合计**         | 148                 | **262**            | **+114** |
+| coverage lines   | 未启用              | 94.63 (agent) / 80.82 (creator) | — |
+| coverage branch  | 未启用              | 86.15 (agent) / 72.22 (creator) | — |
+| 门槛             | —                   | 90/85 (agent) / 75/65 (creator) | — |

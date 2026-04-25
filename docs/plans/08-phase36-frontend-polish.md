@@ -1,11 +1,20 @@
-# Phase 3.6 — 前端美化（Lumideck · 幻光千叶）实施计划
+# Phase 3.6 — 前端美化（Lumideck · 幻光千叶）实施文档
 
-> **For agentic workers:** 本阶段以视觉重塑为主，CSS 为核心产物。所有 step 使用 `- [ ]` checkbox 语法跟踪进度。
-
-**状态**：已完成（2026-04-22）
-**关联**：路线图 [Phase 3.5 关闭](07-mcp-integration.md) · 本计划由 brainstorming 对话产出（plan 文件：`.claude/plans/docs-chatui-mcp-design-md-chromedevtool-humble-swan.md`）
+> **状态**：✅ 已关闭（2026-04-22）
+> **前置阶段**：Phase 3.5 MCP 集成（[07-mcp-integration.md](07-mcp-integration.md)）
+> **后续阶段**：Phase 4 编辑与迭代（[09-phase4-edit-iterate.md](09-phase4-edit-iterate.md)）
+> **路线图**：[roadmap.md Phase 3.6](../requirements/roadmap.md)
+> **执行子技能**：本阶段以视觉重塑为主，CSS 为核心产物，所有 step 用 `- [ ]` checkbox 跟踪
+> **规划文件**：`.claude/plans/docs-chatui-mcp-design-md-chromedevtool-humble-swan.md`（用户 local，含 brainstorming 推理）
 
 **Goal**：给 `packages/creator` 引入暖赤陶色系 Design Tokens + DESIGN.md，并据此重做产品头、分割线、预览外框、MCP 设置卡片等关键组件，让项目从"Big-PPT Creator"正式换装为 **Lumideck · 幻光千叶**，在进入 Phase 4 的编辑能力之前补齐视觉层。
+
+---
+
+## ⚠️ Secrets 安全红线（HARD，沿用 [CLAUDE.md 安全约定](../../CLAUDE.md#安全与提交规则)）
+
+- 本 Phase 不引入新环境变量（纯 CSS / token / 视觉重塑）
+- 每次 `git commit` 前 `git status` 人工检查，禁用 `git add -A`
 
 **Style Reference**：Claude DESIGN.md（warm terracotta accent, clean editorial layout）
 
@@ -103,3 +112,31 @@
 - [packages/creator/src/components/App.vue](../../packages/creator/src/components/App.vue)
 - [packages/creator/src/components/SlidePreview.vue](../../packages/creator/src/components/SlidePreview.vue)
 - [packages/creator/src/components/MCPCatalogItem.vue](../../packages/creator/src/components/MCPCatalogItem.vue)
+
+---
+
+## 踩坑与解决
+
+### 坑 1：分割线与预览面板撞色
+
+- **症状**：`App.vue` 的 `.divider { background: #e8e8e8 }` 与 `SlidePreview.vue` 的 `.preview-panel { background: #e8e8e8 }` 撞色，6px 拖拽把手视觉消失
+- **根因**：两个组件硬编码同色，没有 token 区分
+- **修复**：divider 用 `--color-border-strong`、preview-panel 用 `--color-bg-surface-2`，加 3-dot drag handle
+- **防再犯**：tokens.css 引入后强制全 token 化，禁用硬编码 hex；后续 Phase 4 P1-5 推到 slidev 模板做同样改造
+- **已提炼到 CLAUDE.md**：否（属于一次性视觉 bug，不会跨 Phase 复犯）
+
+### 坑 2：MCP 卡片状态色冷艳
+
+- **症状**：`MCPCatalogItem.vue` 用 Ant Design 默认绿 `#52c41a` / 红 `#ff4d4f`，与 terracotta accent 主调撞
+- **根因**：早期开发直接用 antd 默认色，未走品牌系统
+- **修复**：状态色改暖橄榄 `#6B8E4E` / 陶土红 `#B4472C`；状态指示用左侧 3px `inset box-shadow`，不染整圈 border（避免"卡片看起来坏了"的视觉错位）
+- **防再犯**：DESIGN.md 第 X 节定 status 调色板规范
+- **已提炼到 CLAUDE.md**：否
+
+---
+
+## 测试数量落地
+
+> 本 Phase 是视觉重塑，未引入新单元测试。测试守门靠 `pnpm exec turbo run lint test --filter=@big-ppt/creator` 全绿（0 errors / 14 warnings 全是 P3-6 遗留）+ `pnpm --filter @big-ppt/creator build` 通过。
+>
+> 视觉回归截图遗留为 **P3-NEW-2**（chrome-devtools MCP 接入后跑），登记在 99-tech-debt。

@@ -1,12 +1,23 @@
-# Phase 2.1 修订：对话 UI 修复与思维链可视化
+# Phase 2.1 — 对话 UI 修复 + 思维链可视化 实施文档
 
-> **REQUIRED SUB-SKILL:** Use `superpowers:executing-plans` — 本计划改动集中在 `creator/src/components/ChatPanel.vue` 与 `creator/src/composables/useAIChat.ts`，适合 inline 顺序执行。
+> **状态**：✅ 已关闭（2026-04-20 前后，作为 Phase 2 收尾的 bug 修复轨道）
+> **前置阶段**：Phase 2 主轨（[02-ai-integration.md](02-ai-integration.md)）
+> **后续阶段**：Phase 2 关闭报告（[05-phase2-closeout.md](05-phase2-closeout.md)）
+> **路线图**：[roadmap.md Phase 2](../requirements/roadmap.md)
+> **执行子技能**：`superpowers:executing-plans` — 改动集中在 `creator/src/components/ChatPanel.vue` 与 `creator/src/composables/useAIChat.ts`，适合 inline 顺序执行。
 
-**Goal:** 修复对话 UI 的 3 个可用性 bug，并把"思考 / 工具调用"过程从顶部状态栏升级为消息流内的思维链可视化。
+**Goal**：修复对话 UI 的 3 个可用性 bug，并把"思考 / 工具调用"过程从顶部状态栏升级为消息流内的思维链可视化。
 
-**Architecture:** 保持纯前端，不引入新依赖。复用 `@antdv-next/x` 已装的 `ThoughtChain` 组件；消息列表支持三种气泡类型（user / assistant 文本 / assistant 思维链）。
+**Architecture**：保持纯前端，不引入新依赖。复用 `@antdv-next/x` 已装的 `ThoughtChain` 组件；消息列表支持三种气泡类型（user / assistant 文本 / assistant 思维链）。
 
-**Tech Stack:** Vue 3 Composition API、`@antdv-next/x` (Bubble / Sender / ThoughtChain)、TypeScript。
+**Tech Stack**：Vue 3 Composition API、`@antdv-next/x` (Bubble / Sender / ThoughtChain)、TypeScript。
+
+---
+
+## ⚠️ Secrets 安全红线（HARD，沿用 [CLAUDE.md 安全约定](../../CLAUDE.md#安全与提交规则)）
+
+- 本 Phase 不引入新环境变量
+- 每次 `git commit` 前 `git status` 人工检查，禁用 `git add -A`
 
 ---
 
@@ -353,3 +364,28 @@ git commit -m "fix(chat): 修复输入框不清空、roles 响应式与思考阶
 - 若 Sender 的 `expose.clear()` 在 0.3.0 版本行为异常，回退为 `v-model:value` 受控模式。
 
 回滚：两个文件各一次 commit，`git revert` 即可。
+
+---
+
+## 踩坑与解决
+
+### 坑 1：Vue setup() 内普通对象不响应
+
+- **症状**：`roles.ai.loading` 跟着 `status` 变化但 UI 不重渲染
+- **根因**：`const roles = { ai: { loading: status.value === 'thinking' } }` 是 setup 一次求值的普通对象，后续 `status` 变化不触发 `roles` 重算
+- **修复**：改 `computed(() => ({ ai: { loading: status.value === 'thinking' } }))`
+- **防再犯**：CLAUDE.md 已记一句"setup 内派生对象一律 `computed`"
+- **已提炼到 CLAUDE.md**：是
+
+### 坑 2：Sender 输入框发送后不清空
+
+- **症状**：发送消息后 textarea 内容残留
+- **根因**：`Sender` 的 `triggerSend` 只调 `onSubmit`，不清 `innerValue`；父组件没用 `v-model:value` 也没 `ref.clear()`
+- **修复**：用 `senderRef = ref(null)` + 在 `handleSubmit` 后调 `senderRef.value?.clear()`（Sender 已 `expose({ clear })`）
+- **防再犯**：组件交互手册——非受控输入组件的清空必须显式调 expose 的 clear，不能依赖 onSubmit 副作用
+
+---
+
+## 测试数量落地
+
+> 本 Phase 是 bug 修复轨道，未引入新测试（Phase 3 才落地测试基建）。Phase 4 起 useSlashCommands 抽出后才有针对性单测。
