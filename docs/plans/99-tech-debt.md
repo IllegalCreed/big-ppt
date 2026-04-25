@@ -8,7 +8,7 @@
 | ------ | -------------------- | -------------------------------------------------- |
 | **P1** | Phase 3 关闭前必须清 | 5（全部清除：Phase 3 清 4 条，Phase 4 清 P1-5）                   |
 | **P2** | Phase 4 关闭前必须清 | 4（**全部清除**：P2-1/P2-2/P2-3 Phase 4 清；**P2-4 2026-04-23 提前清**） |
-| **P3** | 非阻塞，有机会再清   | 9（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归）    |
+| **P3** | 非阻塞，有机会再清   | 10（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归；**P3-10 2026-04-25 7C 暴露**）    |
 
 ---
 
@@ -260,6 +260,39 @@
 
 ---
 
+### P3-10. creator 单测过度依赖 msw mock，应改为真实 agent + lumideck_test 集成测（Phase 7C 暴露）
+
+**位置**：`packages/creator/test/*.spec.ts`（10 个 spec 全部）
+
+**影响**：
+
+- 7C-4 把 `<img src>` 写成 `/templates/...`（缺 `/api/` 前缀），unit 测全用 msw mock 任意 URL 给假数据，**整套 72 个测试全绿**。E2E 那条 picker spec 当时只断言 `expect(thumbs).toHaveCount(2)`（DOM 元素存在），src 错也照过。直到 dev/prod 浏览器打开看到 broken image 才暴露。
+- 同样的盲点会让 API 路径 / 请求体 schema / 响应字段更名 / auth header 形式等所有"前后端契约层"的 bug 在 unit 测看不见。
+- 项目本来就有 `lumideck_test`（远程 MySQL 阿里云 RDS），agent 测试已经全用真 DB（281 条）。creator 这边 fast-cycle 借口 msw 是 Phase 5 补测轨道遗留惯性。
+
+**用户原话（2026-04-25）**：
+
+> "我给了你一个专门的测试库，就是让你放心调用后端，什么叫端到端。除了需要调用 llm 或者 mcp 的部分，其他的你有什么可 mock 的"
+
+**修复方案**：
+
+- **保留** msw 的少量场景：纯 UI 行为（state machine / class binding / transition / event emit）
+- **改用真实 agent + lumideck_test** 的场景：所有验证 API 契约的测（list / create / update / version restore / switch-template / lock / chats / list-templates / 静态资源加载 …）
+- 为 creator 测建立 `_setup/integration.ts`：beforeAll 起一个 in-process Hono agent（不开网络端口，直接 fetch handler）+ 共享同一份测试 DB；afterEach `truncateAllTables()`
+- 只 mock：LLM API（外部 cost）+ MCP HTTP transport（外部网络）
+- E2E 也要从"DOM 元素存在"升级到"功能真正工作"：图片必须 `naturalWidth > 0`、按钮点击后必须真有响应、版本回滚后 deck 内容必须真的变
+
+**触发时机**：Phase 7D（与 plan 15 的 3 条切换流 E2E 一并做），或独立提一个 testing-infra 重构 mini-phase
+
+**短期已做**（2026-04-25 7C-补丁）：
+
+- TemplateCard / TemplatePreviewPane URL 改 `/api/templates/...`
+- agent 加 `GET /api/templates/:id/:filename`（白名单 png/jpg/svg/webp + 防 traversal），加 7 条真实集成测覆盖 200/404/400/traversal
+- E2E template-picker spec 加 `naturalWidth > 0` + `request.get(src).status === 200` + content-type 断言
+- 测试 281+72+3 = 356 → 288+72+3 = 363 unit + 6 e2e = 369 total
+
+---
+
 ### P3-6. creator 有 11 条 `any` 警告（Phase 2 遗留） ✅（2026-04-22 清）
 
 **原位置**：
@@ -292,3 +325,4 @@
 | 2026-04-22 | Phase 4 完成：P1-5 / P2-1 / P2-2 / P2-3 / P3-6 清除；slides.md 800→90 行；四件套工具 + /undo /redo 轮次聚合 + 单页预览定位；工具层 integer 宽容 coerce；creator lint 0 errors / 0 warnings | 项目组 |
 | 2026-04-23 | Phase 5 完成：P3-2 清除（localStorage API Key → 后端 AES-256-GCM 加密存 `users.llm_settings`）；P2-4 MCP 凭证加密**未**在 Phase 5 做，挪到 Phase 5.5 部署前必须清；Phase 5 补测轨道落地后总测试数 262（agent 208 + creator 49 + E2E 5）、coverage 门槛 agent 90/85 + creator 75/65 都过 | 项目组 |
 | 2026-04-23 | **P2-4 提前清完**：JsonFileRepo 落盘时用 AES-256-GCM 加密 headers value（复用 `crypto/apikey.ts`），`/api/mcp/servers` 上 requireAuth + GET 脱敏 value 为 `***` + PATCH 支持 `***` 保留旧值语义；前端 `MCPCatalogItem.vue` 适配脱敏 UI；顺带修了 Phase 5 遗留的 "未登录可读 MCP headers" 漏洞；测试 +11 = 268；P2 条数 3/4 → 4/4 | 项目组 |
+| 2026-04-25 | **新增 P3-10**：Phase 7C 暴露 creator 单测过度依赖 msw mock，整套 72 测全绿但 `<img src>` 缺 `/api/` 前缀的 prod bug 直到 dev 浏览器才发现。用户提醒"给了 lumideck_test 测试库就是让你放心调后端，除了 LLM/MCP 没什么可 mock 的"。短期 7C-补丁修了 URL 路径 + agent 加 `/api/templates/:id/:filename` 静态路由 + E2E 强化（naturalWidth > 0 / HTTP 200 断言）；中期改造 creator 测用真实 agent + lumideck_test 留 Phase 7D | 项目组 |

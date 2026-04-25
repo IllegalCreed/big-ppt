@@ -115,3 +115,57 @@ describe('GET /api/templates/:id/starter', () => {
     expect(json.success).toBe(false)
   })
 })
+
+describe('GET /api/templates/:id/:filename（静态资源 — 缩略图 / logo）', () => {
+  it('已存在的 png 文件返回 200 + image/png + 真实字节', async () => {
+    const res = await buildApp().request('/api/templates/beitou-standard/cover.png')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('image/png')
+    expect(res.headers.get('cache-control')).toMatch(/max-age/)
+    const buf = Buffer.from(await res.arrayBuffer())
+    expect(buf.toString('utf-8')).toBe('PNG') // fixture 内容
+  })
+
+  it('未知模板 id 返回 404', async () => {
+    const res = await buildApp().request('/api/templates/no-such/thumbnail.png')
+    expect(res.status).toBe(404)
+  })
+
+  it('已知模板但文件不存在返回 404', async () => {
+    const res = await buildApp().request('/api/templates/beitou-standard/missing.png')
+    expect(res.status).toBe(404)
+  })
+
+  it('非图片后缀返回 400（防止误读 manifest/starter）', async () => {
+    const res = await buildApp().request('/api/templates/beitou-standard/manifest.json')
+    expect(res.status).toBe(400)
+  })
+
+  it('filename 含 .. 返回 400（防 path traversal）', async () => {
+    const res = await buildApp().request('/api/templates/beitou-standard/..%2Fother.png')
+    expect(res.status).toBe(400)
+  })
+
+  it('filename 含路径分隔符返回 400', async () => {
+    const res = await buildApp().request('/api/templates/beitou-standard/sub%2Fimg.png')
+    expect(res.status).toBe(400)
+  })
+
+  it('jpg / svg / webp 后缀都支持，content-type 正确', async () => {
+    fs.writeFileSync(path.join(csDir, 'a.jpg'), 'JPG-DATA')
+    fs.writeFileSync(path.join(csDir, 'b.svg'), '<svg/>')
+    fs.writeFileSync(path.join(csDir, 'c.webp'), 'WEBP')
+
+    const jpg = await buildApp().request('/api/templates/beitou-standard/a.jpg')
+    expect(jpg.status).toBe(200)
+    expect(jpg.headers.get('content-type')).toBe('image/jpeg')
+
+    const svg = await buildApp().request('/api/templates/beitou-standard/b.svg')
+    expect(svg.status).toBe(200)
+    expect(svg.headers.get('content-type')).toBe('image/svg+xml')
+
+    const webp = await buildApp().request('/api/templates/beitou-standard/c.webp')
+    expect(webp.status).toBe(200)
+    expect(webp.headers.get('content-type')).toBe('image/webp')
+  })
+})

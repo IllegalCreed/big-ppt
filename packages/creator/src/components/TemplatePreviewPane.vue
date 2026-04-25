@@ -7,7 +7,8 @@ defineProps<{
 }>()
 
 function thumbnailUrl(m: TemplateManifest): string {
-  return m.thumbnail ? `/templates/${m.id}/${m.thumbnail}` : ''
+  // 同 TemplateCard：走 /api 前缀，agent 提供静态文件路由
+  return m.thumbnail ? `/api/templates/${m.id}/${m.thumbnail}` : ''
 }
 </script>
 

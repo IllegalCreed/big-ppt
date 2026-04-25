@@ -6,7 +6,8 @@ defineEmits<{ select: [] }>()
 
 function thumbnailUrl(m: TemplateManifest): string {
   if (!m.thumbnail) return ''
-  return `/templates/${m.id}/${m.thumbnail}`
+  // 走 /api 前缀，由 agent /api/templates/:id/:filename 路由读 packages/slidev/templates/<id>/ 下文件
+  return `/api/templates/${m.id}/${m.thumbnail}`
 }
 </script>
 

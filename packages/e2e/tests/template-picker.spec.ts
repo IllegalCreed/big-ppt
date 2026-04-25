@@ -32,9 +32,35 @@ test('新建 deck 选择 jingyeda-standard 走通全链路', async ({ page }) =>
   await expect(cards.filter({ hasText: '北投集团汇报模板' })).toBeVisible()
   await expect(cards.filter({ hasText: '竞业达汇报模板' })).toBeVisible()
 
-  // 缩略图 img 元素存在（有 src 即可，不等待网络加载）
+  // 缩略图：不仅 img 元素存在，还要真实加载成功（HTTP 200 + naturalWidth > 0）
   const thumbs = page.locator('[data-template-card] img')
   await expect(thumbs).toHaveCount(2, { timeout: 5_000 })
+
+  // 断言 src 走 /api/templates/ 前缀（防 7C 把 /templates 漏 /api 前缀回归）
+  const srcList = await thumbs.evaluateAll((imgs) =>
+    (imgs as HTMLImageElement[]).map((i) => i.src),
+  )
+  for (const src of srcList) {
+    expect(src).toMatch(/\/api\/templates\/(beitou|jingyeda)-standard\/thumbnail\.png$/)
+  }
+
+  // 断言图片 byte 真的回了：等所有 img 完成 + naturalWidth > 0（broken image 的 naturalWidth = 0）
+  await expect
+    .poll(
+      async () =>
+        thumbs.evaluateAll((imgs) =>
+          (imgs as HTMLImageElement[]).every((i) => i.complete && i.naturalWidth > 0),
+        ),
+      { timeout: 8_000 },
+    )
+    .toBe(true)
+
+  // 再做一次 HTTP HEAD/GET 验证后端确实返回 200 + image/* content-type
+  for (const src of srcList) {
+    const resp = await page.request.get(src)
+    expect(resp.status(), `${src} should return 200`).toBe(200)
+    expect(resp.headers()['content-type']).toMatch(/^image\//)
+  }
 
   // 点 jingyeda 卡片 → 右侧预览描述随之更新（description 包含"商务科技风格"）
   await cards.filter({ hasText: '竞业达汇报模板' }).click()

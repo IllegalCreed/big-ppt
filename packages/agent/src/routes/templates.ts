@@ -78,6 +78,61 @@ templates.get('/templates/:id/starter', (c) => {
   }
 })
 
+/** 静态资源路由：缩略图 / logo 等模板目录里的图片文件。
+ *  路径：GET /api/templates/:id/:filename
+ *  安全：filename 白名单后缀（png/jpg/jpeg/svg/webp）+ 阻止 .. / 路径分隔符 + 解析后必须落在模板目录里。
+ *  Content-Type 按后缀映射，否则按二进制返回。
+ */
+const IMAGE_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+}
+
+templates.get('/templates/:id/:filename', (c) => {
+  const id = c.req.param('id')
+  const filename = c.req.param('filename')
+
+  // 1. 模板存在
+  if (!getManifest(id)) {
+    return c.json({ success: false, error: `模板 ${id} 不存在` }, 404)
+  }
+
+  // 2. filename 后缀白名单 + 禁路径分隔/相对路径符
+  if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+    return c.json({ success: false, error: '非法文件名' }, 400)
+  }
+  const ext = path.extname(filename).toLowerCase()
+  const mime = IMAGE_MIME[ext]
+  if (!mime) {
+    return c.json({ success: false, error: '只支持图片文件（png/jpg/svg/webp）' }, 400)
+  }
+
+  // 3. 解析路径必须落在 templatesRoot/<id>/ 下（防 traversal）
+  const { templatesRoot } = getPaths()
+  const templateDir = path.join(templatesRoot, id)
+  const filePath = path.join(templateDir, filename)
+  const resolvedFile = path.resolve(filePath)
+  const resolvedDir = path.resolve(templateDir)
+  if (!resolvedFile.startsWith(resolvedDir + path.sep)) {
+    return c.json({ success: false, error: '非法路径' }, 403)
+  }
+
+  // 4. 文件存在
+  if (!fs.existsSync(resolvedFile)) {
+    return c.json({ success: false, error: `${filename} 不存在` }, 404)
+  }
+
+  // 5. 直接返回二进制
+  const buf = fs.readFileSync(resolvedFile)
+  return c.body(buf, 200, {
+    'Content-Type': mime,
+    'Cache-Control': 'public, max-age=300', // 5min；新增模板手跑 gen:thumbnails 后浏览器一刷就更新
+  })
+})
+
 templates.post('/read-template', async (c) => {
   try {
     const { templatesDir } = getPaths()
