@@ -10,7 +10,8 @@
     "lint": "turbo run lint",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "type-check": "turbo run type-check"
+    "type-check": "turbo run type-check",
+    "gen:thumbnails": "tsx scripts/generate-template-thumbnails.ts"
   },
   "devDependencies": {
     "prettier": "^3.8.3",

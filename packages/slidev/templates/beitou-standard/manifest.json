@@ -16,12 +16,26 @@
       "description": "封面页（大标题 + 副标题 + 汇报人 + 日期，适合全场开篇）",
       "frontmatterSchema": {
         "type": "object",
-        "required": ["mainTitle"],
+        "required": [
+          "mainTitle"
+        ],
         "properties": {
-          "mainTitle": { "type": "string", "description": "主标题，大字白色，约 52px" },
-          "subtitle": { "type": "string", "description": "副标题（可选）" },
-          "reporter": { "type": "string", "description": "汇报人或部门（可选）" },
-          "date": { "type": "string", "description": "日期（可选，如 2026/04/24）" }
+          "mainTitle": {
+            "type": "string",
+            "description": "主标题，大字白色，约 52px"
+          },
+          "subtitle": {
+            "type": "string",
+            "description": "副标题（可选）"
+          },
+          "reporter": {
+            "type": "string",
+            "description": "汇报人或部门（可选）"
+          },
+          "date": {
+            "type": "string",
+            "description": "日期（可选，如 2026/04/24）"
+          }
         }
       }
     },
@@ -30,12 +44,16 @@
       "description": "目录页（全目录 / 章节导航页两用）",
       "frontmatterSchema": {
         "type": "object",
-        "required": ["items"],
+        "required": [
+          "items"
+        ],
         "properties": {
           "items": {
             "type": "array",
             "description": "目录项数组，如 items: [\"Q1 关键目标\", \"数据背景\"]",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
           "active": {
             "type": "number",
@@ -49,9 +67,14 @@
       "description": "纯文字页（标题 + 正文要点）",
       "frontmatterSchema": {
         "type": "object",
-        "required": ["heading"],
+        "required": [
+          "heading"
+        ],
         "properties": {
-          "heading": { "type": "string", "description": "页标题，红色 40px" }
+          "heading": {
+            "type": "string",
+            "description": "页标题，红色 40px"
+          }
         }
       },
       "bodyGuidance": "body 是 markdown，可用 **加粗**（会染成品牌红），● 开头的要点列表，或 markdown 列表语法。"
@@ -61,11 +84,22 @@
       "description": "两栏对比页（左右并列，常用于前后对比 / 业务与技术 / A 与 B）",
       "frontmatterSchema": {
         "type": "object",
-        "required": ["heading"],
+        "required": [
+          "heading"
+        ],
         "properties": {
-          "heading": { "type": "string", "description": "页标题" },
-          "leftTitle": { "type": "string", "description": "左栏小标题" },
-          "rightTitle": { "type": "string", "description": "右栏小标题" }
+          "heading": {
+            "type": "string",
+            "description": "页标题"
+          },
+          "leftTitle": {
+            "type": "string",
+            "description": "左栏小标题"
+          },
+          "rightTitle": {
+            "type": "string",
+            "description": "右栏小标题"
+          }
         }
       },
       "bodyGuidance": "body 必须用 Slidev 命名 slot：`::left::` 分隔左栏，`::right::` 分隔右栏。两栏内部正文用 markdown 要点列表。"
@@ -75,13 +109,21 @@
       "description": "数据页（左图右指标卡，适合核心数字 + 图表对照）",
       "frontmatterSchema": {
         "type": "object",
-        "required": ["heading", "metrics"],
+        "required": [
+          "heading",
+          "metrics"
+        ],
         "properties": {
-          "heading": { "type": "string", "description": "页标题" },
+          "heading": {
+            "type": "string",
+            "description": "页标题"
+          },
           "metrics": {
             "type": "array",
             "description": "指标卡数组 inline JSON，如 metrics: [{ \"value\": \"629\", \"unit\": \"点\", \"label\": \"年度交付总量\" }]",
-            "items": { "type": "object" }
+            "items": {
+              "type": "object"
+            }
           }
         }
       },
@@ -92,11 +134,23 @@
       "description": "图文页（左图右文，适合产品截图 / 案例展示）",
       "frontmatterSchema": {
         "type": "object",
-        "required": ["heading", "image"],
+        "required": [
+          "heading",
+          "image"
+        ],
         "properties": {
-          "heading": { "type": "string", "description": "页标题" },
-          "image": { "type": "string", "description": "图片 URL（推荐 /templates/beitou-standard/ 下的白名单资源）" },
-          "textTitle": { "type": "string", "description": "文字区小标题" }
+          "heading": {
+            "type": "string",
+            "description": "页标题"
+          },
+          "image": {
+            "type": "string",
+            "description": "图片 URL（推荐 /templates/beitou-standard/ 下的白名单资源）"
+          },
+          "textTitle": {
+            "type": "string",
+            "description": "文字区小标题"
+          }
         }
       },
       "bodyGuidance": "body 是文字正文，markdown 语法。"
@@ -106,12 +160,21 @@
       "description": "封底致谢页（白字于红色渐变块）",
       "frontmatterSchema": {
         "type": "object",
-        "required": ["message"],
+        "required": [
+          "message"
+        ],
         "properties": {
-          "message": { "type": "string", "description": "结束语（白字于红色渐变块内）" },
-          "date": { "type": "string", "description": "底部日期（可选）" }
+          "message": {
+            "type": "string",
+            "description": "结束语（白字于红色渐变块内）"
+          },
+          "date": {
+            "type": "string",
+            "description": "底部日期（可选）"
+          }
         }
       }
     }
-  ]
+  ],
+  "thumbnail": "thumbnail.png"
 }
