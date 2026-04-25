@@ -22,6 +22,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:open': [value: boolean]
   created: [deck: Deck]
+  switched: [payload: { snapshotVersionId: number | null; newTemplateId: string; newTemplateName: string; newVersionName: string }]
 }>()
 
 const { createDeck } = useDecks()
@@ -135,6 +136,47 @@ function close() {
   if (view.value === 'progress') return
   emit('update:open', false)
 }
+
+const STAGE_ORDER: Array<'pending' | 'snapshotting' | 'migrating' | 'success'> = [
+  'pending',
+  'snapshotting',
+  'migrating',
+  'success',
+]
+
+function stageClass(target: 'snapshotting' | 'migrating' | 'success') {
+  const cur = switchStage.value
+  const curIdx = STAGE_ORDER.indexOf(cur as (typeof STAGE_ORDER)[number])
+  const tgtIdx = STAGE_ORDER.indexOf(target)
+  if (curIdx > tgtIdx) return 'stage-done'
+  if (curIdx === tgtIdx) return 'stage-active'
+  return 'stage-pending'
+}
+
+function onSuccessClose() {
+  const snap = switchResult.value?.snapshotVersionId ?? null
+  emit('switched', {
+    snapshotVersionId: snap,
+    newTemplateId: selected.value!.id,
+    newTemplateName: selected.value!.name,
+    newVersionName: selected.value!.name,
+  })
+  close()
+}
+
+async function onRetry() {
+  if (!props.deckId || !selected.value) return
+  view.value = 'progress'
+  try {
+    await switchJob.start({
+      deckId: props.deckId,
+      targetTemplateId: selected.value.id,
+    })
+    view.value = 'success'
+  } catch {
+    view.value = 'error'
+  }
+}
 </script>
 
 <template>
@@ -189,14 +231,47 @@ function close() {
 
           <p v-if="submitError" class="form-error">{{ submitError }}</p>
         </div>
-        <div v-else-if="view === 'progress'" class="modal-body">
-          正在切换到「{{ selected?.name }}」…
+        <div v-else-if="view === 'progress'" class="modal-body progress-body">
+          <div class="progress-title">正在切换到「{{ selected?.name }}」</div>
+          <ul class="stage-list">
+            <li :class="stageClass('snapshotting')">
+              <span class="stage-dot" />保存当前版本快照
+            </li>
+            <li :class="stageClass('migrating')">
+              <span class="stage-dot" />AI 重写内容
+            </li>
+            <li :class="stageClass('success')">
+              <span class="stage-dot" />写入新版本
+            </li>
+          </ul>
+          <div class="progress-bar">
+            <div class="progress-bar__fill" :style="{ width: `${Math.round(switchProgress * 100)}%` }" />
+          </div>
+          <div class="progress-hint">约 1 分钟，请稍候…</div>
         </div>
-        <div v-else-if="view === 'success'" class="modal-body">
-          切换完成
+        <div v-else-if="view === 'success'" class="modal-body success-body">
+          <div class="success-icon">✓</div>
+          <div class="success-title">切换完成</div>
+          <div class="success-sub">已用「{{ selected?.name }}」重新生成内容</div>
+          <button
+            type="button"
+            class="btn-primary"
+            data-success-view
+            @click="onSuccessClose"
+          >
+            查看
+          </button>
         </div>
-        <div v-else-if="view === 'error'" class="modal-body">
-          切换失败
+        <div v-else-if="view === 'error'" class="modal-body error-body">
+          <div class="error-title">切换失败</div>
+          <div class="error-msg">
+            {{ switchError || '未知错误' }}<br />
+            <span class="error-sub">快照已保存，当前 deck 未受影响。</span>
+          </div>
+          <div class="error-actions">
+            <button type="button" class="btn-secondary" @click="close">关闭</button>
+            <button type="button" class="btn-danger" data-retry @click="onRetry">重试</button>
+          </div>
         </div>
 
         <div v-if="view === 'picker'" class="modal-footer">
@@ -384,5 +459,103 @@ function close() {
   border-radius: var(--radius-md);
   color: #b4472c;
   font-size: var(--fs-sm);
+}
+.progress-body {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+.progress-title {
+  font-size: var(--fs-md);
+  color: var(--color-fg-primary);
+}
+.stage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+}
+.stage-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-fg-muted);
+}
+.stage-list li.stage-done {
+  color: #3a9a5e;
+}
+.stage-list li.stage-active {
+  color: var(--color-accent);
+  font-weight: var(--fw-semibold);
+}
+.stage-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.progress-bar {
+  width: 100%;
+  max-width: 280px;
+  height: 4px;
+  background: var(--color-bg-subtle);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-bar__fill {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 200ms var(--ease-out);
+}
+.progress-hint {
+  font-size: var(--fs-xs);
+  color: var(--color-fg-muted);
+}
+.success-body,
+.error-body {
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+.success-icon {
+  font-size: 36px;
+  color: #3a9a5e;
+}
+.success-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--color-fg-primary);
+}
+.success-sub {
+  font-size: var(--fs-sm);
+  color: var(--color-fg-muted);
+}
+.error-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: #b4472c;
+}
+.error-msg {
+  font-size: var(--fs-sm);
+  color: var(--color-fg-secondary);
+  text-align: center;
+  line-height: 1.6;
+}
+.error-sub {
+  color: var(--color-fg-muted);
+}
+.error-actions {
+  display: flex;
+  gap: var(--space-2);
 }
 </style>

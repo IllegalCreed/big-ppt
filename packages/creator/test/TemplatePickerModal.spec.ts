@@ -201,3 +201,112 @@ describe('TemplatePickerModal · switch mode', () => {
     })
   })
 })
+
+describe('TemplatePickerModal · progress / success / error', () => {
+  describe('fake timer block', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('progress view 显示 stage list，完成后进 success view 并带"查看"按钮', async () => {
+      mockListTemplates()
+      let count = 0
+      server.use(
+        http.post('/api/decks/1/switch-template', () =>
+          HttpResponse.json({ jobId: 'jp', state: 'pending' }),
+        ),
+        http.get('/api/switch-template-jobs/jp', () => {
+          count++
+          if (count === 1) return HttpResponse.json({ job: { id: 'jp', state: 'snapshotting' } })
+          if (count === 2) return HttpResponse.json({ job: { id: 'jp', state: 'migrating' } })
+          return HttpResponse.json({
+            job: {
+              id: 'jp',
+              state: 'success',
+              snapshotVersionId: 7,
+              newVersionId: 8,
+            },
+          })
+        }),
+      )
+      const wrapper = mount(TemplatePickerModal, {
+        props: { open: true, mode: 'switch', currentTemplateId: 'beitou-standard', deckId: 1, disableTeleport: true },
+      })
+      await flushPromises()
+      await wrapper.find<HTMLButtonElement>('button[data-primary-action]').trigger('click')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(wrapper.text()).toContain('保存当前版本快照')  // stage list 渲染
+      await vi.advanceTimersByTimeAsync(1500)
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(1500)
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(1500)
+      await flushPromises()
+      expect(wrapper.text()).toContain('切换完成')
+      expect(wrapper.find<HTMLButtonElement>('button[data-success-view]').exists()).toBe(true)
+    })
+
+    it('点"查看"关窗 + emit switched 带 snapshotVersionId / newTemplateName', async () => {
+      mockListTemplates()
+      server.use(
+        http.post('/api/decks/1/switch-template', () =>
+          HttpResponse.json({ jobId: 'jp2', state: 'pending' }),
+        ),
+        http.get('/api/switch-template-jobs/jp2', () =>
+          HttpResponse.json({
+            job: { id: 'jp2', state: 'success', snapshotVersionId: 9, newVersionId: 10 },
+          }),
+        ),
+      )
+      const wrapper = mount(TemplatePickerModal, {
+        props: { open: true, mode: 'switch', currentTemplateId: 'beitou-standard', deckId: 1, disableTeleport: true },
+      })
+      await flushPromises()
+      await wrapper.find<HTMLButtonElement>('button[data-primary-action]').trigger('click')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(1500)
+      await flushPromises()
+      await wrapper.find<HTMLButtonElement>('button[data-success-view]').trigger('click')
+      await flushPromises()
+      const events = wrapper.emitted('switched')
+      expect(events).toBeDefined()
+      expect(events![0][0]).toMatchObject({
+        snapshotVersionId: 9,
+        newVersionName: '竞业达汇报模板',
+      })
+      expect(wrapper.emitted('update:open')).toBeDefined()
+    })
+
+    it('error view 显示 retry 按钮，点击重新进 progress', async () => {
+      mockListTemplates()
+      let tries = 0
+      server.use(
+        http.post('/api/decks/1/switch-template', () => {
+          tries++
+          return HttpResponse.json({ jobId: `jr${tries}`, state: 'pending' })
+        }),
+        http.get(/switch-template-jobs\/jr1/, () =>
+          HttpResponse.json({ job: { id: 'jr1', state: 'failed', error: 'boom' } }),
+        ),
+        http.get(/switch-template-jobs\/jr2/, () =>
+          HttpResponse.json({ job: { id: 'jr2', state: 'migrating' } }),
+        ),
+      )
+      const wrapper = mount(TemplatePickerModal, {
+        props: { open: true, mode: 'switch', currentTemplateId: 'beitou-standard', deckId: 1, disableTeleport: true },
+      })
+      await flushPromises()
+      await wrapper.find<HTMLButtonElement>('button[data-primary-action]').trigger('click')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(1500)
+      await flushPromises()
+      expect(wrapper.text()).toContain('切换失败')
+      expect(wrapper.text()).toContain('boom')
+      await wrapper.find<HTMLButtonElement>('button[data-retry]').trigger('click')
+      await flushPromises()
+      expect(tries).toBe(2)
+      // 应回到 progress 视图
+      expect(wrapper.text()).toContain('正在切换')
+    })
+  })
+})
