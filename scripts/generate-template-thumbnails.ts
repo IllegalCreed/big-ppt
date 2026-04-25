@@ -1,13 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * Phase 7C thumbnail generation script (run once, or when adding new templates).
+ * Phase 7C 一次性（及新增模板时手跑）缩略图生成脚本。
  *
- * Steps:
- *   1. Scan packages/slidev/templates/* /manifest.json
- *   2. For each template: write starter content to slides.md, start slidev CLI dev server,
- *      use playwright chromium to screenshot /1 at 1280x720, kill process
- *   3. Write thumbnail.png to template dir + set manifest.thumbnail = "thumbnail.png"
- *   4. Idempotent: if manifest.thumbnail already correct, skip JSON write (only PNG changes)
+ * 流程：
+ *   1. 扫 packages/slidev/templates/*/manifest.json
+ *   2. 每套模板串行：写临时 slides.md（starter 内容）→ 起 slidev cli dev → playwright 打开 /1 截图 → 杀进程
+ *   3. 写 thumbnail.png 到模板目录 + manifest.thumbnail = "thumbnail.png"
+ *   4. 幂等：manifest 字段如已存在且值相同不改动（让 git diff 只反映图片变化）
  */
 import { chromium } from '@playwright/test'
 import { spawn } from 'node:child_process'
@@ -19,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, '..')
 const TEMPLATES_DIR = path.join(REPO_ROOT, 'packages/slidev/templates')
 const SLIDEV_DIR = path.join(REPO_ROOT, 'packages/slidev')
-const PORT = 3033 // avoid conflict with dev default 3030/3031
+const PORT = 3033 // 避开 dev 默认 3030/3031
 
 async function waitForServer(url: string, timeoutMs = 30_000) {
   const start = Date.now()
@@ -28,7 +27,7 @@ async function waitForServer(url: string, timeoutMs = 30_000) {
       const res = await fetch(url)
       if (res.ok) return
     } catch {
-      // keep polling
+      // 继续轮询
     }
     await new Promise((r) => setTimeout(r, 500))
   }
@@ -36,7 +35,7 @@ async function waitForServer(url: string, timeoutMs = 30_000) {
 }
 
 async function captureTemplate(templateId: string) {
-  console.log(`[${templateId}] preparing screenshot...`)
+  console.log(`[${templateId}] 准备截图…`)
   const templateDir = path.join(TEMPLATES_DIR, templateId)
   const manifestPath = path.join(templateDir, 'manifest.json')
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
@@ -60,7 +59,7 @@ async function captureTemplate(templateId: string) {
     const browser = await chromium.launch()
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
     await page.goto(`http://localhost:${PORT}/1`, { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(1200) // wait for fonts + logo to load
+    await page.waitForTimeout(1200) // 字体 + logo 加载
     const outPath = path.join(templateDir, 'thumbnail.png')
     await page.screenshot({ path: outPath, type: 'png' })
     await browser.close()
@@ -68,9 +67,9 @@ async function captureTemplate(templateId: string) {
     if (manifest.thumbnail !== 'thumbnail.png') {
       manifest.thumbnail = 'thumbnail.png'
       fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
-      console.log(`[${templateId}] manifest.thumbnail field written`)
+      console.log(`[${templateId}] manifest.thumbnail 字段已写入`)
     }
-    console.log(`[${templateId}] OK -> ${outPath}`)
+    console.log(`[${templateId}] OK → ${outPath}`)
   } finally {
     proc.kill('SIGTERM')
     await new Promise((r) => setTimeout(r, 500))
@@ -87,11 +86,11 @@ async function main() {
     .map((e) => e.name)
     .sort()
 
-  console.log(`templates to process: ${ids.join(', ')}`)
+  console.log(`待处理模板：${ids.join(', ')}`)
   for (const id of ids) {
     await captureTemplate(id)
   }
-  console.log('Done. Commit thumbnail.png + manifest.json changes.')
+  console.log('完成。提交 thumbnail.png + manifest.json 改动。')
 }
 
 main().catch((err) => {
