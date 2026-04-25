@@ -118,6 +118,8 @@ export async function rewriteForTemplate(args: {
 - 只输出最终 slides.md 全文，不要解释、不要包 \`\`\`markdown 代码块
 - **不要用 <tool_call> / <tool_name> / 任何工具调用格式回复**——本次没有工具可调，直接输出 markdown
 - 输出必须以 \`---\` 起首声明第一段 frontmatter（含 layout 字段）
+- **首段 frontmatter 的 \`theme\` 字段必须保持 \`seriph\` 不变**（这是 slidev 的全局主题包名，与模板 id 无关；填模板 id 会让 slidev 启动失败）
+- 模板归属表达在 \`layout\` 字段（如 \`layout: ${args.toTemplateId.replace('-standard', '')}-cover\`），不是 \`theme\`
 - 严格遵循新模板的 layout 清单与 frontmatter schema
 - 页数可以微调（不要少于原 1/2 也不要超过原 2 倍）
 

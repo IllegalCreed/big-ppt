@@ -36,7 +36,49 @@ export function ensureRouterModeHash(content: string): string {
   return next.join('\n')
 }
 
+/**
+ * Phase 7D fix（theme 兜底）：保证首段 frontmatter 的 `theme` 字段是合法 slidev 主题。
+ *
+ * 起因：rewriteForTemplate 调真 LLM 时，模型偶尔把"模板 id"（jingyeda-standard）误写到
+ * `theme:` 字段。slidev 启动时按这个值找 npm 主题包（@slidev/theme-jingyeda-standard），
+ * 找不到就 cli 进程 crash。turbo dev 是 persistent，子进程 crash 不会自动重启 → :3031
+ * 死掉用户得手动 pnpm dev。
+ *
+ * 策略：白名单检查，不在 SAFE_THEMES 内的 theme 值强制改为 'seriph'（slidev 默认主题）。
+ * - 缺 theme 字段 → 不动（slidev 默认是 default 主题，不会 crash）
+ * - theme 是 SAFE_THEMES 之一 → 不动
+ * - theme 是其他值（疑似模板 id 漂移）→ 替换成 seriph
+ */
+const SAFE_THEMES = new Set(['seriph', 'default', 'apple-basic', 'bricks'])
+
+export function ensureValidTheme(content: string): string {
+  if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) return content
+
+  const lines = content.split('\n')
+  let endIdx = -1
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i] === '---' || lines[i] === '---\r') {
+      endIdx = i
+      break
+    }
+  }
+  if (endIdx === -1) return content
+
+  let changed = false
+  const next = lines.map((line, i) => {
+    if (i === 0 || i >= endIdx) return line
+    const m = line.match(/^(theme\s*:\s*)(.*?)\s*$/)
+    if (!m) return line
+    const value = m[2]!.trim().replace(/^['"]|['"]$/g, '') // 去引号
+    if (SAFE_THEMES.has(value)) return line
+    changed = true
+    return `${m[1]}seriph`
+  })
+  return changed ? next.join('\n') : content
+}
+
 export function mirrorSlidesContent(content: string): void {
   const { slidesPath } = getPaths()
-  fs.writeFileSync(slidesPath, ensureRouterModeHash(content), 'utf-8')
+  const sanitized = ensureValidTheme(ensureRouterModeHash(content))
+  fs.writeFileSync(slidesPath, sanitized, 'utf-8')
 }
