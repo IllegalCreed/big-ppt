@@ -33,6 +33,11 @@ export default defineConfig({
         // Phase 7D：让 rewriteForTemplate 跳 LLM 直接读 starter.md，
         // 使切模板状态机端到端跑通无需调真 LLM
         BIG_PPT_TEST_REWRITE_MODE: 'skeleton',
+        // 让 e2e 的 mirror 写到 tmp 而非 packages/slidev/slides.md，
+        // 避免你 dev 跑着的 :3031 slidev HMR 被 e2e 切模板搞乱（root cause：
+        // 大改 frontmatter 触发 slidev cli full reload，dev iframe 闪/状态错乱）。
+        // e2e spec 都断 DB + UI selector 不验 iframe 渲染，写哪都不影响通过率。
+        BIG_PPT_SLIDES_PATH: '/tmp/lumideck-e2e-slides.md',
       },
     },
     {
