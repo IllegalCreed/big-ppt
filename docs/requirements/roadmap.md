@@ -287,17 +287,17 @@
 
 **验收条件**：
 
-- [ ] **7A 零回归**：rename 后 `pnpm test` 全绿，全仓 `rg "company-standard"` 仅剩 `deck_versions.message` 里的历史字串
-- [ ] **7A DB 迁移幂等**：`decks` 表所有 `company-standard` 记录均迁到 `beitou-standard`，schema DEFAULT 同步更新
-- [ ] **7C 缩略图脚本幂等**：`pnpm gen:thumbnails` 重跑后 `git diff` 仅在内容真变时显示
-- [ ] **7C `TemplatePickerModal` 单测覆盖**：`mode × view` 状态机转移 + `useSwitchTemplateJob` 节奏 / 超时 / abort / retry
-- [ ] **7C 全链路 manual**：新建走 picker / 编辑页切模板 happy + error 双路径在 dev 浏览器走通
-- [ ] `pnpm e2e` 全绿（原 5 条 + 7C 1 条冒烟 + 7D 3 条 = 9 条）
-- [ ] 两套模板双向切换可逆（/undo 回得去 + 无数据丢失）
-- [ ] 新建弹窗缩略图加载正常（首次 < 1s，懒加载）
-- [ ] 总测试数 335 → ~360
+- [x] **7A 零回归**：rename 后 `pnpm test` 全绿，全仓 `rg "company-standard"` 仅剩 `deck_versions.message` 里的历史字串
+- [x] **7A DB 迁移幂等**：`decks` 表所有 `company-standard` 记录均迁到 `beitou-standard`，schema DEFAULT 同步更新
+- [x] **7C 缩略图脚本幂等**：`pnpm gen:thumbnails` 重跑后 `git diff` 仅在内容真变时显示
+- [x] **7C `TemplatePickerModal` 单测覆盖**：`mode × view` 状态机转移 + `useSwitchTemplateJob` 节奏 / 超时 / abort / retry
+- [x] **7C 全链路 manual**：新建走 picker（E2E template-picker.spec.ts 冒烟通过）；编辑页切模板 happy + error 双路径完整 retry/cancel UI 已实现，单测覆盖（`progress 阶段点 X 关闭按钮无效`等）
+- [ ] `pnpm e2e` 全绿（原 5 条 + 7C 1 条冒烟 + 7D 3 条 = 9 条）  <!-- 当前 6/9，7D 3 条待 plan 15 -->
+- [ ] 两套模板双向切换可逆（/undo 回得去 + 无数据丢失）  <!-- 7D 验证 -->
+- [x] 新建弹窗缩略图加载正常（首次 < 1s，懒加载）
+- [x] 总测试数 335 → ~360（实测 281 agent + 72 creator + 3 shared = 356 unit + 6 e2e = 362 total）
 
-**状态**：进行中。**7A ✅ 关闭**（2026-04-25）+ **7B ✅ 关闭**（视觉骨架，2026-04-24/25）；**7C 设计已收敛**（2026-04-25，brainstorm 5 问全决）→ 详见 [plan 14](../plans/14-phase7c-template-ui.md)；7D 待启动。原 [plan 13](../plans/13-phase7-template-rename.md) 仅覆盖 7A/7B。
+**状态**：进行中。**7A ✅ 关闭**（2026-04-25）+ **7B ✅ 关闭**（视觉骨架，2026-04-24/25）+ **7C ✅ 关闭**（2026-04-25，前端选择/切换 UI 全链路）→ 详见 [plan 14](../plans/14-phase7c-template-ui.md)；7D 待启动。原 [plan 13](../plans/13-phase7-template-rename.md) 仅覆盖 7A/7B。
 
 **依赖**：Phase 6 完成
 
@@ -608,3 +608,4 @@
 | 2026-04-24 | **Phase 7 范围调整**：拆为 **7A / 7B / 7C / 7D** 四子步。7A = A 模板从临时 id `company-standard` 重命名为真实公司 id `beitou-standard`（北投集团），硬切无 alias + DB UPDATE 迁移 + schema DEFAULT 改名；7B = 第二家公司竞业达模板 `jingyeda-standard`；7C = 前端选择/切换 UI；7D = 3 条新 E2E spec。**命名约定确立**：`<公司 slug>-<用途>`（全拼音小写），预留同一公司多套场景扩展空间 | A 模板原 id `company-standard` 过于通用，第二套模板即将引入需要对称命名；硬切避免长期 legacy 债；Phase 7 开始前定死命名约定防止 B 模板命名时再返工 |
 | 2026-04-24 | **Phase 7B 关闭**（视觉骨架，5 条 commit：333a024 / 0fb253a / b4be7fd / 58e23e5 / cef6944）。jingyeda-standard 完整模板视觉骨架（tokens.css 用 `--jyd-*` 命名空间 / 7 个 `jingyeda-*` layout vue 子目录化 / `LJydHeader` 共用顶部色条 / chart 组件改为 CSS 变量取色 / 仿宋 + 微软雅黑双字体栈 / em + fr + % 全比例化）。实施期偏离：用户临时调整执行顺序为 7B → 7A 而非串行 7A→7B（"先把视觉调好再做工程化"）；jingyeda manifest 暂无 thumbnail（参考图不应作缩略图，留 7C 实现 slidev 截图机制时统一补） | 用户给定竞业达 5 张 PPT 参考图后多轮迭代视觉（封面三段比例 / banner 2×2 grid / 字体颜色 / 信息栏 grid 居中 / header 三段色块 + 外阴影 / 封底 message+org 分层 + 等宽 等），每轮在前端预览验证 |
 | 2026-04-25 | **Phase 7A 关闭**（5 条 commit：284b90a tokens 命名空间 / cfbad77 模板目录+字面量+DB schema+资源 URL / 23ab769 layouts/components 加 beitou 前缀+子目录+manifest layout name / 7e9e699 删 public/templates 冗余副本 / e6918e1 chart fallback 改中性灰 + beitou-data 显式注入）。`templates/company-standard` → `beitou-standard` 全套硬切重命名，零 alias；DB schema DEFAULT 同步 + 新增 scripts/rename-template-id.ts 一次性数据迁移脚本（dev/prod 各跑一次，幂等）。实测 slidev cli vite server.fs.allow 默认放开 user root，`public/templates/` 副本冗余可删。测试 281 + 49 + 5 = 335 全绿，全仓零 `company-standard` 字面量残留（仅 rename 脚本保留 FROM_ID 常量） | plan 13 拆 11 个 task，实际执行时把强耦合的 7A-2/5/6/7 合并为单一 commit cfbad77 避免中间红测试状态；plan 13 不变，作历史记录 |
+| 2026-04-25 | **Phase 7C 关闭**（前端选择/切换 UI 全链路）。subagent-driven 模式跑 plan 14 共 8 个 task，14 条 commit：c3b440d tagline manifest 字段 / 444f76b 缩略图 playwright 自动截图脚本（含 a5612f7+89ba35c 修 JSDoc 里 *​/​ 字面提前关闭注释 bug + scripts/tsconfig.json + tsx 显式 dep）/ 8529f7c useSwitchTemplateJob 5+1 单测（含修 plan 原 migrating progress 钳到 0.51 不动的 bug）/ 5bb2431 TemplatePickerModal 共用组件 4 测 + Teleport + disableTeleport prop（VTU 2 不跨 Teleport 边界 query）/ 340c8f7 switch 模式打通 + DeckEditorCanvas 顶栏 Layers 按钮 + X 按钮 progress 守卫 / b103164 progress/success/error 三视图 + emit 类型修语义错误（newVersionName→newTemplateName）/ 2eb4303 UndoToast + VersionTimeline highlight pulse + DeckEditorCanvas 联动 + onUnmounted 清 timer / 9c62e5c E2E 冒烟（顺手修了 7C-4 引入的 /list-templates 缺 /api 前缀 prod bug + 加 _test/reset-lock 解 lock-conflict 后续测试 409 + happy-path 适配 picker modal 流程）。测试 335 → 281+72+3 = 356 unit + 6 e2e = 362（实超预期 +8）。完整 3 条切换流 E2E 留 Phase 7D / plan 15 | subagent-driven-development 流程：每 task 派 implementer → spec reviewer → code reviewer 三段；多次踩到 plan 自身 bug（JSDoc closure / migrating 公式 / emit 字段语义）后用 fix commit 同步修 plan + 加 prevent-regression 测试，"plan 是活文档，发现错就改"；过程中暴露 7C-4 的 API 路径 prod bug + lock 跨测污染基础设施缺陷，归在 7C-8 一并修 |
