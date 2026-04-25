@@ -5,6 +5,7 @@ import ChatPanel from './ChatPanel.vue'
 import SlidePreview from './SlidePreview.vue'
 import SettingsModal from './SettingsModal.vue'
 import TemplatePickerModal from './TemplatePickerModal.vue'
+import UndoToast from './UndoToast.vue'
 import VersionTimeline from './VersionTimeline.vue'
 import {
   useDecks,
@@ -21,7 +22,10 @@ const props = defineProps<{
   deck: Deck
   currentVersion: DeckVersion | null
 }>()
-const emit = defineEmits<{ 'exit-to-list': [] }>()
+const emit = defineEmits<{
+  'exit-to-list': []
+  'template-switched': []
+}>()
 
 const { currentUser, logout } = useAuth()
 const { listChats, appendChat, updateDeck } = useDecks()
@@ -153,6 +157,44 @@ const showSettings = ref(false)
 const showTimeline = ref(false)
 const showTemplatePicker = ref(false)
 
+// ── UndoToast + VersionTimeline 高亮 ──────────────────────────────────────
+const undoToast = ref<{ visible: boolean; templateName: string; snapshotVersionId: number | null }>({
+  visible: false,
+  templateName: '',
+  snapshotVersionId: null,
+})
+const highlightVersionId = ref<number | null>(null)
+let highlightTimer: ReturnType<typeof setTimeout> | null = null
+
+function onTemplateSwitched(payload: {
+  snapshotVersionId: number | null
+  newTemplateId: string
+  newTemplateName: string
+}) {
+  // 更新 deck state 反映新模板（父组件持有 deck 对象，mutate 让 SlidePreview 等响应）
+  props.deck.templateId = payload.newTemplateId
+  // 通知父组件 refetch deck + currentVersion
+  emit('template-switched')
+
+  undoToast.value = {
+    visible: true,
+    templateName: payload.newTemplateName,
+    snapshotVersionId: payload.snapshotVersionId,
+  }
+}
+
+function onUndoFromToast(snapshotVersionId: number) {
+  undoToast.value.visible = false
+  showTimeline.value = true
+  // 清除旧 timer 避免泄漏
+  if (highlightTimer) clearTimeout(highlightTimer)
+  highlightVersionId.value = snapshotVersionId
+  highlightTimer = setTimeout(() => {
+    highlightVersionId.value = null
+    highlightTimer = null
+  }, 2500)
+}
+
 function onTimelineRestored() {
   // 回滚成功后强制 iframe 重载，Slidev 会读到新的 slides.md
   slideStore.refresh()
@@ -281,10 +323,19 @@ onMounted(() => {
       mode="switch"
       :deck-id="deck.id"
       :current-template-id="deck.templateId"
+      @switched="onTemplateSwitched"
+    />
+    <UndoToast
+      :visible="undoToast.visible"
+      :template-name="undoToast.templateName"
+      :snapshot-version-id="undoToast.snapshotVersionId"
+      @close="undoToast.visible = false"
+      @undo="onUndoFromToast"
     />
     <VersionTimeline
       :deck-id="deck.id"
       :current-version-id="currentVersion?.id ?? null"
+      :highlight-version-id="highlightVersionId"
       :open="showTimeline"
       @close="showTimeline = false"
       @restored="onTimelineRestored"

@@ -121,6 +121,18 @@ async function handleExit() {
   await releaseLock()
   await router.push('/decks')
 }
+
+/** 模板切换完成后，重新拉取 deck + currentVersion 刷新编辑页数据 */
+async function handleTemplateSwitched() {
+  const id = deckId.value
+  if (!Number.isInteger(id) || id <= 0) return
+  try {
+    const { deck, currentVersion } = await decksApi.getDeck(id)
+    state.value = { kind: 'ready', deck, currentVersion }
+  } catch {
+    // 拉取失败不崩溃；下次用户交互或刷新时会重新拉
+  }
+}
 </script>
 
 <template>
@@ -145,6 +157,7 @@ async function handleExit() {
     :deck="state.deck"
     :current-version="state.currentVersion"
     @exit-to-list="handleExit"
+    @template-switched="handleTemplateSwitched"
   />
 </template>
 

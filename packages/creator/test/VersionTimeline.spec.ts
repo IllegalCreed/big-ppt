@@ -16,7 +16,7 @@ function mockVersions(arr: Array<{ id: number; turnId?: string | null; createdAt
   }))
 }
 
-async function mountIt(props: { deckId: number; currentVersionId: number | null; open?: boolean }) {
+async function mountIt(props: { deckId: number; currentVersionId: number | null; open?: boolean; highlightVersionId?: number | null }) {
   const wrapper = mount(VersionTimeline, {
     props: { ...props, open: props.open ?? true },
   })
@@ -116,5 +116,26 @@ describe('VersionTimeline', () => {
     expect(closeBtn.exists()).toBe(true)
     await closeBtn.trigger('click')
     expect(wrapper.emitted('close')).toBeTruthy()
+  })
+
+  it('highlightVersionId 传入时该行加 data-highlighted=true', async () => {
+    server.use(
+      http.get('/api/decks/1/versions', () =>
+        HttpResponse.json({
+          versions: mockVersions([
+            { id: 5, createdAt: '2026-04-25T10:00:00Z' },
+            { id: 4, createdAt: '2026-04-25T09:59:00Z' },
+          ]),
+        }),
+      ),
+    )
+    const wrapper = await mountIt({
+      deckId: 1,
+      currentVersionId: 5,
+      highlightVersionId: 4,
+    })
+    await flushPromises()
+    const highlighted = wrapper.findAll('[data-highlighted="true"]')
+    expect(highlighted.length).toBe(1)
   })
 })

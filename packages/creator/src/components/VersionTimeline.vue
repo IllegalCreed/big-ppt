@@ -8,6 +8,7 @@ const props = defineProps<{
   deckId: number
   currentVersionId: number | null
   open: boolean
+  highlightVersionId?: number | null
 }>()
 const emit = defineEmits<{
   close: []
@@ -104,7 +105,8 @@ watch(
               v-for="version in group.items"
               :key="version.id"
               class="item"
-              :class="{ current: version.id === currentVersionId }"
+              :class="{ current: version.id === currentVersionId, highlighted: version.id === highlightVersionId }"
+              :data-highlighted="String(version.id === highlightVersionId)"
             >
               <div class="item-main">
                 <div class="item-meta">
@@ -308,5 +310,15 @@ watch(
 .restore-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.item.highlighted {
+  animation: pulse 2s ease-out 1;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 var(--color-accent-soft); }
+  50% { box-shadow: 0 0 0 8px var(--color-accent-soft); }
+  100% { box-shadow: 0 0 0 0 var(--color-accent-soft); }
 }
 </style>
