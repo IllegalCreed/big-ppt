@@ -112,6 +112,7 @@ export async function runSwitchJob(
       deckId: job.deckId,
       content: currentContent,
       message: `切换模板前快照 (${job.from} → ${job.to})`,
+      templateId: job.from,
       authorId: job.userId,
     })
     const [snapshot] = await db
@@ -138,6 +139,7 @@ export async function runSwitchJob(
       deckId: job.deckId,
       content: rewritten,
       message: `切换到模板 ${job.to}`,
+      templateId: job.to,
       authorId: job.userId,
     })
     const [newest] = await db

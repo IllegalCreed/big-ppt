@@ -41,6 +41,35 @@ describe('db/schema FK 级联行为', () => {
     expect(chatRows.length).toBe(0)
   })
 
+  it('Phase 7D：deck_versions.template_id 列存在且 nullable，写入/读取保真', async () => {
+    const db = getDb()
+    const { user } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id)
+
+    // 写一条带 templateId 的 version
+    await db.insert(deckVersions).values({
+      deckId: deck.id,
+      content: 'with template',
+      templateId: 'jingyeda-standard',
+      authorId: user.id,
+    })
+    // 写一条 templateId=NULL 的 version（向前兼容旧数据）
+    await db.insert(deckVersions).values({
+      deckId: deck.id,
+      content: 'legacy',
+      authorId: user.id,
+    })
+
+    const rows = await db
+      .select()
+      .from(deckVersions)
+      .where(eq(deckVersions.deckId, deck.id))
+    const withTpl = rows.find((r) => r.content === 'with template')
+    const legacy = rows.find((r) => r.content === 'legacy')
+    expect(withTpl?.templateId).toBe('jingyeda-standard')
+    expect(legacy?.templateId).toBeNull()
+  })
+
   it('删 user → 其写过的 deck_versions.author_id 被 SET NULL，版本记录本身保留', async () => {
     const db = getDb()
     // 两个用户：A 创建 deck；B 以合作者身份写了一个 version

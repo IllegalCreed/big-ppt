@@ -90,6 +90,11 @@ export const deckVersions = mysqlTable(
     message: varchar('message', { length: 255 }),
     /** 同一 turn 多次写标记为同组，UI 可折叠显示 */
     turnId: varchar('turn_id', { length: 64 }),
+    /**
+     * Phase 7D：写入此 version 时所属的模板 id（snapshot 用 from / 新版本用 to）。
+     * restore 时 fallback 同步 decks.template_id 实现切模板可逆；NULL 视为旧数据保持原行为。
+     */
+    templateId: varchar('template_id', { length: 64 }),
     authorId: int('author_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').default(NOW).notNull(),
   },

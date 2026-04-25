@@ -119,6 +119,7 @@ decksRoute.post('/decks', async (c) => {
         deckId: created.id,
         content: initialContent,
         message: `从模板 ${templateId} 初始化`,
+        templateId,
         authorId: user.id,
       })
       const [firstVersion] = await tx
@@ -263,7 +264,16 @@ decksRoute.post('/decks/:id{[0-9]+}/restore/:vid{[0-9]+}', async (c) => {
     .limit(1)
   if (!version) return c.json({ error: '版本不存在' }, 404)
 
-  await db.update(decks).set({ currentVersionId: versionId }).where(eq(decks.id, deckId))
+  // Phase 7D：版本携带 templateId 时同步回写 decks.template_id（实现切模板可逆）；
+  // 旧版本 templateId 为 NULL 时保持原行为不动 decks.template_id（向前兼容）
+  if (version.templateId != null) {
+    await db
+      .update(decks)
+      .set({ currentVersionId: versionId, templateId: version.templateId })
+      .where(eq(decks.id, deckId))
+  } else {
+    await db.update(decks).set({ currentVersionId: versionId }).where(eq(decks.id, deckId))
+  }
 
   // 若当前 session 正占用该 deck，mirror 到 fs，让 Slidev 热重载
   const session = c.get('session')

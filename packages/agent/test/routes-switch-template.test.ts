@@ -260,9 +260,11 @@ describe('POST /api/decks/:id/switch-template', () => {
     expect(afterRows.length).toBe(3) // initial + snapshot + 切后
     const snapshot = afterRows.find((v) => v.id === job.snapshotVersionId)!
     expect(snapshot.message).toContain('切换模板前快照')
+    expect(snapshot.templateId).toBe('beitou-standard') // Phase 7D：snapshot 带 fromTemplateId
     const newest = afterRows.find((v) => v.id === job.newVersionId)!
     expect(newest.content).toBe(rewritten)
     expect(newest.message).toContain('切换到模板 alpha')
+    expect(newest.templateId).toBe('alpha') // Phase 7D：新 version 带 toTemplateId
 
     const [updated] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
     expect(updated!.templateId).toBe('alpha')

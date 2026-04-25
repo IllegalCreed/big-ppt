@@ -304,6 +304,103 @@ describe('routes/decks', () => {
     expect(bad.status).toBe(404)
   })
 
+  it('Phase 7D restore: 切模板后回滚到带 fromTemplateId 的 snapshot → decks.template_id 同步回旧', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id, 'UndoSwitch')
+
+    // 模拟一次成功切换：写一条带 templateId='alpha' 的新 version，并把 deck templateId 同步置 alpha
+    const db = getDb()
+    await db.insert(deckVersions).values({
+      deckId: deck.id,
+      content: '---\nlayout: cover\nmainTitle: snapshot\n---\n',
+      message: '切换模板前快照 (beitou-standard → alpha)',
+      templateId: 'beitou-standard',
+      authorId: user.id,
+    })
+    const [snapshot] = await db
+      .select({ id: deckVersions.id })
+      .from(deckVersions)
+      .where(and(eq(deckVersions.deckId, deck.id), eq(deckVersions.message, '切换模板前快照 (beitou-standard → alpha)')))
+      .limit(1)
+    await db.insert(deckVersions).values({
+      deckId: deck.id,
+      content: '---\nlayout: cover\nmainTitle: 切后\n---\n',
+      message: '切换到模板 alpha',
+      templateId: 'alpha',
+      authorId: user.id,
+    })
+    const [newVer] = await db
+      .select({ id: deckVersions.id })
+      .from(deckVersions)
+      .where(and(eq(deckVersions.deckId, deck.id), eq(deckVersions.message, '切换到模板 alpha')))
+      .limit(1)
+    await db.update(decks).set({ currentVersionId: newVer!.id, templateId: 'alpha' }).where(eq(decks.id, deck.id))
+
+    // 回滚到 snapshot：decks.template_id 应同步回 'beitou-standard'
+    const res = await postJson(app, `/api/decks/${deck.id}/restore/${snapshot!.id}`, {}, cookie)
+    expect(res.status).toBe(200)
+    const [updated] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
+    expect(updated!.currentVersionId).toBe(snapshot!.id)
+    expect(updated!.templateId).toBe('beitou-standard')
+  })
+
+  it('Phase 7D restore: 同模板内回滚 → decks.template_id 不变', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser()
+    const { deck, initialVersionId } = await createDeckDirect(user.id, 'SameTemplateRollback')
+
+    // 加一条同模板内的新版本（templateId 仍是 beitou-standard）
+    const db = getDb()
+    await db.insert(deckVersions).values({
+      deckId: deck.id,
+      content: 'v2 same template',
+      templateId: 'beitou-standard',
+      authorId: user.id,
+    })
+    const [v2] = await db
+      .select({ id: deckVersions.id })
+      .from(deckVersions)
+      .where(and(eq(deckVersions.deckId, deck.id), eq(deckVersions.content, 'v2 same template')))
+      .limit(1)
+    await db.update(decks).set({ currentVersionId: v2!.id }).where(eq(decks.id, deck.id))
+
+    const res = await postJson(app, `/api/decks/${deck.id}/restore/${initialVersionId}`, {}, cookie)
+    expect(res.status).toBe(200)
+    const [updated] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
+    expect(updated!.currentVersionId).toBe(initialVersionId)
+    expect(updated!.templateId).toBe('beitou-standard')
+  })
+
+  it('Phase 7D restore: 旧版本 templateId=NULL → decks.template_id 不改（向前兼容）', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id, 'LegacyRollback')
+
+    // 模拟历史遗留 NULL 数据：手动插一条无 templateId 的版本
+    const db = getDb()
+    await db.insert(deckVersions).values({
+      deckId: deck.id,
+      content: 'legacy null',
+      authorId: user.id,
+      // templateId 留空 → NULL
+    })
+    const [legacy] = await db
+      .select({ id: deckVersions.id })
+      .from(deckVersions)
+      .where(and(eq(deckVersions.deckId, deck.id), eq(deckVersions.content, 'legacy null')))
+      .limit(1)
+
+    // 切到 alpha 状态
+    await db.update(decks).set({ templateId: 'alpha' }).where(eq(decks.id, deck.id))
+
+    const res = await postJson(app, `/api/decks/${deck.id}/restore/${legacy!.id}`, {}, cookie)
+    expect(res.status).toBe(200)
+    const [updated] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
+    expect(updated!.currentVersionId).toBe(legacy!.id)
+    expect(updated!.templateId).toBe('alpha') // 不动
+  })
+
   it('Chats: 空列表开始；POST role 非法 → 400，content 缺失 → 400', async () => {
     const app = makeApp()
     const { user, cookie } = await createLoggedInUser()
