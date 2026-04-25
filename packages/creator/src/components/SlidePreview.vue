@@ -14,10 +14,40 @@ const slideStore = useSlideStore()
 // 链频繁 setPage 时画面闪烁 + 浏览器扩展 postMessage 在 contentWindow null 瞬间挂错。
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 const initialPage = slideStore.currentPage.value // 仅用作 mount 时的初始 hash
+
+// effectiveToken 跟随 store.refreshToken 但延后到 Slidev 反代 ready 才同步——避免切模板
+// 这种"slides.md 大改"触发 Slidev vite full reload 的几百 ms 窗口里 iframe 撞 502。
+// 见 onWatch(refreshToken) 里的 probeSlidevReady 逻辑。
+const effectiveToken = ref(slideStore.refreshToken.value)
 const iframeSrc = computed(
-  () => `/api/slidev-preview/?t=${slideStore.refreshToken.value}#/${initialPage}`,
+  () => `/api/slidev-preview/?t=${effectiveToken.value}#/${initialPage}`,
 )
 const presentSrc = computed(() => `/api/slidev-preview/#/${slideStore.currentPage.value}`)
+
+/** 探测 Slidev 反代是否就绪（最多 timeoutMs，每 300ms 重试） */
+async function probeSlidevReady(timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch('/api/slidev-preview/', { credentials: 'include' })
+      if (res.ok) return true
+    } catch {
+      /* 网络/反代错就 retry */
+    }
+    await new Promise((r) => setTimeout(r, 300))
+  }
+  return false
+}
+
+// refreshToken bump → 等 Slidev 重启稳态再切 iframe src（仅切模板/restore 这种大改场景重要；
+// 手动刷新按钮路径下 Slidev 没在 reload，probe 第一次就 ok，几乎无延迟）
+watch(
+  () => slideStore.refreshToken.value,
+  async (newToken) => {
+    await probeSlidevReady(5000)
+    effectiveToken.value = newToken // 即便超时也 sync，让 iframe 至少尝试加载
+  },
+)
 
 // currentPage 变化 → 写 iframe hash（不重新挂载 iframe）
 watch(
