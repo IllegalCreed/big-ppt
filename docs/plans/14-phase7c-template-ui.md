@@ -260,10 +260,13 @@ Expected: 成功或"already installed"。
  * Phase 7C 一次性（及新增模板时手跑）缩略图生成脚本。
  *
  * 流程：
- *   1. 扫 packages/slidev/templates/*/manifest.json
+ *   1. 扫 packages/slidev/templates 下每个子目录里的 manifest.json
  *   2. 每套模板串行：写临时 slides.md（starter 内容）→ 起 slidev cli dev → playwright 打开 /1 截图 → 杀进程
  *   3. 写 thumbnail.png 到模板目录 + manifest.thumbnail = "thumbnail.png"
  *   4. 幂等：manifest 字段如已存在且值相同不改动（让 git diff 只反映图片变化）
+ *
+ * 注意：JSDoc 块里禁止写 templates/<glob>/manifest.json 这种含 */ 字面的 path——
+ * esbuild 会把 */ 当作块注释结束符提前关闭注释。如需写 glob 改用自然语言描述。
  */
 import { chromium } from '@playwright/test'
 import { spawn } from 'node:child_process'
