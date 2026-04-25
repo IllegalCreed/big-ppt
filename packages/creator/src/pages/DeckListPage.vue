@@ -5,15 +5,16 @@ import { FileText, LogOut, Plus, Sparkles, Trash2 } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth'
 import { useDecks, type Deck } from '../composables/useDecks'
 import { ApiError } from '../api/client'
+import TemplatePickerModal from '../components/TemplatePickerModal.vue'
 
 const router = useRouter()
 const { currentUser, logout } = useAuth()
-const { listDecks, createDeck, deleteDeck, updateDeck } = useDecks()
+const { listDecks, deleteDeck, updateDeck } = useDecks()
 
 const decks = ref<Deck[]>([])
 const loading = ref(true)
-const creating = ref(false)
 const error = ref('')
+const showPicker = ref(false)
 
 async function refresh() {
   loading.value = true
@@ -27,17 +28,12 @@ async function refresh() {
   }
 }
 
-async function onCreate() {
-  if (creating.value) return
-  creating.value = true
-  try {
-    const deck = await createDeck({ title: '未命名幻灯片' })
-    await router.push(`/decks/${deck.id}`)
-  } catch (err) {
-    error.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
-  } finally {
-    creating.value = false
-  }
+function onCreate() {
+  showPicker.value = true
+}
+
+async function onPickerCreated(deck: Deck) {
+  await router.push(`/decks/${deck.id}`)
 }
 
 function openDeck(deck: Deck) {
@@ -103,9 +99,9 @@ onMounted(refresh)
     <main class="content">
       <div class="content-header">
         <h1>我的幻灯片</h1>
-        <button type="button" class="btn-primary" :disabled="creating" @click="onCreate">
+        <button type="button" class="btn-primary" @click="onCreate">
           <Plus :size="16" :stroke-width="2" />
-          <span>{{ creating ? '创建中...' : '新建 Deck' }}</span>
+          <span>新建 Deck</span>
         </button>
       </div>
 
@@ -143,6 +139,12 @@ onMounted(refresh)
         </li>
       </ul>
     </main>
+
+    <TemplatePickerModal
+      v-model:open="showPicker"
+      mode="create"
+      @created="onPickerCreated"
+    />
   </div>
 </template>
 
