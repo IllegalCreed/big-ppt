@@ -260,7 +260,7 @@
 
 ---
 
-### P3-10. creator 单测过度依赖 msw mock，应改为真实 agent + lumideck_test 集成测（Phase 7C 暴露）
+### P3-10. creator 单测过度依赖 msw mock，应改为真实 agent + lumideck_test 集成测 ✅（2026-04-25 清，Phase 7D-C）
 
 **位置**：`packages/creator/test/*.spec.ts`（10 个 spec 全部）
 
@@ -290,6 +290,23 @@
 - agent 加 `GET /api/templates/:id/:filename`（白名单 png/jpg/svg/webp + 防 traversal），加 7 条真实集成测覆盖 200/404/400/traversal
 - E2E template-picker spec 加 `naturalWidth > 0` + `request.get(src).status === 200` + content-type 断言
 - 测试 281+72+3 = 356 → 288+72+3 = 363 unit + 6 e2e = 369 total
+
+**实际修复**（2026-04-25 Phase 7D-C 关闭）：
+
+- 抽 `packages/agent/src/app.ts`：导出 Hono app 单例（仅路由 + 中间件装配，副作用如 `registerLocalTools` / `verifyTemplatesOrThrow` / MCP init 留 index.ts）
+- creator 加 `@big-ppt/agent: workspace:*` devDep（无循环依赖）
+- 新建 `packages/creator/test/_setup/integration.ts`：
+  - 顶层 `loadDotenv` 加载 agent `.env.test.local`（DATABASE_URL / APIKEY_MASTER_KEY 等）
+  - 替换 `globalThis.fetch`：相对路径 / `http://test/*` / `http://localhost/*` → `app.fetch(req)` in-process；外部 URL 走原生 fetch
+  - cookie jar 自动收集 Set-Cookie 注入下次请求（模拟浏览器 credentials: 'include'）
+  - 透传 `useTestDb` / `createLoggedInUser` / `createDeckDirect` / `__setRewriteFnForTesting` / `RewriteFn` / `getDb` / `decks` / `deckVersions`
+- `packages/creator/vitest.config.ts` 加 `fileParallelism: false`（集成测共享 lumideck_test + 全局 fetch shim 必须串行）
+- 3 个契约 spec 改造：
+  - `useAuth.spec.ts`：6 测真链路（register 201 + cookie / login 200/401 / me 401 / saveLlmSettings 持久化 / logout 清本地）
+  - `useDecks.spec.ts`：5 测真 CRUD + 跨用户 403 ownership + activate 409 holder 字段
+  - `useSwitchTemplateJob.spec.ts`：4 测真状态机（fake RewriteFn DI → POST → 轮询 → success；DB.decks.template_id 真改 + new version templateId / RewriteFn throw → state=failed / 同模板 400 / 未知模板 404）；fake-timer 节奏/abort/progress ratio 测试由 E2E + UI spec 覆盖
+- 5 个 UI spec（DeckEditorCanvas / UndoToast / VersionTimeline / TemplatePickerModal / OccupiedWaitingPage）保留 msw 不动
+- 测试数 72 → 71（useDecks +1 / useSwitchTemplateJob 6→4 / 删 1 故意不通的过渡 case）
 
 ---
 
@@ -326,3 +343,4 @@
 | 2026-04-23 | Phase 5 完成：P3-2 清除（localStorage API Key → 后端 AES-256-GCM 加密存 `users.llm_settings`）；P2-4 MCP 凭证加密**未**在 Phase 5 做，挪到 Phase 5.5 部署前必须清；Phase 5 补测轨道落地后总测试数 262（agent 208 + creator 49 + E2E 5）、coverage 门槛 agent 90/85 + creator 75/65 都过 | 项目组 |
 | 2026-04-23 | **P2-4 提前清完**：JsonFileRepo 落盘时用 AES-256-GCM 加密 headers value（复用 `crypto/apikey.ts`），`/api/mcp/servers` 上 requireAuth + GET 脱敏 value 为 `***` + PATCH 支持 `***` 保留旧值语义；前端 `MCPCatalogItem.vue` 适配脱敏 UI；顺带修了 Phase 5 遗留的 "未登录可读 MCP headers" 漏洞；测试 +11 = 268；P2 条数 3/4 → 4/4 | 项目组 |
 | 2026-04-25 | **新增 P3-10**：Phase 7C 暴露 creator 单测过度依赖 msw mock，整套 72 测全绿但 `<img src>` 缺 `/api/` 前缀的 prod bug 直到 dev 浏览器才发现。用户提醒"给了 lumideck_test 测试库就是让你放心调后端，除了 LLM/MCP 没什么可 mock 的"。短期 7C-补丁修了 URL 路径 + agent 加 `/api/templates/:id/:filename` 静态路由 + E2E 强化（naturalWidth > 0 / HTTP 200 断言）；中期改造 creator 测用真实 agent + lumideck_test 留 Phase 7D | 项目组 |
+| 2026-04-25 | **Phase 7D 关闭**：P3-10 全清（抽 agent app 单例 + creator workspace dep + `_setup/integration.ts` in-process fetch shim + 3 个契约 spec 改造）；同期 `deck_versions` schema 加 `template_id` 列 + `routes/decks` restore 端点同步 `decks.template_id`，让 /undo 切回旧模板可逆；新增 3 条 E2E spec（新建 jingyeda / 切模板 / 切完 /undo），9 条 e2e 全绿。测试 363 unit → 368 unit + 9 e2e = 377 total | 项目组 |

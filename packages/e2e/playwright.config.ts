@@ -30,6 +30,9 @@ export default defineConfig({
       stderr: 'pipe',
       env: {
         AGENT_PORT: String(AGENT_PORT),
+        // Phase 7D：让 rewriteForTemplate 跳 LLM 直接读 starter.md，
+        // 使切模板状态机端到端跑通无需调真 LLM
+        BIG_PPT_TEST_REWRITE_MODE: 'skeleton',
       },
     },
     {

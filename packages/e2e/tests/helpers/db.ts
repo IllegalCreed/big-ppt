@@ -50,3 +50,62 @@ export async function disposeDb(): Promise<void> {
 }
 
 export const AGENT_BASE = `http://localhost:${process.env.AGENT_PORT ?? 4100}`
+
+// ─── Phase 7D：deck / version / template 直读 helper ──────────────────
+
+export type DeckRow = {
+  id: number
+  user_id: number
+  title: string
+  template_id: string
+  current_version_id: number | null
+  status: 'active' | 'archived' | 'deleted'
+}
+
+/** 直读 lumideck_test，断言 decks.template_id 等字段 */
+export async function getDeckByIdSql(id: number): Promise<DeckRow | null> {
+  const [rows] = await getPool().query<mysql.RowDataPacket[]>(
+    'SELECT id, user_id, title, template_id, current_version_id, status FROM decks WHERE id = ? LIMIT 1',
+    [id],
+  )
+  return (rows[0] as DeckRow) ?? null
+}
+
+/** 拿当前 deck 的当前 version content；deck.current_version_id NULL 时返 null */
+export async function getCurrentVersionContent(deckId: number): Promise<string | null> {
+  const [rows] = await getPool().query<mysql.RowDataPacket[]>(
+    `SELECT v.content
+       FROM decks d
+       JOIN deck_versions v ON v.id = d.current_version_id
+      WHERE d.id = ?
+      LIMIT 1`,
+    [deckId],
+  )
+  return ((rows[0]?.content as string) ?? null) as string | null
+}
+
+/** 读模板 manifest 拿到 layouts 白名单（spec 里断言每页 layout 都属此白名单） */
+export async function getTemplateLayoutNames(templateId: string): Promise<string[]> {
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+  const root = resolve(__dirname, '../../../slidev/templates', templateId, 'manifest.json')
+  const raw = await fs.readFile(root, 'utf-8')
+  const m = JSON.parse(raw) as { layouts: { name: string }[] }
+  return m.layouts.map((l) => l.name)
+  // path 本身没用上，只是确保 import 类型不会报错（rg ts-prune 时清理）
+  void path
+}
+
+/** 提取 slides.md 全文里所有 frontmatter 的 layout 字段 */
+export function extractLayouts(content: string): string[] {
+  const out: string[] = []
+  // 解析 frontmatter 块（--- ... ---）
+  const blocks = content.split(/^---\s*$/m)
+  // blocks[0] 是开头空内容，blocks[1] 是第一个 frontmatter，blocks[2] body，blocks[3] frontmatter, ...
+  for (let i = 1; i < blocks.length; i += 2) {
+    const fm = blocks[i] ?? ''
+    const m = fm.match(/^layout:\s*([^\s#]+)/m)
+    if (m) out.push(m[1]!)
+  }
+  return out
+}
