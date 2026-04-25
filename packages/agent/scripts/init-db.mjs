@@ -12,11 +12,19 @@
  *
  * 行为：
  *   1. 若 --database-url 指定：仅把 URL 写进对应 .env.{env}.local（不连 DB）
- *   2. 否则用 quiz-monorepo 的 root 账号连接 MySQL，CREATE DATABASE + CREATE USER
- *      + GRANT，再把连接串写进 .env.{env}.local
+ *   2. 否则读取 root 凭据文件（默认 packages/agent/.env.create-db.local，
+ *      可用 --root-env-file=<path> 或环境变量 LUMIDECK_DB_ROOT_ENV 覆盖），
+ *      连接 MySQL 执行 CREATE DATABASE + CREATE USER + GRANT，
+ *      再把连接串写进 .env.{env}.local
  *   3. 若目标文件已有 `DATABASE_URL=mysql://...` 且未指定 --rotate，则跳过 DB 改动
  *      避免悄悄 rotate 密码击落现有连接
  *   4. SESSION_SECRET / APIKEY_MASTER_KEY 若为 CHANGE_ME_* 或缺失，自动随机生成一份
+ *
+ * root 凭据文件需要的字段（参考 .env.create-db.example）：
+ *   DATABASE_HOST=...
+ *   DATABASE_PORT=3306
+ *   DB_ROOT_USERNAME=...
+ *   DB_ROOT_PASSWORD=...
  *
  * 密码从不回显到 stdout 或 command line。
  */
@@ -28,7 +36,7 @@ import mysql from 'mysql2/promise'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const AGENT_DIR = resolve(__dirname, '..')
-const QUIZ_CREATE_DB_LOCAL = '/Users/zhangxu/illegal/quiz-monorepo/apps/quiz-backend/.env.create-db.local'
+const DEFAULT_ROOT_ENV_FILE = resolve(AGENT_DIR, '.env.create-db.local')
 
 // ─── CLI 参数 ───────────────────────────────────────────────────
 const argv = process.argv.slice(2)
@@ -42,6 +50,10 @@ function arg(name, fallback = undefined) {
 const env = arg('env', 'development')
 const databaseUrlOverride = arg('database-url')
 const rotate = !!arg('rotate', false)
+const rootEnvFile = resolve(
+  process.cwd(),
+  arg('root-env-file') || process.env.LUMIDECK_DB_ROOT_ENV || DEFAULT_ROOT_ENV_FILE,
+)
 
 if (!['development', 'test', 'production'].includes(env)) {
   console.error(`✗ --env 只能是 development / test / production，实际：${env}`)
@@ -140,15 +152,18 @@ async function main() {
     process.exit(1)
   }
 
-  if (!existsSync(QUIZ_CREATE_DB_LOCAL)) {
-    console.error(`✗ 找不到 ${QUIZ_CREATE_DB_LOCAL}，无法获取 root 账号`)
-    console.error(`  你可以直接 --database-url=... 跳过本分支`)
+  if (!existsSync(rootEnvFile)) {
+    console.error(`✗ 找不到 root 凭据文件：${rootEnvFile}`)
+    console.error('  解决方案二选一：')
+    console.error('    1) 在该路径创建 .env.create-db.local（参考 .env.create-db.example）')
+    console.error('    2) 用 --root-env-file=<path> 或 LUMIDECK_DB_ROOT_ENV=<path> 指向已有文件')
+    console.error('    3) 直接 --database-url=mysql://... 跳过 root 建库流程')
     process.exit(1)
   }
-  const rootEnv = parseEnv(QUIZ_CREATE_DB_LOCAL)
+  const rootEnv = parseEnv(rootEnvFile)
   const { DATABASE_HOST, DATABASE_PORT, DB_ROOT_USERNAME, DB_ROOT_PASSWORD } = rootEnv
   if (!DATABASE_HOST || !DB_ROOT_USERNAME || !DB_ROOT_PASSWORD) {
-    console.error('✗ quiz create-db.local 缺必要字段（DATABASE_HOST / DB_ROOT_USERNAME / DB_ROOT_PASSWORD）')
+    console.error(`✗ ${rootEnvFile} 缺必要字段（DATABASE_HOST / DB_ROOT_USERNAME / DB_ROOT_PASSWORD）`)
     process.exit(1)
   }
 
