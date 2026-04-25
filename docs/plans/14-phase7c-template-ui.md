@@ -48,6 +48,7 @@
 | `packages/creator/test/TemplatePickerModal.spec.ts` | 组件单测（mode × view 状态机 + 按钮 disabled 边界） |
 | `packages/creator/test/UndoToast.spec.ts` | toast 单测（渲染 / 6s 自动消失 / /undo 跳转） |
 | `scripts/generate-template-thumbnails.ts` | 一次性自动截图脚本（playwright + slidev cli） |
+| `scripts/tsconfig.json` | scripts/ 目录最小 tsconfig（extends base + types: node + noEmit），让 IDE / tsc 认 node:* 类型 |
 | `packages/slidev/templates/beitou-standard/thumbnail.png` | 脚本生成 |
 | `packages/slidev/templates/jingyeda-standard/thumbnail.png` | 脚本生成 |
 | `packages/e2e/tests/template-picker.spec.ts` | 冒烟 E2E：picker 渲染 + 选 jingyeda 新建 deck |
@@ -62,7 +63,7 @@
 | `packages/creator/src/pages/DeckListPage.vue` | `onCreate()` 改为打开 `TemplatePickerModal` + 接成功事件后跳转 |
 | `packages/creator/src/components/DeckEditorCanvas.vue` | 顶栏新增"切换模板"按钮 + 挂 `TemplatePickerModal` + 挂 `UndoToast` + 监听切换成功 |
 | `packages/creator/src/components/VersionTimeline.vue` | 支持 `?highlight=<versionId>` 参数高亮刚快照的版本（2s 环形动画） |
-| `package.json`（repo 根） | 加 `gen:thumbnails` script |
+| `package.json`（repo 根） | 加 `gen:thumbnails` script + 显式声明 `tsx` devDep（之前靠 hoisting 间接拿，脆弱） |
 | `docs/requirements/roadmap.md` | Phase 7C 完成后写"变更记录"行（最后一步） |
 
 ---
