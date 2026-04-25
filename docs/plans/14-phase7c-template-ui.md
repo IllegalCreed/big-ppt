@@ -589,6 +589,38 @@ describe('useSwitchTemplateJob', () => {
     expect(ok.newVersionId).toBe(2)
     expect(started).toBe(2)
   })
+
+  it('migrating 阶段进度条每次 poll 递增（从 0.5 起步，封顶 0.9）', async () => {
+    server.use(
+      http.post('/api/decks/1/switch-template', () =>
+        HttpResponse.json({ jobId: 'job-mig', state: 'pending' }),
+      ),
+      http.get('/api/switch-template-jobs/job-mig', () =>
+        HttpResponse.json({ job: { id: 'job-mig', state: 'migrating' } }),
+      ),
+    )
+    const job = useSwitchTemplateJob()
+    void job.start({ deckId: 1, targetTemplateId: 'x' })
+
+    // 第一次 poll：0.5 → 0.52
+    await vi.advanceTimersByTimeAsync(1500)
+    const p1 = job.progressRatio.value
+    expect(p1).toBeGreaterThanOrEqual(0.5)
+    expect(p1).toBeLessThanOrEqual(0.55)
+
+    // 第二次 poll：必须严格递增
+    await vi.advanceTimersByTimeAsync(1500)
+    const p2 = job.progressRatio.value
+    expect(p2).toBeGreaterThan(p1)
+
+    // 多次 poll 后仍封顶 0.9
+    await vi.advanceTimersByTimeAsync(1500 * 10)
+    const p3 = job.progressRatio.value
+    expect(p3).toBeGreaterThan(p2)
+    expect(p3).toBeLessThanOrEqual(0.9)
+
+    job.abort()
+  })
 })
 ```
 
@@ -678,9 +710,10 @@ export function useSwitchTemplateJob() {
         const { job } = await getSwitchTemplateJob(jobId)
         if (job.id !== currentJobId) continue
         stage.value = job.state
-        // migrating 阶段根据轮询次数在 0.5 → 0.9 区间插值
+        // migrating 阶段每次 poll 进度递增 +0.02（从 0.5 起步累加，封顶 0.9）；其他 stage 直接读 STAGE_RATIO
         if (job.state === 'migrating') {
-          progressRatio.value = Math.min(0.9, Math.max(progressRatio.value, STAGE_RATIO.migrating + 0.01))
+          const base = Math.max(progressRatio.value, STAGE_RATIO.migrating)
+          progressRatio.value = Math.min(0.9, base + 0.02)
         } else {
           progressRatio.value = STAGE_RATIO[job.state]
         }

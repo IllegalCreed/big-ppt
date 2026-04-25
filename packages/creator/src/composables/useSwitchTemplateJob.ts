@@ -86,9 +86,10 @@ export function useSwitchTemplateJob() {
         const { job } = await getSwitchTemplateJob(jobId)
         if (job.id !== currentJobId) continue
         stage.value = job.state
-        // migrating 阶段根据轮询次数在 0.5 → 0.9 区间插值
+        // migrating 阶段每次 poll 进度递增 +0.02（从 0.5 起步累加，封顶 0.9）；其他 stage 直接读 STAGE_RATIO
         if (job.state === 'migrating') {
-          progressRatio.value = Math.min(0.9, Math.max(progressRatio.value, STAGE_RATIO.migrating + 0.01))
+          const base = Math.max(progressRatio.value, STAGE_RATIO.migrating)
+          progressRatio.value = Math.min(0.9, base + 0.02)
         } else {
           progressRatio.value = STAGE_RATIO[job.state]
         }
