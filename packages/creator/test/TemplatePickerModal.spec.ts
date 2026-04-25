@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { http, HttpResponse, server, useMsw } from './_setup/msw'
 import TemplatePickerModal from '../src/components/TemplatePickerModal.vue'
@@ -146,26 +146,58 @@ describe('TemplatePickerModal · switch mode', () => {
     expect(wrapper.text()).toContain('AI 用新模板风格重写')
   })
 
-  it('点"切换"调 switchTemplate API 并进入 progress 视图', async () => {
-    mockListTemplates()
-    server.use(
-      http.post('/api/decks/1/switch-template', () =>
-        HttpResponse.json({ jobId: 'job-x', state: 'pending' }),
-      ),
-      http.get('/api/switch-template-jobs/job-x', () =>
-        HttpResponse.json({ job: { id: 'job-x', state: 'migrating' } }),
-      ),
-    )
-    vi.useFakeTimers()
-    const wrapper = mount(TemplatePickerModal, {
-      props: { open: true, mode: 'switch', currentTemplateId: 'beitou-standard', deckId: 1, disableTeleport: true },
+  describe('switch → progress（fake timer）', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('点"切换"调 switchTemplate API 并进入 progress 视图', async () => {
+      mockListTemplates()
+      server.use(
+        http.post('/api/decks/1/switch-template', () =>
+          HttpResponse.json({ jobId: 'job-x', state: 'pending' }),
+        ),
+        http.get('/api/switch-template-jobs/job-x', () =>
+          HttpResponse.json({ job: { id: 'job-x', state: 'migrating' } }),
+        ),
+      )
+      const wrapper = mount(TemplatePickerModal, {
+        props: { open: true, mode: 'switch', currentTemplateId: 'beitou-standard', deckId: 1, disableTeleport: true },
+      })
+      await flushPromises()
+      await wrapper.find<HTMLButtonElement>('button[data-primary-action]').trigger('click')
+      await flushPromises()
+      // 视图切到 progress：picker 列表不再显示
+      expect(wrapper.find('[data-template-card]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('正在切换')
     })
-    await flushPromises()
-    await wrapper.find<HTMLButtonElement>('button[data-primary-action]').trigger('click')
-    await flushPromises()
-    // 视图切到 progress：picker 列表不再显示
-    expect(wrapper.find('[data-template-card]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('正在切换')
-    vi.useRealTimers()
+
+    it('progress 阶段点 X 关闭按钮无效，view 不退回 picker（防误关丢任务）', async () => {
+      mockListTemplates()
+      server.use(
+        http.post('/api/decks/1/switch-template', () =>
+          HttpResponse.json({ jobId: 'job-y', state: 'pending' }),
+        ),
+        http.get('/api/switch-template-jobs/job-y', () =>
+          HttpResponse.json({ job: { id: 'job-y', state: 'migrating' } }),
+        ),
+      )
+      const wrapper = mount(TemplatePickerModal, {
+        props: { open: true, mode: 'switch', currentTemplateId: 'beitou-standard', deckId: 1, disableTeleport: true },
+      })
+      await flushPromises()
+      await wrapper.find<HTMLButtonElement>('button[data-primary-action]').trigger('click')
+      await flushPromises()
+      // 现在在 progress 视图
+      expect(wrapper.text()).toContain('正在切换')
+
+      // 点 X 关闭按钮
+      await wrapper.find<HTMLButtonElement>('button[aria-label="关闭"]').trigger('click')
+      await flushPromises()
+
+      // update:open 不应被 emit
+      expect(wrapper.emitted('update:open')).toBeUndefined()
+      // view 仍然是 progress
+      expect(wrapper.text()).toContain('正在切换')
+    })
   })
 })

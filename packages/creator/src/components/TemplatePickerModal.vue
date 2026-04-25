@@ -131,6 +131,8 @@ function onOverlayClick() {
 }
 
 function close() {
+  // 与 overlay 同样规则：progress 阶段不可关，防误关丢任务（X 按钮也走这里）
+  if (view.value === 'progress') return
   emit('update:open', false)
 }
 </script>
