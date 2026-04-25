@@ -4,6 +4,7 @@ import { useRouter, RouterLink } from 'vue-router'
 import { Sparkles } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth'
 import { ApiError } from '../api/client'
+import PasswordInput from '../components/PasswordInput.vue'
 
 const router = useRouter()
 const { register } = useAuth()
@@ -59,12 +60,12 @@ async function onSubmit() {
 
       <label class="field">
         <span class="field-label">密码</span>
-        <input v-model="password" type="password" autocomplete="new-password" required minlength="6" />
+        <PasswordInput v-model="password" autocomplete="new-password" :required="true" :minlength="6" />
       </label>
 
       <label class="field">
         <span class="field-label">确认密码</span>
-        <input v-model="passwordConfirm" type="password" autocomplete="new-password" required minlength="6" />
+        <PasswordInput v-model="passwordConfirm" autocomplete="new-password" :required="true" :minlength="6" />
       </label>
 
       <p v-if="error" class="error">{{ error }}</p>
