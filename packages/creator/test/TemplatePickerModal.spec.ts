@@ -42,7 +42,7 @@ describe('TemplatePickerModal · create mode · picker view', () => {
   it('open=true 时拉模板清单并渲染左列表 + 右预览', async () => {
     mockListTemplates()
     const wrapper = mount(TemplatePickerModal, {
-      props: { open: true, mode: 'create' },
+      props: { open: true, mode: 'create', disableTeleport: true },
     })
     await flushPromises()
     expect(wrapper.text()).toContain('北投集团汇报模板')
@@ -54,7 +54,7 @@ describe('TemplatePickerModal · create mode · picker view', () => {
   it('点左列切换选中 → 右预览更新', async () => {
     mockListTemplates()
     const wrapper = mount(TemplatePickerModal, {
-      props: { open: true, mode: 'create' },
+      props: { open: true, mode: 'create', disableTeleport: true },
     })
     await flushPromises()
     const cards = wrapper.findAll('[data-template-card]')
@@ -67,7 +67,7 @@ describe('TemplatePickerModal · create mode · picker view', () => {
   it('标题 input 空时创建按钮 disabled，有值时可点', async () => {
     mockListTemplates()
     const wrapper = mount(TemplatePickerModal, {
-      props: { open: true, mode: 'create' },
+      props: { open: true, mode: 'create', disableTeleport: true },
     })
     await flushPromises()
     const input = wrapper.find<HTMLInputElement>('input[data-title-input]')
@@ -101,7 +101,7 @@ describe('TemplatePickerModal · create mode · picker view', () => {
       }),
     )
     const wrapper = mount(TemplatePickerModal, {
-      props: { open: true, mode: 'create' },
+      props: { open: true, mode: 'create', disableTeleport: true },
     })
     await flushPromises()
     await wrapper.find<HTMLInputElement>('input[data-title-input]').setValue('My Deck')

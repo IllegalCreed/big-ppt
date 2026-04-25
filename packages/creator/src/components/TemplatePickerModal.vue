@@ -14,6 +14,8 @@ const props = defineProps<{
   currentTemplateId?: string
   /** switch 模式下的 deckId */
   deckId?: number
+  /** 测试用：禁用 Teleport，让 modal 在父 wrapper 内渲染（VTU 2 不跨 Teleport 边界 query） */
+  disableTeleport?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -105,8 +107,9 @@ function close() {
 </script>
 
 <template>
-  <div v-if="open" class="modal-overlay" @click.self="close">
-    <div class="modal-content">
+  <Teleport to="body" :disabled="disableTeleport">
+    <div v-if="open" class="modal-overlay" @click.self="close">
+      <div class="modal-content">
         <div class="modal-header">
           <h3>{{ mode === 'create' ? '新建 Deck' : '切换模板' }}</h3>
           <button type="button" class="close-btn" aria-label="关闭" @click="close">
@@ -166,8 +169,9 @@ function close() {
             {{ primaryLabel }}
           </button>
         </div>
+      </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
