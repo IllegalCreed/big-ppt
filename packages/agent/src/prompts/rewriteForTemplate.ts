@@ -69,6 +69,32 @@ function stripMarkdownFence(raw: string): string {
   return trimmed
 }
 
+/**
+ * Phase 7D：LLM 重写返回值合法性校验。
+ *
+ * 现实中（尤其国产 LLM）会偶尔把 message content 写成 tool-call 格式字面文本，例如：
+ *   <tool_call)>\n<tool_name>read_slides</tool_name>\n</tool_call()>
+ * 我们没校验直接写进 deck_versions + mirror 到 slides.md，整个 deck 就废了。
+ *
+ * 合法 slidev markdown 必有第一段 frontmatter（以 --- 开头 + 至少声明 layout）。
+ * 不合规则 throw，让 runSwitchJob 标 failed → 不写 DB / 不 mirror → 用户看错误提示。
+ */
+export function validateSlidevMarkdown(content: string): void {
+  const trimmed = content.trim()
+  // 1. 必须以 --- 开头（首段 frontmatter 起始符）
+  if (!trimmed.startsWith('---')) {
+    throw new Error('LLM 返回非 slidev markdown：未以 frontmatter `---` 开头')
+  }
+  // 2. 不能含 tool-call 字面标签 —— 这是 LLM 错把 tool_call 格式写到 content 的特征
+  if (/<tool_call[^>]*>|<tool_name>|```tool_call/i.test(trimmed)) {
+    throw new Error('LLM 返回包含 tool-call 字面标签，疑似格式漂移')
+  }
+  // 3. 必须至少能匹配到一处 layout 字段（slidev 渲染必需）
+  if (!/^layout\s*:/m.test(trimmed)) {
+    throw new Error('LLM 返回缺 layout 字段，无法作为合法 slidev markdown')
+  }
+}
+
 /** 非流式调 LLM 重写 slides.md；错误向上抛 */
 export async function rewriteForTemplate(args: {
   oldContent: string
@@ -90,6 +116,8 @@ export async function rewriteForTemplate(args: {
 
 要求：
 - 只输出最终 slides.md 全文，不要解释、不要包 \`\`\`markdown 代码块
+- **不要用 <tool_call> / <tool_name> / 任何工具调用格式回复**——本次没有工具可调，直接输出 markdown
+- 输出必须以 \`---\` 起首声明第一段 frontmatter（含 layout 字段）
 - 严格遵循新模板的 layout 清单与 frontmatter schema
 - 页数可以微调（不要少于原 1/2 也不要超过原 2 倍）
 
@@ -125,5 +153,7 @@ ${args.oldContent}`
   if (!content || typeof content !== 'string') {
     throw new Error('LLM 响应缺失 content')
   }
-  return stripMarkdownFence(content)
+  const stripped = stripMarkdownFence(content)
+  validateSlidevMarkdown(stripped)
+  return stripped
 }
