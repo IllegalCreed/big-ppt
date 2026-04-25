@@ -2,6 +2,7 @@
   "id": "beitou-standard",
   "name": "北投集团汇报模板",
   "description": "商务正式风格，品牌红（#d00d14）主色 + 无衬线字体，适合北投集团业务汇报、OKR 共识与发布会。",
+  "tagline": "商务正式 · 暖色调",
   "logos": {
     "primary": "logo.png",
     "mark": "logo-mark.png",
