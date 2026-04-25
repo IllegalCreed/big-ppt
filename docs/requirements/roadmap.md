@@ -292,7 +292,7 @@
 - [ ] 新建弹窗缩略图加载正常（首次 < 1s，懒加载）
 - [ ] 总测试数 335 → ~360
 
-**状态**：待开始
+**状态**：进行中。**7A ✅ 关闭**（2026-04-25）+ **7B ✅ 关闭**（视觉骨架，2026-04-24/25）；7C/7D 待启动。详见 [plan 13](../plans/13-phase7-template-rename.md)。
 
 **依赖**：Phase 6 完成
 
@@ -601,3 +601,5 @@
 | 2026-04-24 | Phase 6 实施计划落地：[plan 12](../plans/12-phase6-template-architecture.md) 拆 6A（manifest + starter 骨架）/ 6B（decks.template_id + createDeck 加载 starter）/ 6C（prompt 迁 agent + A/B contract test）/ 6D（switch-template 迁移流水）四步增量；manifest 新增 `starterSlidesPath`，新建 deck 即带 3 页骨架预览（封面「请填写标题」/ 内容页占位 / 封底），不再空白；`theme_id` 和 `template_id` 并存不合并；不加 feature flag | 用户确认部署前先建完整模板架构；seed 骨架痛点（新建 deck 右侧预览空白）纳入 6A/6B 一并解决；theme variant 语义留给未来 |
 | 2026-04-24 | Phase 6 关闭（4 条 commit：6A/6B/6C/6D）。实施期偏离：无重大偏离；`switch_template` 工具加入 tool registry（tools 数 9→10），LLM 重写由 `RewriteFn` 可注入 DI 替换便于单测。测试 262+6(6A) → 268+6(6B) → 274+17(6C) → 291+24(6D) ＝ **281 条 agent 本底**（281 + creator 49 + E2E 5 = 335 总数）；coverage lines 94.44 / branches 85.75 维持 90/85 门槛 | 按 plan 12 拆四步完成，无需偏离；RewriteFn DI 让 LLM 不可用场景下也能完整测试状态机 |
 | 2026-04-24 | **Phase 7 范围调整**：拆为 **7A / 7B / 7C / 7D** 四子步。7A = A 模板从临时 id `company-standard` 重命名为真实公司 id `beitou-standard`（北投集团），硬切无 alias + DB UPDATE 迁移 + schema DEFAULT 改名；7B = 第二家公司竞业达模板 `jingyeda-standard`；7C = 前端选择/切换 UI；7D = 3 条新 E2E spec。**命名约定确立**：`<公司 slug>-<用途>`（全拼音小写），预留同一公司多套场景扩展空间 | A 模板原 id `company-standard` 过于通用，第二套模板即将引入需要对称命名；硬切避免长期 legacy 债；Phase 7 开始前定死命名约定防止 B 模板命名时再返工 |
+| 2026-04-24 | **Phase 7B 关闭**（视觉骨架，5 条 commit：333a024 / 0fb253a / b4be7fd / 58e23e5 / cef6944）。jingyeda-standard 完整模板视觉骨架（tokens.css 用 `--jyd-*` 命名空间 / 7 个 `jingyeda-*` layout vue 子目录化 / `LJydHeader` 共用顶部色条 / chart 组件改为 CSS 变量取色 / 仿宋 + 微软雅黑双字体栈 / em + fr + % 全比例化）。实施期偏离：用户临时调整执行顺序为 7B → 7A 而非串行 7A→7B（"先把视觉调好再做工程化"）；jingyeda manifest 暂无 thumbnail（参考图不应作缩略图，留 7C 实现 slidev 截图机制时统一补） | 用户给定竞业达 5 张 PPT 参考图后多轮迭代视觉（封面三段比例 / banner 2×2 grid / 字体颜色 / 信息栏 grid 居中 / header 三段色块 + 外阴影 / 封底 message+org 分层 + 等宽 等），每轮在前端预览验证 |
+| 2026-04-25 | **Phase 7A 关闭**（5 条 commit：284b90a tokens 命名空间 / cfbad77 模板目录+字面量+DB schema+资源 URL / 23ab769 layouts/components 加 beitou 前缀+子目录+manifest layout name / 7e9e699 删 public/templates 冗余副本 / e6918e1 chart fallback 改中性灰 + beitou-data 显式注入）。`templates/company-standard` → `beitou-standard` 全套硬切重命名，零 alias；DB schema DEFAULT 同步 + 新增 scripts/rename-template-id.ts 一次性数据迁移脚本（dev/prod 各跑一次，幂等）。实测 slidev cli vite server.fs.allow 默认放开 user root，`public/templates/` 副本冗余可删。测试 281 + 49 + 5 = 335 全绿，全仓零 `company-standard` 字面量残留（仅 rename 脚本保留 FROM_ID 常量） | plan 13 拆 11 个 task，实际执行时把强耦合的 7A-2/5/6/7 合并为单一 commit cfbad77 避免中间红测试状态；plan 13 不变，作历史记录 |
