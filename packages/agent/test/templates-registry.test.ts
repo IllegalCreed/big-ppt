@@ -70,29 +70,29 @@ afterEach(() => {
 
 describe('templates registry', () => {
   it('载入合法模板后 listManifests 返回按 id 排序', () => {
-    writeTemplate('company-standard')
+    writeTemplate('beitou-standard')
     writeTemplate('alpha')
-    expect(listManifests().map((m) => m.id)).toEqual(['alpha', 'company-standard'])
+    expect(listManifests().map((m) => m.id)).toEqual(['alpha', 'beitou-standard'])
   })
 
   it('getManifest 按 id 返回 manifest，未知 id 返回 null', () => {
-    writeTemplate('company-standard')
-    expect(getManifest('company-standard')?.id).toBe('company-standard')
+    writeTemplate('beitou-standard')
+    expect(getManifest('beitou-standard')?.id).toBe('beitou-standard')
     expect(getManifest('does-not-exist')).toBeNull()
   })
 
   it('readStarter 返回 starter.md 原文', () => {
-    writeTemplate('company-standard', {
+    writeTemplate('beitou-standard', {
       starter: '---\nlayout: cover\nmainTitle: T\n---\n',
     })
-    expect(readStarter('company-standard')).toBe(
+    expect(readStarter('beitou-standard')).toBe(
       '---\nlayout: cover\nmainTitle: T\n---\n',
     )
   })
 
   it('verifyTemplatesOrThrow 在 manifest 损坏时抛错', () => {
     // 写一个 id 与目录不一致的 manifest
-    const dir = path.join(templatesRoot, 'company-standard')
+    const dir = path.join(templatesRoot, 'beitou-standard')
     fs.mkdirSync(dir)
     fs.writeFileSync(
       path.join(dir, 'manifest.json'),
@@ -118,7 +118,7 @@ describe('templates registry', () => {
   })
 
   it('verifyTemplatesOrThrow 在 starter.md 缺失时抛错', () => {
-    writeTemplate('company-standard', { starter: null })
+    writeTemplate('beitou-standard', { starter: null })
     expect(() => verifyTemplatesOrThrow()).toThrowError(
       /starterSlidesPath 不存在/,
     )
@@ -130,10 +130,10 @@ describe('templates registry', () => {
   })
 
   it('verifyTemplatesOrThrow 跳过无 manifest.json 的子目录', () => {
-    writeTemplate('company-standard')
+    writeTemplate('beitou-standard')
     fs.mkdirSync(path.join(templatesRoot, '_deprecated'))
     // 不应抛错
     expect(() => verifyTemplatesOrThrow()).not.toThrow()
-    expect(listManifests().map((m) => m.id)).toEqual(['company-standard'])
+    expect(listManifests().map((m) => m.id)).toEqual(['beitou-standard'])
   })
 })

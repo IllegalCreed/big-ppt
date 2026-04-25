@@ -331,7 +331,7 @@ export function useAIChat() {
   // Phase 6C：system prompt 构造迁到 agent（manifest 驱动）。这里先留空，
   // 首次 sendMessage / 恢复后的下一次 sendMessage 都会 lazy 拉一次填入 index 0。
   const messages = ref<ChatMessage[]>([])
-  const templateId = deckCtx?.templateId ?? 'company-standard'
+  const templateId = deckCtx?.templateId ?? 'beitou-standard'
 
   async function ensureSystemPrompt(): Promise<void> {
     const first = messages.value[0]

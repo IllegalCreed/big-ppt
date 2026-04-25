@@ -1,5 +1,5 @@
 <!--
-  company-standard 品牌 logo 组合块：红色 logo-mark + 黑色 logo-text。
+  beitou-standard 品牌 logo 组合块：红色 logo-mark + 黑色 logo-text。
   用 `L` 前缀标记为 layout 内部复用块（不对 AI prompt 列举）。被 cover / back-cover layout 使用。
 -->
 <script setup lang="ts">
@@ -17,12 +17,12 @@ withDefaults(
 <template>
   <div class="l-cover-logo">
     <img
-      src="/templates/company-standard/logo-mark.png"
+      src="/templates/beitou-standard/logo-mark.png"
       class="l-logo-mark"
       :style="{ height: `${markSize}px` }"
     />
     <img
-      src="/templates/company-standard/logo-text.png"
+      src="/templates/beitou-standard/logo-text.png"
       class="l-logo-text"
       :class="{ 'l-logo-text--invert': invertText }"
       :style="{ height: `${textSize}px` }"

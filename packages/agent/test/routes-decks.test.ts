@@ -52,7 +52,7 @@ describe('routes/decks', () => {
     const { deck } = await res.json()
     expect(deck.title).toBe('我的新 Deck')
     expect(deck.currentVersionId).not.toBeNull()
-    expect(deck.templateId).toBe('company-standard')
+    expect(deck.templateId).toBe('beitou-standard')
 
     // 验证 DB 有对应 version，message 来自模板初始化
     const db = getDb()
@@ -62,7 +62,7 @@ describe('routes/decks', () => {
       .where(eq(deckVersions.id, deck.currentVersionId))
       .limit(1)
     expect(v?.deckId).toBe(deck.id)
-    expect(v?.message).toBe('从模板 company-standard 初始化')
+    expect(v?.message).toBe('从模板 beitou-standard 初始化')
   })
 
   it('POST /decks: initialContent 自定义能落库', async () => {
@@ -76,13 +76,13 @@ describe('routes/decks', () => {
     expect(v?.content).toBe(custom)
   })
 
-  it('POST /decks: 未传 initialContent → 默认用 company-standard 的 starter.md（3 页骨架）', async () => {
+  it('POST /decks: 未传 initialContent → 默认用 beitou-standard 的 starter.md（3 页骨架）', async () => {
     const app = makeApp()
     const { cookie } = await createLoggedInUser()
     const res = await postJson(app, '/api/decks', { title: 'StarterCheck' }, cookie)
     expect(res.status).toBe(201)
     const { deck } = await res.json()
-    expect(deck.templateId).toBe('company-standard')
+    expect(deck.templateId).toBe('beitou-standard')
     const db = getDb()
     const [v] = await db
       .select()
@@ -111,18 +111,18 @@ describe('routes/decks', () => {
     expect(rows).toEqual([])
   })
 
-  it('POST /decks: 显式传 templateId=company-standard 能写入对应字段', async () => {
+  it('POST /decks: 显式传 templateId=beitou-standard 能写入对应字段', async () => {
     const app = makeApp()
     const { cookie } = await createLoggedInUser()
     const res = await postJson(
       app,
       '/api/decks',
-      { title: 'Y', templateId: 'company-standard' },
+      { title: 'Y', templateId: 'beitou-standard' },
       cookie,
     )
     expect(res.status).toBe(201)
     const { deck } = await res.json()
-    expect(deck.templateId).toBe('company-standard')
+    expect(deck.templateId).toBe('beitou-standard')
   })
 
   it('GET /decks: 列表结果携带 templateId 字段', async () => {
@@ -131,7 +131,7 @@ describe('routes/decks', () => {
     await postJson(app, '/api/decks', { title: 'WithTemplateId' }, cookie)
     const res = await app.request('/api/decks', { headers: { Cookie: cookie } })
     const { decks: list } = await res.json()
-    expect(list[0].templateId).toBe('company-standard')
+    expect(list[0].templateId).toBe('beitou-standard')
   })
 
   it('GET /decks: 只返回 active/archived，不返回 deleted', async () => {
@@ -175,10 +175,10 @@ describe('routes/decks', () => {
     const { deck } = await createDeckDirect(user.id, 'withTid')
     const res = await app.request(`/api/decks/${deck.id}`, { headers: { Cookie: cookie } })
     const { deck: d } = await res.json()
-    expect(d.templateId).toBe('company-standard')
+    expect(d.templateId).toBe('beitou-standard')
   })
 
-  it('decks.template_id 在未显式传值时取 DB DEFAULT=company-standard', async () => {
+  it('decks.template_id 在未显式传值时取 DB DEFAULT=beitou-standard', async () => {
     const { user } = await createLoggedInUser()
     const db = getDb()
     await db.insert(decks).values({ userId: user.id, title: 'NoTemplate' })
@@ -187,7 +187,7 @@ describe('routes/decks', () => {
       .from(decks)
       .where(and(eq(decks.userId, user.id), eq(decks.title, 'NoTemplate')))
       .limit(1)
-    expect(row?.templateId).toBe('company-standard')
+    expect(row?.templateId).toBe('beitou-standard')
   })
 
   it('GET /decks/:id: 返回 deck + currentVersion + versions[] 按时间倒序', async () => {

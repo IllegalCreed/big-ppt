@@ -1,5 +1,5 @@
 <!--
-  company-standard 数据 layout：左侧 chart 区（slot default） + 右侧 metric cards 列。
+  beitou-standard 数据 layout：左侧 chart 区（slot default） + 右侧 metric cards 列。
   frontmatter 字段：
     heading : string —— 页标题。用 heading 而非 title 避开 Slidev 全局 headmatter `title`
     metrics : Array<{ value: string|number, unit?: string, label: string }>

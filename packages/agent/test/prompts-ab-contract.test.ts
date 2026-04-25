@@ -24,7 +24,7 @@ import { __resetPathsForTesting } from '../src/workspace.js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REAL_MANIFEST_PATH = path.resolve(
   __dirname,
-  '../../slidev/templates/company-standard/manifest.json',
+  '../../slidev/templates/beitou-standard/manifest.json',
 )
 
 let tmpRoot: string
@@ -34,7 +34,7 @@ let csDir: string
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-prompt-'))
   templatesRoot = path.join(tmpRoot, 'packages/slidev/templates')
-  csDir = path.join(templatesRoot, 'company-standard')
+  csDir = path.join(templatesRoot, 'beitou-standard')
   fs.mkdirSync(csDir, { recursive: true })
   // 复用真实 manifest.json，A/B contract 必须以生产 fixture 为准
   fs.copyFileSync(REAL_MANIFEST_PATH, path.join(csDir, 'manifest.json'))
@@ -56,7 +56,7 @@ afterEach(() => {
 
 describe('buildSystemPrompt（A/B contract）', () => {
   it('七个 layout 段标题全部出现', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toContain('### `cover`')
     expect(prompt).toContain('### `toc`')
     expect(prompt).toContain('### `content`')
@@ -67,7 +67,7 @@ describe('buildSystemPrompt（A/B contract）', () => {
   })
 
   it('cover layout 字段名齐：mainTitle / subtitle / reporter / date', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toMatch(/`mainTitle`/)
     expect(prompt).toMatch(/`subtitle`/)
     expect(prompt).toMatch(/`reporter`/)
@@ -75,31 +75,31 @@ describe('buildSystemPrompt（A/B contract）', () => {
   })
 
   it('toc layout 字段：items + active 可选', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toMatch(/`items` \(string\[\]\)/)
     expect(prompt).toMatch(/`active` \(number, 可选\)/)
   })
 
   it('two-col bodyGuidance 含 ::left:: / ::right:: 提示', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toContain('::left::')
     expect(prompt).toContain('::right::')
   })
 
   it('data bodyGuidance 含 BarChart 组件示例 + metrics inline JSON 写法', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toContain('BarChart')
     expect(prompt).toMatch(/metrics: \[/)
   })
 
   it('image-content 字段：heading / image / textTitle', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toMatch(/`image`/)
     expect(prompt).toMatch(/`textTitle`/)
   })
 
   it('back-cover 字段：message + date 可选', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toMatch(/`message`/)
     // back-cover 的 date 是可选
     const backCoverSection = prompt.split('### `back-cover`')[1] ?? ''
@@ -107,13 +107,13 @@ describe('buildSystemPrompt（A/B contract）', () => {
   })
 
   it('content layout 含 body 指引', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     const contentSection = prompt.split('### `content`')[1]?.split('### `')[0] ?? ''
     expect(contentSection).toContain('**body**')
   })
 
   it('保留四件套 + edit_slides + 工具参数约定文本', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toContain('update_slide')
     expect(prompt).toContain('create_slide')
     expect(prompt).toContain('delete_slide')
@@ -123,7 +123,7 @@ describe('buildSystemPrompt（A/B contract）', () => {
   })
 
   it('保留输出约束 + 中文商务表达 + 字数口径', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toContain('禁用套话')
     expect(prompt).toContain('≤ 150 字')
     expect(prompt).toContain('禁止')
@@ -131,16 +131,16 @@ describe('buildSystemPrompt（A/B contract）', () => {
   })
 
   it('promptPersona 段落出现在 prompt 开头附近', () => {
-    const prompt = buildSystemPrompt({ templateId: 'company-standard' })
-    // company-standard manifest 的 promptPersona 关键词
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
+    // beitou-standard manifest 的 promptPersona 关键词
     expect(prompt).toContain('商务正式')
   })
 
   it('mcpBadges 提供时拼到 prompt 末尾，不提供时不拼', () => {
-    const without = buildSystemPrompt({ templateId: 'company-standard' })
+    const without = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(without).not.toContain('扩展工具（MCP）')
     const withBadges = buildSystemPrompt({
-      templateId: 'company-standard',
+      templateId: 'beitou-standard',
       mcpBadges: ['搜索', '读网页'],
     })
     expect(withBadges).toContain('扩展工具（MCP）')
@@ -171,19 +171,19 @@ describe('GET /api/system-prompt', () => {
     expect(res.status).toBe(404)
   })
 
-  it('templateId=company-standard → 200 + 含 7 个 layout', async () => {
-    const res = await buildApp().request('/api/system-prompt?templateId=company-standard')
+  it('templateId=beitou-standard → 200 + 含 7 个 layout', async () => {
+    const res = await buildApp().request('/api/system-prompt?templateId=beitou-standard')
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.success).toBe(true)
-    expect(json.templateId).toBe('company-standard')
+    expect(json.templateId).toBe('beitou-standard')
     expect(json.prompt).toContain('### `cover`')
     expect(json.prompt).toContain('### `back-cover`')
   })
 
   it('mcpBadges query 拼到 prompt', async () => {
     const res = await buildApp().request(
-      '/api/system-prompt?templateId=company-standard&mcpBadges=%E6%90%9C%E7%B4%A2,%E8%AF%BB%E7%BD%91%E9%A1%B5',
+      '/api/system-prompt?templateId=beitou-standard&mcpBadges=%E6%90%9C%E7%B4%A2,%E8%AF%BB%E7%BD%91%E9%A1%B5',
     )
     const json = await res.json()
     expect(json.prompt).toContain('搜索、读网页')

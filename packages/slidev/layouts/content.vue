@@ -1,5 +1,5 @@
 <!--
-  company-standard 通用内容 layout（纯文字页）。
+  beitou-standard 通用内容 layout（纯文字页）。
   frontmatter 字段：
     heading : string —— 页标题（红色，40px）。用 heading 而非 title 避开 Slidev 全局 headmatter `title`
   slot default : markdown 正文

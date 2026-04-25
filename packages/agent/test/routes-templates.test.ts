@@ -20,12 +20,12 @@ let csDir: string
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-tpl-route-'))
   templatesRoot = path.join(tmpRoot, 'packages/slidev/templates')
-  csDir = path.join(templatesRoot, 'company-standard')
+  csDir = path.join(templatesRoot, 'beitou-standard')
   fs.mkdirSync(csDir, { recursive: true })
   fs.writeFileSync(
     path.join(csDir, 'manifest.json'),
     JSON.stringify({
-      id: 'company-standard',
+      id: 'beitou-standard',
       name: '公司标准模板',
       description: 'fixture',
       thumbnail: 'cover.png',
@@ -76,16 +76,16 @@ describe('GET /api/list-templates', () => {
     const json = await res.json()
     expect(json.success).toBe(true)
     expect(json.manifests).toHaveLength(1)
-    expect(json.manifests[0].id).toBe('company-standard')
+    expect(json.manifests[0].id).toBe('beitou-standard')
     expect(json.manifests[0].starterSlidesPath).toBe('starter.md')
     expect(json.manifests[0].layouts[0].name).toBe('cover')
     // 向后兼容：老字段仍在
     expect(json.templates).toEqual([
-      { name: 'cover.md', path: 'company-standard/cover.md' },
+      { name: 'cover.md', path: 'beitou-standard/cover.md' },
     ])
     expect(json.usage_guide).toBe('USAGE\n')
     expect(json.available_images).toEqual([
-      '/templates/company-standard/cover.png',
+      '/templates/beitou-standard/cover.png',
     ])
   })
 
@@ -100,11 +100,11 @@ describe('GET /api/list-templates', () => {
 
 describe('GET /api/templates/:id/starter', () => {
   it('已存在模板返回 starter 内容', async () => {
-    const res = await buildApp().request('/api/templates/company-standard/starter')
+    const res = await buildApp().request('/api/templates/beitou-standard/starter')
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.success).toBe(true)
-    expect(json.templateId).toBe('company-standard')
+    expect(json.templateId).toBe('beitou-standard')
     expect(json.content).toContain('mainTitle: 请填写标题')
   })
 

@@ -63,7 +63,7 @@ export const decks = mysqlTable(
     themeId: varchar('theme_id', { length: 64 }).default('default').notNull(),
     /** 模板 id，对应 templates/<template_id>/manifest.json；新建 deck 时 starter.md 来源 */
     templateId: varchar('template_id', { length: 64 })
-      .default('company-standard')
+      .default('beitou-standard')
       .notNull(),
     /** 指向当前激活的 version；删除 version 时置 NULL（循环 FK，建表时必须可空） */
     currentVersionId: int('current_version_id'),

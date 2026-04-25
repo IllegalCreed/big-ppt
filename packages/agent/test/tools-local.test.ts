@@ -13,7 +13,7 @@ beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-local-'))
   const slidevDir = path.join(tmpRoot, 'packages/slidev')
   const templatesRoot = path.join(slidevDir, 'templates')
-  const templatesDir = path.join(templatesRoot, 'company-standard')
+  const templatesDir = path.join(templatesRoot, 'beitou-standard')
   fs.mkdirSync(templatesDir, { recursive: true })
   fs.writeFileSync(path.join(slidevDir, 'slides.md'), '# hello\n')
   fs.writeFileSync(path.join(templatesDir, 'cover.md'), '<cover>封面</cover>\n')
@@ -21,7 +21,7 @@ beforeEach(() => {
   fs.writeFileSync(
     path.join(templatesDir, 'manifest.json'),
     JSON.stringify({
-      id: 'company-standard',
+      id: 'beitou-standard',
       name: '公司标准模板',
       description: 'fixture',
       thumbnail: 'cover.png',
@@ -111,10 +111,10 @@ describe('registerLocalTools', () => {
     const raw = await getTool('list_templates')!.exec({})
     const parsed = JSON.parse(raw)
     expect(parsed.success).toBe(true)
-    expect(parsed.templates).toEqual([{ name: 'cover.md', path: 'company-standard/cover.md' }])
+    expect(parsed.templates).toEqual([{ name: 'cover.md', path: 'beitou-standard/cover.md' }])
     expect(parsed.usage_guide).toBe('USAGE\n')
     expect(parsed.manifests).toHaveLength(1)
-    expect(parsed.manifests[0].id).toBe('company-standard')
+    expect(parsed.manifests[0].id).toBe('beitou-standard')
     expect(parsed.manifests[0].layouts[0].name).toBe('cover')
   })
 

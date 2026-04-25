@@ -29,7 +29,7 @@ export function buildListTemplatesPayload(): {
   const all = fs.readdirSync(templatesDir)
   const files = all
     .filter((f) => f.endsWith('.md') && !IGNORE_FILES.has(f))
-    .map((f) => ({ name: f, path: `company-standard/${f}` }))
+    .map((f) => ({ name: f, path: `beitou-standard/${f}` }))
 
   const readmePath = path.join(templatesDir, 'README.md')
   const usage_guide = fs.existsSync(readmePath)
@@ -43,7 +43,7 @@ export function buildListTemplatesPayload(): {
 
   const available_images = all
     .filter((f) => /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f))
-    .map((f) => `/templates/company-standard/${f}`)
+    .map((f) => `/templates/beitou-standard/${f}`)
 
   return {
     success: true,

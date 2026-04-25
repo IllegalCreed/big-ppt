@@ -22,7 +22,7 @@ export interface Paths {
   root: string
   slidesPath: string
   historyDir: string
-  /** 单模板目录，兼容 Phase 6 之前硬编码 company-standard 的路径期望。 */
+  /** 单模板目录，兼容 Phase 6 之前硬编码 beitou-standard 的路径期望。 */
   templatesDir: string
   /** 多模板根目录，`<templatesRoot>/<templateId>/manifest.json` + `starter.md`。 */
   templatesRoot: string
@@ -48,7 +48,7 @@ export function getPaths(): Paths {
     : path.join(root, 'packages/agent/data/slides-history')
   const templatesDir = process.env.BIG_PPT_TEMPLATES_DIR
     ? path.resolve(process.env.BIG_PPT_TEMPLATES_DIR)
-    : path.join(root, 'packages/slidev/templates/company-standard')
+    : path.join(root, 'packages/slidev/templates/beitou-standard')
   const templatesRoot = process.env.BIG_PPT_TEMPLATES_ROOT
     ? path.resolve(process.env.BIG_PPT_TEMPLATES_ROOT)
     : path.join(root, 'packages/slidev/templates')

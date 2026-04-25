@@ -24,7 +24,7 @@ withDefaults(defineProps<{ padding?: string }>(), { padding: '32px 0' })
 .l-title-texture {
   position: absolute;
   inset: 0;
-  background-image: url('/templates/company-standard/logo-mark.png');
+  background-image: url('/templates/beitou-standard/logo-mark.png');
   background-repeat: no-repeat;
   background-size: 100% 100%;
   background-position: center;

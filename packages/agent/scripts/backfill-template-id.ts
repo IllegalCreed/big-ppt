@@ -1,6 +1,6 @@
 /**
  * Phase 6B 一次性回填脚本：把 `decks.template_id` 为 NULL / 空字符串的老记录
- * 回填为 `company-standard`。
+ * 回填为 `beitou-standard`。
  *
  * 幂等：多次运行结果一致（第二次应影响 0 行）。
  * 用法：
@@ -9,7 +9,7 @@
  *   # 实际写入
  *   pnpm -F @big-ppt/agent exec tsx scripts/backfill-template-id.ts
  *
- * 由于 schema 上 `template_id` 字段有 DEFAULT 'company-standard' NOT NULL，
+ * 由于 schema 上 `template_id` 字段有 DEFAULT 'beitou-standard' NOT NULL，
  * 加字段时 MySQL 会自动把所有已存在的 row 回填为默认值。这个脚本主要用于
  * 双重保险（例如历史上手动 INSERT 时绕过默认值的场景）以及 dry-run 审计。
  */
@@ -21,7 +21,7 @@ if (!process.env.DATABASE_URL) {
 import mysql from 'mysql2/promise'
 
 const DRY_RUN = process.argv.includes('--dry-run')
-const DEFAULT_TEMPLATE_ID = 'company-standard'
+const DEFAULT_TEMPLATE_ID = 'beitou-standard'
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL

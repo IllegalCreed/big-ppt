@@ -1,5 +1,5 @@
 <!--
-  company-standard 封面 layout。
+  beitou-standard 封面 layout。
   frontmatter 字段（全部可选，缺失时对应元素隐藏）：
     mainTitle : 主标题（白字，52px）—— 用 mainTitle 而非 title，避开与 Slidev 全局 `title`（浏览器 tab）的 key 冲突
     subtitle  : 副标题（白字，46px）

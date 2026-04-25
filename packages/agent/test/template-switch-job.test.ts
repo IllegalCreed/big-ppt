@@ -25,7 +25,7 @@ useTestDb()
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REAL_MANIFEST_PATH = path.resolve(
   __dirname,
-  '../../slidev/templates/company-standard/manifest.json',
+  '../../slidev/templates/beitou-standard/manifest.json',
 )
 
 let tmpRoot: string
@@ -35,7 +35,7 @@ beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-sw-job-'))
   templatesRoot = path.join(tmpRoot, 'packages/slidev/templates')
   fs.mkdirSync(templatesRoot, { recursive: true })
-  const csDir = path.join(templatesRoot, 'company-standard')
+  const csDir = path.join(templatesRoot, 'beitou-standard')
   fs.mkdirSync(csDir)
   fs.copyFileSync(REAL_MANIFEST_PATH, path.join(csDir, 'manifest.json'))
   fs.writeFileSync(path.join(csDir, 'starter.md'), '# cs\n')
@@ -82,7 +82,7 @@ afterEach(() => {
 
 describe('validateSwitchTarget', () => {
   it('空 targetTemplateId → 400', () => {
-    const r = validateSwitchTarget('company-standard', '')
+    const r = validateSwitchTarget('beitou-standard', '')
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.status).toBe(400)
   })
@@ -106,7 +106,7 @@ describe('validateSwitchTarget', () => {
   })
 
   it('合法目标 → ok', () => {
-    expect(validateSwitchTarget('company-standard', 'alpha')).toEqual({ ok: true })
+    expect(validateSwitchTarget('beitou-standard', 'alpha')).toEqual({ ok: true })
   })
 })
 
@@ -132,7 +132,7 @@ describe('runSwitchJob 边界分支', () => {
   })
 
   it('deck 不存在 → state=failed with "deck 不存在"', async () => {
-    const job = createJob({ deckId: 999999, userId: 1, from: 'company-standard', to: 'alpha' })
+    const job = createJob({ deckId: 999999, userId: 1, from: 'beitou-standard', to: 'alpha' })
     await runSwitchJob(job.id, async () => '---\nlayout: cover\nmainTitle: X\n---\n')
     const finalJob = getJob(job.id)!
     expect(finalJob.state).toBe('failed')
@@ -142,7 +142,7 @@ describe('runSwitchJob 边界分支', () => {
   it('deck.userId !== job.userId → state=failed ownership 校验错', async () => {
     const { user } = await createLoggedInUser('a@a.com')
     const { deck } = await createDeckDirect(user.id, 'X')
-    const job = createJob({ deckId: deck.id, userId: 999, from: 'company-standard', to: 'alpha' })
+    const job = createJob({ deckId: deck.id, userId: 999, from: 'beitou-standard', to: 'alpha' })
     await runSwitchJob(job.id, async () => '---\nlayout: cover\nmainTitle: X\n---\n')
     const finalJob = getJob(job.id)!
     expect(finalJob.state).toBe('failed')
@@ -162,7 +162,7 @@ describe('runSwitchJob 边界分支', () => {
     const job = createJob({
       deckId: created!.id,
       userId: user.id,
-      from: 'company-standard',
+      from: 'beitou-standard',
       to: 'alpha',
     })
     await runSwitchJob(job.id, async () => '---\nlayout: cover\nmainTitle: X\n---\n')
@@ -183,7 +183,7 @@ describe('runSwitchJob 边界分支', () => {
     const job = createJob({
       deckId: deck.id,
       userId: user.id,
-      from: 'company-standard',
+      from: 'beitou-standard',
       to: 'alpha',
     })
     await runSwitchJob(job.id, async () => null as unknown as string)

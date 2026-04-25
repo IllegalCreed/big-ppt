@@ -8,7 +8,7 @@
  * 一律使用 var(--bt-*) / var(--jyd-*) 消费这里的 token，按所属模板的命名空间。
  */
 
-@import './templates/company-standard/tokens.css';
+@import './templates/beitou-standard/tokens.css';
 @import './templates/jingyeda-standard/tokens.css';
 
 /* 跨 layout 通用基底 —— 给所有 .slidev-layout 一个默认字体，避免每个 layout 重复声明。

@@ -3,7 +3,7 @@ import { validateManifest, type TemplateManifest } from '@big-ppt/shared'
 
 function baseManifest(): TemplateManifest {
   return {
-    id: 'company-standard',
+    id: 'beitou-standard',
     name: '公司标准模板',
     description: '测试 manifest',
     thumbnail: 'cover.png',
@@ -31,7 +31,7 @@ describe('validateManifest', () => {
     const m = baseManifest()
     const res = validateManifest(m)
     expect(res.ok).toBe(true)
-    if (res.ok) expect(res.value.id).toBe('company-standard')
+    if (res.ok) expect(res.value.id).toBe('beitou-standard')
   })
 
   it('缺失 id / name 聚合报错', () => {

@@ -1,6 +1,6 @@
-# 公司标准汇报模板 - 设计规范
+# 北投集团汇报模板 - 设计规范
 
-> 此 DESIGN.md 定义了"公司标准汇报"模板套的全部视觉规范。AI 生成幻灯片时必须严格遵循此文件。
+> 此 DESIGN.md 定义了"北投集团汇报"模板套的全部视觉规范。AI 生成幻灯片时必须严格遵循此文件。
 
 ## 1. 视觉风格与氛围
 
@@ -79,7 +79,7 @@ filter: brightness(0);
 ### Mark 纹理
 
 ```css
-background-image: url('/templates/company-standard/logo-mark.png');
+background-image: url('/templates/beitou-standard/logo-mark.png');
 background-repeat: no-repeat;
 background-size: 100% 100%;
 opacity: 0.1;

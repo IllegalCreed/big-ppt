@@ -19,7 +19,7 @@ let tmpRoot: string
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-routes-'))
   const slidevDir = path.join(tmpRoot, 'packages/slidev')
-  fs.mkdirSync(path.join(slidevDir, 'templates/company-standard'), { recursive: true })
+  fs.mkdirSync(path.join(slidevDir, 'templates/beitou-standard'), { recursive: true })
   fs.writeFileSync(path.join(slidevDir, 'slides.md'), '# t\n')
   process.env.BIG_PPT_SLIDES_PATH = path.join(slidevDir, 'slides.md')
   process.env.BIG_PPT_HISTORY_DIR = path.join(tmpRoot, 'slides-history')

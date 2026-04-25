@@ -1,5 +1,5 @@
 <!--
-  company-standard 目录 layout。
+  beitou-standard 目录 layout。
   frontmatter 字段：
     items   : string[] —— 目录项文本数组（必填）。示例：items: ["Q1 关键目标", "数据背景", "重点项目", "风险与依赖"]
     active  : number   —— 1-based 当前高亮项；未设置或 0 则全部高亮（用作总览页）
@@ -64,7 +64,7 @@ withDefaults(
 .toc-left-texture {
   position: absolute;
   inset: 0;
-  background-image: url('/templates/company-standard/logo-mark.png');
+  background-image: url('/templates/beitou-standard/logo-mark.png');
   background-repeat: no-repeat;
   background-size: 100% 100%;
   background-position: center;

@@ -1,5 +1,5 @@
 <!--
-  company-standard 图文 layout：左 45% 图 + 右 55% 文字。
+  beitou-standard 图文 layout：左 45% 图 + 右 55% 文字。
   frontmatter 字段：
     heading   : string —— 页标题。用 heading 而非 title 避开 Slidev 全局 headmatter `title`
     image     : string —— 图片 URL

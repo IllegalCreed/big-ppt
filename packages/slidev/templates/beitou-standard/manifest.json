@@ -1,14 +1,13 @@
 {
-  "id": "company-standard",
-  "name": "公司标准模板",
-  "description": "商务正式风格，品牌红（#d00d14）主色 + 无衬线字体，适合业务汇报、OKR 共识与发布会。",
-  "thumbnail": "cover.png",
+  "id": "beitou-standard",
+  "name": "北投集团汇报模板",
+  "description": "商务正式风格，品牌红（#d00d14）主色 + 无衬线字体，适合北投集团业务汇报、OKR 共识与发布会。",
   "logos": {
     "primary": "logo.png",
     "mark": "logo-mark.png",
     "text": "logo-text.png"
   },
-  "promptPersona": "你为使用「公司标准模板」的用户服务，请保持商务正式的叙述语气。视觉由 layout + tokens 决定，不要在 slides.md 中写 <style>、硬编码颜色或字体。AI 只负责结构与内容。",
+  "promptPersona": "你为使用「北投集团汇报模板」的用户服务，请保持商务正式的叙述语气。视觉由 layout + tokens 决定，不要在 slides.md 中写 <style>、硬编码颜色或字体。AI 只负责结构与内容。",
   "starterSlidesPath": "starter.md",
   "layouts": [
     {
@@ -95,7 +94,7 @@
         "required": ["heading", "image"],
         "properties": {
           "heading": { "type": "string", "description": "页标题" },
-          "image": { "type": "string", "description": "图片 URL（推荐 /templates/company-standard/ 下的白名单资源）" },
+          "image": { "type": "string", "description": "图片 URL（推荐 /templates/beitou-standard/ 下的白名单资源）" },
           "textTitle": { "type": "string", "description": "文字区小标题" }
         }
       },

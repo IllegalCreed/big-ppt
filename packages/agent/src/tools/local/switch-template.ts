@@ -24,7 +24,7 @@ export const switchTemplateTool: ToolDef = {
     type: 'object',
     properties: {
       deckId: { type: 'number', description: '要切模板的 deck id（默认取 active deck）' },
-      targetTemplateId: { type: 'string', description: '目标模板 id，如 company-standard' },
+      targetTemplateId: { type: 'string', description: '目标模板 id，如 beitou-standard' },
       confirmed: { type: 'boolean', description: '必须显式传 true' },
     },
     required: ['targetTemplateId', 'confirmed'],

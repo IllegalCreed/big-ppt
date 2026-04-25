@@ -1,5 +1,5 @@
 <!--
-  company-standard 封底 layout。
+  beitou-standard 封底 layout。
   frontmatter 字段：
     message : string —— 结束语（白字于红色渐变块内，52px）
     date    : string —— 底部日期（可选）

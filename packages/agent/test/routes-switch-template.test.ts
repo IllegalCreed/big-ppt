@@ -1,7 +1,7 @@
 /**
  * Phase 6D：switch-template 路由 + job 流水集成测试。
  *
- * - 构造 tmp templates/ 包含 2 个合法 manifest（company-standard + alpha），支撑互切
+ * - 构造 tmp templates/ 包含 2 个合法 manifest（beitou-standard + alpha），支撑互切
  * - 通过 __setRewriteFnForTesting 注入 mock rewrite，避免真连 LLM
  * - runSwitchJob 是异步 fire-and-forget，测试用 poll 等 job 到终态
  */
@@ -28,7 +28,7 @@ useTestDb()
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REAL_MANIFEST_PATH = path.resolve(
   __dirname,
-  '../../slidev/templates/company-standard/manifest.json',
+  '../../slidev/templates/beitou-standard/manifest.json',
 )
 
 let tmpRoot: string
@@ -79,7 +79,7 @@ beforeEach(() => {
   templatesRoot = path.join(tmpRoot, 'packages/slidev/templates')
   fs.mkdirSync(templatesRoot, { recursive: true })
 
-  const csDir = path.join(templatesRoot, 'company-standard')
+  const csDir = path.join(templatesRoot, 'beitou-standard')
   fs.mkdirSync(csDir)
   fs.copyFileSync(REAL_MANIFEST_PATH, path.join(csDir, 'manifest.json'))
   fs.writeFileSync(
@@ -190,11 +190,11 @@ describe('POST /api/decks/:id/switch-template', () => {
     const app = makeApp()
     const { user, cookie } = await createLoggedInUser()
     const { deck } = await createDeckDirect(user.id, 'D')
-    // createDeckDirect 默认 DB default template_id=company-standard
+    // createDeckDirect 默认 DB default template_id=beitou-standard
     const res = await postJson(
       app,
       `/api/decks/${deck.id}/switch-template`,
-      { targetTemplateId: 'company-standard', confirmed: true },
+      { targetTemplateId: 'beitou-standard', confirmed: true },
       cookie,
     )
     expect(res.status).toBe(400)
@@ -251,7 +251,7 @@ describe('POST /api/decks/:id/switch-template', () => {
     const { jobId } = await res.json()
 
     const { job } = await waitForJobState(app, jobId, cookie, 'success')
-    expect(job.from).toBe('company-standard')
+    expect(job.from).toBe('beitou-standard')
     expect(job.to).toBe('alpha')
     expect(job.snapshotVersionId).toBeTypeOf('number')
     expect(job.newVersionId).toBeTypeOf('number')
@@ -292,7 +292,7 @@ describe('POST /api/decks/:id/switch-template', () => {
 
     const db = getDb()
     const [updated] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
-    expect(updated!.templateId).toBe('company-standard') // 未改
+    expect(updated!.templateId).toBe('beitou-standard') // 未改
     // snapshot 仍在（failed 时不回滚已写入的 snapshot row）
     const vs = await db.select().from(deckVersions).where(eq(deckVersions.deckId, deck.id))
     expect(vs.find((v) => v.id === job.snapshotVersionId)?.message).toContain('切换模板前快照')

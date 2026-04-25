@@ -84,7 +84,7 @@ decksRoute.post('/decks', async (c) => {
   type CreateBody = { title?: string; initialContent?: string; templateId?: string }
   const body = await c.req.json<CreateBody>().catch((): CreateBody => ({}))
   const title = body.title?.trim() || '未命名幻灯片'
-  const templateId = body.templateId?.trim() || 'company-standard'
+  const templateId = body.templateId?.trim() || 'beitou-standard'
 
   // 白名单校验：未知 templateId 直接拒绝，避免老 deck 后续激活时读不到 manifest
   const manifest = getManifest(templateId)
