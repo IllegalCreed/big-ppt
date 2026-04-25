@@ -9,7 +9,7 @@ import { getDb, decks, deckVersions, sessions } from '../db/index.js'
 import type { AuthVars } from '../middleware/auth.js'
 import { mirrorSlidesContent } from '../deck/mirror.js'
 import { setActiveDeckId } from '../context.js'
-import { getHolder, heartbeat, release, tryAcquire, type LockHolder } from '../slidev-lock.js'
+import { forceRelease, getHolder, heartbeat, release, tryAcquire, type LockHolder } from '../slidev-lock.js'
 
 export const lockRoute = new Hono<{ Variables: AuthVars }>()
 
@@ -101,4 +101,18 @@ lockRoute.get('/lock-status', async (c) => {
   if (!holder) return c.json({ locked: false })
   const isMe = !!session && holder.sessionId === session.id
   return c.json({ locked: true, holder: toWireHolder(holder), isMe })
+})
+
+/**
+ * 测试专用：强制清空内存锁状态。
+ * E2E 在 truncateAllTables() 后 DB session 已清空，但内存锁还残留，
+ * 导致后续测试 activate-deck 遇到 409 冲突，此接口让 beforeEach 能同步重置。
+ * 仅在 NODE_ENV !== 'production' 时生效。
+ */
+lockRoute.post('/_test/reset-lock', (c) => {
+  if (process.env.NODE_ENV === 'production') {
+    return c.json({ error: 'not allowed in production' }, 403)
+  }
+  forceRelease()
+  return c.json({ ok: true })
 })

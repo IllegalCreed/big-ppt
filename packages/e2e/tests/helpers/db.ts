@@ -33,6 +33,13 @@ export async function truncateAllTables(): Promise<void> {
   } finally {
     conn.release()
   }
+  // DB session 已清空，同步重置 agent 进程内的内存锁状态，
+  // 防止残留锁导致下一条测试 activate-deck 遇到 409 冲突。
+  try {
+    await fetch(`${AGENT_BASE}/api/_test/reset-lock`, { method: 'POST' })
+  } catch {
+    // agent 未启动时忽略（本地单元测试场景）
+  }
 }
 
 export async function disposeDb(): Promise<void> {

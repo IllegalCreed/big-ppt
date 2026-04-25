@@ -24,8 +24,12 @@ test.describe('Happy path: 注册 → 登录 → 新建 deck → 编辑器渲染
     // 2. 注册成功 → 跳到 /decks
     await expect(page).toHaveURL(/\/decks(\?.*)?$/, { timeout: 10_000 })
 
-    // 3. 新建 deck
+    // 3. 新建 deck（v7C: 点"新建 Deck"打开 picker modal，默认标题 + 任选模板 + 点"创建"）
     await page.getByRole('button', { name: /新建 Deck|新建/ }).first().click()
+    // 等 picker 里模板卡片加载出来
+    await expect(page.locator('[data-template-card]').first()).toBeVisible({ timeout: 10_000 })
+    // 直接点"创建"（默认标题"未命名幻灯片"，默认选中第一套模板）
+    await page.getByRole('button', { name: /^创建$/ }).click()
     await expect(page).toHaveURL(/\/decks\/\d+/, { timeout: 10_000 })
 
     // 4. 编辑器加载（标题在顶栏可见）

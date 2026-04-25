@@ -63,7 +63,7 @@ const primaryLabel = computed(() => {
 async function loadManifests() {
   loading.value = true
   try {
-    const res = await api.get<{ manifests: TemplateManifest[] }>('/list-templates')
+    const res = await api.get<{ manifests: TemplateManifest[] }>('/api/list-templates')
     manifests.value = res.manifests
     const defaultId =
       props.mode === 'switch' && props.currentTemplateId

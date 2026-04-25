@@ -32,7 +32,7 @@ const MANIFESTS = [
 
 function mockListTemplates() {
   server.use(
-    http.get('/list-templates', () =>
+    http.get('/api/list-templates', () =>
       HttpResponse.json({ success: true, manifests: MANIFESTS, templates: [], usage_guide: '', design_spec: '', available_images: [] }),
     ),
   )

@@ -64,6 +64,11 @@ export function release(sessionId: string): void {
   }
 }
 
+/** 强制清空锁状态（仅供测试环境在 truncate DB 后重置内存状态使用） */
+export function forceRelease(): void {
+  currentLock = null
+}
+
 export function getHolder(): LockHolder | null {
   sweepStale()
   return currentLock ? { ...currentLock } : null
