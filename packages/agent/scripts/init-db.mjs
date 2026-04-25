@@ -49,7 +49,7 @@ if (!['development', 'test', 'production'].includes(env)) {
 }
 
 const TARGET = {
-  development: { db: 'lumideck', user: 'lumideck_user', envFile: '.env.development.local', exampleFile: '.env.development.example' },
+  development: { db: 'lumideck_dev', user: 'lumideck_dev_user', envFile: '.env.development.local', exampleFile: '.env.development.example' },
   test: { db: 'lumideck_test', user: 'lumideck_test_user', envFile: '.env.test.local', exampleFile: '.env.test.example' },
   production: { db: 'lumideck', user: 'lumideck_prod_user', envFile: '.env.production.local', exampleFile: '.env.production.example' },
 }[env]

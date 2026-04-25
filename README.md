@@ -21,8 +21,8 @@ Lumideck 是一个围绕 [Slidev](https://sli.dev/) 构建的 AI 演示文稿生
 ```bash
 pnpm install
 
-# 首次：建开发库 + lumideck_test 库（共用同一 MySQL server）
-pnpm -F @big-ppt/agent init-db            # 建 lumideck + 写 .env.development.local
+# 首次：建 lumideck_dev / lumideck_test（同一台 MySQL/RDS 不同库；prod 库叫 lumideck）
+pnpm -F @big-ppt/agent init-db            # 建 lumideck_dev + 写 .env.development.local
 pnpm -F @big-ppt/agent init-test-db       # 建 lumideck_test + 写 .env.test.local
 pnpm -F @big-ppt/agent db:push            # 推 schema 到开发库
 pnpm -F @big-ppt/agent db:push:test       # 推 schema 到测试库
