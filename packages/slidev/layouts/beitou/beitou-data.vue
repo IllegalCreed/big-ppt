@@ -70,6 +70,9 @@ withDefaults(
 .chart-wrap {
   flex: 1;
   min-width: 0;
+  /* chart 组件读这两个变量决定主色，与 jingyeda-data 对称注入，避免依赖 fallback */
+  --chart-primary-bg: rgba(208, 13, 20, 0.85);
+  --chart-primary-border: #a8090e;
 }
 .metrics-wrap {
   flex: 0 0 240px;

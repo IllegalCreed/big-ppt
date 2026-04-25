@@ -24,11 +24,11 @@ const props = defineProps<{
  * 从最近父元素的 CSS 变量读取配色，支持多模板主题切换。
  *   --chart-primary-bg     : bar fill color (含 alpha)
  *   --chart-primary-border : bar border color
- * 如果父级没设这些变量，fallback 到 beitou 的红色。
+ * 如果父级没设这些变量，fallback 到中性灰（避免漏注入时静默使用某个模板的品牌色）。
  */
 const rootRef = ref<HTMLElement | null>(null)
-const bgColor = ref('rgba(208, 13, 20, 0.85)')
-const borderColor = ref('#a8090e')
+const bgColor = ref('rgba(128, 128, 128, 0.5)')
+const borderColor = ref('#888888')
 
 onMounted(() => {
   if (!rootRef.value) return

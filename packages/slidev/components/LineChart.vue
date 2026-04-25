@@ -35,11 +35,11 @@ const props = defineProps<{
  * 从最近父元素的 CSS 变量读取配色，支持多模板主题切换。
  *   --chart-primary-border : 折线颜色 + 点填充色
  *   --chart-primary-bg     : 折线下方填充色（含 alpha）
- * fallback 到 beitou 的红色。
+ * fallback 到中性灰（避免漏注入时静默使用某个模板的品牌色）。
  */
 const rootRef = ref<HTMLElement | null>(null)
-const lineColor = ref('#d00d14')
-const fillColor = ref('rgba(208, 13, 20, 0.15)')
+const lineColor = ref('#888888')
+const fillColor = ref('rgba(128, 128, 128, 0.15)')
 
 onMounted(() => {
   if (!rootRef.value) return
