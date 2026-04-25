@@ -18,7 +18,7 @@ withDefaults(defineProps<{ padding?: string }>(), { padding: '32px 0' })
 <style scoped>
 .l-title-block {
   position: relative;
-  background: var(--c-brand-gradient);
+  background: var(--bt-brand-gradient);
   overflow: hidden;
 }
 .l-title-texture {

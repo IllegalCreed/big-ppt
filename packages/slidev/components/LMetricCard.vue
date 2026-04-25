@@ -21,7 +21,7 @@ defineProps<{
 <style scoped>
 .l-metric-card {
   padding: 18px 20px;
-  background: var(--c-brand-gradient);
+  background: var(--bt-brand-gradient);
   color: #ffffff;
   text-align: center;
 }

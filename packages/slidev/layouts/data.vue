@@ -47,14 +47,14 @@ withDefaults(
 .content-root {
   position: absolute;
   inset: 0;
-  background: var(--c-bg-page);
+  background: var(--bt-bg-page);
   overflow: hidden;
   padding: 48px 60px;
   box-sizing: border-box;
-  font-family: var(--ff-brand);
+  font-family: var(--bt-ff-brand);
 }
 .content-title {
-  color: var(--c-brand);
+  color: var(--bt-brand);
   font-size: 40px;
   font-weight: 900;
   letter-spacing: 4px;

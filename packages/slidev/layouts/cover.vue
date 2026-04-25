@@ -35,14 +35,14 @@ defineProps<{
 .cover-root {
   position: absolute;
   inset: 0;
-  background: var(--c-bg-page);
+  background: var(--bt-bg-page);
   overflow: hidden;
   padding: 36px 48px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  font-family: var(--ff-brand);
+  font-family: var(--bt-ff-brand);
 }
 .cover-logo {
   justify-content: flex-end;
@@ -67,7 +67,7 @@ defineProps<{
 .cover-info {
   margin-top: 20px;
   margin-left: 40px;
-  color: var(--c-fg-primary);
+  color: var(--bt-fg-primary);
   font-size: 20px;
   font-weight: bold;
   letter-spacing: 1px;

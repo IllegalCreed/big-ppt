@@ -1,30 +1,29 @@
 /*
- * company-standard theme tokens
+ * beitou-standard theme tokens
  *
- * Phase 4 P2-3 清零。Slidev layouts / slides.md / templates 的一切品牌视觉值
- * 都走这里的 var() 引用；未来切换到其他 theme 只需要替换这一份 tokens.css。
+ * Phase 7A 重命名：原 --c-* / --ff-* / --logo-red-filter 全部加 bt- 前缀，
+ * 与 jingyeda-standard 的 --jyd-* 命名空间对称隔离，未来加第三套模板不冲突。
  *
- * 命名空间：slidev 全局 token 统一 `--c-*` / `--ff-*` 前缀（注意：creator 用 `--color-*`
- * 命名空间独立，见 packages/creator/src/styles/tokens.css；两侧互不影响）。
+ * Slidev layouts / starter.md / templates 的一切品牌视觉值都走 var() 引用。
  */
 
 :root {
   /* 品牌主色 */
-  --c-brand: #d00d14;
-  --c-brand-mid: #c00b11;
-  --c-brand-deep: #a8090e;
-  --c-brand-gradient: linear-gradient(180deg, #d00d14 0%, #c00b11 60%, #a8090e 100%);
+  --bt-brand: #d00d14;
+  --bt-brand-mid: #c00b11;
+  --bt-brand-deep: #a8090e;
+  --bt-brand-gradient: linear-gradient(180deg, #d00d14 0%, #c00b11 60%, #a8090e 100%);
 
   /* 前景 / 背景 */
-  --c-fg-primary: #333333;
-  --c-fg-muted: #666666;
-  --c-bg-page: #ffffff;
-  --c-bg-subtle: #f5f5f5;
+  --bt-fg-primary: #333333;
+  --bt-fg-muted: #666666;
+  --bt-bg-page: #ffffff;
+  --bt-bg-subtle: #f5f5f5;
 
   /* 字体 */
-  --ff-brand: "Microsoft YaHei", "微软雅黑", sans-serif;
+  --bt-ff-brand: "Microsoft YaHei", "微软雅黑", sans-serif;
 
-  /* Logo 红色滤镜（把黑色 logo 文字染成 --c-brand） */
-  --logo-red-filter: invert(87%) sepia(98%) saturate(4811%) hue-rotate(352deg) brightness(82%)
+  /* Logo 红色滤镜（把黑色 logo 文字染成 --bt-brand） */
+  --bt-logo-red-filter: invert(87%) sepia(98%) saturate(4811%) hue-rotate(352deg) brightness(82%)
     contrast(100%);
 }

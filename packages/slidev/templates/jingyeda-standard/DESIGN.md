@@ -101,7 +101,7 @@
 ### Logo 使用
 
 - 合并版 logo (JYD 图标 + 竞业达中文)：`/templates/jingyeda-standard/logo.png`
-- **不做滤镜染色**（与 beitou 的 `--logo-red-filter` 不同）：竞业达 logo 本身是蓝+绿双色印刷色，直接使用原图
+- **不做滤镜染色**（与 beitou 的 `--bt-logo-red-filter` 不同）：竞业达 logo 本身是蓝+绿双色印刷色，直接使用原图
 - 封面：40px 高，右上角
 - 水印：24px 高，右下角，opacity 0.85
 

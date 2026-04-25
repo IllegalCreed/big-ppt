@@ -44,21 +44,21 @@ withDefaults(
 .toc-root {
   position: absolute;
   inset: 0;
-  background: var(--c-bg-page);
+  background: var(--bt-bg-page);
   overflow: hidden;
   display: flex;
   align-items: center;
   padding: 40px 48px;
   box-sizing: border-box;
   gap: 20px;
-  font-family: var(--ff-brand);
+  font-family: var(--bt-ff-brand);
 }
 .toc-left-block {
   position: relative;
   width: 350px;
   height: 350px;
   flex-shrink: 0;
-  background: var(--c-brand-gradient);
+  background: var(--bt-brand-gradient);
   overflow: hidden;
 }
 .toc-left-texture {
@@ -113,7 +113,7 @@ withDefaults(
   width: 3px;
   align-self: center;
   height: 350px;
-  background: var(--c-brand);
+  background: var(--bt-brand);
   flex-shrink: 0;
 }
 .toc-right {
@@ -127,7 +127,7 @@ withDefaults(
 .toc-item {
   display: flex;
   align-items: center;
-  border: 2px solid var(--c-brand);
+  border: 2px solid var(--bt-brand);
 }
 .toc-item.inactive {
   opacity: 0.2;
@@ -142,14 +142,14 @@ withDefaults(
   font-size: 20px;
   font-weight: 700;
   color: #ffffff;
-  background: var(--c-brand);
+  background: var(--bt-brand);
   flex-shrink: 0;
 }
 .toc-label {
   flex: 1;
   font-size: 22px;
   font-weight: 600;
-  color: var(--c-fg-primary);
+  color: var(--bt-fg-primary);
   letter-spacing: 2px;
   padding: 10px 16px;
 }

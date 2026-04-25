@@ -29,7 +29,7 @@ defineProps<{
 .back-cover-root {
   position: absolute;
   inset: 0;
-  background: var(--c-bg-page);
+  background: var(--bt-bg-page);
   overflow: hidden;
   padding: 36px 48px;
   box-sizing: border-box;
@@ -38,7 +38,7 @@ defineProps<{
   justify-content: center;
   align-items: center;
   padding-top: 120px;
-  font-family: var(--ff-brand);
+  font-family: var(--bt-ff-brand);
 }
 .ending-block {
   width: 100%;
@@ -59,7 +59,7 @@ defineProps<{
   gap: 8px;
 }
 .footer-date {
-  color: var(--c-fg-primary);
+  color: var(--bt-fg-primary);
   font-size: 20px;
   font-weight: bold;
   letter-spacing: 2px;

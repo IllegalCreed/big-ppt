@@ -5,18 +5,18 @@
  * 这里可通过构建时软链 / 替换切换主题 tokens（见规划文件 抉择 2）。
  *
  * layouts 和 slides.md 的 `<style>` 不再硬编码 hex / font-family / filter，
- * 一律使用 var(--c-*) / var(--ff-*) 消费这里的 token。
+ * 一律使用 var(--bt-*) / var(--jyd-*) 消费这里的 token，按所属模板的命名空间。
  */
 
 @import './templates/company-standard/tokens.css';
 @import './templates/jingyeda-standard/tokens.css';
 
 /* 跨 layout 通用基底 —— 给所有 .slidev-layout 一个默认字体，避免每个 layout 重复声明。
- * 注意：这里用的是 beitou/company-standard 的 --c-* 变量作为项目默认；
+ * 注意：这里用的是 beitou 的 --bt-* 变量作为项目默认；
  * jingyeda 的 layout 自己在组件内声明 var(--jyd-*) 不依赖这里。
  */
 .slidev-layout {
-  font-family: var(--ff-brand);
-  color: var(--c-fg-primary);
-  background: var(--c-bg-page);
+  font-family: var(--bt-ff-brand);
+  color: var(--bt-fg-primary);
+  background: var(--bt-bg-page);
 }

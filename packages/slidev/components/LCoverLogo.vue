@@ -37,7 +37,7 @@ withDefaults(
   gap: 10px;
 }
 .l-logo-mark {
-  filter: var(--logo-red-filter);
+  filter: var(--bt-logo-red-filter);
 }
 .l-logo-text--invert {
   filter: brightness(0);

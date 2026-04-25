@@ -41,14 +41,14 @@ defineProps<{
 .content-root {
   position: absolute;
   inset: 0;
-  background: var(--c-bg-page);
+  background: var(--bt-bg-page);
   overflow: hidden;
   padding: 48px 60px;
   box-sizing: border-box;
-  font-family: var(--ff-brand);
+  font-family: var(--bt-ff-brand);
 }
 .content-title {
-  color: var(--c-brand);
+  color: var(--bt-brand);
   font-size: 40px;
   font-weight: 900;
   letter-spacing: 4px;
@@ -67,21 +67,21 @@ defineProps<{
 }
 .col-divider {
   width: 2px;
-  background: var(--c-brand);
+  background: var(--bt-brand);
   opacity: 0.5;
   align-self: stretch;
 }
 .col-title {
-  color: var(--c-brand);
+  color: var(--bt-brand);
   font-size: 26px;
   font-weight: 700;
   letter-spacing: 2px;
   margin: 0 0 18px 0;
   padding-bottom: 10px;
-  border-bottom: 2px solid var(--c-brand);
+  border-bottom: 2px solid var(--bt-brand);
 }
 .col-content {
-  color: var(--c-fg-primary);
+  color: var(--bt-fg-primary);
   font-size: 20px;
   line-height: 1.8;
 }
