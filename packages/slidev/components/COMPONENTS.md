@@ -112,7 +112,49 @@ slot：`#slot1..#slot9`。
 
 ## 装饰类组件（decoration）
 
-> 7.5C-2 落地。占位章节。
+> Phase 7.5C-2 引入。装饰类组件提供"美化几何骨架 + 多 slot"，**几何形状跨模板共用，配色仅靠 `--ld-*` token 自动适配**——花瓣 / 流程箭头等装饰元素在 beitou 是红色、在 jingyeda 是蓝色，几何不变。
+>
+> 装饰类首版 2 个种子；其他形态（CircleFour / HexThree / TimelineHorizontal / PyramidLevels / VennTwo / FlowCircular / RadialSix 等）按需扩展。每加一个新装饰：放 `decoration/<Name>.vue` + `<Name>.test.ts`；只读 `--ld-*` token；几何用 SVG `viewBox` + `preserveAspectRatio="xMidYMid meet"` 防缩放走形。
+
+### `<PetalFour>` 花瓣 4 区
+
+4 个椭圆花瓣中央对称排列，每片中央放 1 个 slot。常用于"4 小节方阵"——设计 / 开发 / 测试 / 文档 这种平等对比。
+
+| Prop / Slot                               | 类型 / 说明                              |
+| ----------------------------------------- | ---------------------------------------- |
+| `borderWidth?`                            | `'thin' \| 'thick'`，默认 `'thick'`      |
+| `#slot1` / `#slot2` / `#slot3` / `#slot4` | named slot；上 / 右 / 下 / 左 四花瓣中央 |
+
+```vue
+<PetalFour>
+  <template #slot1>1</template>
+  <template #slot2>2</template>
+  <template #slot3>3</template>
+  <template #slot4>4</template>
+</PetalFour>
+```
+
+slot 内默认放编号 / 短标签；如需要长文字描述，建议外套 `<ThreeCol>`：左右两栏写说明文字，中间放 PetalFour（参考 plan 16 概念辨析示例）。
+
+### `<ProcessFlow>` 流程箭头
+
+N 个步骤水平排列，相邻步骤间用三角箭头连接。适合"阶段流程 / 工作流"展示。
+
+| Prop / Slot                          | 类型 / 说明                                 |
+| ------------------------------------ | ------------------------------------------- |
+| `cols?`                              | number，渲染步骤数；默认 `3`，钳到 `[1, 6]` |
+| `#step1` / `#step2` / ... / `#step6` | named slot；按 cols 决定渲染几个            |
+
+```vue
+<ProcessFlow :cols="4">
+  <template #step1>需求确认</template>
+  <template #step2>设计方案</template>
+  <template #step3>开发实施</template>
+  <template #step4>测试上线</template>
+</ProcessFlow>
+```
+
+每个 step 是带描边的圆角矩形，slot 内可以放纯文字、`<MetricCard>`、自由 markdown 等任意内容。
 
 ---
 
