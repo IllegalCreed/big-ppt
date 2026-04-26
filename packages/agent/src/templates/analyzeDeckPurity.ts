@@ -47,17 +47,15 @@ const LAYER1_LAYOUT_SET = new Set(LAYER1_LAYOUT_NAMES)
 
 /**
  * Slidev 内置 / 已有的合法 PascalCase 标签（不归 commonComponents 但允许出现）。
- * 包含：Vue 内置 <Transition> / <Teleport> / <Suspense> / <KeepAlive> 等；
- * Slidev 内置 <Counter>（之前的示例组件）；模板私有 layer-1 装饰组件
- * （LBeitouCoverLogo / LBeitouTitleBlock / LJydHeader 应该只在 layer-1 layout
- * 内部用，不该出现在 deck content 里——出现即 level 5 的污染信号）。
+ * 包含：Vue 内置 <Transition> / <Teleport> / <Suspense> / <KeepAlive> 等。
+ * 模板私有 layer-1 装饰组件（LBeitouCoverLogo / LBeitouTitleBlock / LJydHeader）
+ * 应只在 layer-1 layout 内部使用，不该出现在 deck content 里——出现即 level 5 的污染信号。
  */
 const PASCAL_TAG_ALLOWED_NON_LD: readonly string[] = [
   'Transition',
   'Teleport',
   'Suspense',
   'KeepAlive',
-  'Counter', // Phase 3 之前留的示例组件
 ]
 const PASCAL_TAG_ALLOWED_NON_LD_SET = new Set(PASCAL_TAG_ALLOWED_NON_LD)
 
