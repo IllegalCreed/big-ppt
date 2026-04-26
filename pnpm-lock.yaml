@@ -91,8 +91,8 @@ importers:
   packages/creator:
     dependencies:
       '@antdv-next/x':
-        specifier: ^0.3.0
-        version: 0.3.0(antdv-next@1.2.1(vue@3.5.33(typescript@6.0.3)))(vue@3.5.33(typescript@6.0.3))
+        specifier: ^1.0.1
+        version: 1.0.1(antdv-next@1.2.1(vue@3.5.33(typescript@6.0.3)))(vue@3.5.33(typescript@6.0.3))
       '@big-ppt/shared':
         specifier: workspace:*
         version: link:../shared
@@ -196,8 +196,8 @@ importers:
   packages/slidev:
     dependencies:
       '@antdv-next/x':
-        specifier: ^0.3.0
-        version: 0.3.0(antdv-next@1.2.1(vue@3.5.33(typescript@5.9.3)))(vue@3.5.33(typescript@5.9.3))
+        specifier: ^1.0.1
+        version: 1.0.1(antdv-next@1.2.1(vue@3.5.33(typescript@5.9.3)))(vue@3.5.33(typescript@5.9.3))
       '@iconify-json/carbon':
         specifier: ^1.2.20
         version: 1.2.20
@@ -271,8 +271,8 @@ packages:
     peerDependencies:
       vue: '>=3.2.0'
 
-  '@antdv-next/x@0.3.0':
-    resolution: {integrity: sha512-lzfYzKcXh5Ydb/8WGUMfq+Ft/jVFH/Dvm/Lou1K9OO0NQvnVofsZkmQ6RyezRrnnrC4S/QR0pfX6DrE9Bvc3ZA==}
+  '@antdv-next/x@1.0.1':
+    resolution: {integrity: sha512-Z5VN9Vpk7ir8xSADw3Xl/qdP06FyZBrnghL5lgUoSMT+YqiIgrLVhiC4RordIkV+ao5rjQAXCaaFIVtSJCjLYw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       antdv-next: '>=1.0.0'
@@ -4442,8 +4442,14 @@ packages:
   oniguruma-parser@0.12.1:
     resolution: {integrity: sha512-8Unqkvk1RYc6yq2WBYRj4hdnsAxVze8i7iPfQr8e4uSP3tRv0rpZcbGUDvxfQQcdwHt/e9PrMvGCsa8OqG9X3w==}
 
+  oniguruma-parser@0.12.2:
+    resolution: {integrity: sha512-6HVa5oIrgMC6aA6WF6XyyqbhRPJrKR02L20+2+zpDtO5QAzGHAUGw5TKQvwi5vctNnRHkJYmjAhRVQF2EKdTQw==}
+
   oniguruma-to-es@4.3.5:
     resolution: {integrity: sha512-Zjygswjpsewa0NLTsiizVuMQZbp0MDyM6lIt66OxsF21npUDlzpHi1Mgb/qhQdkb+dWFTzJmFbEWdvZgRho8eQ==}
+
+  oniguruma-to-es@4.3.6:
+    resolution: {integrity: sha512-csuQ9x3Yr0cEIs/Zgx/OEt9iBw9vqIunAPQkx19R/fiMq2oGVTgcMqO/V3Ybqefr1TBvosI6jU539ksaBULJyA==}
 
   open@10.2.0:
     resolution: {integrity: sha512-YgBpdJHPyQ2UE5x+hlSXcnejzAvD0b22U2OuAP+8OnlJT+PjWPxtgmGqKKc+RgTM63U9gN0YzrYc71R2WT/hTA==}
@@ -5683,7 +5689,7 @@ snapshots:
       '@v-c/util': 1.0.19(vue@3.5.33(typescript@6.0.3))
       vue: 3.5.33(typescript@6.0.3)
 
-  '@antdv-next/x@0.3.0(antdv-next@1.2.1(vue@3.5.33(typescript@5.9.3)))(vue@3.5.33(typescript@5.9.3))':
+  '@antdv-next/x@1.0.1(antdv-next@1.2.1(vue@3.5.33(typescript@5.9.3)))(vue@3.5.33(typescript@5.9.3))':
     dependencies:
       '@ant-design/fast-color': 3.0.1
       '@antdv-next/cssinjs': 1.0.6(vue@3.5.33(typescript@5.9.3))
@@ -5696,7 +5702,7 @@ snapshots:
       shiki: 3.23.0
       vue: 3.5.33(typescript@5.9.3)
 
-  '@antdv-next/x@0.3.0(antdv-next@1.2.1(vue@3.5.33(typescript@6.0.3)))(vue@3.5.33(typescript@6.0.3))':
+  '@antdv-next/x@1.0.1(antdv-next@1.2.1(vue@3.5.33(typescript@6.0.3)))(vue@3.5.33(typescript@6.0.3))':
     dependencies:
       '@ant-design/fast-color': 3.0.1
       '@antdv-next/cssinjs': 1.0.6(vue@3.5.33(typescript@6.0.3))
@@ -6752,7 +6758,7 @@ snapshots:
     dependencies:
       '@shikijs/types': 3.23.0
       '@shikijs/vscode-textmate': 10.0.2
-      oniguruma-to-es: 4.3.5
+      oniguruma-to-es: 4.3.6
 
   '@shikijs/engine-javascript@4.0.2':
     dependencies:
@@ -10597,9 +10603,17 @@ snapshots:
 
   oniguruma-parser@0.12.1: {}
 
+  oniguruma-parser@0.12.2: {}
+
   oniguruma-to-es@4.3.5:
     dependencies:
       oniguruma-parser: 0.12.1
+      regex: 6.1.0
+      regex-recursion: 6.0.2
+
+  oniguruma-to-es@4.3.6:
+    dependencies:
+      oniguruma-parser: 0.12.2
       regex: 6.1.0
       regex-recursion: 6.0.2
 

@@ -17,7 +17,7 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
-    "@antdv-next/x": "^0.3.0",
+    "@antdv-next/x": "^1.0.1",
     "@big-ppt/shared": "workspace:*",
     "antdv-next": "^1.2.1",
     "lucide-vue-next": "^1.0.0",
