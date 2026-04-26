@@ -18,16 +18,22 @@
 </template>
 
 <style scoped>
+/* 4 cell 等大 + gap 视觉对称：让 TwoColumnsTwoRows 整体 1:1 aspect-ratio
+ * （2 cell × 2 cell + 2 gap）。cell 自然正方形，水平 / 垂直 gap 视觉一致。
+ * minmax(0, 1fr) 防止 cell 内容意外撑高 row。
+ */
 .ld-two-x-two {
   display: grid;
-  /* minmax(0, 1fr) 防止 cell 内容意外撑高 row → 强制 4 cell 严格等大 */
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 1.5em;
-  width: 100%;
+  aspect-ratio: 1 / 1;
   height: 100%;
-  flex: 1;
-  min-height: 0; /* Phase 7.5E flex slot 撑满 */
+  width: auto;
+  max-width: 100%;
+  margin: 0 auto;
+  flex: 0 1 auto;
+  min-height: 0;
   font-family: var(--ld-font-family-brand);
   color: var(--ld-color-fg-primary);
   font-size: var(--ld-font-size-body);

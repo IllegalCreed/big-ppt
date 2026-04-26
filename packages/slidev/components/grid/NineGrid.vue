@@ -18,15 +18,22 @@
 </template>
 
 <style scoped>
+/* 9 cell 等宽等高 + gap 视觉对称的关键：让 NineGrid 自身保持 1:1 aspect-ratio。
+ * 这样 cell 自然是正方形，水平 / 垂直 gap 旁的"留白比例"才视觉一致。
+ * 如果 body 是 16:9 矩形，NineGrid 按短边 fit、自动水平居中（margin: 0 auto）。
+ */
 .ld-nine-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 1.5em;
-  width: 100%;
+  aspect-ratio: 1 / 1;
   height: 100%;
-  flex: 1;
-  min-height: 0; /* Phase 7.5E flex slot 撑满 */
+  width: auto;
+  max-width: 100%;
+  margin: 0 auto;
+  flex: 0 1 auto; /* 不强制撑满主轴；让 height: 100% + aspect-ratio 决定大小 */
+  min-height: 0;
   font-family: var(--ld-font-family-brand);
   color: var(--ld-color-fg-primary);
   font-size: var(--ld-font-size-body);
