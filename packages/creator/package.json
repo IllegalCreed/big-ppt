@@ -19,9 +19,9 @@
   "dependencies": {
     "@antdv-next/x": "^0.3.0",
     "@big-ppt/shared": "workspace:*",
-    "antdv-next": "^1.2.0",
+    "antdv-next": "^1.2.1",
     "lucide-vue-next": "^1.0.0",
-    "vue": "^3.5.32",
+    "vue": "^3.5.33",
     "vue-router": "^5.0.6"
   },
   "devDependencies": {
@@ -33,20 +33,20 @@
     "@vitest/coverage-v8": "^4.1.5",
     "@vitest/eslint-plugin": "^1.6.16",
     "@vue/eslint-config-typescript": "^14.7.0",
-    "@vue/test-utils": "^2.4.6",
+    "@vue/test-utils": "^2.4.8",
     "@vue/tsconfig": "^0.9.1",
     "eslint": "^10.2.1",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-vue": "~10.8.0",
+    "eslint-plugin-vue": "~10.9.0",
     "jiti": "^2.6.1",
     "jsdom": "^29.0.2",
-    "msw": "^2.13.5",
+    "msw": "^2.13.6",
     "npm-run-all2": "^8.0.4",
     "prettier": "3.8.3",
     "typescript": "~6.0.0",
-    "vite": "^8.0.8",
+    "vite": "^8.0.10",
     "vite-plugin-vue-devtools": "^8.1.1",
-    "vitest": "^4.1.4",
+    "vitest": "^4.1.5",
     "vue-tsc": "^3.2.6"
   },
   "engines": {

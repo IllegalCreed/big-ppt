@@ -115,7 +115,7 @@ async function onPrimary() {
           targetTemplateId: selected.value.id,
         })
         view.value = 'success'
-      } catch (err) {
+      } catch {
         view.value = 'error'
       }
     }

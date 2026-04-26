@@ -21,16 +21,16 @@
     "@slidev/cli": "^52.14.2",
     "@slidev/theme-default": "latest",
     "@slidev/theme-seriph": "latest",
-    "antdv-next": "^1.2.0",
+    "antdv-next": "^1.2.1",
     "chart.js": "^4.5.1",
-    "vue": "^3.5.29",
+    "vue": "^3.5.33",
     "vue-chartjs": "^5.3.3"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.6",
-    "@vue/test-utils": "^2.4.6",
+    "@vue/test-utils": "^2.4.8",
     "jsdom": "^29.0.2",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.5"
   },
   "engines": {
     "node": ">=18.0.0"

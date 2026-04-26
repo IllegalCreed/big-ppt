@@ -25,6 +25,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'exit-to-list': []
   'template-switched': []
+  'title-updated': [payload: { title: string }]
 }>()
 
 const { currentUser, logout } = useAuth()
@@ -79,8 +80,9 @@ async function commitTitle() {
   try {
     const updated = await updateDeck(props.deck.id, { title: next })
     displayTitle.value = updated.title
-    // 同步 props.deck.title，父组件 state 引用同一对象，返回列表时拿到新标题
-    props.deck.title = updated.title
+    // emit 给父组件让其更新自己的 state.deck.title（不直接 mutate prop，
+    // 否则违反 vue/no-mutating-props）
+    emit('title-updated', { title: updated.title })
     isEditingTitle.value = false
     titleError.value = ''
   } catch (err) {
@@ -171,9 +173,7 @@ function onTemplateSwitched(payload: {
   newTemplateId: string
   newTemplateName: string
 }) {
-  // 更新 deck state 反映新模板（父组件持有 deck 对象，mutate 让 SlidePreview 等响应）
-  props.deck.templateId = payload.newTemplateId
-  // 通知父组件 refetch deck + currentVersion
+  // 通知父组件 refetch deck + currentVersion，新 templateId 会随 deck 一起回流
   emit('template-switched')
 
   // 不主动调 slideStore.refresh()：backend 已 mirrorSlidesContent 写入新 slides.md，
