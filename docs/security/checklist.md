@@ -38,7 +38,7 @@
 | A10.1 | 无用户可控 SSRF 路径 | ✅ | – | LLM/MCP URL 由后端配置 |
 | 卫生.1 | scripts 全部有保留/归档判定 | ⚠ | 9-G | 4 归档 + 5 保留 |
 | 卫生.2 | knip 死代码扫描 baseline | ⚠ | 9-G | – |
-| 卫生.3 | .gitignore 加固 data/* | ⚠ | 9-F2 | – |
+| 卫生.3 | .gitignore 加固 data/* | ✅ | 9-F2 | 根 .gitignore 加 `packages/agent/data/*` + `!.gitkeep`；防御层叠在 packages/agent/data/.gitignore 之上 |
 | 债务.1 | P3-15 coverage 拉回 | ⚠ | 9-G | 拉回 90/85 或锁定门槛 |
 | 回归 | pnpm test + pnpm e2e 全绿 | TBD | 9-H | – |
 | 回归 | coverage 不退步 | TBD | 9-H | – |

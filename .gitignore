@@ -167,3 +167,9 @@ slides.md.bak
 slides?copy.md
 slides-*.md
 .superpowers/
+
+# Phase 9-F2：agent runtime 数据全部 ignore，仅留 .gitkeep（防御性）
+# 历史上 packages/agent/data/.gitignore 显式列了 mcp.json + slides-history，
+# 但未来该目录新增运行时文件容易漏 ignore；根 ignore 加固一层。
+packages/agent/data/*
+!packages/agent/data/.gitkeep
