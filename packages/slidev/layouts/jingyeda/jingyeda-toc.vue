@@ -5,6 +5,8 @@
     active : number   —— 1-based 当前高亮项；未设置或 0 则全部高亮（总览页）
 -->
 <script setup lang="ts">
+import { templateAsset } from '../../composables/useTemplateAsset'
+
 withDefaults(
   defineProps<{
     items?: string[]
@@ -36,7 +38,10 @@ withDefaults(
           <span class="jyd-toc-label">{{ item }}</span>
         </div>
       </div>
-      <img src="/templates/jingyeda-standard/logo.png" class="jyd-toc-watermark" />
+      <img
+        :src="templateAsset('/templates/jingyeda-standard/logo.png')"
+        class="jyd-toc-watermark"
+      />
     </div>
   </div>
 </template>

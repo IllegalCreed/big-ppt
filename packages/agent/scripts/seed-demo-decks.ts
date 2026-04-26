@@ -138,19 +138,19 @@ heading: TwoColumnsTwoRows 田字格 + MetricCard
 
 ---
 layout: beitou-content
-heading: NineGrid 九宫格（短文字标签）
+heading: NineGrid 九宫格（每格嵌 MetricCard）
 ---
 
 <NineGrid>
-<template #slot1>设计</template>
-<template #slot2>开发</template>
-<template #slot3>测试</template>
-<template #slot4>文档</template>
-<template #slot5>部署</template>
-<template #slot6>监控</template>
-<template #slot7>反馈</template>
-<template #slot8>迭代</template>
-<template #slot9>复盘</template>
+<template #slot1><MetricCard value="22" label="--ld-* token" variant="outline" /></template>
+<template #slot2><MetricCard value="16" label="公共组件总数" variant="outline" /></template>
+<template #slot3><MetricCard value="473" label="单测覆盖" variant="outline" /></template>
+<template #slot4><MetricCard value="5" label="layer-1 layout" variant="outline" /></template>
+<template #slot5><MetricCard value="8" label="栅格组件" variant="fill" /></template>
+<template #slot6><MetricCard value="2" label="装饰种子" variant="outline" /></template>
+<template #slot7><MetricCard value="6" label="内容块" variant="outline" /></template>
+<template #slot8><MetricCard value="100" unit="%" label="字节级一致" variant="outline" /></template>
+<template #slot9><MetricCard value="13" label="设计抉择" variant="outline" /></template>
 </NineGrid>
 
 ---
@@ -385,19 +385,19 @@ heading: TwoColumnsTwoRows 田字格 + MetricCard
 
 ---
 layout: jingyeda-content
-heading: NineGrid 九宫格（短文字标签）
+heading: NineGrid 九宫格（每格嵌 MetricCard）
 ---
 
 <NineGrid>
-<template #slot1>设计</template>
-<template #slot2>开发</template>
-<template #slot3>测试</template>
-<template #slot4>文档</template>
-<template #slot5>部署</template>
-<template #slot6>监控</template>
-<template #slot7>反馈</template>
-<template #slot8>迭代</template>
-<template #slot9>复盘</template>
+<template #slot1><MetricCard value="22" label="--ld-* token" variant="outline" /></template>
+<template #slot2><MetricCard value="16" label="公共组件总数" variant="outline" /></template>
+<template #slot3><MetricCard value="473" label="单测覆盖" variant="outline" /></template>
+<template #slot4><MetricCard value="5" label="layer-1 layout" variant="outline" /></template>
+<template #slot5><MetricCard value="8" label="栅格组件" variant="fill" /></template>
+<template #slot6><MetricCard value="2" label="装饰种子" variant="outline" /></template>
+<template #slot7><MetricCard value="6" label="内容块" variant="outline" /></template>
+<template #slot8><MetricCard value="100" unit="%" label="字节级一致" variant="outline" /></template>
+<template #slot9><MetricCard value="13" label="设计抉择" variant="outline" /></template>
 </NineGrid>
 
 ---

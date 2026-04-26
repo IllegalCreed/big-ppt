@@ -28,6 +28,10 @@ defineProps<{ heading?: string }>()
   padding: 48px 60px;
   box-sizing: border-box;
   font-family: var(--bt-ff-brand);
+  /* Phase 7.5E：flex column 让 .content-body 撑满剩余高度，
+     这样 slot 内的栅格组件 height: 100% 能找到参照 */
+  display: flex;
+  flex-direction: column;
 }
 .content-title {
   color: var(--bt-brand);
@@ -36,12 +40,17 @@ defineProps<{ heading?: string }>()
   letter-spacing: 4px;
   margin: 0;
   line-height: 1.2;
+  flex-shrink: 0;
 }
 .content-body {
   margin-top: 48px;
   color: var(--bt-fg-primary);
   font-size: 22px;
   line-height: 1.8;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .content-body :deep(p) {
   margin: 4px 0;

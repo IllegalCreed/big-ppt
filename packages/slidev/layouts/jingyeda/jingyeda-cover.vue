@@ -11,6 +11,8 @@
     date       : 汇报日期
 -->
 <script setup lang="ts">
+import { templateAsset } from '../../composables/useTemplateAsset'
+
 defineProps<{
   mainTitle?: string
   subtitle?: string
@@ -26,12 +28,15 @@ defineProps<{
     <div class="jyd-cover-root">
       <!-- ① logo 段（1/3） -->
       <div class="jyd-cover-top">
-        <img src="/templates/jingyeda-standard/logo.png" class="jyd-cover-logo" />
+        <img :src="templateAsset('/templates/jingyeda-standard/logo.png')" class="jyd-cover-logo" />
       </div>
 
       <!-- ② banner 段（1/3）：2×2 grid ── banner 图 / 右侧蓝竖条 / 底部蓝横条 / 右下绿方块 -->
       <div class="jyd-cover-banner">
-        <img src="/templates/jingyeda-standard/banner.png" class="jyd-cover-banner-img" />
+        <img
+          :src="templateAsset('/templates/jingyeda-standard/banner.png')"
+          class="jyd-cover-banner-img"
+        />
         <div class="jyd-cover-banner-right"></div>
         <div class="jyd-cover-banner-bottom"></div>
         <div class="jyd-cover-banner-corner"></div>

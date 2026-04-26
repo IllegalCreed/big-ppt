@@ -10,6 +10,8 @@
     orgEn   : 英文公司名（默认"JYD Technology"）
 -->
 <script setup lang="ts">
+import { templateAsset } from '../../composables/useTemplateAsset'
+
 withDefaults(
   defineProps<{
     message?: string
@@ -29,7 +31,7 @@ withDefaults(
     <div class="jyd-bc-root">
       <!-- ① logo 段（3/10） -->
       <div class="jyd-bc-top">
-        <img src="/templates/jingyeda-standard/logo.png" class="jyd-bc-logo" />
+        <img :src="templateAsset('/templates/jingyeda-standard/logo.png')" class="jyd-bc-logo" />
       </div>
 
       <!-- ② 色块段（5/10，贴 100% 宽：左蓝 2/3 + 右绿 1/3） -->

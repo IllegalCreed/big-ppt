@@ -7,6 +7,8 @@
     chapterTitle  : string   章节标题
 -->
 <script setup lang="ts">
+import { templateAsset } from '../../composables/useTemplateAsset'
+
 defineProps<{
   chapterNumber?: number
   chapterTitle?: string
@@ -24,7 +26,10 @@ defineProps<{
         <div class="jyd-section-accent-blue" />
         <div class="jyd-section-accent-green" />
       </div>
-      <img src="/templates/jingyeda-standard/logo.png" class="jyd-section-watermark" />
+      <img
+        :src="templateAsset('/templates/jingyeda-standard/logo.png')"
+        class="jyd-section-watermark"
+      />
     </div>
   </div>
 </template>

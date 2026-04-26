@@ -6,7 +6,7 @@
  * 边框颜色读 `--ld-color-brand-primary`，宽度按 imageBorder 切 token。
  */
 const props = defineProps<{
-  /** 图片 src（必填） */
+  /** 图片 src（必填）；以 / 开头的绝对路径会自动加 Slidev base 前缀 */
   image: string
   /** 图片描述（默认空） */
   alt?: string
@@ -15,6 +15,20 @@ const props = defineProps<{
   /** 图片在左还是右；默认 'image-left' */
   direction?: 'image-left' | 'image-right'
 }>()
+
+/**
+ * Slidev iframe 内 dev 时配了 `--base /api/slidev-preview/`，但 SFC 模板里
+ * 硬编码 `<img src="/templates/...">` 不会被 vite 自动加 base，要手工拼。
+ * http(s):// 外链不动；其他相对路径不动；以 / 开头的绝对路径加 base。
+ */
+const resolvedImage = (() => {
+  const src = props.image
+  if (!src) return ''
+  if (/^https?:\/\//.test(src)) return src
+  if (!src.startsWith('/')) return src
+  const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
+  return `${base}${src}`
+})()
 
 const borderWidthVar = (() => {
   switch (props.imageBorder ?? 'thick') {
@@ -32,7 +46,7 @@ const borderWidthVar = (() => {
 <template>
   <div class="ld-image-text" :data-direction="direction ?? 'image-left'">
     <div class="ld-image-wrap" :style="{ borderWidth: borderWidthVar }">
-      <img :src="image" :alt="alt ?? ''" class="ld-image" />
+      <img :src="resolvedImage" :alt="alt ?? ''" class="ld-image" />
     </div>
     <div class="ld-text">
       <slot name="text" />
@@ -46,6 +60,8 @@ const borderWidthVar = (() => {
   gap: 1.5em;
   width: 100%;
   height: 100%;
+  flex: 1;
+  min-height: 0; /* Phase 7.5E flex slot 撑满 */
   align-items: center;
   font-family: var(--ld-font-family-brand);
   color: var(--ld-color-fg-primary);

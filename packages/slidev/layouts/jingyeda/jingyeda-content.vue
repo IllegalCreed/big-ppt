@@ -5,6 +5,8 @@
   slot default : markdown 正文
 -->
 <script setup lang="ts">
+import { templateAsset } from '../../composables/useTemplateAsset'
+
 defineProps<{ heading?: string }>()
 </script>
 
@@ -17,7 +19,10 @@ defineProps<{ heading?: string }>()
       <div class="jyd-content-body">
         <slot />
       </div>
-      <img src="/templates/jingyeda-standard/logo.png" class="jyd-content-watermark" />
+      <img
+        :src="templateAsset('/templates/jingyeda-standard/logo.png')"
+        class="jyd-content-watermark"
+      />
     </div>
   </div>
 </template>
@@ -30,6 +35,9 @@ defineProps<{ heading?: string }>()
   overflow: hidden;
   box-sizing: border-box;
   font-family: var(--jyd-ff-brand);
+  /* Phase 7.5E：flex column 让 body 撑满剩余高度 */
+  display: flex;
+  flex-direction: column;
 }
 .jyd-content-title {
   color: #ffffff; /* 显式白色，Slidev 默认 h1 color 会覆盖继承 */
@@ -44,6 +52,10 @@ defineProps<{ heading?: string }>()
   color: var(--jyd-fg-primary);
   font-size: 1.25em;
   line-height: 1.9;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .jyd-content-body :deep(p) {
   margin: 0.3em 0;

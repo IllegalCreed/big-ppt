@@ -12,17 +12,20 @@ withDefaults(
   }>(),
   { markSize: 44, textSize: 44, invertText: true },
 )
+
+// Slidev dev 配 --base /api/slidev-preview/，硬编 src 不会被 vite 自动加 base
+const baseUrl = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
 </script>
 
 <template>
   <div class="l-cover-logo">
     <img
-      src="/templates/beitou-standard/logo-mark.png"
+      :src="`${baseUrl}/templates/beitou-standard/logo-mark.png`"
       class="l-logo-mark"
       :style="{ height: `${markSize}px` }"
     />
     <img
-      src="/templates/beitou-standard/logo-text.png"
+      :src="`${baseUrl}/templates/beitou-standard/logo-text.png`"
       class="l-logo-text"
       :class="{ 'l-logo-text--invert': invertText }"
       :style="{ height: `${textSize}px` }"

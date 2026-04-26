@@ -30,6 +30,8 @@ defineProps<{
   gap: 1.2em;
   width: 100%;
   height: 100%;
+  flex: 1;
+  min-height: 0; /* Phase 7.5E flex slot 撑满 */
   font-family: var(--ld-font-family-brand);
   color: var(--ld-color-fg-primary);
   font-size: var(--ld-font-size-body);
