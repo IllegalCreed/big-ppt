@@ -1,9 +1,15 @@
 import { Hono } from 'hono'
 import { getTool, listTools } from '../tools/registry.js'
 import { setTurnId } from '../context.js'
+import { requireAuth, type AuthVars } from '../middleware/auth.js'
 import type { CallToolRequest, CallToolResponse, GetToolsResponse } from '@big-ppt/shared'
 
-export const tools = new Hono()
+export const tools = new Hono<{ Variables: AuthVars }>()
+
+// Phase 9-B（A01）：未登录禁止枚举工具列表 / 调用工具
+// （/call-tool 未守卫将允许任意人调 write_slides / delete_slide / mcp__* 等敏感工具）
+tools.use('/tools', requireAuth)
+tools.use('/call-tool', requireAuth)
 
 tools.get('/tools', (c) => {
   const payload: GetToolsResponse = { success: true, tools: listTools() }

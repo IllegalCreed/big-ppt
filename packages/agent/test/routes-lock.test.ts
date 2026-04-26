@@ -130,6 +130,12 @@ describe('routes/lock', () => {
     expect((await hB.json()).heldByMe).toBe(false)
   })
 
+  it('lock-status 未登录 → 401（Phase 9-B 防 holder.email 枚举）', async () => {
+    const app = makeApp()
+    const res = await app.request('/api/lock-status')
+    expect(res.status).toBe(401)
+  })
+
   it('lock-status: 空锁 / 他人持有 / 自己持有 三态', async () => {
     const app = makeApp()
     const a = await createLoggedInUser('la@a.com')

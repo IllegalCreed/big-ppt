@@ -59,9 +59,47 @@ gitleaks detect --config .gitleaks.toml --redact -v --no-banner --report-format 
 
 ## 1. OWASP A01 Broken Access Control
 
-**适用项**：state-changing API ownership 守卫 + session cookie 设置 + Slidev 反代鉴权 + **MCP per-user 隔离（高优先级修复）**。
+**适用项**：state-changing API ownership 守卫 + session cookie 设置 + Slidev 反代鉴权 + **MCP per-user 隔离**。
 
-**当前状态**：详查待 Task 9-B / 9-F 落档。
+### 1.1 路由鉴权全量盘点（Task 9-B 落档，2026-04-26）
+
+**修复前漏洞清单**（Explore 期 + 9-B 复审发现的 11 个公开端点）：
+
+| 路径 | 修复前 | 风险 | 修复 |
+| ---- | ------ | ---- | ---- |
+| `POST /api/log-event` | 无鉴权 | 任意人灌日志 / 探内部错误 | 加 `requireAuth`（routes/log.ts） |
+| `GET /api/log/latest` | 无鉴权 | 任意人读日志（含 user prompt + LLM response） | 加 `requireAuth` |
+| `GET /api/tools` | 无鉴权 | 工具命名空间枚举（暴露 mcp__\* 内部 server id） | 加 `requireAuth`（routes/tools.ts） |
+| `POST /api/call-tool` | 无鉴权 | **严重**：未登录可调 write_slides/delete_slide/mcp__\* 等敏感工具 | 加 `requireAuth` |
+| `POST /api/read-slides` × 2（GET/POST） | 无鉴权 | 任意人读 lock holder 的 slides.md（跨用户泄漏 deck 内容） | 加 `requireAuth` + 持锁守卫（routes/slides.ts） |
+| `POST /api/restore-slides` × 2 | 无鉴权 | 任意人触发 lock holder 的 /undo | 同上 |
+| `POST /api/redo-slides` × 2 | 无鉴权 | 任意人触发 lock holder 的 /redo | 同上 |
+| `GET /api/lock-status` | 无鉴权 | holder.email 枚举（推测平台用户邮箱） | 加 `requireAuth`（routes/lock.ts） |
+
+**已合规端点**（盘点期确认）：
+
+- `/api/decks/*` 全量：`requireAuth` + `getOwnedDeck()` ownership 校验（routes/decks.ts:37-42）
+- `/api/auth/llm-settings` GET/PUT：`requireAuth` 自证 + 仅返本人数据
+- `/api/llm/chat/completions`：`requireAuth` 自证（routes/llm.ts:55-57）
+- `/api/mcp/servers*`：`requireAuth` 完整（但跨用户共享数据，详见 1.2）
+- `/api/activate-deck/:id` `/api/release-deck` `/api/heartbeat`：`requireAuth` + ownership
+
+**公开端点合理性**（评估保留）：
+
+- `/api/auth/register` `/api/auth/login`：登录前必须公开
+- `/api/auth/logout`：幂等，未登录无副作用
+- `/api/templates/*` `/api/system-prompt`：项目内置资源 / prompt 模板，无敏感信息
+- `/healthz` `/`：服务标识，生产绑内网
+
+**slides.ts 持锁守卫**：用户 A 持锁编辑时，slides.md 是 server-wide mirror。修复后 user B（即使登录）无法读 / undo / redo —— B 的视角应在 OccupiedWaitingPage。
+
+**新增测试**（Task 9-B）：
+- `routes-tools.test.ts`：6 测改造为带 cookie 集成测 + 新增 2 条未登录 401（GET /tools / POST /call-tool）
+- `routes-log.test.ts`（新建）：3 测（POST/GET 未登录 401 / 登录 200）
+- `routes-slides.test.ts`（新建）：6 测（未登录 401 × 2 / 登录未持锁 403 / 登录持别人锁 403 / 登录持锁 200 × 3）
+- `routes-lock.test.ts`：+1 测 lock-status 未登录 401
+
+### 1.2 MCP server per-user 隔离（待 Task 9-F）
 
 **关键发现（Phase 9 Explore 期）**：MCP server 当前是全用户共享单文件 + singleton registry → 跨用户凭据共享 → 严重 A01 漏洞。修复方案见 [plan 18 Task 9-F](../plans/18-phase9-security-audit.md#task-9-fmcp-per-user-入库a01-broken-access-control-修复)。
 

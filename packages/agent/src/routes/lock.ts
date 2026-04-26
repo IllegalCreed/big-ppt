@@ -94,12 +94,16 @@ lockRoute.post('/heartbeat', async (c) => {
   return c.json({ ok: true, heldByMe: held })
 })
 
-/** 查询当前锁状态（用于等待页轮询）。 */
+/**
+ * 查询当前锁状态（用于等待页轮询）。
+ * Phase 9-B（A01）：加 requireAuth — 未登录无业务理由查锁，且 holder 含 email 防枚举。
+ */
 lockRoute.get('/lock-status', async (c) => {
   const session = c.get('session')
+  if (!session) return c.json({ error: 'unauthorized' }, 401)
   const holder = getHolder()
   if (!holder) return c.json({ locked: false })
-  const isMe = !!session && holder.sessionId === session.id
+  const isMe = holder.sessionId === session.id
   return c.json({ locked: true, holder: toWireHolder(holder), isMe })
 })
 
