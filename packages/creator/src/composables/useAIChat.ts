@@ -173,8 +173,14 @@ function trimMessages(messages: ChatMessage[]): ChatMessage[] {
       '[ Earlier conversation history has been trimmed. The current slides.md is available via read_slides tool. ]',
   }
   const recent = messages.slice(-MAX_CONTEXT_MESSAGES)
-  return [system, summary, ...recent]
+  // 守护：tool 消息必须紧跟在带匹配 tool_call_id 的 assistant 之后（OpenAI/GLM spec），
+  // slice 切口若落在 assistant.tool_calls ↔ tool 配对中间，会留下孤儿 tool —— 丢掉。
+  let start = 0
+  while (start < recent.length && recent[start]!.role === 'tool') start++
+  return [system, summary, ...recent.slice(start)]
 }
+
+export const __trimMessagesForTesting = trimMessages
 
 // --- 工具执行 ---
 
