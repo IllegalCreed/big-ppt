@@ -13,5 +13,8 @@
     "@playwright/test": "^1.49.0",
     "dotenv": "^17.4.2",
     "mysql2": "^3.22.2"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }

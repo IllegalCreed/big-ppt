@@ -14,5 +14,8 @@
   "scripts": {
     "type-check": "tsc --noEmit",
     "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   }
 }
