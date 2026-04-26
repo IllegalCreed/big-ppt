@@ -53,15 +53,17 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
 // module under test must be imported after vi.mock declarations
 const { McpRegistry } = await import('../src/mcp-registry/registry.js')
 
-// ---- fake repo ----
+// ---- fake repo (per-user 接口适配，Phase 9-F) ----
 class FakeRepo {
   constructor(private servers: McpServerConfig[]) {}
-  list = async () => this.servers
-  get = async (id: string) => this.servers.find((s) => s.id === id)
+  list = async (_userId: number) => this.servers
+  get = async (_userId: number, id: string) => this.servers.find((s) => s.id === id)
   create = async () => { throw new Error('not used') }
   update = async () => { throw new Error('not used') }
-  delete = async () => { throw new Error('not used') }  // 原来这里是 remove,改成 delete 匹配 McpServerRepo 接口
+  delete = async () => { throw new Error('not used') }
 }
+
+const TEST_USER_ID = 42
 
 function mkConfig(over: Partial<McpServerConfig> = {}): McpServerConfig {
   return {
@@ -97,20 +99,20 @@ describe('McpRegistry.initialize', () => {
       ],
     })
     const repo = new FakeRepo([mkConfig({ id: 'zhipu-web-search' })])
-    const registry = new McpRegistry(repo as any)
+    const registry = new McpRegistry(repo as any, TEST_USER_ID)
     await registry.initialize()
-    expect(hasTool('mcp__zhipu-web-search__search')).toBe(true)
+    expect(hasTool('mcp__zhipu-web-search__search', TEST_USER_ID)).toBe(true)
     expect(registry.getStatus('zhipu-web-search').state).toBe('ok')
     expect(registry.getStatus('zhipu-web-search').toolCount).toBe(1)
   })
 
   it('enabled=false server does not connect', async () => {
     const repo = new FakeRepo([mkConfig({ enabled: false })])
-    const registry = new McpRegistry(repo as any)
+    const registry = new McpRegistry(repo as any, TEST_USER_ID)
     await registry.initialize()
     expect(mocks.connectDefault).not.toHaveBeenCalled()
     expect(registry.getStatus('srv').state).toBe('disabled')
-    expect(listRegistryTools()).toEqual([])
+    expect(listRegistryTools(TEST_USER_ID)).toEqual([])
   })
 
   it('一个 server connect 失败不影响其他 server', async () => {
@@ -123,11 +125,40 @@ describe('McpRegistry.initialize', () => {
       mkConfig({ id: 'bad', enabled: true, url: 'https://bad.example/mcp' }),
       mkConfig({ id: 'good', enabled: true, url: 'https://good.example/mcp' }),
     ])
-    const registry = new McpRegistry(repo as any)
+    const registry = new McpRegistry(repo as any, TEST_USER_ID)
     await registry.initialize()
     expect(registry.getStatus('bad').state).toBe('error')
     expect(registry.getStatus('bad').error).toMatch(/401/)
     expect(registry.getStatus('good').state).toBe('ok')
+  })
+})
+
+describe('McpRegistry per-user 隔离 + ensureInitialized', () => {
+  it('两个 user 启用同名 serverId 工具不冲突，互不可见', async () => {
+    mocks.connectDefault.mockResolvedValue(undefined)
+    mocks.listTools.mockResolvedValue({
+      tools: [{ name: 'fetch', inputSchema: { type: 'object', properties: {} } }],
+    })
+    const regA = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any, 1)
+    const regB = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any, 2)
+    await regA.initialize()
+    await regB.initialize()
+    expect(hasTool('mcp__srv__fetch', 1)).toBe(true)
+    expect(hasTool('mcp__srv__fetch', 2)).toBe(true)
+    expect(hasTool('mcp__srv__fetch')).toBe(false) // 全局没注册
+    expect(listRegistryTools(1).map((t) => t.function.name)).toEqual(['mcp__srv__fetch'])
+    expect(listRegistryTools(2).map((t) => t.function.name)).toEqual(['mcp__srv__fetch'])
+  })
+
+  it('ensureInitialized 幂等（多次调用不重复 connect）', async () => {
+    mocks.connectDefault.mockResolvedValue(undefined)
+    mocks.listTools.mockResolvedValue({ tools: [] })
+    const repo = new FakeRepo([mkConfig({ enabled: true })])
+    const registry = new McpRegistry(repo as any, TEST_USER_ID)
+    await registry.ensureInitialized()
+    await registry.ensureInitialized()
+    await registry.ensureInitialized()
+    expect(mocks.connectDefault).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -137,11 +168,11 @@ describe('McpRegistry.sync', () => {
     mocks.listTools.mockResolvedValue({
       tools: [{ name: 'fetch', inputSchema: { type: 'object', properties: {} } }],
     })
-    const registry = new McpRegistry(new FakeRepo([]) as any)
+    const registry = new McpRegistry(new FakeRepo([]) as any, TEST_USER_ID)
     await registry.initialize()
-    expect(hasTool('mcp__srv__fetch')).toBe(false)
+    expect(hasTool('mcp__srv__fetch', TEST_USER_ID)).toBe(false)
     await registry.sync(mkConfig({ id: 'srv', enabled: true }))
-    expect(hasTool('mcp__srv__fetch')).toBe(true)
+    expect(hasTool('mcp__srv__fetch', TEST_USER_ID)).toBe(true)
   })
 
   it('disabling closes session and unregisters tools', async () => {
@@ -149,11 +180,11 @@ describe('McpRegistry.sync', () => {
     mocks.listTools.mockResolvedValue({
       tools: [{ name: 'fetch', inputSchema: { type: 'object', properties: {} } }],
     })
-    const registry = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any)
+    const registry = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any, TEST_USER_ID)
     await registry.initialize()
-    expect(hasTool('mcp__srv__fetch')).toBe(true)
+    expect(hasTool('mcp__srv__fetch', TEST_USER_ID)).toBe(true)
     await registry.sync(mkConfig({ id: 'srv', enabled: false }))
-    expect(hasTool('mcp__srv__fetch')).toBe(false)
+    expect(hasTool('mcp__srv__fetch', TEST_USER_ID)).toBe(false)
     expect(mocks.close).toHaveBeenCalledTimes(1)
     expect(registry.getStatus('srv').state).toBe('disabled')
   })
@@ -169,10 +200,10 @@ describe('McpRegistry callTool 委派', () => {
       content: [{ type: 'text', text: 'hello from mcp' }],
       isError: false,
     })
-    const registry = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any)
+    const registry = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any, TEST_USER_ID)
     await registry.initialize()
 
-    const tool = getTool('mcp__srv__fetch')!
+    const tool = getTool('mcp__srv__fetch', TEST_USER_ID)!
     const out = await tool.exec({ url: 'https://x' })
     const parsed = JSON.parse(out)
     expect(parsed.success).toBe(true)
@@ -189,10 +220,10 @@ describe('McpRegistry callTool 委派', () => {
       content: [{ type: 'text', text: 'upstream 500' }],
       isError: true,
     })
-    const registry = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any)
+    const registry = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any, TEST_USER_ID)
     await registry.initialize()
 
-    const out = await getTool('mcp__srv__fetch')!.exec({})
+    const out = await getTool('mcp__srv__fetch', TEST_USER_ID)!.exec({})
     expect(JSON.parse(out).success).toBe(false)
   })
 
@@ -202,16 +233,16 @@ describe('McpRegistry callTool 委派', () => {
       tools: [{ name: 'fetch', inputSchema: { type: 'object', properties: {} } }],
     })
     mocks.callTool.mockRejectedValueOnce(new Error('ECONNRESET'))
-    const registry = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any)
+    const registry = new McpRegistry(new FakeRepo([mkConfig({ id: 'srv' })]) as any, TEST_USER_ID)
     await registry.initialize()
     expect(registry.getStatus('srv').state).toBe('ok')
 
-    const out1 = await getTool('mcp__srv__fetch')!.exec({})
+    const out1 = await getTool('mcp__srv__fetch', TEST_USER_ID)!.exec({})
     expect(JSON.parse(out1).success).toBe(false)
     expect(registry.getStatus('srv').state).toBe('error')
 
     // 第二次调用应立即落 "未连接" 分支,不再试图 call 坏掉的 client
-    const out2 = await getTool('mcp__srv__fetch')!.exec({})
+    const out2 = await getTool('mcp__srv__fetch', TEST_USER_ID)!.exec({})
     const parsed2 = JSON.parse(out2)
     expect(parsed2.success).toBe(false)
     expect(parsed2.error).toMatch(/未连接/)

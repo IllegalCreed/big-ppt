@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { getTool, listTools } from '../tools/registry.js'
 import { setTurnId } from '../context.js'
 import { requireAuth, type AuthVars } from '../middleware/auth.js'
+import { getRegistry } from '../mcp-registry/index.js'
 import type { CallToolRequest, CallToolResponse, GetToolsResponse } from '@big-ppt/shared'
 
 export const tools = new Hono<{ Variables: AuthVars }>()
@@ -11,8 +12,13 @@ export const tools = new Hono<{ Variables: AuthVars }>()
 tools.use('/tools', requireAuth)
 tools.use('/call-tool', requireAuth)
 
-tools.get('/tools', (c) => {
-  const payload: GetToolsResponse = { success: true, tools: listTools() }
+// Phase 9-F：listTools / getTool 按 ctx.user.id 路由——本地工具全用户可见，
+// MCP 工具仅本人可见 / 调用（A01 修复）。
+tools.get('/tools', async (c) => {
+  const userId = c.get('user')!.id
+  // 确保 MCP server 工具注册到 user 分区（首次访问时 connect + register）
+  await getRegistry(userId).ensureInitialized()
+  const payload: GetToolsResponse = { success: true, tools: listTools(userId) }
   return c.json(payload)
 })
 
@@ -33,7 +39,8 @@ tools.post('/call-tool', async (c) => {
     const resp: CallToolResponse = { success: false, error: 'name 不能为空' }
     return c.json(resp, 400)
   }
-  const tool = getTool(name)
+  const userId = c.get('user')!.id
+  const tool = getTool(name, userId)
   if (!tool) {
     const resp: CallToolResponse = { success: false, error: `未知工具: ${name}` }
     return c.json(resp, 404)

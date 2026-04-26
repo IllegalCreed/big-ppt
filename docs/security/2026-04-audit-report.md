@@ -99,9 +99,28 @@ gitleaks detect --config .gitleaks.toml --redact -v --no-banner --report-format 
 - `routes-slides.test.ts`（新建）：6 测（未登录 401 × 2 / 登录未持锁 403 / 登录持别人锁 403 / 登录持锁 200 × 3）
 - `routes-lock.test.ts`：+1 测 lock-status 未登录 401
 
-### 1.2 MCP server per-user 隔离（待 Task 9-F）
+### 1.2 MCP server per-user 隔离 ✅（Task 9-F 落档，2026-04-26）
 
-**关键发现（Phase 9 Explore 期）**：MCP server 当前是全用户共享单文件 + singleton registry → 跨用户凭据共享 → 严重 A01 漏洞。修复方案见 [plan 18 Task 9-F](../plans/18-phase9-security-audit.md#task-9-fmcp-per-user-入库a01-broken-access-control-修复)。
+**修复前漏洞**：`McpServerRepo` 接口的 `list()` / `get(id)` / `create()` / `update()` / `delete()` 全无 userId 参数，所有登录用户操作 `data/mcp.json` 单文件 + 共享 singleton `mcp-registry`。后果：A 启用 server + 填自己的智谱 token → B 登录看到 server enabled + 用 A 的 token 调用 → 跨用户凭据共享 + 配额混账。
+
+**修复**（多文件改造）：
+- DB schema 新增 [`userMcpServers`](../../packages/agent/src/db/schema.ts) 表（`(userId, serverId)` 唯一索引 + headers JSON 加密落库）
+- [`McpServerRepo`](../../packages/agent/src/mcp-server-repo/types.ts) 接口所有方法加 `userId` 参数
+- 新建 [`DrizzleRepo`](../../packages/agent/src/mcp-server-repo/drizzle-repo.ts)（替代 `JsonFileRepo`）：首次 list 自动 seed PRESET（每用户独立 4 条）；headers 加密复用 P2-4 `crypto/apikey.ts`
+- [`mcp-registry/index.ts`](../../packages/agent/src/mcp-registry/index.ts) 从 singleton 改 `Map<userId, McpRegistry>` + LRU 上限 100
+- [`McpRegistry`](../../packages/agent/src/mcp-registry/registry.ts) 构造接 `userId`；`activate` 调 user-scoped `registerForUser`；新增 `ensureInitialized()` lazy + 幂等
+- [`tools/registry.ts`](../../packages/agent/src/tools/registry.ts) 拆全局工具 + per-user 分区；`getTool(name, userId)` / `listTools(userId)` 路由；同 serverId 在不同 user 下注册的"同名"工具不冲突
+- [`routes/mcp.ts`](../../packages/agent/src/routes/mcp.ts) + [`routes/tools.ts`](../../packages/agent/src/routes/tools.ts) handler 用 `ctx.var.user.id`
+- [`json-file-repo.ts`](../../packages/agent/src/mcp-server-repo/json-file-repo.ts) 加 `@deprecated` 注释，运行时不再用
+- [`packages/agent/src/index.ts`](../../packages/agent/src/index.ts) 删除启动期全局 `getRegistry().initialize()`，改为每 user 首次访问 `/api/mcp/servers` 或 `/api/tools` 时 lazy 初始化
+- 数据迁移：dev 库现有 `data/mcp.json` 数据无主直接清空；prod 还没上线零成本
+
+**工具命名不变**：`mcp__<serverId>__<toolName>` 保持 —— registry 已 per-user 隔离够了，无需把 userId 编进工具名（避免 prompt 暴露 userId）。
+
+**测试**（新增 ≥ 13）：
+- [`mcp-server-repo.test.ts`](../../packages/agent/test/mcp-server-repo.test.ts)（10 测）：DrizzleRepo 首次 list seed / 跨用户独立 / headers 加密落库 / 同 serverId 不同 user 不冲突 / preset 不可删
+- [`mcp-registry.test.ts`](../../packages/agent/test/mcp-registry.test.ts) +2 测：跨 user 隔离 + ensureInitialized 幂等
+- [`routes-mcp.test.ts`](../../packages/agent/test/routes-mcp.test.ts) +3 测（跨用户隔离）：A 启 server + token，B 看到自己的 4 个 preset / A 不能 update B 的 / A 创建的 server B 不可见且 B 同名创建不冲突
 
 ---
 

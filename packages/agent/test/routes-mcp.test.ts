@@ -1,11 +1,19 @@
 // packages/agent/test/routes-mcp.test.ts
+/**
+ * Phase 9-F：MCP per-user 入库改造（A01 修复）。
+ *
+ * 重构要点：
+ *   - JsonFileRepo + 文件路径 → DrizzleRepo + DB 表 user_mcp_servers
+ *   - 单 singleton mcp-registry → per-user `getRegistry(userId)` + LRU
+ *   - 所有 routes handler 用 ctx.var.user.id 调 repo + registry
+ *   - 加测试：跨用户隔离（A 看不到 B / A 不能 update B）
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { Hono } from 'hono'
+import { eq, and } from 'drizzle-orm'
 import { useTestDb } from './_setup/test-db.js'
 import { createLoggedInUser } from './_setup/factories.js'
+import { getDb, userMcpServers } from '../src/db/index.js'
 
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   Client: class {
@@ -25,9 +33,9 @@ const { mcp: mcpRoute } = await import('../src/routes/mcp.js')
 const { authOptional } = await import('../src/middleware/auth.js')
 const { __resetRepoForTesting } = await import('../src/mcp-server-repo/index.js')
 const { __resetRegistryForTesting } = await import('../src/mcp-registry/index.js')
-const { __resetPathsForTesting } = await import('../src/workspace.js')
+const { __resetRegistry: __resetToolsRegistry } = await import('../src/tools/registry.js')
 
-useTestDb() // users/sessions 表需要，factories 要用
+useTestDb()
 
 function buildApp() {
   const app = new Hono()
@@ -36,34 +44,33 @@ function buildApp() {
   return app
 }
 
-let tmpDir: string
-let cookie: string
+let cookieA: string
+let userIdA: number
+let cookieB: string
 
 beforeEach(async () => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-routes-mcp-'))
-  process.env.BIG_PPT_MCP_CONFIG = path.join(tmpDir, 'mcp.json')
-  __resetPathsForTesting()
   __resetRepoForTesting()
   __resetRegistryForTesting()
-  // 每个 case 建个登录用户，带着 cookie 走完整鉴权路径
-  const user = await createLoggedInUser(`mcp-${Date.now()}@a.com`)
-  cookie = user.cookie
+  __resetToolsRegistry()
+  const a = await createLoggedInUser('mcp-a@a.com')
+  const b = await createLoggedInUser('mcp-b@a.com')
+  cookieA = a.cookie
+  userIdA = a.user.id
+  cookieB = b.cookie
 })
 
 afterEach(() => {
-  delete process.env.BIG_PPT_MCP_CONFIG
-  __resetPathsForTesting()
   __resetRepoForTesting()
   __resetRegistryForTesting()
-  fs.rmSync(tmpDir, { recursive: true, force: true })
+  __resetToolsRegistry()
 })
 
-function authed(init: RequestInit = {}): RequestInit {
+function authed(cookie: string, init: RequestInit = {}): RequestInit {
   return { ...init, headers: { ...(init.headers ?? {}), Cookie: cookie } }
 }
 
 describe('鉴权', () => {
-  it('未登录访问 GET → 401（Phase 5 遗留漏洞修复）', async () => {
+  it('未登录 GET → 401', async () => {
     const res = await buildApp().request('/api/mcp/servers')
     expect(res.status).toBe(401)
   })
@@ -79,8 +86,8 @@ describe('鉴权', () => {
 })
 
 describe('GET /api/mcp/servers', () => {
-  it('返回预置 4 个 + status + headers value 脱敏', async () => {
-    const res = await buildApp().request('/api/mcp/servers', authed())
+  it('首次返回预置 4 个 + status=disabled + headers 脱敏', async () => {
+    const res = await buildApp().request('/api/mcp/servers', authed(cookieA))
     const json = await res.json()
     expect(json.success).toBe(true)
     expect(json.servers.map((s: any) => s.id).sort()).toEqual([
@@ -90,25 +97,24 @@ describe('GET /api/mcp/servers', () => {
       'zhipu-zread',
     ])
     for (const s of json.servers) expect(s.status.state).toBe('disabled')
-    // 预置 headers 是 {} ，脱敏后仍是 {}（空集无可脱）
     for (const s of json.servers) expect(s.headers).toEqual({})
   })
 
-  it('设置过 key 后，GET 返回 Authorization: Bearer ***', async () => {
-    // 先设 Bearer
+  it('设置过 key 后，GET 返回 Authorization: ***', async () => {
+    // 先 GET seed 一次让 preset 入库（路由层不自动 seed-on-write）
+    await buildApp().request('/api/mcp/servers', authed(cookieA))
     await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
-      authed({
+      authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true, headers: { Authorization: 'Bearer real-secret' } }),
       }),
     )
-    const res = await buildApp().request('/api/mcp/servers', authed())
+    const res = await buildApp().request('/api/mcp/servers', authed(cookieA))
     const json = await res.json()
     const found = json.servers.find((s: any) => s.id === 'zhipu-web-search')
     expect(found.headers.Authorization).toBe('***')
-    // 确认不含真值
     expect(JSON.stringify(json)).not.toContain('real-secret')
   })
 })
@@ -117,21 +123,23 @@ describe('POST /api/mcp/servers', () => {
   it('新增自定义 server 成功', async () => {
     const res = await buildApp().request(
       '/api/mcp/servers',
-      authed({
+      authed(cookieA, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: 'custom', displayName: 'C', url: 'https://c.example/mcp' }),
       }),
     )
     expect(res.status).toBe(200)
-    const list = await (await buildApp().request('/api/mcp/servers', authed())).json()
+    const list = await (await buildApp().request('/api/mcp/servers', authed(cookieA))).json()
     expect(list.servers.some((s: any) => s.id === 'custom' && s.preset === false)).toBe(true)
   })
 
   it('重复 id 返回 409', async () => {
+    // 先 GET 一次让 preset seed
+    await buildApp().request('/api/mcp/servers', authed(cookieA))
     const res = await buildApp().request(
       '/api/mcp/servers',
-      authed({
+      authed(cookieA, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: 'zhipu-web-search', displayName: 'Dup', url: 'https://x' }),
@@ -143,7 +151,7 @@ describe('POST /api/mcp/servers', () => {
   it('缺字段返回 400', async () => {
     const res = await buildApp().request(
       '/api/mcp/servers',
-      authed({
+      authed(cookieA, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: 'x' }),
@@ -155,7 +163,7 @@ describe('POST /api/mcp/servers', () => {
   it('POST 请求体非法 JSON 返回 400', async () => {
     const res = await buildApp().request(
       '/api/mcp/servers',
-      authed({
+      authed(cookieA, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: 'not-json',
@@ -169,7 +177,7 @@ describe('POST /api/mcp/servers', () => {
   it('POST id 含非法字符返回 400', async () => {
     const res = await buildApp().request(
       '/api/mcp/servers',
-      authed({
+      authed(cookieA, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: 'bad id!', displayName: 'X', url: 'https://x' }),
@@ -182,17 +190,22 @@ describe('POST /api/mcp/servers', () => {
 })
 
 describe('PATCH /api/mcp/servers/:id', () => {
+  // PATCH 前先 GET 一次让 preset seed 落库
+  beforeEach(async () => {
+    await buildApp().request('/api/mcp/servers', authed(cookieA))
+  })
+
   it('enabled=true 触发 registry 激活', async () => {
     const res = await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
-      authed({
+      authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true, headers: { Authorization: 'Bearer t' } }),
       }),
     )
     expect(res.status).toBe(200)
-    const list = await (await buildApp().request('/api/mcp/servers', authed())).json()
+    const list = await (await buildApp().request('/api/mcp/servers', authed(cookieA))).json()
     const found = list.servers.find((s: any) => s.id === 'zhipu-web-search')
     expect(found.enabled).toBe(true)
     expect(found.status.state).toBe('ok')
@@ -201,7 +214,7 @@ describe('PATCH /api/mcp/servers/:id', () => {
   it('PATCH 不存在的 id 返回 404', async () => {
     const res = await buildApp().request(
       '/api/mcp/servers/does-not-exist',
-      authed({
+      authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true }),
@@ -213,39 +226,41 @@ describe('PATCH /api/mcp/servers/:id', () => {
   })
 
   it('PATCH headers.Authorization = *** → 保留旧值', async () => {
-    // 先设旧值
     await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
-      authed({
+      authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ headers: { Authorization: 'Bearer keep-me' } }),
       }),
     )
-    // 用 *** 再 PATCH
     const res = await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
-      authed({
+      authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: true, headers: { Authorization: 'Bearer ***' } }),
       }),
     )
     expect(res.status).toBe(200)
-    // 从磁盘验证：旧值在，没被 *** 覆盖
-    const disk = JSON.parse(
-      fs.readFileSync(path.join(tmpDir, 'mcp.json'), 'utf-8'),
-    ) as Array<{ id: string; headers: Record<string, string> }>
-    const entry = disk.find((e) => e.id === 'zhipu-web-search')!
-    // 磁盘上是密文（以 v1: 开头），但至少不是字面 "Bearer ***"
-    expect(entry.headers.Authorization).not.toBe('Bearer ***')
-    expect(entry.headers.Authorization.startsWith('v1:')).toBe(true)
+    // 从 DB 验证：旧值保留（密文，不应是字面 "Bearer ***"）
+    const db = getDb()
+    const [row] = await db
+      .select({ headers: userMcpServers.headers })
+      .from(userMcpServers)
+      .where(
+        and(eq(userMcpServers.userId, userIdA), eq(userMcpServers.serverId, 'zhipu-web-search')),
+      )
+      .limit(1)
+    const stored = JSON.parse(row!.headers) as Record<string, string>
+    expect(stored.Authorization).not.toBe('Bearer ***')
+    expect(stored.Authorization!.startsWith('v1:')).toBe(true)
   })
 
   it('PATCH headers.Authorization = "Bearer new-val" → 覆盖旧值', async () => {
     await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
-      authed({
+      authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ headers: { Authorization: 'Bearer old' } }),
@@ -253,15 +268,14 @@ describe('PATCH /api/mcp/servers/:id', () => {
     )
     const res = await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
-      authed({
+      authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ headers: { Authorization: 'Bearer new-val' } }),
       }),
     )
     expect(res.status).toBe(200)
-    // 再 GET → value 脱敏为 ***，但 registry 应该能用真值
-    const list = await (await buildApp().request('/api/mcp/servers', authed())).json()
+    const list = await (await buildApp().request('/api/mcp/servers', authed(cookieA))).json()
     const found = list.servers.find((s: any) => s.id === 'zhipu-web-search')
     expect(found.headers.Authorization).toBe('***')
   })
@@ -269,9 +283,11 @@ describe('PATCH /api/mcp/servers/:id', () => {
 
 describe('DELETE /api/mcp/servers/:id', () => {
   it('预置返回 403', async () => {
+    // 先 seed
+    await buildApp().request('/api/mcp/servers', authed(cookieA))
     const res = await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
-      authed({ method: 'DELETE' }),
+      authed(cookieA, { method: 'DELETE' }),
     )
     expect(res.status).toBe(403)
   })
@@ -279,7 +295,7 @@ describe('DELETE /api/mcp/servers/:id', () => {
   it('自定义删除成功', async () => {
     await buildApp().request(
       '/api/mcp/servers',
-      authed({
+      authed(cookieA, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: 'custom', displayName: 'C', url: 'https://c' }),
@@ -287,7 +303,7 @@ describe('DELETE /api/mcp/servers/:id', () => {
     )
     const res = await buildApp().request(
       '/api/mcp/servers/custom',
-      authed({ method: 'DELETE' }),
+      authed(cookieA, { method: 'DELETE' }),
     )
     expect(res.status).toBe(200)
   })
@@ -295,17 +311,21 @@ describe('DELETE /api/mcp/servers/:id', () => {
   it('DELETE 不存在的 id 返回 404', async () => {
     const res = await buildApp().request(
       '/api/mcp/servers/does-not-exist',
-      authed({ method: 'DELETE' }),
+      authed(cookieA, { method: 'DELETE' }),
     )
     expect(res.status).toBe(404)
   })
 })
 
-describe('加密持久化', () => {
-  it('mcp.json 磁盘内容不包含 Bearer token 明文', async () => {
+describe('加密持久化（DB）', () => {
+  beforeEach(async () => {
+    await buildApp().request('/api/mcp/servers', authed(cookieA)) // seed
+  })
+
+  it('headers token 落 DB 时加密（v1: 前缀），原文不出现在表里', async () => {
     await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
-      authed({
+      authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -314,43 +334,82 @@ describe('加密持久化', () => {
         }),
       }),
     )
-    const diskText = fs.readFileSync(path.join(tmpDir, 'mcp.json'), 'utf-8')
-    expect(diskText).not.toContain('top-secret-token-123')
-    expect(diskText).toMatch(/"Authorization":\s*"v1:/)
+    const db = getDb()
+    const [row] = await db
+      .select()
+      .from(userMcpServers)
+      .where(
+        and(eq(userMcpServers.userId, userIdA), eq(userMcpServers.serverId, 'zhipu-web-search')),
+      )
+      .limit(1)
+    expect(row!.headers).not.toContain('top-secret-token-123')
+    const stored = JSON.parse(row!.headers) as Record<string, string>
+    expect(stored.Authorization!.startsWith('v1:')).toBe(true)
   })
+})
 
-  it('旧版明文 mcp.json 能被无缝读取并在下次写盘时迁移为密文', async () => {
-    // 手动写一个"旧版"文件（value 不是 v1: 开头）
-    const legacy = [
-      {
-        id: 'legacy-plain',
-        displayName: 'Legacy',
-        description: '',
-        url: 'https://legacy.example/mcp',
-        headers: { Authorization: 'Bearer legacy-plain-token', 'X-Other': 'visible' },
-        enabled: false,
-        preset: false,
-      },
-    ]
-    fs.writeFileSync(path.join(tmpDir, 'mcp.json'), JSON.stringify(legacy, null, 2))
-
-    // GET 能看到（value 脱敏）
-    const list = await (await buildApp().request('/api/mcp/servers', authed())).json()
-    const found = list.servers.find((s: any) => s.id === 'legacy-plain')
-    expect(found.headers.Authorization).toBe('***')
-    expect(found.headers['X-Other']).toBe('***')
-
-    // 触发一次 PATCH（保留 Authorization 原值）→ 落盘后应变密文
+describe('跨用户隔离（Phase 9-F A01 修复）', () => {
+  it('A 启用 server + 填 token，B GET 看到的是 B 自己的 4 个 preset（enabled=false）', async () => {
+    // A 启用 + 填 fake token
     await buildApp().request(
-      '/api/mcp/servers/legacy-plain',
-      authed({
+      '/api/mcp/servers/zhipu-web-search',
+      authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: true, headers: { Authorization: 'Bearer ***', 'X-Other': '***' } }),
+        body: JSON.stringify({ enabled: true, headers: { Authorization: 'Bearer A-secret' } }),
       }),
     )
-    const diskText = fs.readFileSync(path.join(tmpDir, 'mcp.json'), 'utf-8')
-    expect(diskText).not.toContain('legacy-plain-token')
-    expect(diskText).toMatch(/"Authorization":\s*"v1:/)
+    // B GET
+    const list = await (await buildApp().request('/api/mcp/servers', authed(cookieB))).json()
+    expect(list.servers).toHaveLength(4)
+    const found = list.servers.find((s: any) => s.id === 'zhipu-web-search')
+    // B 自己的应是默认 disabled + 空 headers
+    expect(found.enabled).toBe(false)
+    expect(found.headers).toEqual({})
+    // 不应含 A 的 token
+    expect(JSON.stringify(list)).not.toContain('A-secret')
+  })
+
+  it('A 不能 PATCH B 的 server（同 serverId 是 B 的不同记录）', async () => {
+    // 让 A B 都 seed 自己的 preset
+    await buildApp().request('/api/mcp/servers', authed(cookieA))
+    await buildApp().request('/api/mcp/servers', authed(cookieB))
+
+    // A 用自己的 cookie patch zhipu-web-search → 改的是 A 的记录，B 不受影响
+    await buildApp().request(
+      '/api/mcp/servers/zhipu-web-search',
+      authed(cookieA, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true }),
+      }),
+    )
+    const bList = await (await buildApp().request('/api/mcp/servers', authed(cookieB))).json()
+    const bSrv = bList.servers.find((s: any) => s.id === 'zhipu-web-search')
+    expect(bSrv.enabled).toBe(false) // B 的仍是 disabled
+  })
+
+  it('A 创建的自定义 server 在 B 视角下不可见，且 B 可以同名创建（不冲突）', async () => {
+    await buildApp().request(
+      '/api/mcp/servers',
+      authed(cookieA, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'shared-name', displayName: 'A', url: 'https://a.example/mcp' }),
+      }),
+    )
+    const bResBefore = await (await buildApp().request('/api/mcp/servers', authed(cookieB))).json()
+    expect(bResBefore.servers.some((s: any) => s.id === 'shared-name')).toBe(false)
+
+    // B 同 id 创建不冲突
+    const bCreate = await buildApp().request(
+      '/api/mcp/servers',
+      authed(cookieB, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'shared-name', displayName: 'B', url: 'https://b.example/mcp' }),
+      }),
+    )
+    expect(bCreate.status).toBe(200)
   })
 })

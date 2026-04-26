@@ -14,7 +14,7 @@ import { app } from './app.js'
 import { getPaths } from './workspace.js'
 import { authorizeSlidevAccess } from './slidev-proxy-auth.js'
 import { registerLocalTools } from './tools/local/index.js'
-import { getRegistry } from './mcp-registry/index.js'
+// Phase 9-F：MCP registry 改为 per-user lazy 化（不再启动期全局 init）。
 import { verifyTemplatesOrThrow } from './templates/registry.js'
 
 const port = Number(process.env.AGENT_PORT ?? 4000)
@@ -115,8 +115,7 @@ server.listen(port, () => {
   console.log(
     `[agent] slidev proxy → ${SLIDEV_ORIGIN} (paths: ${SLIDEV_PROXY_PREFIX}/* + ${SLIDEV_EXTRA_PREFIXES.join(' + ')}*)`,
   )
-  void getRegistry()
-    .initialize()
-    .then(() => console.log('[agent] MCP registry initialized'))
-    .catch((err) => console.warn('[agent] MCP init partial failure:', (err as Error).message))
+  // Phase 9-F：MCP registry per-user，每用户首次访问 /api/mcp/servers 或 /api/tools
+  // 时通过 getRegistry(userId) 懒加载初始化；启动期不再批量 init 全部 user。
+  console.log('[agent] MCP registry per-user lazy mode')
 })

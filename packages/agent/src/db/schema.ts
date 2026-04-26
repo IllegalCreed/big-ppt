@@ -9,6 +9,7 @@ import {
   mysqlTable,
   int,
   bigint,
+  boolean,
   varchar,
   text,
   mediumtext,
@@ -16,6 +17,7 @@ import {
   timestamp,
   mysqlEnum,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/mysql-core'
 
 // Aliyun RDS 的 MySQL 5.7 不支持 `DEFAULT (now())` 括号表达式，统一用 raw CURRENT_TIMESTAMP
@@ -122,6 +124,38 @@ export const deckChats = mysqlTable(
 
 // 单实例占用锁已改为 agent 进程内存（见 src/slidev-lock.ts），不落 DB。
 
+/**
+ * Phase 9-F：MCP server per-user 入库（A01 修复）。
+ * 之前是全局 data/mcp.json 共享，所有用户操作同一份 → 跨用户凭据共享漏洞。
+ *
+ * - headers 字段是 AES-256-GCM 加密后的 JSON（key 明文 / value 密文）；落库前 encrypt，读时 decrypt
+ * - preset 标记预置 server（4 个智谱 MCP）；首次 list(userId) 时自动 seed，preset 不可删
+ * - (userId, serverId) 组合唯一，防同 user 创建重复 id
+ */
+export const userMcpServers = mysqlTable(
+  'user_mcp_servers',
+  {
+    id: int('id').autoincrement().primaryKey(),
+    userId: int('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    serverId: varchar('server_id', { length: 64 }).notNull(),
+    displayName: varchar('display_name', { length: 255 }).notNull(),
+    description: text('description'),
+    url: varchar('url', { length: 1024 }).notNull(),
+    /** AES-256-GCM 加密后的 JSON: {[headerKey]: 'v1:...'}；空对象用 '{}' 表示 */
+    headers: text('headers').notNull(),
+    enabled: boolean('enabled').default(false).notNull(),
+    preset: boolean('preset').default(false).notNull(),
+    badge: varchar('badge', { length: 64 }),
+    createdAt: timestamp('created_at').default(NOW).notNull(),
+    updatedAt: timestamp('updated_at').default(NOW_ON_UPDATE).notNull(),
+  },
+  (t) => ({
+    userServerIdx: uniqueIndex('user_mcp_servers_user_server_uniq').on(t.userId, t.serverId),
+  }),
+)
+
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type Session = typeof sessions.$inferSelect
@@ -132,3 +166,5 @@ export type DeckVersion = typeof deckVersions.$inferSelect
 export type NewDeckVersion = typeof deckVersions.$inferInsert
 export type DeckChat = typeof deckChats.$inferSelect
 export type NewDeckChat = typeof deckChats.$inferInsert
+export type UserMcpServer = typeof userMcpServers.$inferSelect
+export type NewUserMcpServer = typeof userMcpServers.$inferInsert

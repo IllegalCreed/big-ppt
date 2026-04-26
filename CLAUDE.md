@@ -127,6 +127,7 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 - **不在 git 历史里出现密钥**：API key / DB 密码 / SESSION_SECRET / APIKEY_MASTER_KEY 全部走 env，绝不硬编码
 - LLM API Key Phase 5 起后端化：`users.llm_settings` 字段 AES-256-GCM 加密，master key 从 `APIKEY_MASTER_KEY` env 读
 - MCP server headers 同样 AES-256-GCM 加密（Phase 5 P2-4）
+- MCP server **per-user 入库**（Phase 9-F A01 修复）：`user_mcp_servers` 表，`(userId, serverId)` 唯一；同 serverId 在不同 user 下是独立记录；registry / tool-registry 都按 user 分区，工具命名 `mcp__<serverId>__<toolName>` 不变（不暴露 userId 到 prompt）
 
 ## 测试基建注意点
 

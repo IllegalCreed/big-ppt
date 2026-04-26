@@ -1,5 +1,5 @@
 export * as schema from './schema.js'
-export { users, sessions, decks, deckVersions, deckChats } from './schema.js'
+export { users, sessions, decks, deckVersions, deckChats, userMcpServers } from './schema.js'
 export type {
   User,
   NewUser,
@@ -11,5 +11,7 @@ export type {
   NewDeckVersion,
   DeckChat,
   NewDeckChat,
+  UserMcpServer,
+  NewUserMcpServer,
 } from './schema.js'
 export { getDb, closeDb } from './client.js'

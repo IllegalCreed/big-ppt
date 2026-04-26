@@ -11,7 +11,7 @@
 | A01.1 | state-changing API 全挂 requireAuth | ✅ | 9-B | log/tools/slides/lock-status 8 个公开端点已加（commit TBD） |
 | A01.2 | deck/version/chat ownership 守卫完整 | ✅ | 9-B | `getOwnedDeck()` decks.ts:37-42；盘点全量已确认 |
 | A01.3 | Slidev proxy 鉴权回归 | ✅ | 9-B | `slidev-proxy-auth.ts` 完整（HTTP + WS upgrade） |
-| A01.4 | **MCP server per-user 隔离** | ⚠ | 9-F | A 用户的 server / token 在 B 视角不可见 |
+| A01.4 | **MCP server per-user 隔离** | ✅ | 9-F | DrizzleRepo + per-user registry/tool 分区；3 条跨用户隔离测；headers 加密落 DB |
 | A01.5 | slides 持锁守卫（read/restore/redo） | ✅ | 9-B | routes/slides.ts 加 `isHeldBy(session.id)` 守卫 |
 | A02.1 | session cookie httpOnly + secure(prod) + sameSite=lax | ✅ | – | `auth.ts:23-31` |
 | A02.2 | 密码 bcrypt rounds≥10 | ✅ | – | `auth.ts:13` |

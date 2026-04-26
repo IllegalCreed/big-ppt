@@ -1,9 +1,17 @@
 // packages/agent/src/mcp-server-repo/json-file-repo.ts
+/**
+ * @deprecated Phase 9-F：替换为 `drizzle-repo.ts`（per-user DB 入库 / A01 修复）。
+ * 旧的全用户共享 data/mcp.json 方案存在跨用户凭据共享漏洞，运行时不再使用。
+ * 保留代码作为回退参考，**不要在新代码里 new 这个**——getRepo() 默认返 DrizzleRepo。
+ *
+ * 注意：本类签名仍是旧接口（list() / get(id) 等无 userId），不再实现 McpServerRepo
+ * 接口（已加 userId 参数）。本文件主要价值是 P2-4 的 AES-GCM 加解密 helper 实现参考。
+ */
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
 import path from 'node:path'
 import type { McpServerConfig } from '@big-ppt/shared'
-import type { McpServerRepo, McpServerPatch } from './types.js'
+import type { McpServerPatch } from './types.js'
 import { McpRepoNotFoundError } from './types.js'
 import { PRESET_MCP_SERVERS } from './presets.js'
 import { decryptApiKey, encryptApiKey, isEncryptedBlob } from '../crypto/apikey.js'
@@ -46,7 +54,8 @@ function decryptHeaderValues(headers: Record<string, string>): Record<string, st
   return out
 }
 
-export class JsonFileRepo implements McpServerRepo {
+/** @deprecated 见文件头注释；不再实现 McpServerRepo 接口（已加 userId） */
+export class JsonFileRepo {
   /** 串行化写入,避免并发 patch 相互覆盖 */
   private writeQueue: Promise<void> = Promise.resolve()
 

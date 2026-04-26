@@ -1,43 +1,65 @@
 // packages/agent/test/mcp-server-repo.test.ts
+/**
+ * Phase 9-F：DrizzleRepo（per-user MCP 入库，A01 修复）。
+ *
+ * 之前是 JsonFileRepo 全用户共享单文件 → 跨用户凭据共享漏洞。
+ * 改为 DB 表 user_mcp_servers，组合唯一索引 (userId, serverId)。
+ */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
-import { JsonFileRepo } from '../src/mcp-server-repo/json-file-repo.js'
+import { eq, and } from 'drizzle-orm'
+import { DrizzleRepo } from '../src/mcp-server-repo/drizzle-repo.js'
 import { PRESET_MCP_SERVERS } from '../src/mcp-server-repo/presets.js'
+import { useTestDb } from './_setup/test-db.js'
+import { createTestUser } from './_setup/factories.js'
+import { getDb, userMcpServers } from '../src/db/index.js'
 
-let tmpFile: string
+useTestDb()
 
-beforeEach(() => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-repo-'))
-  tmpFile = path.join(dir, 'mcp.json')
+let userIdA: number
+let userIdB: number
+
+beforeEach(async () => {
+  const a = await createTestUser('a@a.com')
+  const b = await createTestUser('b@a.com')
+  userIdA = a.user.id
+  userIdB = b.user.id
 })
 
-afterEach(() => {
-  try { fs.rmSync(path.dirname(tmpFile), { recursive: true, force: true }) } catch {}
-})
-
-describe('JsonFileRepo', () => {
-  it('首次读不存在的文件会 seed 预置目录', async () => {
-    const repo = new JsonFileRepo(tmpFile)
-    const list = await repo.list()
+describe('DrizzleRepo per-user', () => {
+  it('首次 list 自动 seed PRESET_MCP_SERVERS（每用户独立 4 条）', async () => {
+    const repo = new DrizzleRepo()
+    const list = await repo.list(userIdA)
     expect(list).toHaveLength(PRESET_MCP_SERVERS.length)
     expect(list.map((c) => c.id).sort()).toEqual(PRESET_MCP_SERVERS.map((c) => c.id).sort())
-    expect(fs.existsSync(tmpFile)).toBe(true)
-    // 落盘的内容应与预置常量深相等
-    const onDisk = JSON.parse(fs.readFileSync(tmpFile, 'utf-8'))
-    expect(onDisk).toEqual(PRESET_MCP_SERVERS)
+    expect(list.every((c) => c.preset)).toBe(true)
   })
 
-  it('get 返回指定 id', async () => {
-    const repo = new JsonFileRepo(tmpFile)
-    const cfg = await repo.get('zhipu-web-search')
-    expect(cfg?.displayName).toBe('联网搜索(智谱)')
+  it('两个 user 的 list 各自独立 seed，互不干扰', async () => {
+    const repo = new DrizzleRepo()
+    const a = await repo.list(userIdA)
+    const b = await repo.list(userIdB)
+    expect(a).toHaveLength(PRESET_MCP_SERVERS.length)
+    expect(b).toHaveLength(PRESET_MCP_SERVERS.length)
+    // DB 里应有 8 行（A 4 + B 4）
+    const db = getDb()
+    const all = await db.select().from(userMcpServers)
+    expect(all).toHaveLength(PRESET_MCP_SERVERS.length * 2)
   })
 
-  it('create 新增自定义 server,list 能看到', async () => {
-    const repo = new JsonFileRepo(tmpFile)
-    await repo.create({
+  it('get 仅返回当前 user 的 server', async () => {
+    const repo = new DrizzleRepo()
+    await repo.list(userIdA) // seed A
+    // B 还没 seed，get B 的 zhipu-web-search 应 undefined
+    const b = await repo.get(userIdB, 'zhipu-web-search')
+    expect(b).toBeUndefined()
+    // A 的应有
+    const a = await repo.get(userIdA, 'zhipu-web-search')
+    expect(a?.displayName).toBe('联网搜索(智谱)')
+  })
+
+  it('create 自定义 server 仅本 user 可见', async () => {
+    const repo = new DrizzleRepo()
+    await repo.create(userIdA, {
       id: 'my-mcp',
       displayName: 'Mine',
       description: '',
@@ -46,14 +68,15 @@ describe('JsonFileRepo', () => {
       enabled: true,
       preset: false,
     })
-    const list = await repo.list()
-    expect(list.find((c) => c.id === 'my-mcp')?.enabled).toBe(true)
+    expect(await repo.get(userIdA, 'my-mcp')).toBeDefined()
+    expect(await repo.get(userIdB, 'my-mcp')).toBeUndefined()
   })
 
-  it('create 重复 id 抛错', async () => {
-    const repo = new JsonFileRepo(tmpFile)
+  it('create 同 user 重复 serverId 抛错', async () => {
+    const repo = new DrizzleRepo()
+    await repo.list(userIdA) // seed
     await expect(
-      repo.create({
+      repo.create(userIdA, {
         id: 'zhipu-web-search',
         displayName: 'Dup',
         description: '',
@@ -65,113 +88,83 @@ describe('JsonFileRepo', () => {
     ).rejects.toThrow(/already exists/i)
   })
 
-  it('update 合并 patch 并返回新配置（内存中仍是明文）', async () => {
-    const repo = new JsonFileRepo(tmpFile)
-    const updated = await repo.update('zhipu-web-search', {
+  it('create 不同 user 同 serverId 各自独立（不冲突）', async () => {
+    const repo = new DrizzleRepo()
+    const cfg = {
+      id: 'shared-id',
+      displayName: 'Shared',
+      description: '',
+      url: 'x',
+      headers: {},
+      enabled: false,
+      preset: false,
+    }
+    await repo.create(userIdA, cfg)
+    await repo.create(userIdB, cfg) // 不抛错
+    expect(await repo.get(userIdA, 'shared-id')).toBeDefined()
+    expect(await repo.get(userIdB, 'shared-id')).toBeDefined()
+  })
+
+  it('update 合并 patch + 跨用户 not found', async () => {
+    const repo = new DrizzleRepo()
+    await repo.list(userIdA) // seed
+    const updated = await repo.update(userIdA, 'zhipu-web-search', {
       enabled: true,
       headers: { Authorization: 'Bearer abc' },
     })
     expect(updated.enabled).toBe(true)
     expect(updated.headers.Authorization).toBe('Bearer abc')
-    expect((await repo.get('zhipu-web-search'))!.enabled).toBe(true)
-    // 再查一次确认 list/get 返回的仍是明文（内存一致）
-    expect((await repo.get('zhipu-web-search'))!.headers.Authorization).toBe('Bearer abc')
+    // 跨用户 update 同 serverId 应 not found（B 未 seed 该 server）
+    await expect(repo.update(userIdB, 'zhipu-web-search', { enabled: true })).rejects.toThrow(
+      /not found/i,
+    )
   })
 
-  it('持久化：headers value 在磁盘上被 AES-GCM 加密（v1: 前缀）', async () => {
-    const repo = new JsonFileRepo(tmpFile)
-    await repo.update('zhipu-web-search', {
+  it('headers 在 DB 中加密落库（v1: 前缀），内存返明文', async () => {
+    const repo = new DrizzleRepo()
+    await repo.list(userIdA) // seed
+    await repo.update(userIdA, 'zhipu-web-search', {
       headers: { Authorization: 'Bearer plaintext-secret-xyz' },
     })
-    const onDisk = JSON.parse(fs.readFileSync(tmpFile, 'utf-8'))
-    const entry = onDisk.find((e: { id: string }) => e.id === 'zhipu-web-search')
-    expect(entry.headers.Authorization).not.toContain('plaintext-secret-xyz')
-    expect(entry.headers.Authorization.startsWith('v1:')).toBe(true)
-    // 整个文件也应不含明文
-    expect(fs.readFileSync(tmpFile, 'utf-8')).not.toContain('plaintext-secret-xyz')
+    const db = getDb()
+    const [row] = await db
+      .select({ headers: userMcpServers.headers })
+      .from(userMcpServers)
+      .where(
+        and(eq(userMcpServers.userId, userIdA), eq(userMcpServers.serverId, 'zhipu-web-search')),
+      )
+      .limit(1)
+    const stored = JSON.parse(row!.headers) as Record<string, string>
+    expect(stored.Authorization).not.toContain('plaintext-secret-xyz')
+    expect(stored.Authorization!.startsWith('v1:')).toBe(true)
+    // 内存仍是明文
+    const cfg = await repo.get(userIdA, 'zhipu-web-search')
+    expect(cfg?.headers.Authorization).toBe('Bearer plaintext-secret-xyz')
   })
 
-  it('兼容旧版明文文件：读时正常解出，下次写盘自动变密文', async () => {
-    // 手写旧版文件
-    fs.writeFileSync(
-      tmpFile,
-      JSON.stringify(
-        [
-          {
-            id: 'legacy',
-            displayName: 'L',
-            description: '',
-            url: 'https://l.example/mcp',
-            headers: { Authorization: 'Bearer legacy-plain' },
-            enabled: false,
-            preset: false,
-          },
-        ],
-        null,
-        2,
-      ),
-    )
-    const repo = new JsonFileRepo(tmpFile)
-    // list 能拿到明文（兼容读）
-    const list = await repo.list()
-    expect(list.find((c) => c.id === 'legacy')!.headers.Authorization).toBe('Bearer legacy-plain')
-    // 触发一次写盘
-    await repo.update('legacy', { enabled: true })
-    const onDisk = JSON.parse(fs.readFileSync(tmpFile, 'utf-8'))
-    const entry = onDisk.find((e: { id: string }) => e.id === 'legacy')
-    expect(entry.headers.Authorization.startsWith('v1:')).toBe(true)
-    expect(fs.readFileSync(tmpFile, 'utf-8')).not.toContain('legacy-plain')
-  })
-
-  it('update 不存在的 id 抛错', async () => {
-    const repo = new JsonFileRepo(tmpFile)
-    await expect(repo.update('nope', { enabled: true })).rejects.toThrow(/not found/i)
-  })
-
-  it('delete 非预置,预置不能删', async () => {
-    const repo = new JsonFileRepo(tmpFile)
-    await repo.create({
-      id: 'to-delete',
-      displayName: 'D',
+  it('delete 仅作用本 user，preset 不可删', async () => {
+    const repo = new DrizzleRepo()
+    await repo.list(userIdA) // seed both via separate calls
+    await repo.list(userIdB)
+    await repo.create(userIdA, {
+      id: 'a-only',
+      displayName: 'A',
       description: '',
       url: 'x',
       headers: {},
       enabled: false,
       preset: false,
     })
-    await repo.delete('to-delete')
-    expect(await repo.get('to-delete')).toBeUndefined()
-    await expect(repo.delete('zhipu-web-search')).rejects.toThrow(/preset/i)
+    await repo.delete(userIdA, 'a-only')
+    expect(await repo.get(userIdA, 'a-only')).toBeUndefined()
+    // preset 不可删
+    await expect(repo.delete(userIdA, 'zhipu-web-search')).rejects.toThrow(/preset/i)
+    // B 用户不受影响
+    expect(await repo.get(userIdB, 'zhipu-web-search')).toBeDefined()
   })
 
-  it('并发 5 次 create 不同 id,全部持久化', async () => {
-    const repo = new JsonFileRepo(tmpFile)
-    const ids = ['c1', 'c2', 'c3', 'c4', 'c5']
-    await Promise.all(
-      ids.map((id) =>
-        repo.create({
-          id,
-          displayName: id,
-          description: '',
-          url: `https://${id}.example/mcp`,
-          headers: {},
-          enabled: false,
-          preset: false,
-        }),
-      ),
-    )
-    const list = await repo.list()
-    const customIds = list.filter((c) => !c.preset).map((c) => c.id).sort()
-    expect(customIds).toEqual(ids)
-    // 额外:文件真的含 4 个 preset + 5 个 custom = 9 条
-    const onDisk = JSON.parse(fs.readFileSync(tmpFile, 'utf-8'))
-    expect(onDisk).toHaveLength(PRESET_MCP_SERVERS.length + 5)
-  })
-
-  it('持久化:第二个 repo 实例读得到第一个 repo 的写', async () => {
-    const a = new JsonFileRepo(tmpFile)
-    await a.update('zhipu-web-search', { enabled: true })
-    const b = new JsonFileRepo(tmpFile)
-    expect((await b.get('zhipu-web-search'))!.enabled).toBe(true)
+  it('update 不存在 id 抛 NotFound', async () => {
+    const repo = new DrizzleRepo()
+    await expect(repo.update(userIdA, 'nope', { enabled: true })).rejects.toThrow(/not found/i)
   })
 })

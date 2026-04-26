@@ -1,7 +1,7 @@
 /**
  * Integration test 的 DB 生命周期 helper。
  *
- * - `resetDb()`：TRUNCATE 5 张表（关闭 FK 检查）+ 清 slidev-lock 内存
+ * - `resetDb()`：TRUNCATE 6 张表（关闭 FK 检查）+ 清 slidev-lock 内存 + 清 mcp registry 内存
  * - `useTestDb()`：在 describe 块外调用，挂 beforeEach(resetDb) + afterAll(closeDb)
  *
  * 依赖：
@@ -13,10 +13,12 @@ import { afterAll, beforeEach } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { closeDb, getDb } from '../../src/db/index.js'
 import { __resetForTesting as resetSlidevLock } from '../../src/slidev-lock.js'
+import { __resetRegistryForTesting as resetMcpRegistries } from '../../src/mcp-registry/index.js'
 
 export async function resetDb(): Promise<void> {
   const db = getDb()
   await db.execute(sql`SET FOREIGN_KEY_CHECKS=0`)
+  await db.execute(sql`TRUNCATE TABLE user_mcp_servers`)
   await db.execute(sql`TRUNCATE TABLE deck_chats`)
   await db.execute(sql`TRUNCATE TABLE deck_versions`)
   await db.execute(sql`TRUNCATE TABLE decks`)
@@ -24,6 +26,7 @@ export async function resetDb(): Promise<void> {
   await db.execute(sql`TRUNCATE TABLE users`)
   await db.execute(sql`SET FOREIGN_KEY_CHECKS=1`)
   resetSlidevLock()
+  resetMcpRegistries()
 }
 
 /** 在 integration test 文件顶部调用一次 */

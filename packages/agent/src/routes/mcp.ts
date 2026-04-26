@@ -54,11 +54,18 @@ function mergeHeadersPatch(
   return merged
 }
 
+/**
+ * Phase 9-F：所有 handler 用 `ctx.var.user.id` 调 repo + registry，per-user 隔离。
+ * `mcp.use('/mcp/servers', requireAuth)` 保证 user 一定存在。
+ */
+
 mcp.get('/mcp/servers', async (c) => {
   try {
+    const userId = c.get('user')!.id
     const repo = getRepo()
-    const registry = getRegistry()
-    const configs = await repo.list()
+    const registry = getRegistry(userId)
+    await registry.ensureInitialized()
+    const configs = await repo.list(userId)
     const servers = configs.map((cfg) => ({
       ...cfg,
       headers: redactHeaders(cfg.headers ?? {}),
@@ -89,8 +96,9 @@ mcp.post('/mcp/servers', async (c) => {
       const resp: MutateMcpServerResponse = { success: false, error: 'id 只能包含字母、数字、- 和 _' }
       return c.json(resp, 400)
     }
+    const userId = c.get('user')!.id
     const repo = getRepo()
-    const existing = await repo.get(body.id)
+    const existing = await repo.get(userId, body.id)
     if (existing) {
       const resp: MutateMcpServerResponse = { success: false, error: `server id 已存在: ${body.id}` }
       return c.json(resp, 409)
@@ -110,7 +118,7 @@ mcp.post('/mcp/servers', async (c) => {
       preset: false,
       badge: body.badge,
     }
-    await repo.create(config)
+    await repo.create(userId, config)
     const resp: MutateMcpServerResponse = { success: true }
     return c.json(resp)
   } catch (err) {
@@ -129,12 +137,13 @@ mcp.patch('/mcp/servers/:id', async (c) => {
     return c.json(resp, 400)
   }
   try {
+    const userId = c.get('user')!.id
     const repo = getRepo()
-    const registry = getRegistry()
+    const registry = getRegistry(userId)
     // 如果 patch.headers 里有 ***，去 repo 拿已存的明文做合并
     let resolvedPatch = patch
     if (patch.headers) {
-      const existing = await repo.get(id)
+      const existing = await repo.get(userId, id)
       if (!existing) {
         const resp: MutateMcpServerResponse = { success: false, error: 'not found' }
         return c.json(resp, 404)
@@ -144,7 +153,7 @@ mcp.patch('/mcp/servers/:id', async (c) => {
         headers: mergeHeadersPatch(patch.headers, existing.headers ?? {}),
       }
     }
-    const updated = await repo.update(id, resolvedPatch)
+    const updated = await repo.update(userId, id, resolvedPatch)
     await registry.sync(updated)
     const resp: MutateMcpServerResponse = { success: true }
     return c.json(resp)
@@ -161,9 +170,10 @@ mcp.patch('/mcp/servers/:id', async (c) => {
 mcp.delete('/mcp/servers/:id', async (c) => {
   try {
     const id = c.req.param('id')
+    const userId = c.get('user')!.id
     const repo = getRepo()
-    const registry = getRegistry()
-    const existing = await repo.get(id)
+    const registry = getRegistry(userId)
+    const existing = await repo.get(userId, id)
     if (!existing) {
       const resp: MutateMcpServerResponse = { success: false, error: 'not found' }
       return c.json(resp, 404)
@@ -173,7 +183,7 @@ mcp.delete('/mcp/servers/:id', async (c) => {
       return c.json(resp, 403)
     }
     await registry.sync({ ...existing, enabled: false })
-    await repo.delete(id)
+    await repo.delete(userId, id)
     const resp: MutateMcpServerResponse = { success: true }
     return c.json(resp)
   } catch (err) {
