@@ -6,13 +6,18 @@
  *
  * 命名空间：--jyd-* 为 jingyeda-standard 专属；命名同 beitou 结构但独立变量名，
  * 未来切换主题 / 加第三套模板时，各模板的 tokens 互不影响。
+ *
+ * Phase 7.5B 增补：所有 --ld-* 公共契约 token（22 项 4 类）映射到 --jyd-* 内部值。
+ * 公共组件库（栅格 / 装饰 / 内容块）只读 --ld-*；layer-1 layout 仍可读 --jyd-*。
  */
 
 :root {
+  /* === 模板私有 token（layer-1 layout 内部装饰用，不对外暴露） === */
+
   /* 品牌双主色 —— 蓝 + 绿色块硬切（与 beitou 的单色渐变形成对比） */
-  --jyd-brand-primary: #003da5;       /* 主蓝：logo J/D · 标题栏 · 封底左大块 · chart 主色 */
-  --jyd-brand-primary-deep: #002a78;  /* 深蓝：hover / 对比 / 阴影 */
-  --jyd-brand-accent: #8fc31f;        /* 辅绿：logo Y · 装饰条 · 封底右小块 · chart 辅色 */
+  --jyd-brand-primary: #003da5; /* 主蓝：logo J/D · 标题栏 · 封底左大块 · chart 主色 */
+  --jyd-brand-primary-deep: #002a78; /* 深蓝：hover / 对比 / 阴影 */
+  --jyd-brand-accent: #8fc31f; /* 辅绿：logo Y · 装饰条 · 封底右小块 · chart 辅色 */
 
   /* 前景 / 背景 */
   --jyd-fg-primary: #1a1a1a;
@@ -22,7 +27,39 @@
 
   /* 字体 token */
   /* --jyd-ff-brand：品牌字体，仿宋系（用于主标题、正文 —— 偏瘦 + 笔画细，贴原 PPT） */
-  --jyd-ff-brand: "STFangsong", "FangSong", "仿宋", "Songti SC", SimSun, serif;
+  --jyd-ff-brand: 'STFangsong', 'FangSong', '仿宋', 'Songti SC', SimSun, serif;
   /* --jyd-ff-ui：UI 字体，微软雅黑系（用于信息栏 / 标签 / 时间戳 等需要清晰可读的 UI 文字） */
-  --jyd-ff-ui: "Microsoft YaHei", "微软雅黑", "PingFang SC", sans-serif;
+  --jyd-ff-ui: 'Microsoft YaHei', '微软雅黑', 'PingFang SC', sans-serif;
+
+  /* === --ld-* 公共契约 token（Phase 7.5B 增补，公共组件库共用） === */
+
+  /* colors（9 项） */
+  --ld-color-brand-primary: var(--jyd-brand-primary);
+  --ld-color-brand-primary-deep: var(--jyd-brand-primary-deep);
+  --ld-color-brand-accent: var(--jyd-brand-accent); /* 双主色：accent = 绿 */
+  --ld-color-fg-primary: var(--jyd-fg-primary);
+  --ld-color-fg-muted: var(--jyd-fg-muted);
+  --ld-color-bg-page: var(--jyd-bg-page);
+  --ld-color-bg-subtle: var(--jyd-bg-subtle);
+  --ld-color-chart-primary-bg: rgba(0, 61, 165, 0.85);
+  --ld-color-chart-primary-border: var(--jyd-brand-primary);
+
+  /* fonts（7 项） —— jingyeda 双字体：标题用仿宋，UI / chart 文字用雅黑 */
+  --ld-font-family-brand: var(--jyd-ff-brand);
+  --ld-font-family-ui: var(--jyd-ff-ui);
+  --ld-font-size-h1: 40px;
+  --ld-font-size-h2: 26px;
+  --ld-font-size-body: 20px;
+  --ld-font-weight-bold: 700;
+  --ld-font-weight-regular: 400;
+
+  /* shapes（4 项） */
+  --ld-radius-sm: 4px;
+  --ld-radius-md: 8px;
+  --ld-border-width-thin: 1px;
+  --ld-border-width-thick: 2px;
+
+  /* shadows（2 项） */
+  --ld-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --ld-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
 }

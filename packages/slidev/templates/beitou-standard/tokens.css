@@ -4,10 +4,13 @@
  * Phase 7A 重命名：原 --c-* / --ff-* / --logo-red-filter 全部加 bt- 前缀，
  * 与 jingyeda-standard 的 --jyd-* 命名空间对称隔离，未来加第三套模板不冲突。
  *
- * Slidev layouts / starter.md / templates 的一切品牌视觉值都走 var() 引用。
+ * Phase 7.5B 增补：所有 --ld-* 公共契约 token（22 项 4 类）映射到 --bt-* 内部值。
+ * 公共组件库（栅格 / 装饰 / 内容块）只读 --ld-*；layer-1 layout 仍可读 --bt-*。
  */
 
 :root {
+  /* === 模板私有 token（layer-1 layout 内部装饰用，不对外暴露） === */
+
   /* 品牌主色 */
   --bt-brand: #d00d14;
   --bt-brand-mid: #c00b11;
@@ -21,9 +24,41 @@
   --bt-bg-subtle: #f5f5f5;
 
   /* 字体 */
-  --bt-ff-brand: "Microsoft YaHei", "微软雅黑", sans-serif;
+  --bt-ff-brand: 'Microsoft YaHei', '微软雅黑', sans-serif;
 
   /* Logo 红色滤镜（把黑色 logo 文字染成 --bt-brand） */
   --bt-logo-red-filter: invert(87%) sepia(98%) saturate(4811%) hue-rotate(352deg) brightness(82%)
     contrast(100%);
+
+  /* === --ld-* 公共契约 token（Phase 7.5B 增补，公共组件库共用） === */
+
+  /* colors（9 项） */
+  --ld-color-brand-primary: var(--bt-brand);
+  --ld-color-brand-primary-deep: var(--bt-brand-deep);
+  --ld-color-brand-accent: var(--bt-brand); /* 单主色品牌：accent = primary */
+  --ld-color-fg-primary: var(--bt-fg-primary);
+  --ld-color-fg-muted: var(--bt-fg-muted);
+  --ld-color-bg-page: var(--bt-bg-page);
+  --ld-color-bg-subtle: var(--bt-bg-subtle);
+  --ld-color-chart-primary-bg: rgba(208, 13, 20, 0.85);
+  --ld-color-chart-primary-border: var(--bt-brand-deep);
+
+  /* fonts（7 项） —— beitou 无独立 ui 字体，brand 与 ui 同一栈 */
+  --ld-font-family-brand: var(--bt-ff-brand);
+  --ld-font-family-ui: var(--bt-ff-brand);
+  --ld-font-size-h1: 40px;
+  --ld-font-size-h2: 26px;
+  --ld-font-size-body: 20px;
+  --ld-font-weight-bold: 700;
+  --ld-font-weight-regular: 400;
+
+  /* shapes（4 项） */
+  --ld-radius-sm: 4px;
+  --ld-radius-md: 8px;
+  --ld-border-width-thin: 1px;
+  --ld-border-width-thick: 2px;
+
+  /* shadows（2 项） */
+  --ld-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --ld-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
