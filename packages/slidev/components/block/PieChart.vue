@@ -13,14 +13,12 @@ const props = defineProps<{
 }>()
 
 /*
- * Phase 7.5E：饼图。颜色策略——基于品牌主色生成多片色阶（不同 alpha）让多分片
- * 之间有视觉对比，不再依赖单一 chart-primary 双色对。读 token：
- *   --ld-color-brand-primary       : 主色基底
- *   --ld-color-brand-primary-deep  : 深主色（深色片）
- *   --ld-color-brand-accent        : 辅色
- *   --ld-color-fg-primary / muted  : 标签文字
- *   --ld-font-family-ui            : chart 文字
- * 所有色由用户模板的 token 决定，跨模板自动适配。
+ * Phase 7.5E：饼图。直接读 5 色色板 token，分片 i 取 chart-((i % 5) + 1)。
+ * 色板由模板 tokens.css 设计——以品牌色为锚 + 错峰异色，保证多分片区分度。
+ *   --ld-color-chart-1..5    : 5 色色板
+ *   --ld-color-fg-primary    : 标签文字
+ *   --ld-color-bg-page       : 切片之间的描边色（贴页面底）
+ *   --ld-font-family-ui      : chart 文字
  */
 const rootRef = ref<HTMLElement | null>(null)
 const palette = ref<string[]>([
@@ -37,16 +35,17 @@ const fontFamily = ref('Microsoft YaHei, 微软雅黑, sans-serif')
 onMounted(() => {
   if (!rootRef.value) return
   const s = getComputedStyle(rootRef.value)
-  const primary = s.getPropertyValue('--ld-color-brand-primary').trim()
-  const deep = s.getPropertyValue('--ld-color-brand-primary-deep').trim()
-  const accent = s.getPropertyValue('--ld-color-brand-accent').trim()
-  const muted = s.getPropertyValue('--ld-color-fg-muted').trim()
+  const c1 = s.getPropertyValue('--ld-color-chart-1').trim()
+  const c2 = s.getPropertyValue('--ld-color-chart-2').trim()
+  const c3 = s.getPropertyValue('--ld-color-chart-3').trim()
+  const c4 = s.getPropertyValue('--ld-color-chart-4').trim()
+  const c5 = s.getPropertyValue('--ld-color-chart-5').trim()
   const fg = s.getPropertyValue('--ld-color-fg-primary').trim()
   const ff = s.getPropertyValue('--ld-font-family-ui').trim()
   const bg = s.getPropertyValue('--ld-color-bg-page').trim()
 
-  if (primary && deep && accent) {
-    palette.value = [primary, deep, accent, muted || '#888888', '#cccccc']
+  if (c1 && c2 && c3 && c4 && c5) {
+    palette.value = [c1, c2, c3, c4, c5]
   }
   if (bg) borderColor.value = bg
   if (fg) textColor.value = fg

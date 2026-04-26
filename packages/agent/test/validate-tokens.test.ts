@@ -31,13 +31,13 @@ describe('parseLdTokens', () => {
 })
 
 describe('validateTokens', () => {
-  it('full spec css → ok=true, missing=[], counts.matched=22', () => {
+  it('full spec css → ok=true, missing=[], counts.matched=26', () => {
     const result = validateTokens(`:root {\n${FULL_SPEC_CSS}\n}`)
     expect(result.ok).toBe(true)
     expect(result.missing).toEqual([])
     expect(result.extra).toEqual([])
-    expect(result.counts.spec).toBe(22)
-    expect(result.counts.matched).toBe(22)
+    expect(result.counts.spec).toBe(26)
+    expect(result.counts.matched).toBe(26)
   })
 
   it('missing 1 token → ok=false, missing reports which one', () => {
@@ -47,7 +47,7 @@ describe('validateTokens', () => {
     const result = validateTokens(`:root {\n${reduced}\n}`)
     expect(result.ok).toBe(false)
     expect(result.missing).toEqual(['--ld-shadow-md'])
-    expect(result.counts.matched).toBe(21)
+    expect(result.counts.matched).toBe(25)
   })
 
   it('extra --ld-* tokens → ok=true with warning in extra[]', () => {
@@ -62,22 +62,22 @@ ${FULL_SPEC_CSS}
     expect(result.extra).toEqual(['--ld-color-brand-tertiary', '--ld-extra-experimental'])
   })
 
-  it('completely empty css → ok=false, missing covers all 22', () => {
+  it('completely empty css → ok=false, missing covers all 26', () => {
     const result = validateTokens(':root { --bt-brand: red; }')
     expect(result.ok).toBe(false)
-    expect(result.missing.length).toBe(22)
+    expect(result.missing.length).toBe(26)
     expect(result.counts.matched).toBe(0)
   })
 })
 
 describe('LD_TOKEN_SPEC structure', () => {
-  it('exactly 22 tokens distributed 9/7/4/2 across categories', () => {
-    expect(LD_TOKEN_SPEC.length).toBe(22)
+  it('exactly 26 tokens distributed 13/7/4/2 across categories', () => {
+    expect(LD_TOKEN_SPEC.length).toBe(26)
     const byCategory = LD_TOKEN_SPEC.reduce<Record<string, number>>((acc, t) => {
       acc[t.category] = (acc[t.category] ?? 0) + 1
       return acc
     }, {})
-    expect(byCategory).toEqual({ colors: 9, fonts: 7, shapes: 4, shadows: 2 })
+    expect(byCategory).toEqual({ colors: 13, fonts: 7, shapes: 4, shadows: 2 })
   })
 
   it('all token names are unique and start with --ld-', () => {

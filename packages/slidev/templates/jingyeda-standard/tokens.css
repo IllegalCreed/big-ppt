@@ -33,7 +33,7 @@
 
   /* === --ld-* 公共契约 token（Phase 7.5B 增补，公共组件库共用） === */
 
-  /* colors（9 项） */
+  /* colors（13 项） */
   --ld-color-brand-primary: var(--jyd-brand-primary);
   --ld-color-brand-primary-deep: var(--jyd-brand-primary-deep);
   --ld-color-brand-accent: var(--jyd-brand-accent); /* 双主色：accent = 绿 */
@@ -41,8 +41,13 @@
   --ld-color-fg-muted: var(--jyd-fg-muted);
   --ld-color-bg-page: var(--jyd-bg-page);
   --ld-color-bg-subtle: var(--jyd-bg-subtle);
-  --ld-color-chart-primary-bg: rgba(0, 61, 165, 0.85);
-  --ld-color-chart-primary-border: var(--jyd-brand-primary);
+  /* 图表色板：以品牌蓝为锚 + 品牌绿 + 3 个对比 / 互补色，区分度优于纯主色色阶 */
+  --ld-color-chart-1: #003da5; /* 品牌蓝 */
+  --ld-color-chart-1-fill: rgba(0, 61, 165, 0.85); /* chart-1 alpha 版 */
+  --ld-color-chart-2: #8fc31f; /* 品牌绿（双主色第二） */
+  --ld-color-chart-3: #f59e0b; /* 琥珀金（暖色对比） */
+  --ld-color-chart-4: #e76f51; /* 砖红（暖色 accent） */
+  --ld-color-chart-5: #94a3b8; /* 中性石板灰（兜底） */
 
   /* fonts（7 项） —— jingyeda 双字体：标题用仿宋，UI / chart 文字用雅黑 */
   --ld-font-family-brand: var(--jyd-ff-brand);

@@ -33,8 +33,12 @@
   --ld-color-fg-muted: var(--bt-fg-muted);
   --ld-color-bg-page: var(--bt-bg-page);
   --ld-color-bg-subtle: var(--bt-bg-subtle);
-  --ld-color-chart-primary-bg: rgba(208, 13, 20, 0.85);
-  --ld-color-chart-primary-border: var(--bt-brand-deep);
+  --ld-color-chart-1: #d00d14;
+  --ld-color-chart-1-fill: rgba(208, 13, 20, 0.85);
+  --ld-color-chart-2: #f59e0b;
+  --ld-color-chart-3: #2a9d8f;
+  --ld-color-chart-4: #6366f1;
+  --ld-color-chart-5: #94a3b8;
   /* fonts */
   --ld-font-family-brand: var(--bt-ff-brand);
   --ld-font-family-ui: var(--bt-ff-brand);
@@ -62,8 +66,12 @@
   --ld-color-fg-muted: var(--jyd-fg-muted);
   --ld-color-bg-page: var(--jyd-bg-page);
   --ld-color-bg-subtle: var(--jyd-bg-subtle);
-  --ld-color-chart-primary-bg: rgba(0, 61, 165, 0.85);
-  --ld-color-chart-primary-border: var(--jyd-brand-primary);
+  --ld-color-chart-1: #003da5;
+  --ld-color-chart-1-fill: rgba(0, 61, 165, 0.85);
+  --ld-color-chart-2: #8fc31f;
+  --ld-color-chart-3: #f59e0b;
+  --ld-color-chart-4: #e76f51;
+  --ld-color-chart-5: #94a3b8;
   /* fonts */
   --ld-font-family-brand: var(--jyd-ff-brand);
   --ld-font-family-ui: var(--jyd-ff-ui);

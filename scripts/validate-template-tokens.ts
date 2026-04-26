@@ -22,15 +22,10 @@ import {
   validateManifestComponents,
   validateTokens,
 } from '../packages/agent/src/templates/validate-tokens.ts'
+import { ALL_COMPONENT_NAMES } from '../packages/agent/src/prompts/commonComponentsCatalog.ts'
 
-/**
- * 7.5A 阶段公共组件 catalog 还未建立；后续 7.5C-1/2/3 会陆续加 11+ 个组件，
- * 7.5D 落 catalog 后这里改成 `import { COMMON_COMPONENTS } from ...`。
- *
- * 当前留空数组，作用：模板若 manifest.commonComponents 字段为空数组或缺失则通过；
- * 若已经填了任何值，校验会标记为 invalid 提示用户先建 catalog。
- */
-const ALLOWED_COMPONENTS: readonly string[] = []
+/** 公共组件 catalog 名单（7.5D 之后接通） —— manifest.commonComponents 必须从中选取 */
+const ALLOWED_COMPONENTS: readonly string[] = ALL_COMPONENT_NAMES
 
 function red(s: string): string {
   return `\x1b[31m${s}\x1b[0m`

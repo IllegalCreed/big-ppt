@@ -99,7 +99,8 @@ export const commonComponentsCatalog: ComponentEntry[] = [
     category: 'decoration',
     description:
       '花瓣 4 区：2×4 grid 布局——左/右 4 段标题胶囊 + 列表；中央 4 个对角 round 序号方块拼花瓣',
-    propsOrSlots: 'sections: Array<{ title: string; items: string[] }>（4 段，超出截断、不足空位）',
+    propsOrSlots:
+      'sections: Array<{ title: string; items: string[] }>（4 段；每段 items ≤ 3 条，超出会撑破花瓣布局）',
     example: `<PetalFour :sections='[{"title":"设计","items":["改版","布局"]},{"title":"开发","items":["开发","对接"]},{"title":"测试","items":["用例","脚本"]},{"title":"文档","items":["报告","手册"]}]' />`,
   },
   {
@@ -122,7 +123,8 @@ export const commonComponentsCatalog: ComponentEntry[] = [
   {
     name: 'Table',
     category: 'block',
-    description: '表格：表头主色填充白字 + 斑马条；适合项目清单 / 对比矩阵',
+    description:
+      '表格：表头主色填充白字 + 斑马条；适合项目清单 / 对比矩阵。行数建议 ≤ 5（slides 视口固定，溢出会裁剪，超过 5 行请拆页或缩描述避免换行）',
     propsOrSlots: 'headers: string[] / rows: (string|number)[][] / variant?: "striped"|"plain"',
     example: `<Table :headers='["项目","负责人","截止"]' :rows='[["登录优化","张三","04-30"],["性能埋点","李四","05-15"]]' />`,
   },

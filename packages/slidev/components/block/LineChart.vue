@@ -32,13 +32,13 @@ const props = defineProps<{
 }>()
 
 /*
- * Phase 7.5C-3：token rename 同 BarChart。
- *   --ld-color-chart-primary-border : 折线颜色 + 点填充色
- *   --ld-color-chart-primary-bg     : 折线下方填充色（含 alpha）
- *   --ld-color-fg-primary           : 主文字色
- *   --ld-color-fg-muted             : 次要文字色
- *   --ld-font-family-ui             : chart 文字字体（chart-level option，
- *                                     不动 Chart.defaults 避免单例互覆盖）
+ * Phase 7.5E：token 由 chart-primary 切到色板 chart-1。
+ *   --ld-color-chart-1       : 折线颜色 + 点填充色
+ *   --ld-color-chart-1-fill  : 折线下方填充色（含 alpha）
+ *   --ld-color-fg-primary    : 主文字色
+ *   --ld-color-fg-muted      : 次要文字色
+ *   --ld-font-family-ui      : chart 文字字体（chart-level option，
+ *                              不动 Chart.defaults 避免单例互覆盖）
  * fallback 中性灰。
  */
 const rootRef = ref<HTMLElement | null>(null)
@@ -51,8 +51,8 @@ const fontFamily = ref('Microsoft YaHei, 微软雅黑, sans-serif')
 onMounted(() => {
   if (!rootRef.value) return
   const s = getComputedStyle(rootRef.value)
-  const bd = s.getPropertyValue('--ld-color-chart-primary-border').trim()
-  const bg = s.getPropertyValue('--ld-color-chart-primary-bg').trim()
+  const bd = s.getPropertyValue('--ld-color-chart-1').trim()
+  const bg = s.getPropertyValue('--ld-color-chart-1-fill').trim()
   const fg = s.getPropertyValue('--ld-color-fg-primary').trim()
   const muted = s.getPropertyValue('--ld-color-fg-muted').trim()
   const ff = s.getPropertyValue('--ld-font-family-ui').trim()

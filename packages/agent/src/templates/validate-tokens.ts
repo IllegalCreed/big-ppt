@@ -20,9 +20,9 @@ export interface LdTokenDef {
   description: string
 }
 
-/** 22 项 `--ld-*` token 完整 schema —— 与 TOKENS.md 同步维护 */
+/** 26 项 `--ld-*` token 完整 schema —— 与 TOKENS.md 同步维护 */
 export const LD_TOKEN_SPEC: readonly LdTokenDef[] = [
-  // colors（9）
+  // colors（13）
   { name: '--ld-color-brand-primary', category: 'colors', description: '品牌主色' },
   { name: '--ld-color-brand-primary-deep', category: 'colors', description: '主色深色变体' },
   { name: '--ld-color-brand-accent', category: 'colors', description: '辅色' },
@@ -30,8 +30,13 @@ export const LD_TOKEN_SPEC: readonly LdTokenDef[] = [
   { name: '--ld-color-fg-muted', category: 'colors', description: '次要文字色' },
   { name: '--ld-color-bg-page', category: 'colors', description: '页面背景' },
   { name: '--ld-color-bg-subtle', category: 'colors', description: '浅灰填充背景' },
-  { name: '--ld-color-chart-primary-bg', category: 'colors', description: '图表填充色' },
-  { name: '--ld-color-chart-primary-border', category: 'colors', description: '图表边框 / 线条色' },
+  // 图表色板（5 色，第 1 色 = 单系列默认 / Pie 第 1 片，依次循环）
+  { name: '--ld-color-chart-1', category: 'colors', description: '图表色板 1（单系列默认 / Pie 1）' },
+  { name: '--ld-color-chart-1-fill', category: 'colors', description: '图表色板 1 的填充版（带 alpha，Bar/Line 填充用）' },
+  { name: '--ld-color-chart-2', category: 'colors', description: '图表色板 2' },
+  { name: '--ld-color-chart-3', category: 'colors', description: '图表色板 3' },
+  { name: '--ld-color-chart-4', category: 'colors', description: '图表色板 4' },
+  { name: '--ld-color-chart-5', category: 'colors', description: '图表色板 5' },
   // fonts（7）
   { name: '--ld-font-family-brand', category: 'fonts', description: '品牌字体' },
   { name: '--ld-font-family-ui', category: 'fonts', description: 'UI 字体（chart 文字 / 标签）' },

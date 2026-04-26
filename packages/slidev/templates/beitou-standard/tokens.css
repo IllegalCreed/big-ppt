@@ -32,7 +32,7 @@
 
   /* === --ld-* 公共契约 token（Phase 7.5B 增补，公共组件库共用） === */
 
-  /* colors（9 项） */
+  /* colors（13 项） */
   --ld-color-brand-primary: var(--bt-brand);
   --ld-color-brand-primary-deep: var(--bt-brand-deep);
   --ld-color-brand-accent: var(--bt-brand); /* 单主色品牌：accent = primary */
@@ -40,8 +40,13 @@
   --ld-color-fg-muted: var(--bt-fg-muted);
   --ld-color-bg-page: var(--bt-bg-page);
   --ld-color-bg-subtle: var(--bt-bg-subtle);
-  --ld-color-chart-primary-bg: rgba(208, 13, 20, 0.85);
-  --ld-color-chart-primary-border: var(--bt-brand-deep);
+  /* 图表色板：以品牌红为锚 + 4 色异色错峰，保证多分片 / 多系列区分度 */
+  --ld-color-chart-1: #d00d14; /* 品牌红 */
+  --ld-color-chart-1-fill: rgba(208, 13, 20, 0.85); /* chart-1 alpha 版（Bar 填充） */
+  --ld-color-chart-2: #f59e0b; /* 琥珀金（暖色递进） */
+  --ld-color-chart-3: #2a9d8f; /* 青绿（冷色对比） */
+  --ld-color-chart-4: #6366f1; /* 靛蓝（冷色补） */
+  --ld-color-chart-5: #94a3b8; /* 中性石板灰（兜底） */
 
   /* fonts（7 项） —— beitou 无独立 ui 字体，brand 与 ui 同一栈 */
   --ld-font-family-brand: var(--bt-ff-brand);

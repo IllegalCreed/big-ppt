@@ -24,21 +24,27 @@
 └──────────────────────────────────┘
 ```
 
-## 4 大类 22 项 token
+## 4 大类 26 项 token
 
-### Colors（9 项）
+### Colors（13 项）
 
-| Token                             | 语义                                               | 默认值参考                                                       | 谁在用                                 |
-| --------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------- |
-| `--ld-color-brand-primary`        | 品牌主色（标题 / 边框 / 强调）                     | beitou: `#d00d14` / jingyeda: `#003da5`                          | 栅格分隔线 / 装饰几何描边 / 内容块强调 |
-| `--ld-color-brand-primary-deep`   | 主色深色变体（hover / 阴影 / 强对比）              | beitou: `#a8090e` / jingyeda: `#002a78`                          | 装饰组件深色描边、二级强调             |
-| `--ld-color-brand-accent`         | 辅色（双主色品牌的第二色；单主色品牌可同 primary） | beitou: 同 primary / jingyeda: `#8fc31f`                         | 装饰组件辅色块 / 第二品牌色装饰        |
-| `--ld-color-fg-primary`           | 主文字色                                           | beitou: `#333333` / jingyeda: `#1a1a1a`                          | 正文 / 标题文字                        |
-| `--ld-color-fg-muted`             | 次要文字色（注释 / 标签 / 辅助说明）               | `#666666`                                                        | Table plain 边框 / 图表轴标签          |
-| `--ld-color-bg-page`              | 页面背景                                           | `#ffffff`                                                        | layout 容器底色                        |
-| `--ld-color-bg-subtle`            | 浅灰填充背景（卡片 subtle 模式 / 区块底）          | `#f5f5f5`                                                        | MetricCard subtle / Table 斑马条       |
-| `--ld-color-chart-primary-bg`     | 图表填充色（含 alpha）                             | beitou: `rgba(208,13,20,0.85)` / jingyeda: `rgba(0,61,165,0.85)` | BarChart / LineChart 填充              |
-| `--ld-color-chart-primary-border` | 图表边框 / 线条色                                  | beitou: `#a8090e` / jingyeda: `#003da5`                          | BarChart / LineChart 边框 + 线         |
+| Token                          | 语义                                               | 默认值参考                                                       | 谁在用                                 |
+| ------------------------------ | -------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------- |
+| `--ld-color-brand-primary`     | 品牌主色（标题 / 边框 / 强调）                     | beitou: `#d00d14` / jingyeda: `#003da5`                          | 栅格分隔线 / 装饰几何描边 / 内容块强调 |
+| `--ld-color-brand-primary-deep`| 主色深色变体（hover / 阴影 / 强对比）              | beitou: `#a8090e` / jingyeda: `#002a78`                          | 装饰组件深色描边、二级强调             |
+| `--ld-color-brand-accent`      | 辅色（双主色品牌的第二色；单主色品牌可同 primary） | beitou: 同 primary / jingyeda: `#8fc31f`                         | 装饰组件辅色块 / 第二品牌色装饰        |
+| `--ld-color-fg-primary`        | 主文字色                                           | beitou: `#333333` / jingyeda: `#1a1a1a`                          | 正文 / 标题文字                        |
+| `--ld-color-fg-muted`          | 次要文字色（注释 / 标签 / 辅助说明）               | `#666666`                                                        | Table plain 边框 / 图表轴标签          |
+| `--ld-color-bg-page`           | 页面背景                                           | `#ffffff`                                                        | layout 容器底色                        |
+| `--ld-color-bg-subtle`         | 浅灰填充背景（卡片 subtle 模式 / 区块底）          | `#f5f5f5`                                                        | MetricCard subtle / Table 斑马条       |
+| `--ld-color-chart-1`           | 图表色板 1（单系列默认 / Pie 第 1 片）             | beitou: `#d00d14` / jingyeda: `#003da5`                          | BarChart / LineChart 主色 + Pie 第 1 片 |
+| `--ld-color-chart-1-fill`      | chart-1 的 alpha 填充版                            | beitou: `rgba(208,13,20,0.85)` / jingyeda: `rgba(0,61,165,0.85)` | BarChart 柱填充 / LineChart 区域填充   |
+| `--ld-color-chart-2`           | 图表色板 2                                         | beitou: `#f59e0b` / jingyeda: `#8fc31f`                          | Pie 第 2 片                            |
+| `--ld-color-chart-3`           | 图表色板 3                                         | beitou: `#2a9d8f` / jingyeda: `#f59e0b`                          | Pie 第 3 片                            |
+| `--ld-color-chart-4`           | 图表色板 4                                         | beitou: `#6366f1` / jingyeda: `#e76f51`                          | Pie 第 4 片                            |
+| `--ld-color-chart-5`           | 图表色板 5（中性兜底）                             | `#94a3b8`                                                        | Pie 第 5+ 片                           |
+
+> **图表色板设计原则**：第 1 色锚定品牌主色让单系列图保持品牌识别；第 2-4 色错峰异色（warm/cool 互补）保证多分片区分度；第 5 色固定中性灰兜底超出预设色阶的分片。模板可在 `tokens.css` 自定义五色组合，公共组件不感知差异。
 
 ### Fonts（7 项）
 
@@ -70,7 +76,7 @@
 
 ## 模板实现要求
 
-每套模板的 `tokens.css` **必须**给上述 22 项 token 都赋值（不能缺）；多余的 `--ld-*` token（不在本规范）触发 warning 但不阻断。
+每套模板的 `tokens.css` **必须**给上述 26 项 token 都赋值（不能缺）；多余的 `--ld-*` token（不在本规范）触发 warning 但不阻断。
 
 实现方式：可以引用模板私有 token（如 `--ld-color-brand-primary: var(--bt-brand);`）也可以直接给字面值。
 
@@ -90,6 +96,7 @@ pnpm validate:tokens packages/slidev/templates/<template-id>
 
 > 增删 token 是**接口变更**，影响所有公共组件 + 所有模板；走"提案 + 评审"流程，不要随手加。
 
-| 日期       | 变更           | 触发       |
-| ---------- | -------------- | ---------- |
-| 2026-04-26 | 初版定稿 22 项 | Phase 7.5A |
+| 日期       | 变更                                                                                                              | 触发       |
+| ---------- | ----------------------------------------------------------------------------------------------------------------- | ---------- |
+| 2026-04-26 | 初版定稿 22 项                                                                                                    | Phase 7.5A |
+| 2026-04-26 | 替换 chart-primary 双 token 为 chart-1..5 五色色板（含 chart-1-fill），共 +4 token；总数 22 → 26（colors 9 → 13） | Phase 7.5E |

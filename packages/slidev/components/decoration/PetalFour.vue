@@ -27,8 +27,12 @@ defineProps<{
         <li v-for="(item, idx) in sections[0].items" :key="idx">{{ item }}</li>
       </ul>
     </div>
-    <div class="ld-petal-cell ld-petal-cell--bl-tr">1</div>
-    <div class="ld-petal-cell ld-petal-cell--tl-br">2</div>
+    <div class="ld-petal-cell ld-petal-cell--bl-tr">
+      <span class="ld-petal-num">1</span>
+    </div>
+    <div class="ld-petal-cell ld-petal-cell--tl-br">
+      <span class="ld-petal-num">2</span>
+    </div>
     <div class="ld-petal-content ld-petal-content--left">
       <div v-if="sections[1]" class="ld-petal-title">{{ sections[1]?.title }}</div>
       <ul v-if="sections[1]" class="ld-petal-list">
@@ -43,8 +47,12 @@ defineProps<{
         <li v-for="(item, idx) in sections[2].items" :key="idx">{{ item }}</li>
       </ul>
     </div>
-    <div class="ld-petal-cell ld-petal-cell--tl-br">3</div>
-    <div class="ld-petal-cell ld-petal-cell--bl-tr">4</div>
+    <div class="ld-petal-cell ld-petal-cell--tl-br">
+      <span class="ld-petal-num">3</span>
+    </div>
+    <div class="ld-petal-cell ld-petal-cell--bl-tr">
+      <span class="ld-petal-num">4</span>
+    </div>
     <div class="ld-petal-content ld-petal-content--left">
       <div v-if="sections[3]" class="ld-petal-title">{{ sections[3]?.title }}</div>
       <ul v-if="sections[3]" class="ld-petal-list">
@@ -58,11 +66,12 @@ defineProps<{
 .ld-petal-four {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
-  grid-template-rows: auto auto;
+  grid-template-rows: 1fr 1fr;
   align-items: center;
   justify-content: center;
-  column-gap: 1.4em;
-  row-gap: 0;
+  /* 中央 4 cell 上下行 align-self 形成花瓣聚拢；保留 gap 留出花心十字白空 */
+  column-gap: 0.7em;
+  row-gap: 0.7em;
   width: 100%;
   height: 100%;
   flex: 1;
@@ -74,17 +83,32 @@ defineProps<{
 
 /* 4 个序号方块：对角 round 拼花瓣 */
 .ld-petal-cell {
-  width: 8em;
-  height: 8em;
+  width: 7em;
+  height: 7em;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: var(--ld-border-width-thick) solid var(--ld-color-brand-primary);
-  font-size: 3.6em;
-  font-weight: var(--ld-font-weight-bold);
+  border: calc(var(--ld-border-width-thick) * 2) solid var(--ld-color-brand-primary);
   color: var(--ld-color-brand-primary);
   box-sizing: border-box;
   background: var(--ld-color-bg-page);
+}
+
+/* 上一行向底聚拢，下一行向顶聚拢 → 4 花瓣围花心 */
+.ld-petal-four > .ld-petal-cell:nth-child(2),
+.ld-petal-four > .ld-petal-cell:nth-child(3) {
+  align-self: end;
+}
+
+.ld-petal-four > .ld-petal-cell:nth-child(6),
+.ld-petal-four > .ld-petal-cell:nth-child(7) {
+  align-self: start;
+}
+
+.ld-petal-num {
+  font-size: 3em;
+  font-weight: var(--ld-font-weight-bold);
+  line-height: 1;
 }
 
 /* border-radius 顺序：top-left, top-right, bottom-right, bottom-left */

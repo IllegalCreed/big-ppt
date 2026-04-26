@@ -190,7 +190,7 @@ layout: beitou-content
 heading: PetalFour 花瓣 4 区
 ---
 
-<PetalFour :sections='[{"title":"设计","items":["对网站进行整体改版","支持全局自定义布局"]},{"title":"开发","items":["进行新版门户开发工作","对接集团用户系统","对接业务系统单点登录"]},{"title":"测试","items":["完成三端测试用例设计","完成 300+ 自动化测试脚本"]},{"title":"文档编写","items":["测试报告","用户手册","等保材料","汇报材料"]}]' />
+<PetalFour :sections='[{"title":"设计","items":["对网站进行整体改版","支持全局自定义布局"]},{"title":"开发","items":["进行新版门户开发","对接集团用户系统","对接业务单点登录"]},{"title":"测试","items":["三端测试用例设计","300+ 自动化脚本"]},{"title":"文档","items":["测试报告","用户手册","等保材料"]}]' />
 
 ---
 layout: beitou-content
@@ -217,6 +217,13 @@ heading: BarChart 柱状图
 ---
 
 <BarChart :labels='["Q1","Q2","Q3","Q4"]' :values='[120,180,150,210]' label="季度营收（万元）" :height="320" />
+
+---
+layout: beitou-content
+heading: LineChart 折线图
+---
+
+<LineChart :labels='["1月","2月","3月","4月","5月","6月"]' :values='[18,32,28,45,62,78]' label="月活用户（万）" :height="320" />
 
 ---
 layout: beitou-content
@@ -258,7 +265,7 @@ layout: beitou-content
 heading: Table 数据表格
 ---
 
-<Table :headers='["指标","数值","说明"]' :rows='[["--ld-* token 数","22","colors / fonts / shapes / shadows 4 类"],["layer-1 layout","5","cover / toc / section-title / content / back-cover"],["公共组件","16","栅格 8 + 装饰 2 + 内容块 6"],["单测覆盖","473",""],["切模板","deterministic","pure deck 跳 LLM"],["设计抉择","13",""]]' />
+<Table :headers='["指标","数值","说明"]' :rows='[["--ld-* token 数","26","4 大类色板 / 字体 / 形状"],["layer-1 layout","5","cover / toc / section / content / back"],["公共组件","16","栅格 8 + 装饰 2 + 内容块 6"],["单测覆盖","473 +","跨 agent / slidev / shared"],["切模板","deterministic","pure deck 跳 LLM"]]' />
 
 ---
 layout: beitou-back-cover
@@ -440,7 +447,7 @@ layout: jingyeda-content
 heading: PetalFour 花瓣 4 区
 ---
 
-<PetalFour :sections='[{"title":"设计","items":["对网站进行整体改版","支持全局自定义布局"]},{"title":"开发","items":["进行新版门户开发工作","对接集团用户系统","对接业务系统单点登录"]},{"title":"测试","items":["完成三端测试用例设计","完成 300+ 自动化测试脚本"]},{"title":"文档编写","items":["测试报告","用户手册","等保材料","汇报材料"]}]' />
+<PetalFour :sections='[{"title":"设计","items":["对网站进行整体改版","支持全局自定义布局"]},{"title":"开发","items":["进行新版门户开发","对接集团用户系统","对接业务单点登录"]},{"title":"测试","items":["三端测试用例设计","300+ 自动化脚本"]},{"title":"文档","items":["测试报告","用户手册","等保材料"]}]' />
 
 ---
 layout: jingyeda-content
@@ -460,6 +467,13 @@ layout: jingyeda-section-title
 chapterNumber: 3
 chapterTitle: 内容块 + 数据组件
 ---
+
+---
+layout: jingyeda-content
+heading: BarChart 柱状图
+---
+
+<BarChart :labels='["Q1","Q2","Q3","Q4"]' :values='[140,210,180,260]' label="季度营收（万元）" :height="320" />
 
 ---
 layout: jingyeda-content
@@ -508,7 +522,7 @@ layout: jingyeda-content
 heading: Table 数据表格
 ---
 
-<Table :headers='["指标","数值","说明"]' :rows='[["--ld-* token 数","22","colors / fonts / shapes / shadows 4 类"],["layer-1 layout","5","cover / toc / section-title / content / back-cover"],["公共组件","16","栅格 8 + 装饰 2 + 内容块 6"],["单测覆盖","473",""],["切模板","deterministic","pure deck 跳 LLM"],["双字体","仿宋 + 雅黑",""]]' />
+<Table :headers='["指标","数值","说明"]' :rows='[["--ld-* token 数","26","4 大类色板 / 字体 / 形状"],["layer-1 layout","5","cover / toc / section / content / back"],["公共组件","16","栅格 8 + 装饰 2 + 内容块 6"],["切模板","deterministic","pure deck 跳 LLM"],["双字体","仿宋 + 雅黑","标题 / UI 分栈"]]' />
 
 ---
 layout: jingyeda-back-cover

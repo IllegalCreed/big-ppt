@@ -21,14 +21,15 @@ const props = defineProps<{
 }>()
 
 /*
- * Phase 7.5C-3：从最近父元素读 `--ld-*` token，跨模板自动适配。
- *   --ld-color-chart-primary-bg     : bar fill color (含 alpha)
- *   --ld-color-chart-primary-border : bar border color
- *   --ld-color-fg-primary           : 主文字色（轴标题 / legend）
- *   --ld-color-fg-muted             : 次要文字色（轴刻度）
- *   --ld-font-family-ui             : chart 文字字体（chart.js 用 chart-level
- *                                     option 而非 Chart.defaults，避免多 chart
- *                                     实例互相覆盖单例）
+ * Phase 7.5E：从最近父元素读 `--ld-*` 图表色板 token，跨模板自动适配。
+ * 单系列默认用色板第 1 色（chart-1 边框 + chart-1-fill 填充 alpha 版）。
+ *   --ld-color-chart-1       : bar 边框色 + 强调
+ *   --ld-color-chart-1-fill  : bar 填充色（含 alpha）
+ *   --ld-color-fg-primary    : 主文字色（轴标题 / legend）
+ *   --ld-color-fg-muted      : 次要文字色（轴刻度）
+ *   --ld-font-family-ui      : chart 文字字体（chart.js 用 chart-level
+ *                              option 而非 Chart.defaults，避免多 chart
+ *                              实例互相覆盖单例）
  * 漏注入时 fallback 中性灰，避免静默用上一个模板的品牌色。
  */
 const rootRef = ref<HTMLElement | null>(null)
@@ -41,8 +42,8 @@ const fontFamily = ref('Microsoft YaHei, 微软雅黑, sans-serif')
 onMounted(() => {
   if (!rootRef.value) return
   const s = getComputedStyle(rootRef.value)
-  const bg = s.getPropertyValue('--ld-color-chart-primary-bg').trim()
-  const bd = s.getPropertyValue('--ld-color-chart-primary-border').trim()
+  const bg = s.getPropertyValue('--ld-color-chart-1-fill').trim()
+  const bd = s.getPropertyValue('--ld-color-chart-1').trim()
   const fg = s.getPropertyValue('--ld-color-fg-primary').trim()
   const muted = s.getPropertyValue('--ld-color-fg-muted').trim()
   const ff = s.getPropertyValue('--ld-font-family-ui').trim()
