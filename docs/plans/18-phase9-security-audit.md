@@ -1,6 +1,6 @@
 # Phase 9 — 安全 Audit L3 实施文档
 
-> **状态**：进行中（2026-04-26 启动）
+> **状态**：✅ 已关闭（2026-04-26）
 > **前置阶段**：[plan 17](17-phase8-deps-upgrade.md) Phase 8 已关闭（依赖全量升级 + 0 高危漏洞前哨）
 > **后续阶段**：Phase 10（首次部署）
 > **路线图**：[roadmap.md Phase 9](../requirements/roadmap.md)
@@ -352,30 +352,65 @@ Explore + 用户复核（2026-04-26）盘点出 **7 个真实缺口**（Explore 
 
 ---
 
-## 执行期偏离（关闭后追加）
+## 执行期偏离（2026-04-26 关闭）
 
-> 实际跑下来与 plan 不一致的点，写清"原 plan 怎么说 / 实际怎么做 / 为什么改"。
-
-（待 Phase 9 关闭后填）
-
----
-
-## 踩坑与解决（实施期 / 关闭后追加）
-
-> 跑过程中遇到的、需要侦探一阵才搞定的 bug。每条按"症状 / 根因 / 修复 / 防再犯"四段记完整故事。
-
-（待 Phase 9 关闭后填）
+- **9-B 公开端点数从 plan 列的 2 个扩展到 8 个**：plan 原本只列 `/log-event` + `/log/latest`，实施期盘点全 routes 发现 `/api/call-tool`（严重：未登录可调任意工具）+ `/api/tools` + `/api/lock-status` + `/api/read-slides /restore-slides /redo-slides` 6 个 GET/POST 端点全无鉴权。slides 端点除 requireAuth 还加了 `isHeldBy(session.id)` 持锁守卫（仅 lock holder 可读 server-wide slides.md，否则 B 用户读到 A 的 deck 内容）。
+- **9-E LLM 不挂 rate limit**：plan 原写 30/hour/user，用户提醒"API key 是用户自己的"后撤掉。LLM 请求是用户用自己 key 烧自己的钱，upstream provider 自带 quota，agent 不该再加一层。Plan 设计抉择 #2 也没明确说 LLM 必须限速。改为"只限用 agent 服务器资源的攻击面"：login/register（爆破他人）+ log-event（写 disk）。
+- **9-D Origin 校验增加路径豁免**：plan 写 `/api/auth/*` 全豁免，实施期发现 `/api/auth/llm-settings` GET/PUT 也是 state-changing 应该走 Origin 校验，仅 `/api/auth/{login,register,logout}` 三个登录前 / 幂等端点豁免。
+- **9-F per-user registry 加了 ensureInitialized lazy 方法**：plan 没显式提，实施期发现 dev 重启后用户首次访问需要触发原 `initialize()`，否则 enabled MCP 工具还没 register。lazy 幂等设计（`initPromise` 缓存）。
+- **9-F2 mysql2 hoist 工具链 bug**：plan 没预料，实施期 `pnpm db:push` 报 "please install mysql2"，drizzle-kit 0.31 通过 `import('mysql2')` 从自己 .pnpm 节点向上找，mysql2 仅 packages/agent 用 pnpm 不自动 hoist 到根。修法：`.npmrc` 加 `public-hoist-pattern[]=mysql2`。
+- **9-G P3-15 拉回放弃**：plan 原写"补 routes/auth.ts + slidev-lock.ts 缺的 AST 节点分支"，实测 9-D/9-E 加大量新代码后整体百分比反而进一步下移。补 ~50 测覆盖 catch-all / type narrowing 不可达分支收益小。verdict 改为"长期维持新基线 lines 90 / branches 80 / functions 85 / statements 87"，写进 99-tech-debt P3-15。
 
 ---
 
-## 测试数量落地（关闭后追加）
+## 踩坑与解决
+
+### 坑 1：Hono sub-router `use('*', mw)` 经 `app.route('/api', sub)` 挂载后泄漏到 /api/* 全路径
+
+- **症状**：9-B 加完 `slides.use('*', requireLockHolder)` 单测全过；e2e happy-path 直接挂——picker modal 显示 "需要先 activate-deck 占用 Slidev 实例"，模板列表为空。
+- **根因**：Hono 的 `app.route('/api', slides)` 把 slides sub-router 挂在 /api 前缀下；`slides.use('*', mw)` 内的 `*` 匹配整个 /api/* 而**不是只匹配 slides 自己声明的 path**。结果 `list-templates` 等公开端点也被守卫拦下。单测用 `buildApp()` 直接挂 sub-router 不经过 app.route，无法复现。
+- **修复**（commit `a0d3e6f`）：改为显式 path 列举 `slides.use('/read-slides', mw)` / `slides.use('/restore-slides', mw)` / `slides.use('/redo-slides', mw)`。
+- **防再犯**：新建 `routes-mount-integration.test.ts` 用真 `app.fetch()` 验证公开端点维持公开 + 鉴权端点未登录 401 + sub-router 互不干扰（10 测）；CLAUDE.md 加"Hono 路由"已知坑提炼。
+
+### 坑 2：originCheck 加全局后 e2e webServer 复用导致 rate-limit 跨 spec 累计撞 5/15min/IP
+
+- **症状**：9-E 加 rate limit 后 agent unit 都过；e2e 跑一遍部分 spec 挂在 register 429。
+- **根因**：playwright `reuseExistingServer: !CI` 让 e2e 共享同一个 agent 进程，rate-limit Map 跨 spec 累计；5 次内的 spec 过得了但后续 register/login 撞上限。
+- **修复**：`playwright.config.ts` agent webServer env 加 `RATE_LIMIT_ENABLED=false`（同 BIG_PPT_TEST_REWRITE_MODE 模式）；`_setup/test-db.ts` resetDb 加 `__resetRateLimitForTesting()` 每 case 复位计数（agent unit 测）。
+
+### 坑 3：originCheck 全局拦截后 routes-mount-integration / creator integration / e2e helpers / lock-conflict 都需要带 Origin
+
+- **症状**：originCheck 加全局后大量集成 / E2E 测从 401 改成 403。
+- **根因**：浏览器自动带 Origin，但 `app.fetch()` shim / Playwright APIRequestContext 不会自动加。
+- **修复**：creator integration shim 自动补 `Origin: http://localhost`；e2e helpers `reset-lock` fetch 加 Origin；`lock-conflict.spec.ts` 的 `pwRequest.newContext` 加 `extraHTTPHeaders.Origin`。dev 兜底允许 localhost / 127.0.0.1 让 origin 检查通过。
+
+### 坑 4：mysql2 没 hoist 到根 node_modules 导致 drizzle-kit 找不到
+
+- **症状**：`pnpm db:push` 报 `To connect to MySQL database - please install either of 'mysql2' or '@planetscale/database' drivers`。
+- **根因**：drizzle-kit 0.31 通过 `await import('mysql2')` 检测 driver 可用性；从自己的 `.pnpm/drizzle-kit@0.31.10/node_modules/drizzle-kit/` 一路向上查找，但 mysql2 仅被 packages/agent 用，pnpm 默认不 hoist 到根 `node_modules/`。
+- **修复**：`.npmrc` 加 `public-hoist-pattern[]=mysql2`，`pnpm install` 重新装让 mysql2 在根 node_modules 出现。
+- **防再犯**：CLAUDE.md / 已知坑——其他类似"工具自己 import driver 检测"的库（Phase 10 部署期可能再撞）应主动核查 pnpm hoist 状态。
+
+### 坑 5：redact 把 logger 的 session 字段也脱敏
+
+- **症状**：9-E 加 logger redact 后 logger.test.ts 3 测挂，断言 `session: 'sess-1'` 实际拿到 `'[REDACTED]'`。
+- **根因**：DEFAULT_REDACT_KEYS 把 `session` / `sessionid` / `session_id` 都当作敏感字段；但 logger 用 `session` 字段作日志关联 ID（不是 cookie / 凭据），脱敏破坏可读性。
+- **修复**：从 default 列表移除 `session` / `sessionid` / `session_id`；保留 `cookie` / `set-cookie` / `token` / `access_token` / `refresh_token`（子串匹配能覆盖 `sessionToken` 等组合字段）。
+- **防再犯**：`utils/redact.ts` 注释明确"刻意不含 session"；测试覆盖 `sessionId` 字段不脱敏（utils-redact.test.ts）。
+
+---
+
+## 测试数量落地（2026-04-26 关闭）
 
 | 指标             | 起点（Phase 8 终） | 终点 | 增量 |
 | ---------------- | ------------------ | ---- | ---- |
-| agent unit       | 361                |      |      |
-| creator unit     | 71                 |      |      |
-| slidev unit      | 38                 |      |      |
-| shared unit      | 3                  |      |      |
-| E2E              | 9                  |      |      |
-| coverage lines   | 92.82              |      |      |
-| coverage branch  | 83.83              |      |      |
+| agent unit       | 361                | 428  | +67  |
+| creator unit     | 71                 | 79   | +4   |
+| slidev unit      | 38                 | 38   | 0    |
+| shared unit      | 3                  | 3    | 0    |
+| E2E              | 9                  | 9    | 0    |
+| **total**        | **482**            | **557** | **+75** |
+| coverage lines   | 92.82              | 90.11 | -2.71（plan 18 设计抉择 #10 接受，不为凑数字补测） |
+| coverage branch  | 83.83              | 80.34 | -3.49（同上）|
+
+**门槛锁定**（Phase 9-G P3-15 verdict）：lines 90 / branches 80 / functions 85 / statements 87；per-file 95+ 高门槛保留（crypto/apikey / slidev-lock / middleware/auth / routes/auth）。

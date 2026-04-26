@@ -218,4 +218,4 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 
 ## 阶段进展
 
-详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–8 ✅，Phase 9（安全 audit）/ 10（首次部署）排队中。
+详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–9 ✅，Phase 10（首次部署）排队中。

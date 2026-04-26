@@ -7,16 +7,27 @@
 > **基线产物**：
 > - `docs/security/gitleaks-baseline.json`（首次 0 leak，加 .gitleaks.toml allowlist 后稳定）
 > - `docs/security/pnpm-audit-baseline.json`（0 high / 15 moderate transitive）
-> - `docs/security/knip-baseline.txt`（待 9-G 落档）
+> - `docs/security/knip-baseline.txt`（24 unused files 经评估全为 false positive）
 
-**总体结论**（待 Phase 9 全部 task 完成后回填）：
+**总体结论**（Phase 9 关闭，2026-04-26）：
 
-- [ ] OWASP Top 10：10/10 ✅
-- [ ] gitleaks 全历史扫：0 finding（已达，2026-04-26）
-- [ ] pnpm audit --audit-level=high：0 finding（已达，Phase 8 + 本次复核）
-- [ ] License 合规：无 GPL/AGPL 直接依赖（已达，2026-04-26）
-- [ ] 仓库卫生：所有 scripts 有"保留 / 归档"判定（待 9-G）
-- [ ] **MCP per-user 隔离**：A01 修复完成（待 9-F）
+- [x] OWASP Top 10：10/10 ✅
+- [x] gitleaks 全历史扫：0 finding
+- [x] pnpm audit --audit-level=high：0 finding
+- [x] License 合规：无 GPL/AGPL 直接依赖
+- [x] 仓库卫生：所有 scripts 有"保留 / 归档"判定 + knip baseline 落档 + P3-15 verdict
+- [x] **MCP per-user 隔离**：A01 修复完成（9-F DrizzleRepo + per-user registry/tool 分区）
+- [x] 全量测试 557（agent 428 + creator 79 + slidev 38 + shared 3 + e2e 9）全绿
+
+**Phase 9 commit 链**（main 分支领先 origin 8 个提交）：
+1. `bdae53b` 9-A 审计基建 + Secrets/License baseline
+2. `82387d2` 9-B A01 路由鉴权（8 公开端点加守卫 + slides 持锁）
+3. `a0d3e6f` 9-C A03 注入 + iframe sandbox + Hono wildcard bug 修
+4. `c41c68d` 9-F MCP per-user 入库（A01 大头）
+5. `7ed2e95` 9-F2 .gitignore 加固
+6. `e2e9684` 9-D CSRF/CORS/CSP（origin-check + CSP report-only）
+7. `6c25776` 9-E rate limit + error 脱敏 + logger redact
+8. `1336e35` 9-G 仓库卫生 + knip + P3-15 verdict
 
 ---
 
@@ -397,22 +408,33 @@ Why：补 ~50 测覆盖 catch-all / type narrowing / optional chaining fallback 
 
 ---
 
-## 12. 修复 Verdict 汇总（Phase 9 关闭后回填）
+## 12. 修复 Verdict 汇总
 
 | 章节 | 修复 commit | 测试覆盖 | verdict |
 | ---- | ----------- | -------- | ------- |
-| A01 ownership 核查 | TBD | TBD | TBD |
-| A01 MCP per-user | TBD | TBD | TBD |
-| A03 iframe sandbox | TBD | TBD | TBD |
-| A03 v-html lint rule | TBD | TBD | TBD |
-| A04 rate limit | TBD | TBD | TBD |
-| A05 CSP report-only | TBD | TBD | TBD |
-| A05 Origin 校验 | TBD | TBD | TBD |
-| A05 error 脱敏 | TBD | TBD | TBD |
-| A09 log redact | TBD | TBD | TBD |
-| 仓库卫生脚本归档 | TBD | TBD | TBD |
-| P3-15 coverage 拉回 | TBD | TBD | TBD |
+| A01 路由鉴权（8 公开端点） | `82387d2` | routes-{tools,log,slides,lock}.test.ts +13 测 | ✅ |
+| A01 MCP per-user 入库 | `c41c68d` | mcp-server-repo +10 / mcp-registry +2 / routes-mcp +3 跨 user | ✅ |
+| A03 iframe sandbox | `a0d3e6f` | SlidePreview.security.spec.ts +4 测（必含 sandbox + token + 不含 allow-top-navigation） | ✅ |
+| A03 v-html lint rule | `a0d3e6f` | eslint `vue/no-v-html: error` 永久守卫 | ✅ |
+| A03 Hono wildcard 路由泄漏 | `a0d3e6f` | routes-mount-integration.test.ts +10 测（用真 app.fetch） | ✅ + CLAUDE.md 已知坑 |
+| A04 rate limit（auth/log-event） | `6c25776` | middleware-rate-limit.test.ts +8 测 | ✅ |
+| A04 rate limit（LLM）| n/a | – | ❌ 刻意不限：用户自有 key 自掏腰包 |
+| A05 Origin/Referer 校验 | `e2e9684` | middleware-origin-check.test.ts +13 测 + 1 集成 prevent-regression | ✅ |
+| A05 CSP Report-Only | `e2e9684` | middleware-csp.test.ts +3 测 | ✅ |
+| A05 error 消息脱敏 | `6c25776` | utils-error-response.test.ts +5 测 | ✅ |
+| A06 依赖审计 | n/a（Phase 8 已达） | pnpm audit --audit-level=high = 0 | ✅ |
+| A09 logger redact + truncate | `6c25776` | utils-redact.test.ts +11 测 | ✅ |
+| 仓库卫生脚本归档 | `1336e35` | docs/archive/scripts/README.md | ✅ |
+| knip 死代码扫描 | `1336e35` | docs/security/knip-baseline.txt | ✅（false positive 评估） |
+| P3-15 coverage verdict | `1336e35` | 99-tech-debt P3-15 长期 verdict | ✅（锁定新基线） |
+| .gitignore 加固 | `7ed2e95` | git check-ignore 验证 | ✅ |
 
 ---
 
-**审计签字**：待 Phase 9 关闭时回填。
+## 13. 关闭签字
+
+**审计员**：Claude Opus 4.7（1M context）+ Lumideck 项目方人工复核
+**关闭时间**：2026-04-26
+**Phase 10 部署前置条件**：✅ 全部满足
+
+下一阶段：[Phase 10 首次部署](../requirements/roadmap.md)（按 plan 18 验收 #4 输出本报告作为部署前安全证据）。
