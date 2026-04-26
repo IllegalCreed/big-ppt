@@ -25,26 +25,32 @@ import { __resetTemplateRegistryForTesting } from '../src/templates/registry.js'
 import { __resetPathsForTesting } from '../src/workspace.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const REAL_MANIFEST_PATH = path.resolve(
+const BEITOU_MANIFEST_PATH = path.resolve(
   __dirname,
   '../../slidev/templates/beitou-standard/manifest.json',
+)
+const JINGYEDA_MANIFEST_PATH = path.resolve(
+  __dirname,
+  '../../slidev/templates/jingyeda-standard/manifest.json',
 )
 
 let tmpRoot: string
 let templatesRoot: string
-let csDir: string
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-prompt-'))
   templatesRoot = path.join(tmpRoot, 'packages/slidev/templates')
-  csDir = path.join(templatesRoot, 'beitou-standard')
-  fs.mkdirSync(csDir, { recursive: true })
-  // 复用真实 manifest.json，A/B contract 必须以生产 fixture 为准
-  fs.copyFileSync(REAL_MANIFEST_PATH, path.join(csDir, 'manifest.json'))
-  fs.writeFileSync(
-    path.join(csDir, 'starter.md'),
-    '---\nlayout: beitou-cover\nmainTitle: 占位\n---\n',
-  )
+  // 复用真实两套 manifest.json，A/B contract 必须以生产 fixture 为准
+  for (const id of ['beitou-standard', 'jingyeda-standard'] as const) {
+    const dir = path.join(templatesRoot, id)
+    fs.mkdirSync(dir, { recursive: true })
+    const src = id === 'beitou-standard' ? BEITOU_MANIFEST_PATH : JINGYEDA_MANIFEST_PATH
+    fs.copyFileSync(src, path.join(dir, 'manifest.json'))
+    fs.writeFileSync(
+      path.join(dir, 'starter.md'),
+      `---\nlayout: ${id === 'beitou-standard' ? 'beitou-cover' : 'jingyeda-cover'}\nmainTitle: 占位\n---\n`,
+    )
+  }
   process.env.BIG_PPT_TEMPLATES_ROOT = templatesRoot
   __resetPathsForTesting()
   __resetTemplateRegistryForTesting()
@@ -125,6 +131,76 @@ describe('buildSystemPrompt（A/B contract）', () => {
   it('promptPersona 段落出现在 prompt 开头附近', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toContain('商务正式')
+  })
+
+  it('可用 Components 段三个 sub-section 标题出现', () => {
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
+    expect(prompt).toContain('## 可用 Components')
+    expect(prompt).toContain('### 栅格类')
+    expect(prompt).toContain('### 装饰类')
+    expect(prompt).toContain('### 内容块类')
+  })
+
+  it('栅格类 8 个组件名都列在 Components 段', () => {
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
+    for (const name of [
+      'TwoCol',
+      'ThreeCol',
+      'OneLeftThreeRight',
+      'OneRightThreeLeft',
+      'OneTopThreeBottom',
+      'TwoColumnsTwoRows',
+      'NineGrid',
+      'ImageText',
+    ]) {
+      expect(prompt).toContain(`\`<${name}>\``)
+    }
+  })
+
+  it('装饰类 2 个组件 + 内容块类 6 个组件全部列出', () => {
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
+    for (const name of [
+      'PetalFour',
+      'ProcessFlow',
+      'MetricCard',
+      'KVList',
+      'Quote',
+      'Callout',
+      'BarChart',
+      'LineChart',
+    ]) {
+      expect(prompt).toContain(`\`<${name}>\``)
+    }
+  })
+
+  it('工作模式 5 档段落 + 关键代价短语', () => {
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
+    expect(prompt).toContain('## 工作模式')
+    expect(prompt).toContain('5 档自由度')
+    // 5 档每档至少有一个关键句段
+    expect(prompt).toContain('档 1')
+    expect(prompt).toContain('档 5')
+    expect(prompt).toContain('字节级一致')
+    expect(prompt).toContain('chart.js')
+    expect(prompt).toContain('<script setup>')
+  })
+
+  it('决策树段含 5 条关键判定（必须栅格 / 优先装饰 / 必须 chart / 优先 metric / 切模板不重写）', () => {
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
+    expect(prompt).toContain('## 选 Layout 与 Component 的决策树')
+    expect(prompt).toContain('必须**用栅格类组件')
+    expect(prompt).toContain('**优先**装饰类组件')
+    expect(prompt).toContain('**必须** `<BarChart>`')
+    expect(prompt).toContain('**优先** `<MetricCard>`')
+    expect(prompt).toContain('仅替换 frontmatter')
+  })
+
+  it('jingyeda-standard manifest 的 Components 段同样含 16 个组件 + 决策树', () => {
+    const prompt = buildSystemPrompt({ templateId: 'jingyeda-standard' })
+    expect(prompt).toContain('### 栅格类')
+    expect(prompt).toContain('`<PetalFour>`')
+    expect(prompt).toContain('`<TwoCol>`')
+    expect(prompt).toContain('## 选 Layout 与 Component 的决策树')
   })
 
   it('mcpBadges 提供时拼到 prompt 末尾，不提供时不拼', () => {

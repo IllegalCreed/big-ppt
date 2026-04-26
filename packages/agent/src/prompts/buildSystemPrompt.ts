@@ -12,6 +12,7 @@ import type {
   FrontmatterFieldSchema,
 } from '@big-ppt/shared'
 import { getManifest } from '../templates/registry.js'
+import { getCatalogByCategory, type ComponentEntry } from './commonComponentsCatalog.js'
 
 export interface BuildSystemPromptOptions {
   templateId: string
@@ -53,6 +54,57 @@ function renderLayoutsSection(manifest: TemplateManifest): string {
   return `${header}\n\n${body}`
 }
 
+function renderComponentEntry(entry: ComponentEntry): string {
+  return `- \`<${entry.name}>\` ${entry.description}\n  - ${entry.propsOrSlots}\n  - 示例：\`${entry.example}\``
+}
+
+function renderCommonComponentsSection(manifest: TemplateManifest): string {
+  const allowed = manifest.commonComponents
+  if (!allowed || allowed.length === 0) return ''
+  const { grid, decoration, block } = getCatalogByCategory(allowed)
+  if (grid.length === 0 && decoration.length === 0 && block.length === 0) return ''
+
+  const parts: string[] = [
+    '## 可用 Components（在 layer-1 layout slot 内按需用，不写 frontmatter）',
+  ]
+  if (grid.length > 0) {
+    parts.push('### 栅格类（决定页内多区域分布；通常作 content 默认 slot 的根元素）')
+    parts.push(grid.map(renderComponentEntry).join('\n'))
+  }
+  if (decoration.length > 0) {
+    parts.push('### 装饰类（美化几何骨架；几何跨模板共用、配色读 token 自动适配）')
+    parts.push(decoration.map(renderComponentEntry).join('\n'))
+  }
+  if (block.length > 0) {
+    parts.push('### 内容块类（决定单个区域内的渲染）')
+    parts.push(block.map(renderComponentEntry).join('\n'))
+  }
+  return parts.join('\n\n')
+}
+
+const WORK_MODE_SECTION = `## 工作模式（5 档自由度连续谱）
+
+你的内容生成分 5 档，每档代价不同；**优先用低档（预制），实在不够再升档**：
+
+- **档 1（首选）**：自由 markdown 文字 / 列表 / 段落 —— 切模板字节级一致，零成本
+- **档 2**：自由 markdown + 内联 HTML（\`<div>\` / \`<span>\`）—— 颜色 / 字体**必须**用 \`var(--ld-color-brand-primary)\` 等 token，不要 hardcode \`#ff0000\`
+- **档 3**：内嵌公共组件（栅格 / 装饰 / 内容块）+ 自由 markdown —— 系统切模板时走 deterministic 字符串替换，字节级一致
+- **档 4**：内嵌 chart.js / 第三方 lib 现场写自定义图表 —— ⚠️ 切模板时该页系统会 LLM 重写尝试适配，视觉一致但字节不保
+- **档 5**：\`<script setup>\` 完全原创 Vue 组件 —— ⚠️ 切模板视觉可能错乱
+
+**决策原则**：能用预制就用预制；公共组件不够 → 自由 markdown / 内联 HTML（用 token）；仍不够 → 升档 4-5（清楚代价的前提下）。`
+
+const DECISION_TREE_SECTION = `## 选 Layout 与 Component 的决策树
+
+- frontmatter \`layout:\` 字段：每页必填，且**只能**从模板独有的 5 个 layer-1 layout 中选
+- 整页要并列 / 主从 / 网格分块 → **必须**用栅格类组件包整 body（不要在 content 默认 slot 用 div 硬拆）
+- 4 小节方阵 / 阶段流程等需要美化骨架 → **优先**装饰类组件（\`<PetalFour>\` / \`<ProcessFlow>\`）
+- 数字 + 单位 + 标签标准结构 → **优先** \`<MetricCard>\`
+- 图表 → **必须** \`<BarChart>\` / \`<LineChart>\`
+- 引文 / 关键摘要 → **优先** \`<Quote>\` / \`<Callout>\`
+- 段落自由叙述 / 简单列表 → **自由 markdown**，不硬塞组件
+- 切模板任务时（system 调用）：仅替换 frontmatter \`layout:\` 前缀，不要重写公共组件 props 或 slot 内容`
+
 /** 根据 templateId + mcpBadges 拼完整 system prompt 字符串。模板不存在会抛错。 */
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const manifest = getManifest(options.templateId)
@@ -61,6 +113,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   }
 
   const layoutsSection = renderLayoutsSection(manifest)
+  const componentsSection = renderCommonComponentsSection(manifest)
 
   const base = `你是一个专业的幻灯片生成助手，帮助用户使用 Slidev 框架创建商务演示文稿。
 
@@ -104,6 +157,10 @@ ${manifest.promptPersona}
 这些过去的"每页重抄 CSS"模式已废弃。AI 只负责**结构 + 内容**。
 
 ${layoutsSection}
+
+${componentsSection ? componentsSection + '\n\n' : ''}${WORK_MODE_SECTION}
+
+${DECISION_TREE_SECTION}
 
 ## Slidev 语法规则
 
