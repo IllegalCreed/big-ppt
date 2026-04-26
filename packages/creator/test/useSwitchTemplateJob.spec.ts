@@ -42,7 +42,9 @@ async function registerAndCreateBeitouDeck(email: string, title = 'X') {
 
 describe('useSwitchTemplateJob (integration)', () => {
   it('成功路径：fake RewriteFn → POST → polling → success；DB.decks.template_id 同步更新', async () => {
-    __setRewriteFnForTesting((async () => '---\nlayout: cover\nmainTitle: jingyeda 切后\n---\n') as RewriteFn)
+    __setRewriteFnForTesting(
+      (async () => '---\nlayout: cover\nmainTitle: jingyeda 切后\n---\n') as RewriteFn,
+    )
 
     const deck = await registerAndCreateBeitouDeck('switch-ok@a.com', 'WillSwitch')
     const job = useSwitchTemplateJob()
@@ -58,7 +60,11 @@ describe('useSwitchTemplateJob (integration)', () => {
     expect(updated?.templateId).toBe('jingyeda-standard')
     expect(updated?.currentVersionId).toBe(result.newVersionId)
 
-    const [newVer] = await db.select().from(deckVersions).where(eq(deckVersions.id, result.newVersionId!)).limit(1)
+    const [newVer] = await db
+      .select()
+      .from(deckVersions)
+      .where(eq(deckVersions.id, result.newVersionId!))
+      .limit(1)
     expect(newVer?.templateId).toBe('jingyeda-standard')
 
     const [snapVer] = await db
@@ -69,18 +75,45 @@ describe('useSwitchTemplateJob (integration)', () => {
     expect(snapVer?.templateId).toBe('beitou-standard')
   })
 
-  it('失败路径：RewriteFn 抛错 → composable 抛 + state=failed', async () => {
+  it('失败路径：not-pure deck → 走 LLM → RewriteFn 抛错 → composable 抛 + state=failed', async () => {
     __setRewriteFnForTesting((async () => {
       throw new Error('LLM mock 故意挂')
     }) as RewriteFn)
 
     const deck = await registerAndCreateBeitouDeck('switch-err@a.com', 'WillFail')
+
+    // Phase 7.5D-3 起：pure deck 走 deterministic 路径（跳 rewriteFn）。
+    // 想测"rewriteFn throw → fail"必须先把 deck 改成 not-pure（含 <script setup>）。
+    const db = getDb()
+    const notPureContent = `---\nlayout: beitou-content\nheading: 自定义\n---\n\n<script setup>\nconst x = 1\n</script>\n\n<button>{{ x }}</button>\n`
+    await db.insert(deckVersions).values({
+      deckId: deck.id,
+      content: notPureContent,
+      message: 'inject not-pure',
+      authorId: deck.userId,
+      templateId: 'beitou-standard',
+    })
+    const [latest] = await db
+      .select({ id: deckVersions.id })
+      .from(deckVersions)
+      .where(eq(deckVersions.deckId, deck.id))
+      .orderBy(deckVersions.id)
+    // 取最大 id（最新插入）
+    const allVersions = await db
+      .select({ id: deckVersions.id })
+      .from(deckVersions)
+      .where(eq(deckVersions.deckId, deck.id))
+    const newestId = Math.max(...allVersions.map((v) => v.id))
+    void latest
+    await db.update(decks).set({ currentVersionId: newestId }).where(eq(decks.id, deck.id))
+
     const job = useSwitchTemplateJob()
-    await expect(job.start({ deckId: deck.id, targetTemplateId: 'jingyeda-standard' })).rejects.toThrow(/LLM mock 故意挂/)
+    await expect(
+      job.start({ deckId: deck.id, targetTemplateId: 'jingyeda-standard' }),
+    ).rejects.toThrow(/LLM mock 故意挂/)
     expect(job.stage.value).toBe('failed')
 
     // DB：template_id 未改（保留 beitou-standard）；snapshot 仍写入（带 fromTemplateId='beitou-standard'）
-    const db = getDb()
     const [updated] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
     expect(updated?.templateId).toBe('beitou-standard')
   })

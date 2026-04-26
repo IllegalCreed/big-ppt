@@ -7,3 +7,8 @@ logs/**
 pnpm-lock.yaml
 packages/slidev/slides.md
 packages/slidev/slides.md.bak
+
+# Slidev starter / slides .md：多页 frontmatter 用 `---` 同时表示页分隔与
+# frontmatter 边界，prettier 不理解这个语义，会把 `layout: X\n---` 误格式化为
+# `## layout: X`（markdown heading）破坏 Slidev 解析。Phase 7.5E 踩过坑。
+packages/slidev/templates/*/starter.md
