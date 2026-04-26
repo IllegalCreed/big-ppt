@@ -1,0 +1,24 @@
+# gitleaks 自定义配置
+# 用途：扩展默认规则 + 把仓库里的占位符 / 测试 fixture 加 allowlist，避免 false positive。
+# 跑法：gitleaks detect --config .gitleaks.toml --redact -v --no-banner
+# 维护：新增 .example / 文档 / 测试 fixture 含高熵占位符时，扩 paths / regexes。
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "big-ppt 全局 allowlist"
+
+# 路径白名单：天然含占位符的文件
+paths = [
+    '''packages/agent/\.env\.[^.]+\.example$''',
+    '''docs/security/gitleaks-baseline\.json$''',
+]
+
+# 内容白名单：项目里使用的占位符模式（保持显式 + 易识别，区别真凭据）
+regexes = [
+    '''REPLACE_ME[A-Z0-9_]*''',
+    '''your-?api-?key''',
+    '''<your[\s-][^>]+>''',
+    '''placeholder[-_]?[a-z]+''',
+]

