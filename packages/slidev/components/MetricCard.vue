@@ -34,8 +34,8 @@ defineProps<{
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.4em;
-  padding: 1em 1.2em;
+  gap: 0.1em; /* 7.5E：value 与 label 间距收紧，让卡片内容更紧凑 */
+  padding: 0.6em 1em;
   border-radius: var(--ld-radius-md);
   font-family: var(--ld-font-family-brand);
   text-align: center;
