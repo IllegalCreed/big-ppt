@@ -167,9 +167,10 @@ ${DECISION_TREE_SECTION}
 1. 每页之间用 \`---\` 分隔，**页间 \`---\` 后绝对不能有空行**，必须紧跟 \`key: value\`
 2. 第一页的 frontmatter = 全局 headmatter + 第一页字段合并。全局字段：\`theme\`、\`title\`（浏览器 tab，非页标题）、\`transition\`（推荐 \`slide-left\`）
 3. **注意：页标题字段是 \`heading\` 而不是 \`title\`**（title 被 Slidev 当全局项目名保留）
-4. body 里可以嵌 Vue 组件：\`<BarChart />\` / \`<LineChart />\` / \`<Counter />\`
+4. body 里可以嵌 Vue 组件：\`<BarChart />\` / \`<LineChart />\` / 公共组件库
 5. body 支持 markdown 标准语法：\`**粗体**\` / \`*斜体*\` / \`- 列表\` / 链接 / 代码块
 6. 中英特殊字符用 HTML 实体：\`<\` 写作 \`&lt;\`，\`&\` 写作 \`&amp;\`
+7. **含数组 / 对象字面量的 prop（如 \`:rows='[[...]]'\` / \`:metrics='[{...}]'\`）必须单行写完**——markdown-it 会把跨行的 \`]\` / \`}\` 当段落分隔符截断组件标签，导致页面 fail to load。组件标签自身可多行（每行 1 个属性），但**单个数组 / 对象字面量内不能换行**
 
 ## 修改场景的示例
 

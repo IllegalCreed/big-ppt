@@ -252,16 +252,7 @@ heading: Quote / Callout / Table 混合
 </template>
 <template #right>
 
-<Table
-  :headers='["指标", "数值"]'
-  :rows='[
-    ["模板", "beitou-standard"],
-    ["layer-1 layouts", "5 个"],
-    ["公共组件", "16 个"],
-    ["token 数", "22 项"],
-    ["测试覆盖", "473 unit"]
-  ]'
-/>
+<Table :headers='["指标","数值"]' :rows='[["模板","beitou-standard"],["layer-1 layouts","5 个"],["公共组件","16 个"],["token 数","22 项"],["测试覆盖","473 unit"]]' />
 
 </template>
 </TwoCol>
@@ -504,16 +495,7 @@ AI 自由度 5 档：从纯 markdown 到 chart.js 现写到 script setup 原创�
 </template>
 <template #right>
 
-<Table
-  :headers='["指标", "数值"]'
-  :rows='[
-    ["模板", "jingyeda-standard"],
-    ["layer-1 layouts", "5 个"],
-    ["公共组件", "16 个"],
-    ["token 数", "22 项"],
-    ["双字体", "仿宋 + 雅黑"]
-  ]'
-/>
+<Table :headers='["指标","数值"]' :rows='[["模板","jingyeda-standard"],["layer-1 layouts","5 个"],["公共组件","16 个"],["token 数","22 项"],["双字体","仿宋 + 雅黑"]]' />
 
 </template>
 </TwoCol>
