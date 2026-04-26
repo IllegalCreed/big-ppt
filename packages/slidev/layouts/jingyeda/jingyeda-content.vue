@@ -9,7 +9,7 @@ defineProps<{ heading?: string }>()
 </script>
 
 <template>
-  <div class="slidev-layout jyd-content-slide">
+  <div class="slidev-layout jingyeda-template jyd-content-slide">
     <div class="jyd-content-root">
       <LJydHeader>
         <h1 v-if="heading" class="jyd-content-title">{{ heading }}</h1>
@@ -32,7 +32,7 @@ defineProps<{ heading?: string }>()
   font-family: var(--jyd-ff-brand);
 }
 .jyd-content-title {
-  color: #ffffff;  /* 显式白色，Slidev 默认 h1 color 会覆盖继承 */
+  color: #ffffff; /* 显式白色，Slidev 默认 h1 color 会覆盖继承 */
   font-size: 1.75em;
   font-weight: 600;
   letter-spacing: 0.08em;

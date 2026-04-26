@@ -1,6 +1,6 @@
 <!--
-  beitou-standard 章节标题页 layout（Phase 7.5D NEW）。
-  红底白字 + 左侧巨型数字 + 右侧章节名，用于章节切换 / 主题分隔。
+  beitou-standard 章节标题页 layout（Phase 7.5D NEW，7.5E 调整为白底）。
+  白底 + 巨型红色数字 + 黑色章节名 + 右下红色装饰条；克制不抢戏。
 
   frontmatter：
     chapterNumber : number   章节序号（如 1 / 2 / 3）
@@ -14,13 +14,16 @@ defineProps<{
 </script>
 
 <template>
-  <div class="slidev-layout beitou-section-title-slide">
+  <div class="slidev-layout beitou-template beitou-section-title-slide">
     <div class="bt-section-root">
+      <div class="bt-section-eyebrow" v-if="chapterNumber !== undefined">
+        CHAPTER {{ String(chapterNumber).padStart(2, '0') }}
+      </div>
       <div class="bt-section-number" v-if="chapterNumber !== undefined">
         {{ String(chapterNumber).padStart(2, '0') }}
       </div>
-      <div class="bt-section-divider" />
       <h1 class="bt-section-title" v-if="chapterTitle">{{ chapterTitle }}</h1>
+      <div class="bt-section-accent" />
     </div>
   </div>
 </template>
@@ -30,33 +33,42 @@ defineProps<{
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   justify-content: center;
-  gap: 60px;
-  background: var(--bt-brand-gradient);
-  padding: 60px 80px;
+  gap: 24px;
+  background: var(--bt-bg-page);
+  padding: 80px 120px;
   font-family: var(--bt-ff-brand);
-  color: #ffffff;
   overflow: hidden;
 }
+.bt-section-eyebrow {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 8px;
+  color: var(--bt-fg-muted);
+}
 .bt-section-number {
-  font-size: 160px;
+  font-size: 220px;
   font-weight: 900;
   letter-spacing: 4px;
-  line-height: 1;
-  flex: 0 0 auto;
-}
-.bt-section-divider {
-  width: 4px;
-  height: 200px;
-  background: rgba(255, 255, 255, 0.6);
+  line-height: 0.9;
+  color: var(--bt-brand);
 }
 .bt-section-title {
-  flex: 1;
-  font-size: 52px;
-  font-weight: 700;
+  font-size: 56px;
+  font-weight: 800;
   letter-spacing: 6px;
-  line-height: 1.3;
+  line-height: 1.2;
   margin: 0;
+  color: var(--bt-fg-primary);
+}
+.bt-section-accent {
+  position: absolute;
+  right: 0;
+  bottom: 80px;
+  width: 240px;
+  height: 6px;
+  background: var(--bt-brand);
 }
 </style>

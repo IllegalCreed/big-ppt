@@ -16,7 +16,7 @@ defineProps<{
 </script>
 
 <template>
-  <div class="slidev-layout cover-slide">
+  <div class="slidev-layout beitou-template cover-slide">
     <div class="cover-root">
       <LBeitouCoverLogo class="cover-logo" />
       <LBeitouTitleBlock>

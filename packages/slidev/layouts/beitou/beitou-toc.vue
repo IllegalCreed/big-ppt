@@ -15,7 +15,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="slidev-layout toc-slide">
+  <div class="slidev-layout beitou-template toc-slide">
     <div class="toc-root">
       <div class="toc-left-block">
         <div class="toc-left-texture"></div>

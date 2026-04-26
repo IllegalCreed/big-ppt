@@ -163,7 +163,7 @@ describe('buildSystemPrompt（A/B contract）', () => {
       'PetalFour',
       'ProcessFlow',
       'MetricCard',
-      'KVList',
+      'Table',
       'Quote',
       'Callout',
       'BarChart',

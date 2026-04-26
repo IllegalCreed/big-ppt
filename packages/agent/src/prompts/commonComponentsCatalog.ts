@@ -121,11 +121,11 @@ export const commonComponentsCatalog: ComponentEntry[] = [
     example: '<MetricCard value="89" unit="%" label="客户留存率" />',
   },
   {
-    name: 'KVList',
+    name: 'Table',
     category: 'block',
-    description: '键值对列表（label : value），columns 控制几列',
-    propsOrSlots: 'items: Array<{label, value}> / columns?: number(默认 2)',
-    example: `<KVList :items='[{"label":"部门","value":"研发部"},{"label":"负责人","value":"张三"}]' />`,
+    description: '表格：表头主色填充白字 + 斑马条；适合项目清单 / 对比矩阵',
+    propsOrSlots: 'headers: string[] / rows: (string|number)[][] / variant?: "striped"|"plain"',
+    example: `<Table :headers='["项目","负责人","截止"]' :rows='[["登录优化","张三","04-30"],["性能埋点","李四","05-15"]]' />`,
   },
   {
     name: 'Quote',

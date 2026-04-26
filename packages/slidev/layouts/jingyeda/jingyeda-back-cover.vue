@@ -25,7 +25,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="slidev-layout jyd-back-cover-slide">
+  <div class="slidev-layout jingyeda-template jyd-back-cover-slide">
     <div class="jyd-bc-root">
       <!-- ① logo 段（3/10） -->
       <div class="jyd-bc-top">
@@ -85,13 +85,13 @@ withDefaults(
   align-items: stretch;
 }
 .jyd-bc-blue {
-  flex: 2;  /* 2/3 */
+  flex: 2; /* 2/3 */
   background: var(--jyd-brand-primary);
   color: #ffffff;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 2em 1.5em;  /* 顶部不 padding，底部留 1.5em 让 org 不贴到色块边缘 */
+  padding: 0 2em 1.5em; /* 顶部不 padding，底部留 1.5em 让 org 不贴到色块边缘 */
   box-sizing: border-box;
 }
 /* message 占上半部 flex:1 空间，内部居中 */
@@ -123,7 +123,7 @@ withDefaults(
   line-height: 1.6;
   text-align: justify;
   text-align-last: justify;
-  text-justify: inter-character;  /* 中文字符间自动均分，和 text-align-last 配合实现等宽 */
+  text-justify: inter-character; /* 中文字符间自动均分，和 text-align-last 配合实现等宽 */
 }
 .jyd-bc-org-zh {
   font-size: 1.125em;
@@ -134,7 +134,7 @@ withDefaults(
   margin-top: 0.3em;
 }
 .jyd-bc-green {
-  flex: 1;  /* 1/3 */
+  flex: 1; /* 1/3 */
   background: var(--jyd-brand-accent);
 }
 

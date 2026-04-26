@@ -1,11 +1,13 @@
 /*
  * Slidev 跨主题通用样式入口。
  *
- * 目前只做一件事：`@import` 当前激活主题的 tokens.css。Phase 8 多主题时，
- * 这里可通过构建时软链 / 替换切换主题 tokens（见规划文件 抉择 2）。
+ * tokens.css 同时 import 两套（beitou + jingyeda）；私有 --bt-* / --jyd-* 都在
+ * :root 全局可见，不冲突；但 Phase 7.5B 在 :root 同时声明的 --ld-* 会被后导入
+ * 的覆盖（jingyeda 覆盖 beitou），导致所有 deck 看到的 --ld-* 都是 jingyeda 蓝。
  *
- * layouts 和 slides.md 的 `<style>` 不再硬编码 hex / font-family / filter，
- * 一律使用 var(--bt-*) / var(--jyd-*) 消费这里的 token，按所属模板的命名空间。
+ * Phase 7.5E 修法：layer-1 layout 加 .beitou-template / .jingyeda-template class，
+ * 在该 class scope 里 override --ld-* 到对应模板私有值。公共组件作为子元素继承
+ * --ld-* 自动适配模板色。
  */
 
 @import './templates/beitou-standard/tokens.css';
@@ -19,4 +21,63 @@
   font-family: var(--bt-ff-brand);
   color: var(--bt-fg-primary);
   background: var(--bt-bg-page);
+}
+
+/* === Phase 7.5E：--ld-* token scope override，按模板 class 路由 === */
+.slidev-layout.beitou-template {
+  /* colors */
+  --ld-color-brand-primary: var(--bt-brand);
+  --ld-color-brand-primary-deep: var(--bt-brand-deep);
+  --ld-color-brand-accent: var(--bt-brand);
+  --ld-color-fg-primary: var(--bt-fg-primary);
+  --ld-color-fg-muted: var(--bt-fg-muted);
+  --ld-color-bg-page: var(--bt-bg-page);
+  --ld-color-bg-subtle: var(--bt-bg-subtle);
+  --ld-color-chart-primary-bg: rgba(208, 13, 20, 0.85);
+  --ld-color-chart-primary-border: var(--bt-brand-deep);
+  /* fonts */
+  --ld-font-family-brand: var(--bt-ff-brand);
+  --ld-font-family-ui: var(--bt-ff-brand);
+  --ld-font-size-h1: 40px;
+  --ld-font-size-h2: 26px;
+  --ld-font-size-body: 20px;
+  --ld-font-weight-bold: 700;
+  --ld-font-weight-regular: 400;
+  /* shapes */
+  --ld-radius-sm: 4px;
+  --ld-radius-md: 8px;
+  --ld-border-width-thin: 1px;
+  --ld-border-width-thick: 2px;
+  /* shadows */
+  --ld-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --ld-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.slidev-layout.jingyeda-template {
+  /* colors */
+  --ld-color-brand-primary: var(--jyd-brand-primary);
+  --ld-color-brand-primary-deep: var(--jyd-brand-primary-deep);
+  --ld-color-brand-accent: var(--jyd-brand-accent);
+  --ld-color-fg-primary: var(--jyd-fg-primary);
+  --ld-color-fg-muted: var(--jyd-fg-muted);
+  --ld-color-bg-page: var(--jyd-bg-page);
+  --ld-color-bg-subtle: var(--jyd-bg-subtle);
+  --ld-color-chart-primary-bg: rgba(0, 61, 165, 0.85);
+  --ld-color-chart-primary-border: var(--jyd-brand-primary);
+  /* fonts */
+  --ld-font-family-brand: var(--jyd-ff-brand);
+  --ld-font-family-ui: var(--jyd-ff-ui);
+  --ld-font-size-h1: 40px;
+  --ld-font-size-h2: 26px;
+  --ld-font-size-body: 20px;
+  --ld-font-weight-bold: 700;
+  --ld-font-weight-regular: 400;
+  /* shapes */
+  --ld-radius-sm: 4px;
+  --ld-radius-md: 8px;
+  --ld-border-width-thin: 1px;
+  --ld-border-width-thick: 2px;
+  /* shadows */
+  --ld-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --ld-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
 }

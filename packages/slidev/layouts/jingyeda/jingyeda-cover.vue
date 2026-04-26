@@ -22,7 +22,7 @@ defineProps<{
 </script>
 
 <template>
-  <div class="slidev-layout jyd-cover-slide">
+  <div class="slidev-layout jingyeda-template jyd-cover-slide">
     <div class="jyd-cover-root">
       <!-- ① logo 段（1/3） -->
       <div class="jyd-cover-top">
@@ -90,15 +90,15 @@ defineProps<{
   padding: 0 5%;
 }
 .jyd-cover-logo {
-  height: 1.5em;  /* 跟随基础字号缩放 */
+  height: 1.5em; /* 跟随基础字号缩放 */
 }
 
 /* ② banner 段（3/10）：2×2 grid，尺寸全比例（参照参考图实测比例） */
 .jyd-cover-banner {
   flex: 4;
   display: grid;
-  grid-template-columns: 10fr 2fr;  
-  grid-template-rows: 8fr 1fr;     
+  grid-template-columns: 10fr 2fr;
+  grid-template-rows: 8fr 1fr;
   gap: 0.5em;
   overflow: hidden;
 }
@@ -109,7 +109,7 @@ defineProps<{
   height: 100%;
   object-fit: cover;
   display: block;
-  min-height: 0;  /* 允许 grid 子项自由缩小 */
+  min-height: 0; /* 允许 grid 子项自由缩小 */
 }
 .jyd-cover-banner-right {
   grid-column: 2;
@@ -146,13 +146,13 @@ defineProps<{
 .jyd-cover-title {
   color: var(--jyd-brand-primary);
   font-size: 2.25em;
-  font-weight: 500;  /* 仿宋系不宜过粗，synthesized bold 会发糊 */
+  font-weight: 500; /* 仿宋系不宜过粗，synthesized bold 会发糊 */
   letter-spacing: 0.18em;
   margin: 0;
   line-height: 1.3;
 }
 .jyd-cover-subtitle {
-  color: var(--jyd-brand-primary);  /* 副标题也改为品牌蓝 */
+  color: var(--jyd-brand-primary); /* 副标题也改为品牌蓝 */
   font-size: 1.125em;
   font-weight: 400;
   letter-spacing: 0.12em;
@@ -161,8 +161,8 @@ defineProps<{
 }
 .jyd-cover-info {
   display: grid;
-  grid-template-columns: auto auto;  /* 按内容宽度自动撑开，不强制 1:1 分 */
-  justify-content: center;            /* 两列整体在 grid 容器内水平居中 */
+  grid-template-columns: auto auto; /* 按内容宽度自动撑开，不强制 1:1 分 */
+  justify-content: center; /* 两列整体在 grid 容器内水平居中 */
   column-gap: 4em;
   row-gap: 0.6em;
   font-family: var(--jyd-ff-ui);

@@ -34,7 +34,7 @@
 | `--ld-color-brand-primary-deep`   | 主色深色变体（hover / 阴影 / 强对比）              | beitou: `#a8090e` / jingyeda: `#002a78`                          | 装饰组件深色描边、二级强调             |
 | `--ld-color-brand-accent`         | 辅色（双主色品牌的第二色；单主色品牌可同 primary） | beitou: 同 primary / jingyeda: `#8fc31f`                         | 装饰组件辅色块 / 第二品牌色装饰        |
 | `--ld-color-fg-primary`           | 主文字色                                           | beitou: `#333333` / jingyeda: `#1a1a1a`                          | 正文 / 标题文字                        |
-| `--ld-color-fg-muted`             | 次要文字色（注释 / 标签 / 辅助说明）               | `#666666`                                                        | KVList 的 label / 图表轴标签           |
+| `--ld-color-fg-muted`             | 次要文字色（注释 / 标签 / 辅助说明）               | `#666666`                                                        | Table plain 边框 / 图表轴标签          |
 | `--ld-color-bg-page`              | 页面背景                                           | `#ffffff`                                                        | layout 容器底色                        |
 | `--ld-color-bg-subtle`            | 浅灰填充背景（卡片 subtle 模式 / 区块底）          | `#f5f5f5`                                                        | MetricCard subtle / Callout 浅底       |
 | `--ld-color-chart-primary-bg`     | 图表填充色（含 alpha）                             | beitou: `rgba(208,13,20,0.85)` / jingyeda: `rgba(0,61,165,0.85)` | BarChart / LineChart 填充              |
@@ -45,7 +45,7 @@
 | Token                      | 语义                                           | 默认值参考                                   | 谁在用                                     |
 | -------------------------- | ---------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
 | `--ld-font-family-brand`   | 品牌字体（标题 / 正文）                        | beitou: 雅黑系 / jingyeda: 仿宋系            | 标题 / 正文                                |
-| `--ld-font-family-ui`      | UI 字体（信息栏 / 标签 / chart 文字 / 小字号） | 雅黑系（jingyeda 显式区分；beitou 同 brand） | KVList label / chart 轴文字 / Callout 标题 |
+| `--ld-font-family-ui`      | UI 字体（信息栏 / 标签 / chart 文字 / 小字号） | 雅黑系（jingyeda 显式区分；beitou 同 brand） | chart 轴文字 / Callout 标题                |
 | `--ld-font-size-h1`        | 一级标题字号                                   | `40px`                                       | layer-1 layout 标题 / MetricCard.value     |
 | `--ld-font-size-h2`        | 二级标题字号                                   | `26px`                                       | layer-1 layout 副标题 / 装饰组件中央编号   |
 | `--ld-font-size-body`      | 正文字号                                       | `20px`                                       | 正文 / 列表项 / MetricCard.label           |
@@ -58,7 +58,7 @@
 | ------------------------- | ------------------------------- | ---------- | ---------------------------------------- |
 | `--ld-radius-sm`          | 小圆角（按钮 / 标签 / 小卡片）  | `4px`      | 内容块边角 / 内联标签                    |
 | `--ld-radius-md`          | 中圆角（大卡片 / panel）        | `8px`      | 大卡片 / Modal                           |
-| `--ld-border-width-thin`  | 细线（描边 / 分割线）           | `1px`      | KVList 分隔线 / 弱边框                   |
+| `--ld-border-width-thin`  | 细线（描边 / 分割线）           | `1px`      | Table 行分隔线 / 弱边框                  |
 | `--ld-border-width-thick` | 强调粗线（品牌色描边 / 主分隔） | `2px`      | 栅格分隔条 / 装饰组件描边 / 引文左侧粗线 |
 
 ### Shadows（2 项）

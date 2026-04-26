@@ -15,7 +15,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="slidev-layout jyd-toc-slide">
+  <div class="slidev-layout jingyeda-template jyd-toc-slide">
     <div class="jyd-toc-root">
       <LJydHeader>
         <h1 class="jyd-toc-title">目&ensp;录</h1>

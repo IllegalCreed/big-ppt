@@ -12,7 +12,7 @@ defineProps<{
 </script>
 
 <template>
-  <div class="slidev-layout back-cover-slide">
+  <div class="slidev-layout beitou-template back-cover-slide">
     <div class="back-cover-root">
       <LBeitouTitleBlock padding="40px 0" class="ending-block">
         <h1 v-if="message">{{ message }}</h1>

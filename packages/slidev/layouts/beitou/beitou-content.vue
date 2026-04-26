@@ -9,7 +9,7 @@ defineProps<{ heading?: string }>()
 </script>
 
 <template>
-  <div class="slidev-layout content-slide">
+  <div class="slidev-layout beitou-template content-slide">
     <div class="content-root">
       <h1 v-if="heading" class="content-title">{{ heading }}</h1>
       <div class="content-body">
