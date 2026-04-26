@@ -8,7 +8,7 @@
 | ------ | -------------------- | -------------------------------------------------- |
 | **P1** | Phase 3 关闭前必须清 | 5（全部清除：Phase 3 清 4 条，Phase 4 清 P1-5）                   |
 | **P2** | Phase 4 关闭前必须清 | 4（**全部清除**：P2-1/P2-2/P2-3 Phase 4 清；**P2-4 2026-04-23 提前清**） |
-| **P3** | 非阻塞，有机会再清   | 11（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归；**P3-10 2026-04-25 7D 清**；**P3-11 2026-04-25 新增 server-ref 反代**；**P3-4 2026-04-25 hash-mode fix 顺手清**）    |
+| **P3** | 非阻塞，有机会再清   | 14（Phase 4 清 P3-6；**Phase 5 清 P3-2**；P3-NEW 字体/视觉回归；**P3-10 2026-04-25 7D 清**；**P3-11 2026-04-25 新增 server-ref 反代**；**P3-4 2026-04-25 hash-mode fix 顺手清**；**P3-12/13/14 2026-04-26 Phase 7.5 plan 落地新增**）    |
 
 ---
 
@@ -339,6 +339,75 @@
 
 ---
 
+### P3-12. Prompt 公共组件 catalog 走 system prompt（首版），扩到 25+ 组件时切分层 lazy-load
+
+**位置**：[packages/agent/src/prompts/buildSystemPrompt.ts](../../packages/agent/src/prompts/buildSystemPrompt.ts) 的 `renderCommonComponentsSection(manifest)`（Phase 7.5D 引入）
+
+**影响**：
+
+- 首版 16 个公共组件（栅格 8 + 装饰 2 + 内容块 6）catalog 全塞 system prompt，每次 LLM 调用都带；估 system prompt 从 ~1500 → ~2500 token
+- GLM-4.6 上下文 128k 完全 OK；但**未来扩到 25+ 组件**（装饰类候选 6+ 个 / 栅格主从布局补完 / 流程图扩展等），prompt 会膨胀到 ~3500-4500 token，对话 turn 多了占总上下文 10%+，开始有性价比问题
+
+**修复方案**：切到 plan 16 设计抉择 #13 描述的"选项 C 分层 lazy-load"：
+
+- system prompt 仅留"决策树 + 组件名清单 + 一句话职责"（精简版 ~400 token）
+- 详细 props / 示例移到 `get_component_doc(name)` tool，AI 真正用某组件时按需查
+- tool 实现复用现有 `tool-registry`，新增 `get_component_doc` 一个工具
+- contract test 加"AI 调 tool 后能正确生成对应组件"的 happy path
+
+**触发时机**：组件库扩到 25+ 个时；当前 16 个不必动
+
+**Why P3 而非 P2**：当前 token 量可承受；分层只是优化不修 bug
+
+---
+
+### P3-13. AI 工作模式 5 档自由度 UI 提示
+
+**位置**：[packages/creator/src/components/ChatPanel.vue](../../packages/creator/src/components/ChatPanel.vue) / [packages/creator/src/components/DeckEditorCanvas.vue](../../packages/creator/src/components/DeckEditorCanvas.vue)（Phase 7.5D 引入 `analyzeDeckPurity` 后）
+
+**影响**：
+
+- Phase 7.5D 起每个 deck 都有 `level: 1|2|3|4|5` 自由度等级标签（7.5D 的 `analyzeDeckPurity` 输出）；level 4-5 切模板时走 LLM fallback、视觉可能调整
+- 当前 UI **不向用户暴露这个 level**，用户在切模板前不知道"这个 deck 是 deterministic 还是 LLM-fallback 路径"
+- 用户自己在 ChatPanel 让 AI 写了 chart.js 现写 / `<script setup>` 原创组件后，再切模板可能报"视觉走样了"——但其实是已知风险，缺通知机制
+
+**修复方案**：
+
+- DeckEditorCanvas 顶栏（History / Settings / Layers 按钮所在区）加一个小 badge，鼠标悬停显示"本 deck 包含档 X 内容（X 页）；切模板时部分页面会经 LLM 重写"
+- 切模板 modal（`TemplatePickerModal` 在 `mode='switch'`）的警告条，根据 `analyzeDeckPurity().level` 显示不同警告强度：
+  - level 1-3：绿色 ✓ "切换将走 deterministic 路径，内容字节级一致"
+  - level 4-5：黄色 ⚠ "本 deck 含 N 页自由档内容（chart.js / 原创 Vue 组件），切换后视觉可能调整，可 /undo 回滚"
+- 新增 GET `/api/decks/:id/analyze` 端点暴露 `analyzeDeckPurity` 结果给前端
+
+**触发时机**：Phase 7.5 关闭后，用户报告"切模板视觉走样"或主动想看 deck 自由度等级时；非阻塞
+
+**Why P3**：核心机制 7.5D 已落地；UI 提示是体验增强，不影响功能正确性
+
+---
+
+### P3-14. typography size + spacing token 业务消费方
+
+**位置**：[packages/slidev/templates/beitou-standard/](../../packages/slidev/templates/beitou-standard/) / [jingyeda-standard/](../../packages/slidev/templates/jingyeda-standard/) layouts 内联 CSS（Phase 7.5A 立 token 后）
+
+**影响**：
+
+- Phase 7.5A 在 [TOKENS.md](../../packages/slidev/components/TOKENS.md) 立了完整 22 个 `--ld-*` token，含 fonts 类的 `--ld-font-size-h1` / `--ld-font-size-h2` / `--ld-font-size-body` / `--ld-font-weight-bold` / `--ld-font-weight-regular`
+- 但 layer-1 layout（`*-cover.vue` / `*-content.vue` 等）里很多字号 / 字重还是 hardcoded（`font-size: 40px` / `font-weight: 900`）；shapes 类的 `--ld-radius-*` 类似处境
+- 7.5A spec 占位 + 7.5B 模板填值，但**没有强制业务方读 token**——这是 spec 落地半截的状态
+- 长期看：模板视觉调整想统一改字号时（如所有 h1 从 40px → 36px）需要逐文件改，不能一处改 token 全模板生效
+
+**修复方案**：
+
+- 扫每个 layer-1 layout 文件 + 公共组件，把 hardcoded 字号 / 字重 / radius / shadow 用 `var(--ld-font-size-h1)` 等替换
+- 测试：单测加"layout 内 hardcoded 字号 / 字重计数 = 0"的 lint 风格断言（grep `font-size:\s*\d+px` 在 templates 目录下应为 0）
+- 文档：TOKENS.md 加"消费方清单"section，列每个 token 当前被哪些文件用
+
+**触发时机**：未来某次模板视觉重构 / 跨模板字号统一时；非阻塞
+
+**Why P3**：当前模板视觉无变更需求；spec 已立，业务消费可惰性补
+
+---
+
 ### P3-6. creator 有 11 条 `any` 警告（Phase 2 遗留） ✅（2026-04-22 清）
 
 **原位置**：
@@ -375,3 +444,4 @@
 | 2026-04-25 | **Phase 7D 关闭**：P3-10 全清（抽 agent app 单例 + creator workspace dep + `_setup/integration.ts` in-process fetch shim + 3 个契约 spec 改造）；同期 `deck_versions` schema 加 `template_id` 列 + `routes/decks` restore 端点同步 `decks.template_id`，让 /undo 切回旧模板可逆；新增 3 条 E2E spec（新建 jingyeda / 切模板 / 切完 /undo），9 条 e2e 全绿。测试 363 unit → 368 unit + 9 e2e = 377 total | 项目组 |
 | 2026-04-25 | **新增 P3-11**：Slidev 翻页时 iframe 内 `vite-plugin-vue-server-ref` 客户端代码 `fetch('/@server-reactive/nav')` 不带 base 前缀，落到 creator dev 端口 404。临时双层 proxy workaround（creator vite + agent http server 都加 `/@server-ref` `/@server-reactive` 反代）；上游 PR 留 Phase 8 依赖升级期一并提 | 项目组 |
 | 2026-04-25 | **Slidev hash-mode fix**：用户反馈 LLM 改幻灯片时 iframe 频繁刷新 + content_main.js postMessage 报错。根因 SlidePreview iframe src 同时绑 `currentPage`，工具链 setPage 一变就 reload。修法：starter.md（beitou + jingyeda）加 `routerMode: hash` + `mirror.ts` 写盘前 `ensureRouterModeHash` 防御性插入（兼容老 deck）+ SlidePreview src 不绑 currentPage（只绑 refreshToken），翻页改写 `iframe.contentWindow.location.hash`。**P3-4 顺手清**：logger.ts 黑名单 regex 改白名单（同源 origin 才记），扩展无论叫什么都挡掉。测试 +7 mirror 单测 = agent 301 / creator 71 / e2e 9 全绿 | 项目组 |
+| 2026-04-26 | **Phase 7.5 plan 落地**（[plan 16](16-phase75-template-layering.md)）登记 3 条新债：**P3-12** Prompt 公共组件 catalog 全塞 system prompt（首版 16 个组件 ~2500 token），扩到 25+ 时切分层 lazy-load via `get_component_doc(name)` tool；**P3-13** AI 5 档自由度 UI 提示——切模板 modal 根据 `analyzeDeckPurity().level` 给绿/黄警告，DeckEditorCanvas 顶栏 badge 显示当前 deck level；**P3-14** typography size + spacing token 业务消费方（7.5A 立了完整 22 个 `--ld-*` token，但 layer-1 layout 字号 / 字重还有 hardcoded），未来模板视觉重构时统一替换 + lint 断言 hardcoded 计数 = 0；P3 条数 11 → 14 | 项目组 |

@@ -10,6 +10,8 @@
 > - Phase 5 用户系统+Deck+单实例锁：[docs/plans/10-phase5-user-deck-versions.md](../plans/10-phase5-user-deck-versions.md)
 > - Phase 5 补测轨道（env 分层+单元/集成/E2E+coverage）：[docs/plans/11-phase5-tests-and-env-split.md](../plans/11-phase5-tests-and-env-split.md)
 > - Phase 6 模板系统架构：[docs/plans/12-phase6-template-architecture.md](../plans/12-phase6-template-architecture.md)
+> - Phase 7 模板重命名 + 二套 + UI + E2E：[docs/plans/13](../plans/13-phase7-template-rename.md) / [14](../plans/14-phase7c-template-ui.md) / [15](../plans/15-phase7d-e2e-and-undo-fix.md)
+> - Phase 7.5 模板分层重构（公共组件库 POC）：[docs/plans/16-phase75-template-layering.md](../plans/16-phase75-template-layering.md)
 > - 技术债：[docs/plans/99-tech-debt.md](../plans/99-tech-debt.md)
 
 ---
@@ -312,7 +314,7 @@
 
 ## Phase 7.5：模板分层重构（公共组件库 POC）
 
-**目标**：把当前两套模板从"每套都重抄一份内容页部件"的写法，重构为 [vision.md 模板分两层心智](./vision.md#核心心智模板分两层) 描述的两层架构——第一层模板独有的 5 个 layout（封面 / 封底 / 目录 / 章节标题 / 内容页骨架）+ 第二层所有模板共享的内容部件（布局 / 图表 / 媒体）。验证"切换模板时内容页**字节级无损**"这一核心产品断言。
+**目标**：把当前两套模板从"每套都重抄一份内容页部件"的写法，重构为 [vision.md 模板分两层心智](./vision.md#核心心智模板分两层) 描述的两层架构——第一层每套模板独有 5 个 Slidev layout（封面 / 封底 / 目录 / 章节标题 / 内容页骨架）+ 第二层所有模板共享的 Vue 组件库（**栅格 / 装饰 / 内容块** 三类，配色读 `--ld-*` token 自适应模板）。验证"切换模板时内容页**字节级无损**"这一核心产品断言。
 
 **为什么现在做**：
 
@@ -323,36 +325,41 @@
 
 **核心约束**：本 Phase 只做架构与重构，**不做**完整生态化（脚手架 / 市场 / npm 公开包），那些依赖足够多模板与第三方意愿，留 Phase 16+。
 
-**交付物**（5 子步，串行增量，每步独立 commit + 测试；具体类名与文件路径见对应 plan）：
+**交付物**（7 子步，串行增量，每步独立 commit + 测试；具体类名 / 文件路径 / 决策细节见 [plan 16](../plans/16-phase75-template-layering.md)）：
 
-- **7.5A：设计 token 规范定稿** — 颜色 / 字体 / 形状 / 阴影 4 类 token 完整 schema 落档；提供校验脚本检查每套模板都实现了完整规范
-- **7.5B：两套模板按规范增补 tokens** — 现有模板的 tokens 文件补齐规范字段；模板私有 token 保留，仅用于第一层 layout 的独有装饰
-- **7.5C：抽公共内容部件库** — 把目前散落在两套模板里的布局组件（多栏 / 网格）、图表组件、媒体组件下沉到公共组件库；每个组件文档化 + 单测覆盖"读不同 tokens 渲染正确"；模板私有的 chart / layout 组件全部清退
-- **7.5D：每套模板 layouts 收敛到 5 个标准** — 仅保留封面 / 封底 / 目录 / 章节标题 / 内容页骨架；现有"特定数据页 / banner 页"等归入内容页 + 公共组件组合；AI prompt 同步重写为"5 个标准 layout + 公共组件用法 catalog"
-- **7.5E：starter 改造 + 切模板字节级 E2E** — 两套模板的 starter 骨架改用公共组件；新增 E2E 验证切换模板时内容只有 layout 名字 / 模板私有引用变化，业务结构字节级一致；公共组件 catalog 文档
+- **7.5A：token 规范定稿 + 校验脚本** — 颜色 / 字体 / 形状 / 阴影 4 类共 22 个 `--ld-*` token schema 落档；`validate-template-tokens.ts` 校验每套模板覆盖率
+- **7.5B：两套模板按规范增补 tokens** — beitou / jingyeda 的 tokens.css 增补 `--ld-*` 别名指向 `--bt-*` / `--jyd-*`；模板私有 token 保留仅供 layer-1 装饰
+- **7.5C-1：抽公共栅格组件（Layer 2A，8 个）** — TwoColLayout / ThreeCol / OneLeftThreeRight / OneRightThreeLeft / OneTopThreeBottom / TwoColumnsTwoRows（田字格）/ NineGrid / ImageTextLayout，提供 named slots
+- **7.5C-2：抽公共装饰组件（Layer 2B，2 个种子）+ 装饰类规范文档** — PetalFour（花瓣 4 区）/ ProcessFlow（流程箭头）+ 装饰类未来扩展规范（CircleFour / Timeline / Pyramid 等留 backlog）
+- **7.5C-3：抽公共内容块组件（Layer 2C，6 个）+ chart token rename** — MetricCard / KVList / Quote / Callout / BarChart / LineChart；旧 `LBeitouMetricCard` 清退
+- **7.5D：layer-1 收敛到 5 + section-title NEW + AI prompt 重写 + deterministic 切模板路径 + 数据迁移脚本** — 删 `*-data` / `*-two-col` / `*-image-content`；新增 `*-section-title`；prompt 加"5 layout + 16 组件 + 决策树 + 5 档自由度"；`analyzeDeckPurity` 判 pure/level，pure 切模板走字符串替换跳 LLM，not-pure fallback LLM 重写；存量 deck 一次性迁移
+- **7.5E：starter 改公共组件 + 文档完善 + 全测试通过 + 用户手验** — 两套 starter 用 layer-1 + 三类公共组件示范；COMPONENTS.md / TOKENS.md 完整化；用户人工双 deck 切模板比对验证（不写自动化字节级 E2E）
 
 **验收条件**：
 
-- [ ] 设计 token 规范定稿，未来变更走显式提案
-- [ ] 两套模板各自的 layouts 数量从当前 7-8 个收敛到 5 个标准 layout
-- [ ] 全仓无模板私有 chart / 布局 / 媒体组件残留，全部下沉到公共组件库
-- [ ] AI 用公共组件生成内容页的 contract test 通过
-- [ ] **切换模板字节级一致 E2E 通过**（核心断言）
-- [ ] 现有 starter 页面渲染视觉无损（人工截图对比）
-- [ ] 公共组件单测覆盖完整
-- [ ] 现有所有 E2E 全绿（不能挂）
+- [ ] `--ld-*` token 规范定稿（22 项 4 类），`validate-template-tokens` 两套模板都过
+- [ ] 两套模板 layouts 从 7 收敛到 5（cover / back-cover / toc / section-title / content）
+- [ ] 全仓无模板私有 chart / 布局 / 媒体组件残留
+- [ ] AI 用三类公共组件生成内容页的 prompt contract test 通过（≥ 18 条断言）
+- [ ] 公共组件单测覆盖完整（栅格 ≥ 16 / 装饰 ≥ 6 / 内容块 ≥ 12）
+- [ ] **切模板手验：内容字节级一致性人工通过 + 装饰组件几何一致 / 配色随 token 切换**（核心断言）
+- [ ] deterministic 切模板路径单测 ≥ 6（`analyzeDeckPurity` 三类污染信号识别 + pure → 字符串替换 / not-pure → LLM fallback）
+- [ ] 现有所有 E2E 全绿（不能挂；11 / 11）
 
-**状态**：待开始
+**状态**：待开始（实施详见 [plan 16](../plans/16-phase75-template-layering.md)）
 
 **依赖**：Phase 7 完成（必须有两套模板对比才能识别共性）
 
 **不做什么**：
 
 - ❌ 模板创作脚手架 CLI / 模板市场 / 创作者经济（全部留 Phase 16+）
-- ❌ 公共组件提 npm 公开包发布
+- ❌ 公共组件提 npm 公开包发布 / 模板 override 机制（同上 Phase 16+）
 - ❌ 新增第三套模板（验证两套切换无损就够）
 - ❌ 改 Phase 12 多 LLM provider 的实现节奏（独立工作）
 - ❌ 改两套模板既有的最终配色
+- ❌ **字节级自动化 E2E**（用户改为人工双 deck 比对；LLM 非 deterministic 不适合自动化字节比对）
+- ❌ 装饰类组件首版超出 2 个种子（CircleFour / HexThree / TimelineHorizontal / PyramidLevels / VennTwo / FlowCircular / RadialSix 等按需加）
+- ❌ 新 LLM 工具（公共组件靠 markdown body 透传，tools 数维持 10）
 
 ---
 
@@ -694,3 +701,4 @@
 | 2026-04-26 | **路线图三处调整**：(1) **Phase 9 加仓库卫生清理**交付物——一次性迁移脚本（`backfill-template-id.ts` / `rename-template-id.ts`）评估删除，保留的脚本要求"通用化"，已结案 plan 评估归档；(2) **导出/导入前插入两个新 Phase**——Phase 12 多 LLM Provider 兼容（Anthropic Claude + Google Gemini 原生接口）/ Phase 13 预制 MCP 服务扩展（catalog 5-8 个）；原 Phase 12（导出）→ **Phase 14**，原 Phase 13（导入）→ **Phase 15**，原 Phase 14+（远期）→ **Phase 16+**；所有跨 Phase 引用同步更新；(3) **vision.md 加远期愿景章节"模板生态系统"**——明确模板分两层架构：**第一层** 5 个模板独有 layout（cover / end / toc / section-title / content 骨架）；**第二层** 所有模板共享的内容页部件（两栏 / 田字格 / 九宫格 / 各类 chart / KV 列表等）下沉到 `@lumideck/template-components` 公共组件库，**只读 `--ld-*` token 自动配色**，模板切换时内容页完全无损。配套：创作者脚手架 + 模板市场 + tokens.css 完整 schema（颜色 / 字体 / 形状 / 阴影 4 类 token）。原 P14+ 的"团队共享模板 / 主题系统与自定义主题编辑器"两条合并为指向 vision.md 的引用。**顺手修**：vision.md / requirements.md 里 Phase 5.5 / 6 / 7 / 8 等过时编号校对到当前 10/11/14/15 | 用户提出 P9 应该清理一次性迁移脚本（不通用就别留）；多 LLM provider 优先级高于导出（避免被 OpenAI 兼容代理丢能力）；用户进一步明确模板心智："内容页里的两栏 / 田字格 / 数据卡片不应该写死在模板里，所有模板都用得上，只读 token 配色就行；模板真正独有的就是封面 / 封底 / 目录 / 章节标题 / 内容页骨架这 5 个 layout"——这是分两层架构的核心抉择 |
 | 2026-04-26 | **新增 Phase 7.5 模板分层重构（公共组件库 POC）**：在 Phase 8 之前插入。5 个子步：7.5A token 规范定稿（`--ld-*` schema）/ 7.5B 两套模板的 tokens.css 按规范增补 / 7.5C 抽公共组件到 `packages/slidev/components/common/`（布局 + 图表 + 媒体三类）+ 删除私有 chart 组件 / 7.5D 每套模板 layouts 收敛到 5 个标准（cover / end / toc / section-title / content）+ AI prompt 重写 / 7.5E starter 改公共组件 + 切模板字节级 E2E。**核心验收**：切换模板时内容页 `deck_versions.content` 字节级一致（仅 layout 名字 / 私有 token 引用变化，公共组件用法不变）。后续 Phase 编号不顺延，仍是 Phase 8/9/10... | 用户明确"越早越好"——只有 2 套模板时重构成本最低（×N 边际成本未累积）；Phase 8/9 工程性工作正好基于新干净架构扫一遍；Phase 10 上线后重构成本暴涨。脚手架 / 市场 / npm 发布留 Phase 16+ 不做 |
 | 2026-04-26 | **文档分工五层定位明确 + 三大文档重构**：(1) **`CLAUDE.md` 新建**——工程指南（技术栈 / 命令 / 架构 / 约定 / 坑），每次对话自动加载；(2) **vision.md 重写**——只剩"产品形态 + 商业模式畅想"两维度，删所有技术细节（CSS / 类名 / SDK / 表名）；新增"商业模式畅想"章节（内部工具 → 行业 SaaS → 模板创作者市场三阶段路径）；模板分两层心智从技术描述改为产品价值描述；(3) **requirements.md 重写**——FR 表删除 Phase 编号承诺（避免编号 drift 同步），新增 FR-12/13/14/15（分享链接 / MCP catalog / 模板分层架构 / 模板生态远期）；(4) **roadmap.md 瘦身**——Phase 7.5/8/9/10/11/12/13/14/15 的交付物全部收敛到"做什么 / 验收什么"颗粒度，具体类名 / SDK / DB schema / 文件路径剥离到对应 plan。统一定位规则：vision = 产品/商业；requirements = 功能点；roadmap = 阶段排期；plans/NN = 技术实施；CLAUDE.md = 工程指南 | 用户提出文档定位模糊——之前的改动把技术细节误塞进 vision/roadmap，导致非技术读者 / 未来 Claude 都难以快速定位关键信息；统一文档分工后，每层只承担一个职责，长期维护成本下降 |
+| 2026-04-26 | **Phase 7.5 plan 落地**（[plan 16](../plans/16-phase75-template-layering.md)）：子步从原 5 个细化为 7 个（C 拆为 C-1 栅格 8 个 / C-2 装饰 2 个种子 / C-3 内容块 6 个）；公共组件分**栅格 / 装饰 / 内容块** 三类（首版 16 个），装饰类（PetalFour / ProcessFlow）几何全公共、配色读 token 自适应（**否定"花瓣 SVG 是模板私有装饰"**）；切模板加 **deterministic 字符串替换路径**——`analyzeDeckPurity` 判 5 档自由度（档 1-3 pure / 档 4-5 not-pure），pure 跳 LLM 直接换 frontmatter `layout:` 前缀，not-pure fallback LLM 重写；AI prompt 加"工作模式 5 档自由度"段，明示档 4-5（chart.js 现写 / `<script setup>` 原创组件）的代价；**字节级一致 E2E 改为人工双 deck 比对**（不写自动化）；prompt 投放走全塞 system prompt（首版 ~2500 token），未来组件库 25+ 切分层 lazy load 已登记进 [99-tech-debt.md](../plans/99-tech-debt.md) | 用户多轮抉择把 layout / component 边界、装饰几何归属、AI 自由度边界、切模板字节级保证机制全部澄清；plan 比 roadmap 原版更精确（roadmap 仅定方向，plan 落实施细节） |
