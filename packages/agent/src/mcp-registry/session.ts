@@ -1,5 +1,7 @@
 // packages/agent/src/mcp-registry/session.ts
 import type { McpServerConfig, McpServerStatus } from '@big-ppt/shared'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 /** MCP 会话的最小抽象:connect -> listTools -> callTool -> close */
 export interface McpToolDef {
@@ -18,13 +20,11 @@ export class McpSession {
   async connect(): Promise<void> {
     this.status = { state: 'connecting' }
     try {
-      // dynamic import 保持每次调用:这样 `vi.mock('@modelcontextprotocol/sdk/...')` 在测试里
-      // 才能拦截(hoisted 的 vi.mock 必须在 import 之前注册)。Node ESM 自带模块缓存,
-      // 首次之后 import 微任务开销可忽略。
-      const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
-      const { StreamableHTTPClientTransport } = await import(
-        '@modelcontextprotocol/sdk/client/streamableHttp.js'
-      )
+      // static import:在 Vitest 4 下,vi.mock(hoist) 对 static import 拦截稳定;
+      // 历史用 dynamic import 是 Vitest 2 时代为了让 vi.mock 拦截的 work-around,
+      // 但 Vitest 4 下 dynamic import 第二次调用会绕过 vi.mock 拿到真 SDK 模块
+      // (实测多 server 场景失败:第二个 server 用真 Client → "_transport.send is
+      // not a function")。production 等价(ESM module 缓存),改 static 仅让测试稳定。
       const transport = new StreamableHTTPClientTransport(new URL(this.config.url), {
         requestInit: { headers: this.config.headers },
       })

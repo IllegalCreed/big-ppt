@@ -27,6 +27,11 @@ vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
     // start() is called by the real Client.connect(); include it so tests
     // remain safe even if vi.mock for the Client doesn't intercept.
     async start() {}
+    // close() is called by Client when connect throws; SDK does
+    // `this._transport?.close()` 期望 transport 有 close 方法。
+    // Vitest 4 起对 unhandled rejection 严格化,缺这个 mock 会让 connect 失败的
+    // 测试报 "this._transport?.close is not a function"。
+    async close() {}
   },
 }))
 
