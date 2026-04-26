@@ -1,0 +1,117 @@
+◇ injected env (0) from .env.development.local,.env.local // tip: ⌘ suppress logs { quiet: true }
+ERROR: Error loading packages/agent/drizzle.config.ts ([drizzle.config] DATABASE_URL 未设置。请在 packages/agent/.env.local 中填入后再运行 drizzle-kit。)
+ERROR: Please fix or visit https://knip.dev/reference/known-issues
+Unused files (24)
+docs/archive/scripts/backfill-template-id.ts               
+docs/archive/scripts/migrate-deprecated-layouts.ts         
+docs/archive/scripts/rename-template-id.ts                 
+docs/archive/scripts/seed-demo-decks.ts                    
+packages/agent/src/mcp-server-repo/json-file-repo.ts       
+packages/creator/env.d.ts                                  
+packages/shared/test/template-manifest.test.ts             
+packages/shared/vitest.config.ts                           
+packages/slidev/components/private/LBeitouCoverLogo.vue    
+packages/slidev/components/private/LBeitouTitleBlock.vue   
+packages/slidev/components/private/LJydHeader.vue          
+packages/slidev/composables/useTemplateAsset.ts            
+packages/slidev/layouts/beitou/beitou-back-cover.vue       
+packages/slidev/layouts/beitou/beitou-content.vue          
+packages/slidev/layouts/beitou/beitou-cover.vue            
+packages/slidev/layouts/beitou/beitou-section-title.vue    
+packages/slidev/layouts/beitou/beitou-toc.vue              
+packages/slidev/layouts/jingyeda/jingyeda-back-cover.vue   
+packages/slidev/layouts/jingyeda/jingyeda-content.vue      
+packages/slidev/layouts/jingyeda/jingyeda-cover.vue        
+packages/slidev/layouts/jingyeda/jingyeda-section-title.vue
+packages/slidev/layouts/jingyeda/jingyeda-toc.vue          
+packages/slidev/snippets/external.ts                       
+vitest.workspace.ts                                        
+Unused dependencies (4)
+@antdv-next/x          packages/slidev/package.json:17:6
+@slidev/theme-default  packages/slidev/package.json:22:6
+@slidev/theme-seriph   packages/slidev/package.json:23:6
+antdv-next             packages/slidev/package.json:24:6
+Unlisted dependencies (7)
+dotenv                packages/creator/test/_setup/integration.ts:16:38       
+drizzle-orm           packages/creator/test/useDecks.spec.ts:11:20            
+drizzle-orm           packages/creator/test/useSwitchTemplateJob.spec.ts:14:20
+unocss                packages/slidev/scripts/gen-icons.mjs:23:33             
+@unocss/preset-icons  packages/slidev/scripts/gen-icons.mjs:24:29             
+vite/client           packages/slidev/vite-env.d.ts:1:1                       
+@playwright/test      scripts/generate-template-thumbnails.ts:11:26           
+Unlisted binaries (1)
+vitest  packages/shared/package.json
+Unresolved imports (1)
+vite/client  packages/slidev/tsconfig.json
+Unused exports (17)
+__getRegistryUserIdsForTesting  function  packages/agent/src/mcp-registry/index.ts:64:17                   
+McpRegistry                               packages/agent/src/mcp-registry/index.ts:68:10                   
+commonComponentsCatalog                   packages/agent/src/prompts/commonComponentsCatalog.ts:29:14      
+LAYER1_LAYOUT_NAMES                       packages/agent/src/templates/analyzeDeckPurity.ts:32:14          
+OLD_LAYOUT_PATTERN                        packages/agent/src/templates/migrate-deprecated-layouts.ts:14:14 
+REMOVE_FIELDS                             packages/agent/src/templates/migrate-deprecated-layouts.ts:15:14 
+reassembleDeck                  function  packages/agent/src/templates/migrate-deprecated-layouts.ts:111:17
+__resetUserRegistry             function  packages/agent/src/tools/registry.ts:93:17                       
+resetDb                         function  packages/agent/test/_setup/test-db.ts:19:23                      
+apiRequest                      function  packages/creator/src/api/client.ts:31:23                         
+getCurrentSession               function  packages/creator/src/composables/logger.ts:18:17                 
+__clearToolsCacheForTesting     function  packages/creator/src/composables/useAIChat.ts:95:17              
+getCookie                       function  packages/creator/test/_setup/integration.ts:31:17                
+resetCookieJar                  function  packages/creator/test/_setup/integration.ts:35:17                
+createSessionFor                          packages/creator/test/_setup/integration.ts:101:3                
+users                                     packages/creator/test/_setup/integration.ts:107:38               
+DEFAULT_TEST_TOKENS                       packages/slidev/test/_setup/index.ts:13:14                       
+Unused exported types (49)
+NewUser                   type       packages/agent/src/db/index.ts:5:3                              
+NewSession                type       packages/agent/src/db/index.ts:7:3                              
+Deck                      type       packages/agent/src/db/index.ts:8:3                              
+NewDeck                   type       packages/agent/src/db/index.ts:9:3                              
+DeckVersion               type       packages/agent/src/db/index.ts:10:3                             
+NewDeckVersion            type       packages/agent/src/db/index.ts:11:3                             
+DeckChat                  type       packages/agent/src/db/index.ts:12:3                             
+NewDeckChat               type       packages/agent/src/db/index.ts:13:3                             
+NewUserMcpServer          type       packages/agent/src/db/index.ts:15:3                             
+LogEventResult            interface  packages/agent/src/logger/index.ts:24:18                        
+LogLatestResult           interface  packages/agent/src/logger/index.ts:72:18                        
+McpToolDef                interface  packages/agent/src/mcp-registry/session.ts:7:18                 
+McpServerRepo             type       packages/agent/src/mcp-server-repo/index.ts:23:15               
+McpServerConfig           type       packages/agent/src/mcp-server-repo/index.ts:23:30               
+McpServerPatch            type       packages/agent/src/mcp-server-repo/index.ts:23:47               
+McpServerConfig           type       packages/agent/src/mcp-server-repo/types.ts:4:15                
+RateLimitOptions          interface  packages/agent/src/middleware/rate-limit.ts:19:18               
+BuildSystemPromptOptions  interface  packages/agent/src/prompts/buildSystemPrompt.ts:17:18           
+ComponentCategory         type       packages/agent/src/prompts/commonComponentsCatalog.ts:14:13     
+MutationResult            interface  packages/agent/src/slides-store/index.ts:13:18                  
+CreateSlideResult         interface  packages/agent/src/slides-store/index.ts:18:18                  
+EditResult                interface  packages/agent/src/slides-store/index.ts:63:18                  
+ParsedSlides              interface  packages/agent/src/slides-store/pages.ts:31:18                  
+SlidevAuthResult          type       packages/agent/src/slidev-proxy-auth.ts:9:13                    
+SwitchJobState            type       packages/agent/src/template-switch-job.ts:21:13                 
+SwitchJob                 interface  packages/agent/src/template-switch-job.ts:23:18                 
+Level                     type       packages/agent/src/templates/analyzeDeckPurity.ts:17:13         
+DeckPurityResult          interface  packages/agent/src/templates/analyzeDeckPurity.ts:19:18         
+PageRewriteSummary        interface  packages/agent/src/templates/migrate-deprecated-layouts.ts:17:18
+MigrateResult             interface  packages/agent/src/templates/migrate-deprecated-layouts.ts:24:18
+LoadedTemplate            interface  packages/agent/src/templates/registry.ts:7:18                   
+TokenCategory             type       packages/agent/src/templates/validate-tokens.ts:15:13           
+LdTokenDef                interface  packages/agent/src/templates/validate-tokens.ts:17:18           
+TokenValidationResult     interface  packages/agent/src/templates/validate-tokens.ts:67:18           
+ManifestLike              interface  packages/agent/src/templates/validate-tokens.ts:109:18          
+ManifestValidationResult  interface  packages/agent/src/templates/validate-tokens.ts:113:18          
+Paths                     interface  packages/agent/src/workspace.ts:21:18                           
+LogPayload                type       packages/creator/src/composables/logger.ts:22:15                
+LLMSettings               type       packages/creator/src/composables/useAIChat.ts:58:25             
+CurrentUser               type       packages/creator/src/composables/useAuth.ts:8:13                
+DeckStatus                type       packages/creator/src/composables/useDecks.ts:9:13               
+LockStatus                type       packages/creator/src/composables/useDecks.ts:55:13              
+ActivateConflict          type       packages/creator/src/composables/useDecks.ts:60:13              
+SlashCommand              interface  packages/creator/src/composables/useSlashCommands.ts:4:18       
+SlashCommandsDeps         interface  packages/creator/src/composables/useSlashCommands.ts:11:18      
+SlashSuggestionItem       interface  packages/creator/src/composables/useSlashCommands.ts:19:18      
+UseSlashCommandsReturn    interface  packages/creator/src/composables/useSlashCommands.ts:24:18      
+StartParams               type       packages/creator/src/composables/useSwitchTemplateJob.ts:18:13  
+DeckRow                   type       packages/e2e/tests/helpers/db.ts:61:13                          
+Configuration hints (3)
+packages/slidev    .  Create knip.json configuration file with workspaces["packages/slidev"] object (15 unused files)
+. (root)           .  Create knip.json configuration file with workspaces["."] object (5 unused files)               
+packages/shared    .  Create knip.json configuration file with workspaces["packages/shared"] object (2 unused files) 

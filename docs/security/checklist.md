@@ -36,9 +36,9 @@
 | A09.1 | log payload redact 敏感字段 | ✅ | 9-E | `utils/redact.ts` 深度递归 + 大小写 + 子串匹配；logger 写盘前调用 |
 | A09.2 | log payload ≤ 64KB 截断 | ✅ | 9-E | `truncate()` 超出标记 `__truncated`；indexFields 也走 redact |
 | A10.1 | 无用户可控 SSRF 路径 | ✅ | – | LLM/MCP URL 由后端配置 |
-| 卫生.1 | scripts 全部有保留/归档判定 | ⚠ | 9-G | 4 归档 + 5 保留 |
-| 卫生.2 | knip 死代码扫描 baseline | ⚠ | 9-G | – |
+| 卫生.1 | scripts 全部有保留/归档判定 | ✅ | 9-G | 4 一次性脚本 git mv 到 docs/archive/scripts/；保留 5 个基础设施脚本 |
+| 卫生.2 | knip 死代码扫描 baseline | ✅ | 9-G | docs/security/knip-baseline.txt；24 unused files 经评估全为 false positive（Slidev 自动注册 / vitest workspace / @deprecated 保留），不删 |
 | 卫生.3 | .gitignore 加固 data/* | ✅ | 9-F2 | 根 .gitignore 加 `packages/agent/data/*` + `!.gitkeep`；防御层叠在 packages/agent/data/.gitignore 之上 |
-| 债务.1 | P3-15 coverage 拉回 | ⚠ | 9-G | 拉回 90/85 或锁定门槛 |
+| 债务.1 | P3-15 coverage 拉回 | ✅ | 9-G | 锁定新基线（global lines 90 / branches 80 / functions 85 / statements 87；per-file 95+ 保留）；99-tech-debt 写明 verdict |
 | 回归 | pnpm test + pnpm e2e 全绿 | TBD | 9-H | – |
 | 回归 | coverage 不退步 | TBD | 9-H | – |

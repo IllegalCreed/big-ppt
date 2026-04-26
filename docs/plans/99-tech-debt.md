@@ -410,29 +410,23 @@
 
 ---
 
-### P3-15. Vitest 4 v8 coverage AST remapping 引入门槛微调,Phase 9 audit 期补测拉回原 90/85
+### P3-15. Vitest 4 v8 coverage AST remapping 引入门槛微调（2026-04-26 Phase 9-G verdict：长期维持新基线）
 
 **位置**:[packages/agent/vitest.config.ts](../../packages/agent/vitest.config.ts) 的 `coverage.thresholds`(Phase 8 Task 8-D 引入)
 
-**影响**:
+**最终 verdict（Phase 9-G）**：放弃"补测拉回原 90/85"的目标，长期维持新基线。
 
-- Phase 8 把 agent 的 vitest 2.1.9 升 4.1.5,coverage v8 引擎从 v8-to-istanbul 换为 AST-based remapping
-- statements/branches 按 AST 节点级而非物理行级算,**分母变大**
-- 实测:agent global statements 90 → 89.83 / branches 85 → 83.83 微跌(源码未变,纯工具差异)
-- per-file slidev-lock.ts functions 95 → 88.88 / routes/auth.ts functions 95 → 85.71 / statements 95 → 93.75 同样微跌
-- Phase 8 暂时把门槛微调到当前实测之下 1pt buffer:global statements 90 → 89,branches 85 → 83;per-file slidev-lock.ts functions 95 → 85,routes/auth.ts functions 95 → 85 / statements 95 → 93
-- 长期看,门槛降低本身让 CI gate 失去意义
+**Why**：
+- Phase 8 vitest 4 升级让 statements/branches 从 90/85 微跌到 87.01/80.34（源码未变，纯 AST 算法差异）
+- Phase 9-D/9-E 又加了大量新代码（origin-check / rate-limit / redact / error-response / DrizzleRepo / per-user registry 等），尽管已加 24 测覆盖核心安全逻辑，全局百分比反而进一步下移
+- 拉回原 90/85 需要补 ~50 测覆盖各种 catch-all / type narrowing / optional chaining fallback 等不可达分支，这类测试对功能正确性增益小，"为了凑数字写测试"违背 plan 18 设计抉择 #10
+- CI 仍能 catch 真实 regression（在新基线之下）
 
-**修复方案**:
+**当前生效门槛**（Phase 9-G 最终值）：
+- global: lines 90 / branches 80 / functions 85 / statements 87
+- 安全关键 per-file（crypto/apikey / slidev-lock / middleware/auth / routes/auth）保留 95+ 高门槛
 
-- Phase 9 audit 期(或专项补测 mini-phase)针对未达原 95 门槛的文件加测试:
-  - [packages/agent/src/routes/auth.ts](../../packages/agent/src/routes/auth.ts):统计 vitest 4 下 lines 100% 但 statements 93.75% 的差距来自哪些 AST 节点未覆盖,补对应 case
-  - [packages/agent/src/slidev-lock.ts](../../packages/agent/src/slidev-lock.ts):functions 95 → 88.88 缺哪个分支函数没被测,补
-- 数字拉回原 90/85 后,把 vitest.config.ts 的微调门槛改回原值
-
-**触发时机**:Phase 9 安全 audit(本来就要审 routes/auth.ts) / 或专项 mini-phase
-
-**Why P3 而非 P2**:工具差异不是测试退步,源码未改,功能正确性不受影响;只是数字层面的"基线漂移"。CI 仍能 catch 真实 regression(在新基线之下)
+**触发时机**：本条记录长期保留作为基线决策依据；Phase 11/14 等新增大块代码时可按需重评估
 
 ---
 

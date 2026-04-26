@@ -347,13 +347,53 @@ info: 0 / low: 0 / moderate: 15 / high: 0 / critical: 0
 
 ---
 
-## 11. 仓库卫生（roadmap 验收 #5）
+## 11. 仓库卫生（roadmap 验收 #5）✅（Task 9-G）
 
-**当前状态**：详查待 Task 9-G 落档。
+### 11.1 一次性脚本归档（git mv 到 `docs/archive/scripts/`）
 
-**预判定**（详 Task 9-G 表）：4 个一次性脚本归档到 `docs/archive/scripts/`；2 个 init 脚本保留；`gen-icons.mjs` / `gen:thumbnails` / `validate-template-tokens.ts` 保留。
+| 脚本 | Phase | 状态 |
+| ---- | ----- | ---- |
+| `backfill-template-id.ts` | 6B | ✅ 归档（dev/prod 已跑完） |
+| `migrate-deprecated-layouts.ts` | 7.5D-4 | ✅ 归档 |
+| `rename-template-id.ts` | 7A | ✅ 归档 |
+| `seed-demo-decks.ts` | dev only | ✅ 归档（无生产用途） |
 
-**knip 死代码**：待 9-G 跑 + 评估。
+[`docs/archive/scripts/README.md`](../archive/scripts/README.md) 写每个脚本的来历 + 何时跑过 + 如何重新启用步骤。
+
+### 11.2 保留运行时脚本（每次新搭环境/特定场景跑）
+
+- `packages/agent/scripts/init-db.mjs` / `init-test-db.mjs`：基础设施
+- `packages/slidev/scripts/gen-icons.mjs`：P3-7 UnoCSS bug workaround
+- `scripts/generate-template-thumbnails.ts`：每加新模板跑
+- `scripts/validate-template-tokens.ts`：Phase 7.5A token schema 校验
+
+### 11.3 knip 死代码扫描
+
+[`docs/security/knip-baseline.txt`](./knip-baseline.txt) 落档完整结果。
+
+**24 unused files 经评估全为 false positive，不删**：
+- `docs/archive/scripts/*` 4 个：归档目录预期 unused
+- `packages/agent/src/mcp-server-repo/json-file-repo.ts`：`@deprecated` 保留作回退参考
+- `packages/creator/env.d.ts`：Vite 环境类型声明（被 TS 编译器读不被 import）
+- `packages/shared/test/*.test.ts` / `vitest.config.ts`：vitest 自己运行，不被 import
+- `packages/slidev/components/private/L*.vue` + `layouts/*/*.vue`：Slidev 按文件名自动注册，不显式 import
+- `packages/slidev/composables/useTemplateAsset.ts`：runtime template 调用
+- `vitest.workspace.ts`：vitest CLI 自动读
+
+**4 unused dependencies in packages/slidev**：`@antdv-next/x` / `antdv-next` / `@slidev/theme-default` / `@slidev/theme-seriph` —— Slidev runtime 使用，不删。
+
+**7 unlisted dependencies**（用了 transitive 但 package.json 没显式声明）：可在未来某次依赖整理时补全；不影响生产功能（pnpm 当前 resolution 让它们能用），记**P3 tech-debt** 留 phase 后处理。
+
+### 11.4 P3-15 coverage 拉回 verdict
+
+放弃"补测拉回原 90/85"，长期维持新基线 —— 详 [`99-tech-debt.md` P3-15](../plans/99-tech-debt.md)：
+
+```
+global: lines 90 / branches 80 / functions 85 / statements 87
+per-file: crypto/apikey / slidev-lock / middleware/auth / routes/auth 保留 95+
+```
+
+Why：补 ~50 测覆盖 catch-all / type narrowing / optional chaining fallback 不可达分支对功能正确性增益小，违背 plan 18 设计抉择 #10。CI 仍能 catch 真实 regression（在新基线之下）。
 
 ---
 
