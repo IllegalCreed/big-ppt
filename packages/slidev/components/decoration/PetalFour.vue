@@ -2,125 +2,149 @@
 /**
  * 公共装饰组件：花瓣 4 区。
  *
- * 4 个椭圆花瓣中央对称排列，每片中央放一个 slot；常用于"4 小节方阵"
- * 展示（设计 / 开发 / 测试 / 文档 等）。slot 内默认放编号 / 短标签。
+ * 7.5E 重设计（按用户参考图）：2 行 × 4 列 grid。
+ *   - 第 1 / 4 列：内容区（标题胶囊 + 列表项）
+ *   - 第 2 / 3 列：4 个序号 div，每个 div 一对对角 round 拼成花瓣轮廓
+ *     · (1,2) bl-tr round（左下 + 右上 大圆角）
+ *     · (1,3) tl-br round（左上 + 右下）
+ *     · (2,2) tl-br round
+ *     · (2,3) bl-tr round
  *
- * 配色：花瓣描边读 `--ld-color-brand-primary`，slot 文字读 brand-primary
- *      + `--ld-font-size-h1` + `--ld-font-weight-bold`。模板切换时几何形状
- *      不变、配色自动适配。
- *
- * 几何：viewBox 200×200，4 片椭圆围绕中心 (100, 100)；上/下椭圆水平向、
- *      左/右椭圆垂直向，相邻两片在中央汇合形成花瓣外观。
+ * 配色：胶囊标题 + 序号 + 花瓣描边 全部读 `--ld-color-brand-primary`，跨模板自动适配。
  */
 defineProps<{
-  /** 描边宽度档位；默认 'thick' */
-  borderWidth?: 'thin' | 'thick'
+  /** 4 个分区，每段 title + items（li 文字数组）；超出 4 截断、不足 4 补空 */
+  sections: Array<{ title: string; items: string[] }>
 }>()
 </script>
 
 <template>
-  <div class="ld-petal-four" :data-border="borderWidth ?? 'thick'">
-    <svg class="ld-petal-svg" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet">
-      <ellipse cx="100" cy="50" rx="50" ry="30" />
-      <ellipse cx="100" cy="150" rx="50" ry="30" />
-      <ellipse cx="50" cy="100" rx="30" ry="50" />
-      <ellipse cx="150" cy="100" rx="30" ry="50" />
-    </svg>
-    <div class="ld-petal-slots">
-      <div class="ld-petal-cell ld-petal-top">
-        <slot name="slot1" />
-      </div>
-      <div class="ld-petal-cell ld-petal-right">
-        <slot name="slot2" />
-      </div>
-      <div class="ld-petal-cell ld-petal-bottom">
-        <slot name="slot3" />
-      </div>
-      <div class="ld-petal-cell ld-petal-left">
-        <slot name="slot4" />
-      </div>
+  <div class="ld-petal-four">
+    <!-- 第一行 -->
+    <div class="ld-petal-content ld-petal-content--right">
+      <div v-if="sections[0]" class="ld-petal-title">{{ sections[0]?.title }}</div>
+      <ul v-if="sections[0]" class="ld-petal-list">
+        <li v-for="(item, idx) in sections[0].items" :key="idx">{{ item }}</li>
+      </ul>
+    </div>
+    <div class="ld-petal-cell ld-petal-cell--bl-tr">1</div>
+    <div class="ld-petal-cell ld-petal-cell--tl-br">2</div>
+    <div class="ld-petal-content ld-petal-content--left">
+      <div v-if="sections[1]" class="ld-petal-title">{{ sections[1]?.title }}</div>
+      <ul v-if="sections[1]" class="ld-petal-list">
+        <li v-for="(item, idx) in sections[1].items" :key="idx">{{ item }}</li>
+      </ul>
+    </div>
+
+    <!-- 第二行 -->
+    <div class="ld-petal-content ld-petal-content--right">
+      <div v-if="sections[2]" class="ld-petal-title">{{ sections[2]?.title }}</div>
+      <ul v-if="sections[2]" class="ld-petal-list">
+        <li v-for="(item, idx) in sections[2].items" :key="idx">{{ item }}</li>
+      </ul>
+    </div>
+    <div class="ld-petal-cell ld-petal-cell--tl-br">3</div>
+    <div class="ld-petal-cell ld-petal-cell--bl-tr">4</div>
+    <div class="ld-petal-content ld-petal-content--left">
+      <div v-if="sections[3]" class="ld-petal-title">{{ sections[3]?.title }}</div>
+      <ul v-if="sections[3]" class="ld-petal-list">
+        <li v-for="(item, idx) in sections[3].items" :key="idx">{{ item }}</li>
+      </ul>
     </div>
   </div>
 </template>
 
 <style scoped>
 .ld-petal-four {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-  max-width: 100%;
-  max-height: 100%;
-  flex: 1;
-  min-height: 0; /* Phase 7.5E flex slot 撑满 */
-  font-family: var(--ld-font-family-brand);
-}
-
-.ld-petal-svg {
-  position: absolute;
-  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  justify-content: center;
+  column-gap: 1.4em;
+  row-gap: 0;
   width: 100%;
   height: 100%;
   flex: 1;
-  min-height: 0; /* Phase 7.5E flex slot 撑满 */
-  fill: none;
-  stroke: var(--ld-color-brand-primary);
+  min-height: 0;
+  font-family: var(--ld-font-family-brand);
+  color: var(--ld-color-fg-primary);
+  font-size: var(--ld-font-size-body);
 }
 
-.ld-petal-four[data-border='thin'] .ld-petal-svg {
-  stroke-width: 2;
-}
-
-.ld-petal-four[data-border='thick'] .ld-petal-svg {
-  stroke-width: 4;
-}
-
-.ld-petal-slots {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-}
-
+/* 4 个序号方块：对角 round 拼花瓣 */
 .ld-petal-cell {
+  width: 8em;
+  height: 8em;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--ld-font-size-h1);
+  border: var(--ld-border-width-thick) solid var(--ld-color-brand-primary);
+  font-size: 3.6em;
   font-weight: var(--ld-font-weight-bold);
   color: var(--ld-color-brand-primary);
-  text-align: center;
+  box-sizing: border-box;
+  background: var(--ld-color-bg-page);
 }
 
-.ld-petal-top {
-  grid-column: 1 / span 2;
-  grid-row: 1;
-  align-items: center;
-  padding-top: 12%;
+/* border-radius 顺序：top-left, top-right, bottom-right, bottom-left */
+.ld-petal-cell--bl-tr {
+  border-radius: 0 50% 0 50%;
 }
 
-.ld-petal-bottom {
-  grid-column: 1 / span 2;
-  grid-row: 2;
-  align-items: center;
-  padding-bottom: 12%;
+.ld-petal-cell--tl-br {
+  border-radius: 50% 0 50% 0;
 }
 
-.ld-petal-left {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 30%;
-  height: 30%;
+/* 内容区：标题胶囊 + 列表 */
+.ld-petal-content {
+  padding: 0.4em 0;
+  min-width: 0;
 }
 
-.ld-petal-right {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 30%;
-  height: 30%;
+.ld-petal-content--left {
+  text-align: left;
+  padding-left: 0.5em;
+}
+
+.ld-petal-content--right {
+  text-align: right;
+  padding-right: 0.5em;
+}
+
+.ld-petal-title {
+  display: inline-block;
+  background: var(--ld-color-brand-primary);
+  color: #ffffff;
+  padding: 0.35em 1.4em;
+  border-radius: 999px;
+  font-weight: var(--ld-font-weight-bold);
+  font-size: 1.1em;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5em;
+}
+
+.ld-petal-list {
+  list-style: disc;
+  margin: 0;
+  padding: 0;
+  font-size: 0.95em;
+  line-height: 1.7;
+  color: var(--ld-color-fg-primary);
+}
+
+.ld-petal-content--right .ld-petal-list {
+  /* 右侧列：让列表也右对齐 */
+  list-style-position: inside;
+  padding: 0;
+}
+
+.ld-petal-content--left .ld-petal-list {
+  list-style-position: outside;
+  padding-left: 1.2em;
+}
+
+.ld-petal-list li {
+  padding: 0.05em 0;
 }
 </style>

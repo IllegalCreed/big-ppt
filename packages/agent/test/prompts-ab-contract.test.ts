@@ -157,7 +157,7 @@ describe('buildSystemPrompt（A/B contract）', () => {
     }
   })
 
-  it('装饰类 2 个组件 + 内容块类 5 个组件全部列出', () => {
+  it('装饰类 2 个组件 + 内容块类 6 个组件全部列出', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     for (const name of [
       'PetalFour',
@@ -167,6 +167,7 @@ describe('buildSystemPrompt（A/B contract）', () => {
       'Quote',
       'BarChart',
       'LineChart',
+      'PieChart',
     ]) {
       expect(prompt).toContain(`\`<${name}>\``)
     }

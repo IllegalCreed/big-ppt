@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mountWithTokens } from '../test/_setup/index.js'
+import { mountWithTokens } from '../../test/_setup/index.js'
 import Table from './Table.vue'
 
 describe('Table', () => {

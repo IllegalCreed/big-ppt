@@ -2,33 +2,43 @@ import { describe, expect, it } from 'vitest'
 import { mountWithTokens } from '../../test/_setup/index.js'
 import PetalFour from './PetalFour.vue'
 
+const SAMPLE_SECTIONS = [
+  { title: '设计', items: ['对网站整体改版', '支持自定义布局'] },
+  { title: '开发', items: ['新版门户开发', '对接用户系统'] },
+  { title: '测试', items: ['测试用例设计', '300+ 自动化脚本'] },
+  { title: '文档', items: ['测试报告', '用户手册'] },
+]
+
 describe('PetalFour', () => {
-  it('SVG 4 个椭圆花瓣骨架渲染', () => {
-    const wrapper = mountWithTokens(PetalFour)
-    expect(wrapper.find('.ld-petal-svg').exists()).toBe(true)
-    expect(wrapper.findAll('ellipse')).toHaveLength(4)
+  it('渲染 4 个序号方块（对角 round 类）', () => {
+    const wrapper = mountWithTokens(PetalFour, { props: { sections: SAMPLE_SECTIONS } })
+    const cells = wrapper.findAll('.ld-petal-cell')
+    expect(cells).toHaveLength(4)
+    expect(cells.map((c) => c.text())).toEqual(['1', '2', '3', '4'])
+    // 对角圆角 class 各 2 个
+    expect(wrapper.findAll('.ld-petal-cell--bl-tr')).toHaveLength(2)
+    expect(wrapper.findAll('.ld-petal-cell--tl-br')).toHaveLength(2)
   })
 
-  it('slot1..slot4 内容透出到对应单元', () => {
+  it('sections 数据透出到内容区（标题胶囊 + 列表）', () => {
+    const wrapper = mountWithTokens(PetalFour, { props: { sections: SAMPLE_SECTIONS } })
+    const titles = wrapper.findAll('.ld-petal-title').map((w) => w.text())
+    expect(titles).toEqual(['设计', '开发', '测试', '文档'])
+    const lists = wrapper.findAll('.ld-petal-list')
+    expect(lists).toHaveLength(4)
+    // 第一组应含两个 li
+    expect(lists[0].findAll('li').map((li) => li.text())).toEqual([
+      '对网站整体改版',
+      '支持自定义布局',
+    ])
+  })
+
+  it('sections 不足 4 个时多余位置不渲染 title / list', () => {
     const wrapper = mountWithTokens(PetalFour, {
-      slots: {
-        slot1: '<span data-test="s1">1</span>',
-        slot2: '<span data-test="s2">2</span>',
-        slot3: '<span data-test="s3">3</span>',
-        slot4: '<span data-test="s4">4</span>',
-      },
+      props: { sections: [SAMPLE_SECTIONS[0], SAMPLE_SECTIONS[1]] },
     })
-    expect(wrapper.find('[data-test="s1"]').text()).toBe('1')
-    expect(wrapper.find('[data-test="s2"]').text()).toBe('2')
-    expect(wrapper.find('[data-test="s3"]').text()).toBe('3')
-    expect(wrapper.find('[data-test="s4"]').text()).toBe('4')
-  })
-
-  it('borderWidth 控制 SVG stroke-width 档位（thin / thick）', () => {
-    const thick = mountWithTokens(PetalFour, { props: { borderWidth: 'thick' } })
-    expect(thick.find('.ld-petal-four').attributes('data-border')).toBe('thick')
-
-    const thin = mountWithTokens(PetalFour, { props: { borderWidth: 'thin' } })
-    expect(thin.find('.ld-petal-four').attributes('data-border')).toBe('thin')
+    expect(wrapper.findAll('.ld-petal-title')).toHaveLength(2)
+    // 但 4 个序号方块仍渲染
+    expect(wrapper.findAll('.ld-petal-cell')).toHaveLength(4)
   })
 })

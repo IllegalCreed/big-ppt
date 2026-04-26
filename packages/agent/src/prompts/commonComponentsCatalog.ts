@@ -97,11 +97,10 @@ export const commonComponentsCatalog: ComponentEntry[] = [
   {
     name: 'PetalFour',
     category: 'decoration',
-    description: '花瓣 4 区中央对称排列；4 小节方阵展示（设计/开发/测试/文档）',
-    propsOrSlots:
-      'borderWidth?: "thin"|"thick"; slots: #slot1 / #slot2 / #slot3 / #slot4（上/右/下/左）',
-    example:
-      '<PetalFour><template #slot1>1</template><template #slot2>2</template><template #slot3>3</template><template #slot4>4</template></PetalFour>',
+    description:
+      '花瓣 4 区：2×4 grid 布局——左/右 4 段标题胶囊 + 列表；中央 4 个对角 round 序号方块拼花瓣',
+    propsOrSlots: 'sections: Array<{ title: string; items: string[] }>（4 段，超出截断、不足空位）',
+    example: `<PetalFour :sections='[{"title":"设计","items":["改版","布局"]},{"title":"开发","items":["开发","对接"]},{"title":"测试","items":["用例","脚本"]},{"title":"文档","items":["报告","手册"]}]' />`,
   },
   {
     name: 'ProcessFlow',
@@ -147,6 +146,13 @@ export const commonComponentsCatalog: ComponentEntry[] = [
     description: '折线图（带填充），接口同 BarChart',
     propsOrSlots: 'labels: string[] / values: number[] / label? / height?: number',
     example: `<LineChart :labels='["1月","2月","3月"]' :values='[10,28,55]' label="月活" />`,
+  },
+  {
+    name: 'PieChart',
+    category: 'block',
+    description: '饼图，多分片色阶来自品牌主色 / 深色 / 辅色 + 中性灰',
+    propsOrSlots: 'labels: string[] / values: number[] / label? / height?: number',
+    example: `<PieChart :labels='["Chrome","Safari","Firefox"]' :values='[62,18,20]' label="浏览器份额" />`,
   },
 ]
 

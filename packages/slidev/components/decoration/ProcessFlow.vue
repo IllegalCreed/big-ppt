@@ -38,13 +38,15 @@ const stepCount = computed(() => {
 </template>
 
 <style scoped>
+/* 7.5E：ProcessFlow 不撑满 body 高度，step 自然高度 + body flex column 中
+ * 上下 margin: auto 让组件垂直居中显示，留白用于上下文（标题 / 总结）。
+ */
 .ld-process-flow {
   display: flex;
   align-items: stretch;
   width: 100%;
-  height: 100%;
-  flex: 1;
-  min-height: 0; /* Phase 7.5E flex slot 撑满 */
+  margin: auto 0;
+  flex: 0 0 auto;
   font-family: var(--ld-font-family-brand);
   color: var(--ld-color-fg-primary);
   font-size: var(--ld-font-size-body);
@@ -56,7 +58,8 @@ const stepCount = computed(() => {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 0.8em 1em;
+  padding: 1.6em 1.2em;
+  min-height: 6em;
   background: var(--ld-color-bg-subtle);
   border: var(--ld-border-width-thick) solid var(--ld-color-brand-primary);
   border-radius: var(--ld-radius-md);

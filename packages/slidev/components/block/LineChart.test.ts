@@ -4,7 +4,7 @@ vi.mock('vue-chartjs', () => ({
   Line: { name: 'LineStub', template: '<div data-stub="line" />' },
 }))
 
-import { mountWithTokens } from '../test/_setup/index.js'
+import { mountWithTokens } from '../../test/_setup/index.js'
 import LineChart from './LineChart.vue'
 
 describe('LineChart', () => {

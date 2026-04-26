@@ -81,7 +81,11 @@ heading: ThreeCol 三列均分
 </template>
 <template #center>
 
-<MetricCard value="3" unit="周" label="迭代周期" variant="fill" />
+**执行迭代**
+
+- 3 周节奏
+- 双周复盘
+- 持续交付
 
 </template>
 <template #right>
@@ -186,29 +190,7 @@ layout: beitou-content
 heading: PetalFour 花瓣 4 区
 ---
 
-<TwoCol left-title="说明" right-title="装饰组件">
-<template #left>
-
-**配色随模板自动变**
-
-- beitou：红色花瓣 + 红色编号
-- jingyeda：蓝色花瓣 + 蓝色编号
-- 几何形状跨模板共用
-
-只读 \`--ld-color-brand-primary\` token，模板私有装饰几何不存在——用户切模板时几何不变、颜色自适应。
-
-</template>
-<template #right>
-
-<PetalFour>
-<template #slot1>设计</template>
-<template #slot2>开发</template>
-<template #slot3>测试</template>
-<template #slot4>上线</template>
-</PetalFour>
-
-</template>
-</TwoCol>
+<PetalFour :sections='[{"title":"设计","items":["对网站进行整体改版","支持全局自定义布局"]},{"title":"开发","items":["进行新版门户开发工作","对接集团用户系统","对接业务系统单点登录"]},{"title":"测试","items":["完成三端测试用例设计","完成 300+ 自动化测试脚本"]},{"title":"文档编写","items":["测试报告","用户手册","等保材料","汇报材料"]}]' />
 
 ---
 layout: beitou-content
@@ -235,6 +217,13 @@ heading: BarChart 柱状图
 ---
 
 <BarChart :labels='["Q1","Q2","Q3","Q4"]' :values='[120,180,150,210]' label="季度营收（万元）" :height="320" />
+
+---
+layout: beitou-content
+heading: PieChart 饼图
+---
+
+<PieChart :labels='["Chrome","Safari","Edge","Firefox","其他"]' :values='[62,18,12,5,3]' label="浏览器份额" :height="380" />
 
 ---
 layout: beitou-content
@@ -342,7 +331,11 @@ heading: ThreeCol 三列均分
 </template>
 <template #center>
 
-<MetricCard value="3" unit="周" label="迭代周期" variant="fill" />
+**执行迭代**
+
+- 3 周节奏
+- 双周复盘
+- 持续交付
 
 </template>
 <template #right>
@@ -444,28 +437,10 @@ chapterTitle: 装饰类组件
 
 ---
 layout: jingyeda-content
-heading: PetalFour 花瓣 4 区（同 deck，配色随模板）
+heading: PetalFour 花瓣 4 区
 ---
 
-<TwoCol left-title="说明" right-title="装饰组件">
-<template #left>
-
-**与北投 deck 同样的组件标签 + props**，但渲染时颜色自动变成竞业达蓝。
-
-切换模板时，body 中 \`<PetalFour>\` 的几何形状字节级不变，仅模板 token 改变颜色。
-
-</template>
-<template #right>
-
-<PetalFour>
-<template #slot1>设计</template>
-<template #slot2>开发</template>
-<template #slot3>测试</template>
-<template #slot4>上线</template>
-</PetalFour>
-
-</template>
-</TwoCol>
+<PetalFour :sections='[{"title":"设计","items":["对网站进行整体改版","支持全局自定义布局"]},{"title":"开发","items":["进行新版门户开发工作","对接集团用户系统","对接业务系统单点登录"]},{"title":"测试","items":["完成三端测试用例设计","完成 300+ 自动化测试脚本"]},{"title":"文档编写","items":["测试报告","用户手册","等保材料","汇报材料"]}]' />
 
 ---
 layout: jingyeda-content
@@ -492,6 +467,13 @@ heading: LineChart 折线图
 ---
 
 <LineChart :labels='["1月","2月","3月","4月","5月","6月"]' :values='[12,18,28,42,55,68]' label="月活用户（万）" :height="320" />
+
+---
+layout: jingyeda-content
+heading: PieChart 饼图
+---
+
+<PieChart :labels='["研发","产品","设计","运营","支持"]' :values='[42,18,15,15,10]' label="人员构成" :height="380" />
 
 ---
 layout: jingyeda-content

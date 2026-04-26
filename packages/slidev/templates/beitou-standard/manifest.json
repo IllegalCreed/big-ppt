@@ -89,7 +89,7 @@
           }
         }
       },
-      "bodyGuidance": "body 是 markdown，可嵌公共组件：\n- 整页要并列 / 主从 / 网格分块 → 必须用栅格组件包整 body（<TwoCol> / <ThreeCol> / <OneLeftThreeRight> / <OneRightThreeLeft> / <OneTopThreeBottom> / <TwoColumnsTwoRows> / <NineGrid> / <ImageText>），不要在默认 slot 用 div 硬拆\n- 4 小节方阵 / 阶段流程要美化骨架 → 优先 <PetalFour> / <ProcessFlow>\n- 数字+标签结构 → <MetricCard>；图表 → <BarChart> / <LineChart>；引文 → <Quote>；表格 → <Table>；代码段 → markdown 三反引号围栏\n- 段落自由叙述 / 简单列表 → 直接 markdown，不硬塞组件"
+      "bodyGuidance": "body 是 markdown，可嵌公共组件：\n- 整页要并列 / 主从 / 网格分块 → 必须用栅格组件包整 body（<TwoCol> / <ThreeCol> / <OneLeftThreeRight> / <OneRightThreeLeft> / <OneTopThreeBottom> / <TwoColumnsTwoRows> / <NineGrid> / <ImageText>），不要在默认 slot 用 div 硬拆\n- 4 小节方阵 / 阶段流程要美化骨架 → 优先 <PetalFour> / <ProcessFlow>\n- 数字+标签结构 → <MetricCard>；图表 → <BarChart> / <LineChart> / <PieChart>；引文 → <Quote>；表格 → <Table>；代码段 → markdown 三反引号围栏\n- 段落自由叙述 / 简单列表 → 直接 markdown，不硬塞组件"
     },
     {
       "name": "beitou-back-cover",
@@ -125,7 +125,8 @@
     "Table",
     "Quote",
     "BarChart",
-    "LineChart"
+    "LineChart",
+    "PieChart"
   ],
   "thumbnail": "thumbnail.png"
 }

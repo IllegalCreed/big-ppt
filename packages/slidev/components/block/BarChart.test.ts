@@ -5,7 +5,7 @@ vi.mock('vue-chartjs', () => ({
   Bar: { name: 'BarStub', template: '<div data-stub="bar" />' },
 }))
 
-import { mountWithTokens } from '../test/_setup/index.js'
+import { mountWithTokens } from '../../test/_setup/index.js'
 import BarChart from './BarChart.vue'
 
 describe('BarChart', () => {
