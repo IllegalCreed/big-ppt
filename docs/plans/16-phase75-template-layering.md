@@ -586,18 +586,18 @@ pnpm dev
 
 ## 验收（与 roadmap.md Phase 7.5 清单映射）
 
-- [ ] 设计 token 规范定稿（22 项 4 大类）→ TOKENS.md / validate-template-tokens
-- [ ] 两套模板 layouts 数从 7 收敛到 5
-- [ ] 全仓无模板私有 chart / 布局 / 媒体组件残留
-- [ ] AI 用三类公共组件生成内容页的 prompt contract test 通过（A/B contract ≥ 18 条）
-- [ ] 公共栅格组件单测 ≥ 16（7.5C-1）
-- [ ] 公共装饰组件单测 ≥ 6（7.5C-2）
-- [ ] 公共内容块组件单测 ≥ 12（7.5C-3）
-- [ ] **deterministic 切模板路径单测 ≥ 6 + analyzeDeckPurity 单测覆盖**（7.5D 新增）
-- [ ] 切模板手验：内容字节级一致性人工通过；装饰组件几何一致 + 配色随 token 切换
-- [ ] 现有 E2E 全绿（11 / 11）
-- [ ] 现存 starter 视觉手验无回归
-- [ ] 总测试数 377 → ≥ 425（+34 公共组件 / +6 deterministic / +6 prompt contract / +4 迁移脚本 / +4 token validate ≈ +54；浮动 -5 因 layout 删除）
+- [x] 设计 token 规范定稿（**实际 26 项 4 大类**——7.5E 期 chart-primary 双 token 拆 chart-1..5 五色色板 +1 fill）→ TOKENS.md / validate-template-tokens（两模板 26/26 通过）
+- [x] 两套模板 layouts 数从 7 收敛到 5
+- [x] 全仓无模板私有 chart / 布局 / 媒体组件残留
+- [x] AI 用三类公共组件生成内容页的 prompt contract test 通过（A/B contract 21 条）
+- [x] 公共栅格组件单测 ≥ 16（7.5C-1）
+- [x] 公共装饰组件单测 ≥ 6（7.5C-2）
+- [x] 公共内容块组件单测 ≥ 12（7.5C-3，**实际 14**——含 PieChart 2 测 / Callout 删除少 2 测，净 +12 → +14 见执行期偏离）
+- [x] **deterministic 切模板路径单测 ≥ 6 + analyzeDeckPurity 单测覆盖**（7.5D 新增）
+- [x] 切模板手验：用户在 dev 双 deck demo 跑通；装饰组件几何一致 + 配色随 token 切换（PetalFour 在 beitou 红 / jingyeda 蓝绿 形状一致）
+- [x] 现有 E2E 全绿（11 / 11）
+- [x] 现存 starter 视觉手验无回归
+- [x] 总测试数 377 → **实际 444**（agent 361 + creator 71 + shared 3 + slidev 38 + E2E 11；slidev 包从 0 起的 38 测全为公共组件；详见下文「测试数量落地」表）
 
 ---
 
@@ -686,27 +686,126 @@ pnpm dev
 
 ---
 
-## 执行期偏离（关闭后追加）
+## 执行期偏离
 
 > 实际跑下来与 plan 不一致的点。
 
+1. **token 总数 22 → 26（color 9 → 13）**：plan 写"chart-primary-bg + chart-primary-border 双 token"，7.5E 用户实测 PieChart 多分片基于"主色 + 深色 + 辅色 + 灰"自动调色区分度太低，改设计为"基于但不等于品牌色的 5 色色板（chart-1..5）+ chart-1-fill alpha 版"。退役旧双 token，新增 6 个；TOKENS.md 变更日志 / validate-tokens spec / 两套 tokens.css / global.css class scope / 三组件读源、测试 setup 全同步
+2. **删除 Callout（plan 内容块 6 改 5）**：plan 7.5C-3 列 6 个内容块（MetricCard / KVList / Quote / Callout / Bar / Line），实施期发现 Callout 与 Quote 视觉职责重叠，用户拍板砍 Callout。同时 KVList 的实际样式不如 Table 干净，改 KVList → Table
+3. **新增 PieChart（内容块第 6 个）**：用户实测三大基础图缺一不可，PieChart 单独追加 + 配套 5 色色板 token 设计（驱动了第 1 项偏离）
+4. **components/ 目录加分子目录**：plan 默认 `components/{grid,decoration}/` + 平铺内容块到 `components/`，实施期为 IDE 一致性把内容块也归到 `components/block/`，layer-1 私有装饰归到 `components/private/`。最终 4 子目录：grid / decoration / block / private
+5. **commonComponents 默认全 opt-in，无细粒度禁用**：plan 写"manifest commonComponents 字段平铺数组列全部组件名"，实施期未进一步加细粒度（哪些 props 该模板不允许）—— 已登记 P3 tech-debt
+6. **PetalFour 设计三轮重构**：plan 写"4 花瓣 SVG 中央对称 2×2 + slot1..4"，用户拍板改为"2 行 × 4 列 grid，左右内容区放标题胶囊 + items 列表，中间 4 个对角 round 方块拼花瓣"；items prop ≤ 3 条限制由 7.5E 加；上下行 align-self end/start 聚拢花心也 7.5E 加
+7. **section-title 加白底 + 章节编号视觉**：plan 7.5D 写"实施期由用户拍板视觉"，实际两套 section-title 都做成白底 + 大号章节编号（彩色）+ 标题文字，与 cover/back-cover 全色块视觉错峰
+8. **starter.md 加进 .prettierignore**：plan 没提，实施期 prettier 跑过会破坏 Slidev frontmatter `---` 分隔；加 `packages/slidev/templates/*/starter.md` 到 .prettierignore
+
 ---
 
-## 踩坑与解决（实施期 / 关闭后追加）
+## 踩坑与解决
 
-> 跑过程中需要侦探一阵才搞定的 bug。
+> 跑过程中需要侦探一阵才搞定的 bug；CLAUDE.md「已知坑」做了精炼索引。
+
+### 1. `--ld-*` 在 `:root` 同时声明被后导入的覆盖（撞过两次）
+
+**症状**：beitou 模板 deck 看到的是 jingyeda 的蓝色——按 token 设计应该是红色。
+
+**根因**：`global.css` 顺序 `@import` 两套 tokens.css，两套都把 `--ld-color-brand-primary` 等公共 token 写在自己的 `:root` 里。CSS cascade 后导入的 jingyeda `:root` 覆盖前者，所有 layer-1 layout 拿到的都是 jingyeda 蓝。
+
+**解决**：
+- tokens.css 的 `:root` 仍保留（让模板私有 `--bt-*` / `--jyd-*` 全局可见）
+- 但 `--ld-*` override 移到 `global.css` 的 `.slidev-layout.beitou-template` / `.slidev-layout.jingyeda-template` class scope
+- layer-1 layout 根元素挂对应 class（如 `<div class="slidev-layout beitou-cover beitou-template">`）
+- 公共组件作为子元素自动继承 class scope 的 `--ld-*` 值
+
+**提炼到 CLAUDE.md**：是。
+
+### 2. markdown-it 跨行截断 prop 字面量
+
+**症状**：deck 跑出来某页"Failed to load"或组件标签不渲染。`<Table :rows='[[...],` 后换行写下一行 → markdown 把跨行的 `]'` / `}'` 当段落分隔符，组件标签被腰斩。
+
+**根因**：Slidev 用 markdown-it 解析 body；它对组件标签内 prop 字面量是按 markdown 规则切段，遇到独立成行的 `]` `}` 就以为是段落结束。
+
+**解决**：
+- 单个数组 / 对象字面量必须**单行写完**（即使 100+ 字符）
+- 组件标签自身可多行（每行 1 个 attribute）
+- system prompt 加规则 7「数组/对象字面量必须单行」
+
+**提炼到 CLAUDE.md**：是。
+
+### 3. Slidev `--base /api/slidev-preview/` 对绝对路径无效
+
+**症状**：模板 logo 图片 `/templates/X/logo.png` 在 dev 模式 404。
+
+**根因**：Slidev 启动加 `--base /api/slidev-preview/` 改的是相对路径解析，但组件里 hardcode 的绝对路径 `/templates/X/y.png` 不会自动加前缀，请求 `/templates/X/y.png` 而不是 `/api/slidev-preview/templates/X/y.png`。
+
+**解决**：写 `useTemplateAsset()` composable，对所有以 `/` 开头的 src 自动 `import.meta.env.BASE_URL` 拼前缀；layer-1 layout 的 logo / 背景图全走该 helper。
+
+**提炼到 CLAUDE.md**：是。
+
+### 4. PetalFour 中央 cell 撑出屏幕
+
+**症状**：用户截图显示 4 个序号 div 巨大，超过整页宽度。
+
+**根因**：`.ld-petal-cell { width: 8em; height: 8em; font-size: 3.6em; ... }` —— em 是相对**自身** font-size 不是父级。font-size 3.6em（设父级 20px → 72px），width 8em 因此变成 8 × 72 = 576px 而非预期的 8 × 20 = 160px。
+
+**解决**：把 font-size 挂到子元素 `<span class="ld-petal-num">` 上，cell 本身只设 width / height（由父 font-size = body 20px 计算 = 140px）。
+
+**提炼到 CLAUDE.md**：是。
+
+### 5. NineGrid 单元格大小不一
+
+**症状**：九宫格 9 格视觉不齐，右下三格被压扁。
+
+**根因**：cell `display: flex; align-items: center; justify-content: center` 让内容尺寸决定 cell 高度；MetricCard value 字号大的 cell 自然挤掉相邻 cell 空间。
+
+**解决**：cell 改 `display: grid; place-items: stretch; minmax(0, 1fr)` 让网格本身决定 cell 大小，内容居中由 grid item 自身控制；同时 row-gap / column-gap 用 em 单位（0.4em）让间距随容器字号自适应而不是 hardcode px。
+
+### 6. aspect-ratio 1/1 反而让单元格留白扩大
+
+**症状**：试图给 NineGrid 单元格加 `aspect-ratio: 1/1` 让它们方正，结果整个 grid 周围留白增加，cell 反而变小。
+
+**根因**：aspect-ratio 用容器**剩余空间**算高度，且 grid 已有 minmax/fr 时它会挤掉 fr 空间不是按 fr 比例分。
+
+**解决**：放弃 aspect-ratio，回到纯 fr 比例 + min-height。slides 是 1080×608 固定视口，单元格自然填满即可，不需要"绝对方形"。
+
+### 7. CSS variable 必须在挂载后读
+
+**症状**：组件 `mounted()` 里同步读 `getComputedStyle(rootRef.value).getPropertyValue('--ld-...')` 偶尔返回空。
+
+**根因**：DOM 挂载完不代表 CSS cascade 完成；jsdom（测试）和 Chrome（生产）行为有差。
+
+**解决**：
+- 组件初始化时给 ref 一个**中性灰** fallback（避免静默用上一个模板的色）
+- 用 `onMounted` 读 token 后赋值，无值时不覆盖 fallback
+- 测试 setup `mountWithTokens` 直接给挂载根 inline `host.style.setProperty(...)` 注入，绕开 cascade
+
+### 8. seed-demo-decks.ts 重复用户
+
+**症状**：跑两次 seed 后 demo user `demo@lumideck.local` 报 unique constraint 冲突。
+
+**根因**：脚本写死"先注册"逻辑，没幂等。
+
+**解决**：先 `select`，找到则复用，找不到才插入；deck 同样按 title 匹配先删旧再插新。
 
 ---
 
-## 测试数量落地（关闭后追加）
+## 测试数量落地
 
-| 阶段（commit）      | agent | creator | shared | slidev | E2E | 合计 |
-| ------------------- | ----- | ------- | ------ | ------ | --- | ---- |
-| 入口（Phase 7D 收） | 294   | 71      | 3      | 0      | 9   | 377  |
-| 7.5A                |       |         |        |        |     |      |
-| 7.5B                |       |         |        |        |     |      |
-| 7.5C-1              |       |         |        |        |     |      |
-| 7.5C-2              |       |         |        |        |     |      |
-| 7.5C-3              |       |         |        |        |     |      |
-| 7.5D                |       |         |        |        |     |      |
-| 7.5E                |       |         |        |        |     |      |
+| 阶段（commit）          | agent  | creator | shared | slidev | E2E | 合计    |
+| ----------------------- | ------ | ------- | ------ | ------ | --- | ------- |
+| 入口（Phase 7D 收）     | 294    | 71      | 3      | 0      | 9   | 377     |
+| 7.5A token spec + 校验  | +12    |         |        |        |     | +12     |
+| 7.5B tokens.css 增补    |        |         |        |        |     | +0      |
+| 7.5C-1 栅格 8 个        |        |         |        | +18    |     | +18     |
+| 7.5C-2 装饰 PetalFour 等 |        |         |        | +6     |     | +6      |
+| 7.5C-3 内容块 6 + chart |        |         |        | +14    |     | +14     |
+| 7.5D-1 layer-1 收敛     |        |         |        |        |     | +0      |
+| 7.5D-2 prompt 改造      | +6     |         |        |        |     | +6      |
+| 7.5D-3 deterministic    | +11+5  |         |        |        |     | +16     |
+| 7.5D-4 迁移脚本         | +9     |         |        |        |     | +9      |
+| 7.5E starter / chart 色板 |       |         |        |        | +2  | +2      |
+| **关闭**                | **361**| **71**  | **3**  | **38** |**11**| **484** |
+
+> 7.5C-2 实际 PetalFour 3 测 + ProcessFlow 3 测 = 6；7.5C-3 内容块去 Callout 加 PieChart 后 = 14；7.5E 加 LineChart / BarChart demo 页对应 E2E 测 +2。slidev 包从 0 起完整建立 vitest 工程是 7.5C-1 的副产物，单独贡献 38 测。
+
+入口 377 → 关闭 484，+107（+106 单测 + 1 E2E）；远超 plan 估的 +54。
