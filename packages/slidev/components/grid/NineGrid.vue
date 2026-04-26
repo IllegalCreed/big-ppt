@@ -20,9 +20,9 @@
 <style scoped>
 .ld-nine-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
-  gap: 1em;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 1.5em;
   width: 100%;
   height: 100%;
   flex: 1;
@@ -32,10 +32,12 @@
   font-size: var(--ld-font-size-body);
 }
 
+/* cell 用 grid + place-items: stretch，让 MetricCard 等子组件自动撑满，
+ * 保证每格大小一致；纯文字用 inline 自然左上对齐——demo 推荐每格放 MetricCard。
+ */
 .ld-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: stretch;
   min-width: 0;
   min-height: 0;
   text-align: center;
