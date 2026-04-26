@@ -49,7 +49,7 @@ defineProps<{
 <style scoped>
 .ld-two-col {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 1.5em;
   width: 100%;
   height: 100%;

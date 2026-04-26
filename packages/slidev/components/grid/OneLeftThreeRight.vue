@@ -46,7 +46,7 @@ defineProps<{
 
 .ld-items {
   display: grid;
-  grid-template-rows: repeat(3, 1fr);
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 0.8em;
   min-width: 0;
 }

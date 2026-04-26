@@ -12,7 +12,10 @@ defineProps<{
 </script>
 
 <template>
-  <div class="ld-three-col" :style="{ gridTemplateColumns: cols ?? '1fr 1fr 1fr' }">
+  <div
+    class="ld-three-col"
+    :style="{ gridTemplateColumns: cols ?? 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)' }"
+  >
     <div class="ld-col">
       <slot name="left" />
     </div>

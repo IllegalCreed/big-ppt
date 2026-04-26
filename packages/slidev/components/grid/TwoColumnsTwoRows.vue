@@ -20,9 +20,10 @@
 <style scoped>
 .ld-two-x-two {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 1.2em;
+  /* minmax(0, 1fr) 防止 cell 内容意外撑高 row → 强制 4 cell 严格等大 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 1.5em;
   width: 100%;
   height: 100%;
   flex: 1;
@@ -32,9 +33,10 @@
   font-size: var(--ld-font-size-body);
 }
 
+/* cell 用 grid + place-items: stretch，让 MetricCard 等块级子组件自动撑满 */
 .ld-cell {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  place-items: stretch;
   min-width: 0;
   min-height: 0;
 }
