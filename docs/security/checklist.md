@@ -17,9 +17,10 @@
 | A02.2 | 密码 bcrypt rounds≥10 | ✅ | – | `auth.ts:13` |
 | A02.3 | API Key AES-256-GCM | ✅ | – | `crypto/apikey.ts` |
 | A03.1 | Drizzle 全量参数化（无原始 sql 拼接） | ✅ | 9-C | `schema.ts` 仅 DEFAULT 字面量 |
-| A03.2 | 全仓 0 v-html | ⚠ → ✅ | 9-C | grep 已确认 0；加 `vue/no-v-html: error` 永久守卫 |
-| A03.3 | Slidev iframe 加 sandbox | ⚠ | 9-C | – |
-| A03.4 | markdown-it 默认 html: false | TBD | 9-C | – |
+| A03.2 | 全仓 0 v-html | ✅ | 9-C | grep 已确认 0；加 `vue/no-v-html: error` 永久守卫 |
+| A03.3 | Slidev iframe 加 sandbox | ✅ | 9-C | `SlidePreview.vue` sandbox + 4 条测试守卫 |
+| A03.4 | markdown-it 默认 html: false | ✅ | 9-C | Slidev 内置默认 false；项目自身无显式调用 |
+| A03.5 | Hono sub-router wildcard 守卫不泄漏 | ✅ | 9-C | `routes-mount-integration.test.ts` 10 测；CLAUDE.md 已知坑提炼 |
 | A04.1 | login / register rate limit | ⚠ | 9-E | 5 / 15min / IP |
 | A04.2 | llm-chat rate limit | ⚠ | 9-E | 30 / hour / user |
 | A04.3 | log-event rate limit | ⚠ | 9-E | 10 / min / user |

@@ -121,14 +121,47 @@ gitleaks detect --config .gitleaks.toml --redact -v --no-banner --report-format 
 
 ## 3. OWASP A03 Injection
 
-**适用项**：SQL 注入 + XSS + iframe sandbox + markdown-it 配置。
+### 3.1 SQL 注入 ✅
 
-**当前状态**：详查待 Task 9-C 落档。
+**核查路径**：`grep -rn 'sql\`' packages/agent/src` → 仅 `db/schema.ts:22-23` 两处：
+```ts
+const NOW = sql`CURRENT_TIMESTAMP`
+const NOW_ON_UPDATE = sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`
+```
+都是 DEFAULT 子句字面量常量，不接 user input。其余全走 Drizzle ORM 参数化查询。**无 SQL 注入风险**。
 
-**初步盘点**：
-- Drizzle ORM 全量参数化（schema.ts 仅 DEFAULT 字面量用 `sql\``，不接 user input）→ ✅
-- 全 creator/slidev 仓库无 `v-html` → ✅（Task 9-C 加 lint rule 永久守卫）
-- Slidev iframe 缺 `sandbox` 属性 → ⚠ 待 9-C 修
+### 3.2 XSS（v-html / innerHTML）✅
+
+**核查路径**：`grep -rn 'v-html\|innerHTML' packages/creator packages/slidev` → 0 命中。
+
+**永久守卫**：在 [`packages/creator/eslint.config.ts`](../../packages/creator/eslint.config.ts) 加 `'vue/no-v-html': 'error'`，未来引入会 lint fail。
+
+### 3.3 Slidev iframe sandbox ✅
+
+**修复**：[`packages/creator/src/components/SlidePreview.vue`](../../packages/creator/src/components/SlidePreview.vue:113-126) iframe 加 `sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"`。
+
+**token 选择 Why**：
+- `allow-same-origin`：保留 contentWindow.location.hash 翻页（同源 iframe）
+- `allow-scripts`：Slidev / Vite HMR / iframe 内 Vue 必需
+- `allow-forms`：Slidev 内 form 元素（presenter 设置面板）
+- `allow-popups + allow-popups-to-escape-sandbox`：presenter 全屏 window.open 需要
+- **不加** `allow-top-navigation`：防 iframe 跳走 parent
+
+**测试守卫**：[`packages/creator/test/SlidePreview.security.spec.ts`](../../packages/creator/test/SlidePreview.security.spec.ts) 4 测断言 sandbox 属性 + token 包含规则 + 不含 allow-top-navigation。
+
+### 3.4 markdown-it ✅
+
+项目自身无显式 markdown-it 调用；Slidev 内置使用，默认 `html: false`（不解析 HTML 片段）。`buildSystemPrompt.ts:174` 仅在注释里提到 markdown-it 行为，不接收 user input。
+
+### 3.5 关键 bug 修复（9-B 联动）
+
+**Hono sub-router wildcard middleware 泄漏**：9-B 一开始把 slides.ts 持锁守卫写成 `slides.use('*', mw)`，通过 `app.route('/api', slides)` 挂载后 `*` 拦截 /api/* 全部路径，e2e happy-path 直接挂在 picker modal（"需要先 activate-deck"）。
+
+**修复**：改为显式 path 列举（`slides.use('/read-slides', mw)` / `slides.use('/restore-slides', mw)` / `slides.use('/redo-slides', mw)`）。
+
+**防再犯**：新建 [`packages/agent/test/routes-mount-integration.test.ts`](../../packages/agent/test/routes-mount-integration.test.ts)（10 测）—— 用真 `app` 实例 fetch 验证公开端点维持公开 + 鉴权端点未登录 401 + 各 sub-router 互不干扰。这种 wildcard 泄漏无法在 sub-router 单测里复现，必须用真 app mount。
+
+**已提炼到 CLAUDE.md "Hono 路由"已知坑**。
 
 ---
 

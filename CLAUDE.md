@@ -158,6 +158,10 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 - **依赖升级前必看 npm `latest` dist-tag 是否指向 beta**：不是所有库都把 `latest` 严格对齐 stable；升 0.x → 1.x 类跨 major 时 `pnpm outdated` 显示的 latest 可能是 beta，显式锁 stable 版本号避免误升（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 踩坑 6）
 - **`@types/node` 跟 Node LTS 不跟 npm latest**：Node 25 还没 LTS 时 npm latest 已经是 25，但部署/CI 用 Node 22 LTS，类型版本应跟运行时 LTS 才不漂移（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 设计抉择 #7）
 
+### Hono 路由
+
+- **Hono sub-router 内 `sub.use('*', mw)` 通过 `app.route('/api', sub)` 挂载后，`*` 会泄漏到 /api/* 所有路径**：sub-router 单测里 `*` 看似只匹配 sub 自己的 path，但通过 route() 挂到前缀下后，wildcard 会拦截整个前缀的所有请求，影响其他 sub-router 的公开端点。改成显式 path 列举（`sub.use('/path-a', mw)` / `sub.use('/path-b', mw)`），或用 `sub.use(['/path-a','/path-b'], mw)` 数组形式。**单测无法复现**——必须有 `app.fetch()` 真路由 mount 集成测才能 catch（[plan 18](docs/plans/18-phase9-security-audit.md) Phase 9-B/9-C）
+
 ### Slidev 反代 + HMR
 
 - **Slidev 仅 agent 反代访问**：原生端口 `:3031` 必须绑 `127.0.0.1`，不能直接对外（详见 [plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 1-2）

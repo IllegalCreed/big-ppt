@@ -32,6 +32,9 @@ export default defineConfigWithVueTs(
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+      // Phase 9-C（A03 防御）：禁用 v-html 永久守卫
+      // user / AI 生成的字符串永远不直接 v-html 注入；如必要走 sanitize
+      'vue/no-v-html': 'error',
     },
   },
 

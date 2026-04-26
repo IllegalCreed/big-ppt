@@ -111,10 +111,19 @@ function present() {
       </div>
     </div>
     <div class="preview-frame">
+      <!--
+        Phase 9-C（A03 防御）：iframe sandbox 限制 Slidev 内潜在 XSS 利用面。
+        - allow-same-origin：保留 contentWindow.location.hash 翻页能力（同源 iframe）
+        - allow-scripts：Slidev / Vite HMR / iframe 内 Vue 必需
+        - allow-forms：Slidev 内 form 元素（presenter 设置面板等）
+        - allow-popups：presenter 全屏放映 window.open 需要
+        - allow-popups-to-escape-sandbox：popup 窗口（present view）不继承 sandbox 限制
+      -->
       <iframe
         ref="iframeRef"
         :src="iframeSrc"
         class="slidev-iframe"
+        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
         allow="clipboard-write; screen-wake-lock"
       />
     </div>

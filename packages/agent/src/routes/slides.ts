@@ -13,16 +13,21 @@ export const slides = new Hono<{ Variables: AuthVars }>()
  *   - 未登录 → 401
  *   - 登录但未持锁 → 403（前端会显示 OccupiedWaitingPage）
  *
- * 不抽 middleware：仅 6 个端点（3 个 endpoint × GET+POST），inline 比 helper 文件少一层抽象。
+ * 不用 `slides.use('*', mw)`：Hono 子 router 通过 `app.route('/api', slides)`
+ * 挂载后，`*` 会匹配 /api/* 所有路径（影响 list-templates 等其他子 router 的公开
+ * 端点）。改为显式列三条 path —— `*` middleware 只在 sub-router 是顶层 app 时安全。
  */
-slides.use('*', async (c, next) => {
+const requireLockHolder: import('hono').MiddlewareHandler<{ Variables: AuthVars }> = async (c, next) => {
   const session = c.get('session')
   if (!session) return c.json({ success: false, error: 'unauthorized' }, 401)
   if (!isHeldBy(session.id)) {
     return c.json({ success: false, error: '需要先 activate-deck 占用 Slidev 实例' }, 403)
   }
   await next()
-})
+}
+slides.use('/read-slides', requireLockHolder)
+slides.use('/restore-slides', requireLockHolder)
+slides.use('/redo-slides', requireLockHolder)
 
 // 返回 slides.md 原文（text/plain，保留与老 middleware 行为一致）
 slides.post('/read-slides', (c) => {
