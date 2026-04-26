@@ -11,17 +11,14 @@
  */
 import { randomUUID } from 'node:crypto'
 import { desc, eq } from 'drizzle-orm'
+import type { TemplateManifest } from '@big-ppt/shared'
 import { getDb, decks, deckVersions } from './db/index.js'
 import { getManifest } from './templates/registry.js'
+import { analyzeDeckPurity } from './templates/analyzeDeckPurity.js'
 import { mirrorSlidesContent } from './deck/mirror.js'
 import { getHolder } from './slidev-lock.js'
 
-export type SwitchJobState =
-  | 'pending'
-  | 'snapshotting'
-  | 'migrating'
-  | 'success'
-  | 'failed'
+export type SwitchJobState = 'pending' | 'snapshotting' | 'migrating' | 'success' | 'failed'
 
 export interface SwitchJob {
   id: string
@@ -74,6 +71,52 @@ function mutateJob(id: string, patch: Partial<SwitchJob>): void {
   jobs.set(id, { ...existing, ...patch })
 }
 
+/**
+ * Phase 7.5D-3：deterministic 字符串替换路径。
+ *
+ * 当两个模板的 layouts 都遵循 `<prefix>-<suffix>` 命名 + suffix 集合相等时，
+ * 切模板可以通过仅替换 frontmatter `layout:` 行的前缀来完成，**完全跳过 LLM**。
+ * 这是 plan 16 设计抉择 #5 + #12 的实现：archive pure deck 走此路径，字节级一致。
+ *
+ * 返回 null 表示模板对不满足 deterministic 条件，调用方应 fallback LLM。
+ */
+function templatePrefix(manifest: TemplateManifest): string {
+  if (manifest.layouts.length === 0) return ''
+  let prefix = manifest.layouts[0].name
+  for (const l of manifest.layouts) {
+    while (prefix.length > 0 && !l.name.startsWith(prefix)) {
+      prefix = prefix.slice(0, -1)
+    }
+  }
+  return prefix
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+export function tryDeterministicSwitch(
+  content: string,
+  fromManifest: TemplateManifest,
+  toManifest: TemplateManifest,
+): string | null {
+  const fromPrefix = templatePrefix(fromManifest)
+  const toPrefix = templatePrefix(toManifest)
+  if (!fromPrefix || !toPrefix) return null
+
+  const fromSuffixes = new Set(fromManifest.layouts.map((l) => l.name.slice(fromPrefix.length)))
+  const toSuffixes = new Set(toManifest.layouts.map((l) => l.name.slice(toPrefix.length)))
+  if (fromSuffixes.size !== toSuffixes.size) return null
+  for (const s of fromSuffixes) {
+    if (!toSuffixes.has(s)) return null
+  }
+
+  return content.replace(
+    new RegExp(`^(layout:\\s*)${escapeRegex(fromPrefix)}(\\S+)$`, 'gm'),
+    `$1${toPrefix}$2`,
+  )
+}
+
 /** 重写函数：由路由注入（生产实现用 LLM；测试实现直接返回模拟内容） */
 export type RewriteFn = (args: {
   oldContent: string
@@ -83,10 +126,7 @@ export type RewriteFn = (args: {
 }) => Promise<string>
 
 /** 执行切换流水；任一步失败会把 job 标 failed，不抛异常到调用方 */
-export async function runSwitchJob(
-  jobId: string,
-  rewriteFn: RewriteFn,
-): Promise<void> {
+export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise<void> {
   const job = jobs.get(jobId)
   if (!job) return
 
@@ -126,14 +166,27 @@ export async function runSwitchJob(
     if (!snapshot) throw new Error('snapshot 回查失败')
     mutateJob(jobId, { snapshotVersionId: snapshot.id, state: 'migrating' })
 
-    const rewritten = await rewriteFn({
-      oldContent: currentContent,
-      fromTemplateId: job.from,
-      toTemplateId: job.to,
-      userId: job.userId,
-    })
-    if (!rewritten || typeof rewritten !== 'string' || rewritten.trim().length === 0) {
-      throw new Error('LLM 返回空内容')
+    // Phase 7.5D-3：尝试 deterministic 路径——pure deck + 模板对兼容则跳 LLM
+    const fromManifest = getManifest(job.from)
+    const toManifest = getManifest(job.to)
+    const purity = analyzeDeckPurity(currentContent)
+    let rewritten: string | null = null
+
+    if (purity.pure && fromManifest && toManifest) {
+      rewritten = tryDeterministicSwitch(currentContent, fromManifest, toManifest)
+    }
+
+    if (rewritten === null) {
+      // fallback：含 chart.js / 原创组件 / 模板对不兼容 → LLM 重写
+      rewritten = await rewriteFn({
+        oldContent: currentContent,
+        fromTemplateId: job.from,
+        toTemplateId: job.to,
+        userId: job.userId,
+      })
+      if (!rewritten || typeof rewritten !== 'string' || rewritten.trim().length === 0) {
+        throw new Error('LLM 返回空内容')
+      }
     }
 
     // 插切换后 version + 更新 decks.template_id / current_version_id
