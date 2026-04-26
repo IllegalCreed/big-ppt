@@ -66,7 +66,7 @@ heading: TwoCol 两栏对比
 
 ---
 layout: beitou-content
-heading: ThreeCol 三列均分（中间装饰）
+heading: ThreeCol 三列均分
 ---
 
 <ThreeCol>
@@ -76,16 +76,12 @@ heading: ThreeCol 三列均分（中间装饰）
 
 - 需求确认
 - 资源盘点
+- 排期对齐
 
 </template>
 <template #center>
 
-<PetalFour>
-<template #slot1>1</template>
-<template #slot2>2</template>
-<template #slot3>3</template>
-<template #slot4>4</template>
-</PetalFour>
+<MetricCard value="3" unit="周" label="迭代周期" variant="fill" />
 
 </template>
 <template #right>
@@ -93,6 +89,7 @@ heading: ThreeCol 三列均分（中间装饰）
 **后期跟进**
 
 - 发布上线
+- 数据回流
 - 复盘评估
 
 </template>
@@ -330,7 +327,7 @@ heading: TwoCol 两栏对比
 
 ---
 layout: jingyeda-content
-heading: ThreeCol 三列均分（中间装饰）
+heading: ThreeCol 三列均分
 ---
 
 <ThreeCol>
@@ -340,16 +337,12 @@ heading: ThreeCol 三列均分（中间装饰）
 
 - 需求确认
 - 资源盘点
+- 排期对齐
 
 </template>
 <template #center>
 
-<PetalFour>
-<template #slot1>1</template>
-<template #slot2>2</template>
-<template #slot3>3</template>
-<template #slot4>4</template>
-</PetalFour>
+<MetricCard value="3" unit="周" label="迭代周期" variant="fill" />
 
 </template>
 <template #right>
@@ -357,6 +350,7 @@ heading: ThreeCol 三列均分（中间装饰）
 **后期跟进**
 
 - 发布上线
+- 数据回流
 - 复盘评估
 
 </template>
