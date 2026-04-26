@@ -36,7 +36,7 @@
 | `--ld-color-fg-primary`           | 主文字色                                           | beitou: `#333333` / jingyeda: `#1a1a1a`                          | 正文 / 标题文字                        |
 | `--ld-color-fg-muted`             | 次要文字色（注释 / 标签 / 辅助说明）               | `#666666`                                                        | Table plain 边框 / 图表轴标签          |
 | `--ld-color-bg-page`              | 页面背景                                           | `#ffffff`                                                        | layout 容器底色                        |
-| `--ld-color-bg-subtle`            | 浅灰填充背景（卡片 subtle 模式 / 区块底）          | `#f5f5f5`                                                        | MetricCard subtle / Callout 浅底       |
+| `--ld-color-bg-subtle`            | 浅灰填充背景（卡片 subtle 模式 / 区块底）          | `#f5f5f5`                                                        | MetricCard subtle / Table 斑马条       |
 | `--ld-color-chart-primary-bg`     | 图表填充色（含 alpha）                             | beitou: `rgba(208,13,20,0.85)` / jingyeda: `rgba(0,61,165,0.85)` | BarChart / LineChart 填充              |
 | `--ld-color-chart-primary-border` | 图表边框 / 线条色                                  | beitou: `#a8090e` / jingyeda: `#003da5`                          | BarChart / LineChart 边框 + 线         |
 
@@ -45,7 +45,7 @@
 | Token                      | 语义                                           | 默认值参考                                   | 谁在用                                     |
 | -------------------------- | ---------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
 | `--ld-font-family-brand`   | 品牌字体（标题 / 正文）                        | beitou: 雅黑系 / jingyeda: 仿宋系            | 标题 / 正文                                |
-| `--ld-font-family-ui`      | UI 字体（信息栏 / 标签 / chart 文字 / 小字号） | 雅黑系（jingyeda 显式区分；beitou 同 brand） | chart 轴文字 / Callout 标题                |
+| `--ld-font-family-ui`      | UI 字体（信息栏 / 标签 / chart 文字 / 小字号） | 雅黑系（jingyeda 显式区分；beitou 同 brand） | chart 轴文字 / Quote footer / 代码字体     |
 | `--ld-font-size-h1`        | 一级标题字号                                   | `40px`                                       | layer-1 layout 标题 / MetricCard.value     |
 | `--ld-font-size-h2`        | 二级标题字号                                   | `26px`                                       | layer-1 layout 副标题 / 装饰组件中央编号   |
 | `--ld-font-size-body`      | 正文字号                                       | `20px`                                       | 正文 / 列表项 / MetricCard.label           |
@@ -63,10 +63,10 @@
 
 ### Shadows（2 项）
 
-| Token            | 语义                          | 默认值参考                    | 谁在用                     |
-| ---------------- | ----------------------------- | ----------------------------- | -------------------------- |
-| `--ld-shadow-sm` | 浅阴影（卡片 hover / 轻浮层） | `0 1px 3px rgba(0,0,0,0.08)`  | MetricCard hover / Callout |
-| `--ld-shadow-md` | 中阴影（modal / 强浮层）      | `0 4px 12px rgba(0,0,0,0.12)` | Modal / 强提示卡           |
+| Token            | 语义                          | 默认值参考                    | 谁在用           |
+| ---------------- | ----------------------------- | ----------------------------- | ---------------- |
+| `--ld-shadow-sm` | 浅阴影（卡片 hover / 轻浮层） | `0 1px 3px rgba(0,0,0,0.08)`  | MetricCard hover |
+| `--ld-shadow-md` | 中阴影（modal / 强浮层）      | `0 4px 12px rgba(0,0,0,0.12)` | Modal / 强提示卡 |
 
 ## 模板实现要求
 

@@ -101,7 +101,8 @@ const DECISION_TREE_SECTION = `## 选 Layout 与 Component 的决策树
 - 4 小节方阵 / 阶段流程等需要美化骨架 → **优先**装饰类组件（\`<PetalFour>\` / \`<ProcessFlow>\`）
 - 数字 + 单位 + 标签标准结构 → **优先** \`<MetricCard>\`
 - 图表 → **必须** \`<BarChart>\` / \`<LineChart>\`
-- 引文 / 关键摘要 → **优先** \`<Quote>\` / \`<Callout>\`
+- 引文 / 关键摘要 → **优先** \`<Quote>\`
+- 代码块 → 用 markdown 围栏（\`\`\`ts ... \`\`\`），Slidev 自带 Shiki 高亮，不需要专用组件
 - 段落自由叙述 / 简单列表 → **自由 markdown**，不硬塞组件
 - 切模板任务时（system 调用）：仅替换 frontmatter \`layout:\` 前缀，不要重写公共组件 props 或 slot 内容`
 

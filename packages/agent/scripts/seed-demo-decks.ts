@@ -111,9 +111,15 @@ heading: OneLeftThreeRight 主从布局
 打造 AI 演示文稿生成的"模板生态系统"基线：从硬编码单模板升级为公共组件库 + token 自适应配色。
 
 </template>
-<template #item1>① 三层架构落地</template>
-<template #item2>② 切模板字节级一致</template>
-<template #item3>③ AI 自由度 5 档框架</template>
+<template #item1>
+<MetricCard value="3" label="架构层数" variant="outline" />
+</template>
+<template #item2>
+<MetricCard value="100" unit="%" label="字节级一致" variant="outline" />
+</template>
+<template #item3>
+<MetricCard value="5" label="自由度档位" variant="outline" />
+</template>
 </OneLeftThreeRight>
 
 ---
@@ -235,27 +241,38 @@ heading: BarChart 柱状图
 
 ---
 layout: beitou-content
-heading: Quote / Callout / Table 混合
+heading: Quote / 代码段
 ---
 
-<TwoCol left-title="引文 / 高亮" right-title="数据表格">
+<TwoCol left-title="引文" right-title="代码示例">
 <template #left>
 
 <Quote author="设计抉择 #2" cite="plan 16">
 装饰几何全公共，仅靠 token 切配色——花瓣造型在 jingyeda 用蓝绿色一样好看；几何形状是中性资产，配色才是模板个性。
 </Quote>
 
-<Callout type="info" title="提示">
-所有公共组件只读 \`--ld-*\` token，跨模板自动适配。
-</Callout>
-
 </template>
 <template #right>
 
-<Table :headers='["指标","数值"]' :rows='[["模板","beitou-standard"],["layer-1 layouts","5 个"],["公共组件","16 个"],["token 数","22 项"],["测试覆盖","473 unit"]]' />
+\`\`\`ts
+// AI 在 markdown body 直接写组件标签
+<MetricCard
+  value="89"
+  unit="%"
+  label="留存率"
+  variant="fill"
+/>
+\`\`\`
 
 </template>
 </TwoCol>
+
+---
+layout: beitou-content
+heading: Table 数据表格
+---
+
+<Table :headers='["指标","数值","说明"]' :rows='[["--ld-* token 数","22","colors / fonts / shapes / shadows 4 类"],["layer-1 layout","5","cover / toc / section-title / content / back-cover"],["公共组件","16","栅格 8 + 装饰 2 + 内容块 6"],["单测覆盖","473",""],["切模板","deterministic","pure deck 跳 LLM"],["设计抉择","13",""]]' />
 
 ---
 layout: beitou-back-cover
@@ -351,9 +368,15 @@ heading: OneRightThreeLeft 右主左从
 ---
 
 <OneRightThreeLeft :main-fr="1.5">
-<template #item1>① 蓝绿双色硬切版式</template>
-<template #item2>② 仿宋 + 雅黑双字体</template>
-<template #item3>③ 科技商务风</template>
+<template #item1>
+<MetricCard value="2" label="主色（蓝/绿）" variant="outline" />
+</template>
+<template #item2>
+<MetricCard value="2" label="字体（仿宋/雅黑）" variant="outline" />
+</template>
+<template #item3>
+<MetricCard value="6" label="layer-1 装饰" variant="outline" />
+</template>
 <template #main>
 
 **模板核心**
@@ -478,27 +501,38 @@ heading: LineChart 折线图
 
 ---
 layout: jingyeda-content
-heading: Quote / Callout / Table 混合
+heading: Quote / 代码段
 ---
 
-<TwoCol left-title="引文 / 高亮" right-title="数据表格">
+<TwoCol left-title="引文" right-title="代码示例">
 <template #left>
 
 <Quote author="设计抉择 #12" cite="plan 16">
 AI 自由度 5 档：从纯 markdown 到 chart.js 现写到 script setup 原创组件——切模板时系统按 deck 纯度自动选 deterministic 替换或 LLM 重写。
 </Quote>
 
-<Callout type="success" title="切模板成功">
-本 deck 完全使用公共组件，切换到对方模板会走 deterministic 路径，body 字节级一致。
-</Callout>
-
 </template>
 <template #right>
 
-<Table :headers='["指标","数值"]' :rows='[["模板","jingyeda-standard"],["layer-1 layouts","5 个"],["公共组件","16 个"],["token 数","22 项"],["双字体","仿宋 + 雅黑"]]' />
+\`\`\`vue
+<!-- pure deck：仅 layer-1 + 公共组件 -->
+<TwoCol left-title="A" right-title="B">
+  <template #left>...</template>
+  <template #right>
+    <MetricCard ... />
+  </template>
+</TwoCol>
+\`\`\`
 
 </template>
 </TwoCol>
+
+---
+layout: jingyeda-content
+heading: Table 数据表格
+---
+
+<Table :headers='["指标","数值","说明"]' :rows='[["--ld-* token 数","22","colors / fonts / shapes / shadows 4 类"],["layer-1 layout","5","cover / toc / section-title / content / back-cover"],["公共组件","16","栅格 8 + 装饰 2 + 内容块 6"],["单测覆盖","473",""],["切模板","deterministic","pure deck 跳 LLM"],["双字体","仿宋 + 雅黑",""]]' />
 
 ---
 layout: jingyeda-back-cover

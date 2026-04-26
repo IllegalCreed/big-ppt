@@ -135,13 +135,6 @@ export const commonComponentsCatalog: ComponentEntry[] = [
     example: '<Quote author="张三" cite="《白皮书》">关键观点文字。</Quote>',
   },
   {
-    name: 'Callout',
-    category: 'block',
-    description: '高亮信息块，3 种 type（info/warning/success）',
-    propsOrSlots: 'type?: "info"|"warning"|"success" / title?; default slot = 正文',
-    example: '<Callout type="warning" title="注意">部署前必须备份。</Callout>',
-  },
-  {
     name: 'BarChart',
     category: 'block',
     description: '柱状图，数据可视化必选；颜色读 ld-chart token',
