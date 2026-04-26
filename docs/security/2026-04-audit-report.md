@@ -190,18 +190,58 @@ const NOW_ON_UPDATE = sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`
 
 **当前状态**：全栈 0 rate limit → ⚠ 待 Task 9-E 实施（自撸 LRU + token bucket，per-IP/user）。
 
+**iframe 防点击劫持**：CSP `frame-ancestors 'self'` 已在 9-D 落地（详 5.3）。
+
 ---
 
 ## 5. OWASP A05 Security Misconfiguration
 
-**适用项**：CORS / CSP / 错误消息泄漏 / 默认凭据。
+### 5.1 CORS ✅（决策：维持现状，无需 middleware）
 
-**当前状态**：详查待 Task 9-D / 9-E 落档。
+生产架构：用户访问主域 `lumideck.example.com`，Vite/反代将 `/api/*` 转发到同 origin 的 agent；浏览器视角是同源请求 → 不触发 CORS preflight，无需在 agent 加 CORS middleware。
 
-**已知缺口**：
-- 无显式 CSP 策略 → 9-D 加 Report-Only
-- 无 CORS allowlist → 9-D 评估（同源 + Vite proxy 是否要 CORS middleware）
-- 错误消息可能泄漏 stack trace → 9-E `errorResponse(err, isProd)` helper
+跨域只发生在两种场景：(1) 攻击者从其他域发 fetch → 默认浏览器拒（CORS）+ 即便绕过也被 sameSite cookie 挡（无凭据）+ originCheck 二次防护；(2) 跨子域协作场景 → 留 Phase 16+ 评估。
+
+### 5.2 CSRF / Origin 校验 ✅（Task 9-D 落档）
+
+**主防线**：session cookie `sameSite=lax`（auth.ts:23-31）—— 跨站 POST 默认带不上 cookie。
+
+**Second-line defense**：[`packages/agent/src/middleware/origin-check.ts`](../../packages/agent/src/middleware/origin-check.ts) 中间件 + [`app.ts`](../../packages/agent/src/app.ts) 全局挂载。
+
+**规则**：
+- POST / PUT / DELETE / PATCH 必须带 Origin（或 Referer fallback）
+- 严格匹配 `PUBLIC_ORIGIN` env（生产）/ 兜底允许 localhost / 127.0.0.1（dev）
+- 缺 Origin 且缺 Referer → 403
+- 不命中白名单 → 403
+- GET / HEAD / OPTIONS 跳过
+- 路径豁免：`/api/auth/login` / `/api/auth/register` / `/api/auth/logout`（登录前用户尚无 session，部分 client 省略 Origin）
+
+**生产配置**：[`.env.production.example`](../../packages/agent/.env.production.example) 添加 `PUBLIC_ORIGIN=https://lumideck.example.com` 占位 + `PUBLIC_ORIGIN_EXTRA` CSV 多源支持（staging / preview）
+
+**测试**：[`middleware-origin-check.test.ts`](../../packages/agent/test/middleware-origin-check.test.ts) 13 条覆盖：方法过滤 / 缺 Origin 拒绝 / Origin 命中 / 不命中 / Referer fallback / dev 兜底 / 路径豁免 / 多源 CSV。集成层 [`routes-mount-integration.test.ts`](../../packages/agent/test/routes-mount-integration.test.ts) +1 条 prevent-regression（POST 缺 Origin → 403）。
+
+### 5.3 CSP ✅（Report-Only，Task 9-D 落档）
+
+**模式**：仅 `Content-Security-Policy-Report-Only`，**不强制**。Slidev iframe 内含 inline script + eval（Vue 编译产物 + Vite HMR），CSP 强制易 break；先观察 violation，Phase 11+ 再切 enforce（详 plan 18 设计抉择 #4）。
+
+**触发条件**：仅生产模式（`NODE_ENV === 'production'`）；dev/test 不注入 header。
+
+**Policy**（[`packages/agent/src/middleware/csp.ts`](../../packages/agent/src/middleware/csp.ts)）：
+```
+default-src 'self' 'unsafe-inline' 'unsafe-eval';
+img-src 'self' data: blob:;
+frame-src 'self';
+worker-src 'self' blob:;
+font-src 'self' data: https:;
+block-all-mixed-content;
+frame-ancestors 'self'  ← 防点击劫持，Slidev iframe 不会被嵌进恶意页面
+```
+
+**测试**：[`middleware-csp.test.ts`](../../packages/agent/test/middleware-csp.test.ts) 3 条（生产注入 / dev 不注入 / 仅 Report-Only 不写 enforce header）。
+
+### 5.4 错误消息脱敏 ⚠（待 Task 9-E）
+
+`errorResponse(err, isProd)` helper 待 9-E 实施。当前 prod 可能吐 stack trace / 内部错误细节。
 
 ---
 

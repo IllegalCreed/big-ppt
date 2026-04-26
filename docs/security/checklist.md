@@ -24,8 +24,8 @@
 | A04.1 | login / register rate limit | ⚠ | 9-E | 5 / 15min / IP |
 | A04.2 | llm-chat rate limit | ⚠ | 9-E | 30 / hour / user |
 | A04.3 | log-event rate limit | ⚠ | 9-E | 10 / min / user |
-| A05.1 | CSP Report-Only | ⚠ | 9-D | – |
-| A05.2 | Origin/Referer 校验 | ⚠ | 9-D | – |
+| A05.1 | CSP Report-Only | ✅ | 9-D | `middleware/csp.ts` 仅生产注入；含 frame-ancestors 防点击劫持；3 测 |
+| A05.2 | Origin/Referer 校验 | ✅ | 9-D | `middleware/origin-check.ts` POST/PUT/DELETE/PATCH 必校验；13 单测 + 1 集成 prevent-regression |
 | A05.3 | error 消息生产脱敏 | ⚠ | 9-E | `errorResponse(err, isProd)` |
 | A06.1 | pnpm audit --audit-level=high = 0 | ✅ | 9-A | Phase 8 + 复核 |
 | A06.2 | moderate 全 transitive + verdict | ✅ | 9-A | 11 unique 漏洞，dompurify/uuid/postcss/esbuild 等上游 |

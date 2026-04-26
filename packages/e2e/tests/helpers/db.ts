@@ -24,6 +24,7 @@ export async function truncateAllTables(): Promise<void> {
   const conn = await getPool().getConnection()
   try {
     await conn.query('SET FOREIGN_KEY_CHECKS=0')
+    await conn.query('TRUNCATE TABLE user_mcp_servers')
     await conn.query('TRUNCATE TABLE deck_chats')
     await conn.query('TRUNCATE TABLE deck_versions')
     await conn.query('TRUNCATE TABLE decks')
@@ -35,8 +36,12 @@ export async function truncateAllTables(): Promise<void> {
   }
   // DB session 已清空，同步重置 agent 进程内的内存锁状态，
   // 防止残留锁导致下一条测试 activate-deck 遇到 409 冲突。
+  // Phase 9-D：state-changing POST 受 originCheck 守卫，必须带 Origin（dev 兜底允许 localhost）
   try {
-    await fetch(`${AGENT_BASE}/api/_test/reset-lock`, { method: 'POST' })
+    await fetch(`${AGENT_BASE}/api/_test/reset-lock`, {
+      method: 'POST',
+      headers: { Origin: AGENT_BASE },
+    })
   } catch {
     // agent 未启动时忽略（本地单元测试场景）
   }

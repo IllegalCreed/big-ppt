@@ -24,6 +24,8 @@ import { decksRoute } from './routes/decks.js'
 import { lockRoute } from './routes/lock.js'
 import { authOptional, type AuthVars } from './middleware/auth.js'
 import { requestContextMiddleware } from './middleware/request-context.js'
+import { originCheck } from './middleware/origin-check.js'
+import { cspReportOnly } from './middleware/csp.js'
 
 export const app = new Hono<{ Variables: AuthVars }>()
 
@@ -31,6 +33,10 @@ export const app = new Hono<{ Variables: AuthVars }>()
 // user/session/activeDeck 包进 AsyncLocalStorage 供下游 slides-store 读取。
 app.use('*', authOptional)
 app.use('*', requestContextMiddleware)
+// Phase 9-D（A05）：state-changing 请求 Origin/Referer 校验 + 生产 CSP report-only。
+// 注意：originCheck 内部对 GET/HEAD/OPTIONS + /api/auth/(login|register|logout) 路径放行。
+app.use('*', originCheck)
+app.use('*', cspReportOnly)
 
 app.get('/', (c) => c.text('Big-PPT Agent'))
 app.get('/healthz', (c) => {

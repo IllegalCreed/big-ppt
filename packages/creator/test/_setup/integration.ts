@@ -55,6 +55,9 @@ function shimFetch(): void {
     const fullUrl = isRelative ? `http://test${url}` : url
     const headers = new Headers(init?.headers)
     if (cookieJar && !headers.has('cookie')) headers.set('cookie', cookieJar)
+    // Phase 9-D：originCheck 中间件要求 state-changing 请求带 Origin/Referer。
+    // 真实浏览器 fetch 自动带 Origin，shim 也补一个让 dev-fallback 兜底（localhost）通过。
+    if (!headers.has('origin')) headers.set('origin', 'http://localhost')
     const req = new Request(fullUrl, { ...init, headers })
     const res = await app.fetch(req)
     // 收集 Set-Cookie（取第一个 cookie 的 name=value 段）

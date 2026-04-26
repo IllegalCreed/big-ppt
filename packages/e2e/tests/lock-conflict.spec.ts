@@ -17,8 +17,16 @@ test.afterAll(async () => {
  * - User B：等待页轮询 5s 内自动跳转到编辑器
  */
 test('A 占锁，B 看等待页；A 释放后 B 5s 内自动进入', async ({ page, baseURL }) => {
-  const aReq = await pwRequest.newContext({ baseURL: AGENT_BASE })
-  const bReq = await pwRequest.newContext({ baseURL: AGENT_BASE })
+  // Phase 9-D：originCheck 中间件要求 state-changing 请求带 Origin。
+  // pwRequest 不像 browser 自动带 Origin，要 extraHTTPHeaders 显式设。
+  const aReq = await pwRequest.newContext({
+    baseURL: AGENT_BASE,
+    extraHTTPHeaders: { Origin: AGENT_BASE },
+  })
+  const bReq = await pwRequest.newContext({
+    baseURL: AGENT_BASE,
+    extraHTTPHeaders: { Origin: AGENT_BASE },
+  })
 
   // A 注册 + 登录 + 创建 deck
   const aEmail = `a-${Date.now()}@a.com`

@@ -37,11 +37,15 @@ describe('Hono sub-router 挂载完整性（A01 防 wildcard 泄漏）', () => {
     expect(res.status).toBe(200)
   })
 
+  // Phase 9-D：state-changing POST 必须带 Origin（dev 兜底允许 localhost），
+  // 否则被 originCheck 拦在 403。给测试统一带个合法 Origin 走到 auth 层。
+  const DEV_ORIGIN = 'http://localhost:3030'
+
   it('POST /api/log-event 未登录 → 401', async () => {
     const res = await app.fetch(
       new Request('http://test/api/log-event', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Origin: DEV_ORIGIN },
         body: JSON.stringify({ session: 's', kind: 'k', payload: {} }),
       }),
     )
@@ -57,7 +61,7 @@ describe('Hono sub-router 挂载完整性（A01 防 wildcard 泄漏）', () => {
     const res = await app.fetch(
       new Request('http://test/api/call-tool', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Origin: DEV_ORIGIN },
         body: JSON.stringify({ name: 'read_slides', args: {} }),
       }),
     )
@@ -70,8 +74,26 @@ describe('Hono sub-router 挂载完整性（A01 防 wildcard 泄漏）', () => {
   })
 
   it('POST /api/read-slides 未登录 → 401（slides 持锁守卫）', async () => {
-    const res = await app.fetch(new Request('http://test/api/read-slides', { method: 'POST' }))
+    const res = await app.fetch(
+      new Request('http://test/api/read-slides', {
+        method: 'POST',
+        headers: { Origin: DEV_ORIGIN },
+      }),
+    )
     expect(res.status).toBe(401)
+  })
+
+  it('POST 缺 Origin 头 → 403（Phase 9-D 防再犯）', async () => {
+    const res = await app.fetch(
+      new Request('http://test/api/log-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: 's', kind: 'k', payload: {} }),
+      }),
+    )
+    expect(res.status).toBe(403)
+    const json = (await res.json()) as { error: string }
+    expect(json.error).toMatch(/Origin|forbidden/i)
   })
 
   it('GET /api/auth/me 未登录 → 401', async () => {
