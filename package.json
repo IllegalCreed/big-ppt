@@ -11,7 +11,8 @@
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "type-check": "turbo run type-check",
-    "gen:thumbnails": "tsx scripts/generate-template-thumbnails.ts"
+    "gen:thumbnails": "tsx scripts/generate-template-thumbnails.ts",
+    "validate:tokens": "tsx scripts/validate-template-tokens.ts"
   },
   "devDependencies": {
     "prettier": "^3.8.3",
