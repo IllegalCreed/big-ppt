@@ -10,7 +10,8 @@
     "build": "pnpm ensure-slides && slidev build",
     "export": "pnpm ensure-slides && slidev export",
     "preview": "pnpm ensure-slides && slidev --port 3031 --base /api/slidev-preview/",
-    "gen-icons": "node scripts/gen-icons.mjs"
+    "gen-icons": "node scripts/gen-icons.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@antdv-next/x": "^0.3.0",
@@ -24,6 +25,12 @@
     "chart.js": "^4.5.1",
     "vue": "^3.5.29",
     "vue-chartjs": "^5.3.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^29.0.2",
+    "vitest": "^4.1.4"
   },
   "engines": {
     "node": ">=18.0.0"

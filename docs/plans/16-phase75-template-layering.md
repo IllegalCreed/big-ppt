@@ -33,18 +33,19 @@ Phase 7.5 趁现在只 2 套模板的窗口，把视觉表达抽两层（Layer 2
 
 ## 概念辨析（关键，写在最显眼防混淆）
 
-| 概念 | 是什么 | 怎么用 | 数量 |
-|---|---|---|---|
-| **Slidev layout** | 真正的 Slidev layout，模板私有 `.vue` | frontmatter `layout: beitou-cover` | 每模板 5 个 |
-| **栅格类组件**（layer 2A） | 普通 Vue 组件，名字带 Layout / Grid 仅是语义 | body 里 `<TwoColLayout>...</TwoColLayout>` | 全局 8 个 |
-| **装饰类组件**（layer 2B） | 普通 Vue 组件，含美化几何骨架 SVG/CSS | body 里 `<PetalFour>...</PetalFour>` | 全局 2 个种子（首版） |
-| **内容块类组件**（layer 2C） | 普通 Vue 组件 | body 里 `<MetricCard ... />` | 全局 6 个 |
+| 概念                         | 是什么                                                                  | 怎么用                               | 数量                  |
+| ---------------------------- | ----------------------------------------------------------------------- | ------------------------------------ | --------------------- |
+| **Slidev layout**            | 真正的 Slidev layout，模板私有 `.vue`                                   | frontmatter `layout: beitou-cover`   | 每模板 5 个           |
+| **栅格类组件**（layer 2A）   | 普通 Vue 组件，名字按"分布形态"命名（不带 Layout 后缀，目录已表明语义） | body 里 `<TwoCol>...</TwoCol>`       | 全局 8 个             |
+| **装饰类组件**（layer 2B）   | 普通 Vue 组件，含美化几何骨架 SVG/CSS                                   | body 里 `<PetalFour>...</PetalFour>` | 全局 2 个种子（首版） |
+| **内容块类组件**（layer 2C） | 普通 Vue 组件                                                           | body 里 `<MetricCard ... />`         | 全局 6 个             |
 
 > 千万不要把"栅格类组件"叫成 "common layout"——它**不是** Slidev layout。
 
 正确写法示例（演示 8 个栅格组件中的 ThreeCol + 1 个装饰组件 PetalFour 嵌套）：
 
-```md
+<!-- prettier-ignore -->
+```vue
 ---
 layout: beitou-content    ← 唯一的 frontmatter layout 字段，5 选 1
 heading: 工作内容
@@ -52,12 +53,7 @@ heading: 工作内容
 
 <ThreeCol>
   <template #left>
-    <Bubble title="设计">
-
-  - 对网站进行整体改版
-  - 支持全局自定义布局
-
-    </Bubble>
+    <MetricCard value="89" unit="%" label="设计" />
   </template>
   <template #center>
     <PetalFour>
@@ -68,12 +64,8 @@ heading: 工作内容
     </PetalFour>
   </template>
   <template #right>
-    <Bubble title="开发">
-
-  - 进行新版门户开发工作
-  - 对接集团用户系统
-
-    </Bubble>
+    - 进行新版门户开发工作
+    - 对接集团用户系统
   </template>
 </ThreeCol>
 ```
@@ -88,6 +80,7 @@ heading: 工作内容
 ✅ 现行方案：only layer-1（每模板 5 个）是 Slidev layout；公共层全部 Vue 组件，分栅格 / 装饰 / 内容块三类，写在 `content` 的 slot 内。
 
 **Why**：
+
 - frontmatter `layout:` 字段不能跨模板共用 layout 文件，做成 Vue 组件可以由 `auto-import` 跨模板触达
 - 切模板心智简单：`layout:` 仅在 5 选 1 中映射
 
@@ -104,14 +97,14 @@ heading: 工作内容
 
 ✅ "**必须 / 优先 / 自由**"三档决策引导：
 
-| 场景 | AI 该怎么做 |
-|---|---|
-| 整页要并列 / 主从 / 网格分块 | **必须**用栅格类组件包整 body（不在 content 默认 slot 用 div 硬拆） |
-| 4 小节方阵 / 阶段流程等需要美化骨架 | **优先**用装饰类组件（`<PetalFour>` / `<ProcessFlow>`） |
-| 数字 + 单位 + 标签标准结构 | **优先** `<MetricCard>` |
-| 图表 | **必须** `<BarChart>` / `<LineChart>` |
-| 引文 / 关键摘要 | **优先** `<Quote>` / `<Callout>` |
-| 段落自由叙述 / 简单列表 | **自由 markdown**，不硬塞组件 |
+| 场景                                | AI 该怎么做                                                         |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| 整页要并列 / 主从 / 网格分块        | **必须**用栅格类组件包整 body（不在 content 默认 slot 用 div 硬拆） |
+| 4 小节方阵 / 阶段流程等需要美化骨架 | **优先**用装饰类组件（`<PetalFour>` / `<ProcessFlow>`）             |
+| 数字 + 单位 + 标签标准结构          | **优先** `<MetricCard>`                                             |
+| 图表                                | **必须** `<BarChart>` / `<LineChart>`                               |
+| 引文 / 关键摘要                     | **优先** `<Quote>` / `<Callout>`                                    |
+| 段落自由叙述 / 简单列表             | **自由 markdown**，不硬塞组件                                       |
 
 ### 4. content layer-1 layout 保留模板装饰，不极简也不 rename
 
@@ -122,6 +115,7 @@ heading: 工作内容
 ### 5. 切模板加 deterministic 路径（关键，影响产品断言达成）
 
 切模板任务（`switch-template-job`）增加扫描判定：
+
 - 如果存量 deck 的 `deck_versions.content` **每页都仅用 layer-1 layout + 公共组件 + 自由 md**（无遗留旧 layout / 无模板私有组件标签），走 **deterministic 替换路径**——仅扫 frontmatter `layout:` 行字符串前缀替换（`beitou-` → `jingyeda-`），**完全跳过 LLM**
 - 否则 fallback 走原 Phase 7C 的 `rewriteForTemplate` LLM 重写路径
 
@@ -164,15 +158,16 @@ interface TemplateManifest {
 
 ✅ 给 AI 5 档"自由度连续谱"，让 AI 自己权衡每档的代价：
 
-| 档 | AI 用什么 | 切模板字节级一致 | 代价 |
-|---|---|---|---|
-| 1 | 自由 markdown 文字 / 列表 | ✅ 保 | 无 |
-| 2 | 自由 markdown + 内联 HTML（颜色/字体须用 `var(--ld-*)` token） | ✅ 保（如用 token） | inline style 易写死 hardcode |
-| 3 | + 内嵌公共组件（预制 16 个） | ✅ 保 | 16 个外需求卡 |
-| 4 | + 内嵌 chart.js / 第三方 lib 现写 | ⚠️ 字面一致但配色易 hardcode | LLM 写易错 + 视觉不读 token |
-| 5 | `<script setup>` 完全原创 Vue 组件 | ❌ 不保 | 切模板视觉随机 + 安全风险 |
+| 档  | AI 用什么                                                      | 切模板字节级一致             | 代价                         |
+| --- | -------------------------------------------------------------- | ---------------------------- | ---------------------------- |
+| 1   | 自由 markdown 文字 / 列表                                      | ✅ 保                        | 无                           |
+| 2   | 自由 markdown + 内联 HTML（颜色/字体须用 `var(--ld-*)` token） | ✅ 保（如用 token）          | inline style 易写死 hardcode |
+| 3   | + 内嵌公共组件（预制 16 个）                                   | ✅ 保                        | 16 个外需求卡                |
+| 4   | + 内嵌 chart.js / 第三方 lib 现写                              | ⚠️ 字面一致但配色易 hardcode | LLM 写易错 + 视觉不读 token  |
+| 5   | `<script setup>` 完全原创 Vue 组件                             | ❌ 不保                      | 切模板视觉随机 + 安全风险    |
 
 **双轨降级**：
+
 - **pure 模式**（档 1-3）：`analyzeDeckPurity` 标 pure → 切模板走 **deterministic 字符串替换**（仅改 frontmatter `layout:` 前缀），跳 LLM
 - **自由模式**（档 4-5）：标 not-pure → 切模板 **fallback LLM 重写**（让 AI 在新模板风格下重生成原创片段），视觉一致但字节不保
 
@@ -181,6 +176,7 @@ interface TemplateManifest {
 **决策原则写入 prompt**：能用预制就用预制；公共组件不够 → 自由 markdown / 内联 HTML（用 token）；仍不够 → 升档 4-5（清楚代价前提下）。
 
 **实现关键**：
+
 - prompt "## 工作模式"段明告 5 档代价
 - `analyzeDeckPurity` 输出 `{ pure: boolean, level: 1|2|3|4|5, reasons: [...] }`；扫描升级到识别 inline `style="color: #..."` hardcode、`new Chart(` chart.js 字面、`<script setup>` 等 not-pure 信号
 - `template-switch-job` 在 UI 提示阶段告诉用户："本 deck 含 X 页自由档内容，切换后视觉可能调整，可 /undo 回滚"
@@ -191,21 +187,25 @@ interface TemplateManifest {
 ✅ 公共组件 catalog（16 个）+ 决策树**全部塞 system prompt**，每次 LLM 调用都带；不加新 tool 查 doc。
 
 **Why**：
+
 - **AI 行为稳**：国产 LLM（GLM / DeepSeek / Qwen）对主动调 tool 查 doc 积极性不如 Claude；硬塞 system prompt = AI 看就懂、不依赖记忆调用
 - **Token 成本可承受**：layer-1 layout 段从 7 → 5 化简（**-300 token**）+ 公共组件三类 catalog（**+1300 token**），净 +1000 token；总 system prompt ~1500 → ~2500 token；GLM 上下文 128k 完全 OK
 - **现有架构延续**：Phase 6 manifest-driven prompt 拼装已建立 (`buildSystemPrompt.ts`)，自然扩展
 - **simplest first**：实现最简单，0 新工具
 
 **未来扩展路径**：组件库扩到 25+ 时切**选项 C 分层**：
+
 - system prompt 仅留"决策树 + 组件名 + 一句话职责"（精简版 ~400 token）
 - 详细 props / 示例移到 `get_component_doc(name)` tool，AI 真正用某组件时按需查
 
 **否定方案**：
+
 - ❌ 加 list/get tool 让 AI 主动查 → 国产 LLM 行为不稳
 - ❌ MCP 服务化 → 基础设施重；首版无收益
 - ❌ 分层 hybrid → 实现较复杂；首版 16 个组件 token 还容得下，无早期分层动力
 
 **实现关键**：`buildSystemPrompt.ts` 改造分两步串行：
+
 1. 化简 layer-1 layouts 段（从 manifest.layouts 渲染 5 个 layout 时每个简短 2-3 行）
 2. 新增 `renderCommonComponentsSection(manifest)` 拼"## 可用 Components"段（按 catalog 中 `category: 'grid' | 'decoration' | 'block'` 分三 sub-section）+ 决策树段
 
@@ -221,56 +221,56 @@ interface TemplateManifest {
 
 ### 新增
 
-| 文件 | 职责 |
-| ---- | ---- |
-| `packages/slidev/components/TOKENS.md` | `--ld-*` 4 大类 token 规范文档 |
-| `packages/slidev/components/COMPONENTS.md` | 公共组件目录（栅格 / 装饰 / 内容块 三 section） |
-| `packages/slidev/components/grid/TwoColLayout.vue` | 2A：左右 50/50 |
-| `packages/slidev/components/grid/ThreeCol.vue` | 2A：三列均分（左 / 中 / 右） |
-| `packages/slidev/components/grid/OneLeftThreeRight.vue` | 2A：左主右从（左 1 主 + 右 3 列） |
-| `packages/slidev/components/grid/OneRightThreeLeft.vue` | 2A：右主左从（对称） |
-| `packages/slidev/components/grid/OneTopThreeBottom.vue` | 2A：上主下从 |
-| `packages/slidev/components/grid/TwoColumnsTwoRows.vue` | 2A：田字格 2×2 |
-| `packages/slidev/components/grid/NineGrid.vue` | 2A：九宫格 3×3 |
-| `packages/slidev/components/grid/ImageTextLayout.vue` | 2A：图文 45/55 |
-| `packages/slidev/components/decoration/PetalFour.vue` | 2B：花瓣 4 区，slot1..slot4 中央对称排列；颜色读 `--ld-color-brand-primary` |
-| `packages/slidev/components/decoration/ProcessFlow.vue` | 2B：流程箭头，items prop 驱动节点（或 N 个 slot），节点间箭头读 token |
-| `packages/slidev/components/MetricCard.vue` | 2C：单数字卡（value/unit/label） |
-| `packages/slidev/components/KVList.vue` | 2C：键值对列表 |
-| `packages/slidev/components/Quote.vue` | 2C：引文 |
-| `packages/slidev/components/Callout.vue` | 2C：高亮信息块 |
-| `packages/slidev/test/_setup/index.ts` | mountWithTokens helper（注入 `--ld-*` 测试值） |
-| `packages/slidev/vitest.config.ts` | jsdom + vue 插件 |
-| `packages/slidev/templates/beitou-standard/layouts/beitou-section-title.vue` | NEW Layer 1 |
-| `packages/slidev/templates/jingyeda-standard/layouts/jingyeda-section-title.vue` | NEW Layer 1 |
-| `scripts/validate-template-tokens.ts` | 校验 tokens.css 是否覆盖 `--ld-*` schema |
-| `packages/agent/scripts/migrate-deprecated-layouts.ts` | 存量 deck 一次性迁移 |
-| `packages/agent/src/prompts/commonComponentsCatalog.ts` | 静态 catalog（含 `category: 'grid'\|'decoration'\|'block'` 分组、props、示例） |
-| `packages/agent/src/services/analyzeDeckPurity.ts` | NEW：扫 deck 内容判断是否 100% layer-1+公共组件+自由 md |
+| 文件                                                                             | 职责                                                                           |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `packages/slidev/components/TOKENS.md`                                           | `--ld-*` 4 大类 token 规范文档                                                 |
+| `packages/slidev/components/COMPONENTS.md`                                       | 公共组件目录（栅格 / 装饰 / 内容块 三 section）                                |
+| `packages/slidev/components/grid/TwoCol.vue`                                     | 2A：左右 50/50                                                                 |
+| `packages/slidev/components/grid/ThreeCol.vue`                                   | 2A：三列均分（左 / 中 / 右）                                                   |
+| `packages/slidev/components/grid/OneLeftThreeRight.vue`                          | 2A：左主右从（左 1 主 + 右 3 列）                                              |
+| `packages/slidev/components/grid/OneRightThreeLeft.vue`                          | 2A：右主左从（对称）                                                           |
+| `packages/slidev/components/grid/OneTopThreeBottom.vue`                          | 2A：上主下从                                                                   |
+| `packages/slidev/components/grid/TwoColumnsTwoRows.vue`                          | 2A：田字格 2×2                                                                 |
+| `packages/slidev/components/grid/NineGrid.vue`                                   | 2A：九宫格 3×3                                                                 |
+| `packages/slidev/components/grid/ImageText.vue`                                  | 2A：图文 45/55                                                                 |
+| `packages/slidev/components/decoration/PetalFour.vue`                            | 2B：花瓣 4 区，slot1..slot4 中央对称排列；颜色读 `--ld-color-brand-primary`    |
+| `packages/slidev/components/decoration/ProcessFlow.vue`                          | 2B：流程箭头，items prop 驱动节点（或 N 个 slot），节点间箭头读 token          |
+| `packages/slidev/components/MetricCard.vue`                                      | 2C：单数字卡（value/unit/label）                                               |
+| `packages/slidev/components/KVList.vue`                                          | 2C：键值对列表                                                                 |
+| `packages/slidev/components/Quote.vue`                                           | 2C：引文                                                                       |
+| `packages/slidev/components/Callout.vue`                                         | 2C：高亮信息块                                                                 |
+| `packages/slidev/test/_setup/index.ts`                                           | mountWithTokens helper（注入 `--ld-*` 测试值）                                 |
+| `packages/slidev/vitest.config.ts`                                               | jsdom + vue 插件                                                               |
+| `packages/slidev/templates/beitou-standard/layouts/beitou-section-title.vue`     | NEW Layer 1                                                                    |
+| `packages/slidev/templates/jingyeda-standard/layouts/jingyeda-section-title.vue` | NEW Layer 1                                                                    |
+| `scripts/validate-template-tokens.ts`                                            | 校验 tokens.css 是否覆盖 `--ld-*` schema                                       |
+| `packages/agent/scripts/migrate-deprecated-layouts.ts`                           | 存量 deck 一次性迁移                                                           |
+| `packages/agent/src/prompts/commonComponentsCatalog.ts`                          | 静态 catalog（含 `category: 'grid'\|'decoration'\|'block'` 分组、props、示例） |
+| `packages/agent/src/services/analyzeDeckPurity.ts`                               | NEW：扫 deck 内容判断是否 100% layer-1+公共组件+自由 md                        |
 
 ### 修改
 
-| 文件 | 改动摘要 |
-| ---- | -------- |
-| `packages/shared/src/template-manifest.ts` | 加 `commonComponents?: string[]` + zod 校验 |
-| `packages/slidev/templates/beitou-standard/tokens.css` | 增补 22 个 `--ld-*` |
-| `packages/slidev/templates/jingyeda-standard/tokens.css` | 同上 |
-| 两套 manifest.json | layouts 7→5；新增 `commonComponents`（16 个）；删 `*-data` / `*-two-col` / `*-image-content` |
-| 两套 starter.md | 用 layer-1 + 公共组件 |
-| `packages/slidev/components/BarChart.vue` / `LineChart.vue` | token rename `--chart-primary-*` → `--ld-color-chart-primary-*`；fontFamily 读 `--ld-font-family-ui` |
-| 两套 `*-content.vue` layer-1 layout | 增强为 heading 容器 + 默认 slot（保留装饰） |
-| `packages/agent/src/prompts/buildSystemPrompt.ts` | 加 `renderCommonComponentsSection(manifest)`（按 category 分 grid/decoration/block 三小节）+ 决策树段 |
-| `packages/agent/src/services/template-switch-job.ts` | 加 deterministic 路径分支：`analyzeDeckPurity` → 纯净则字符串替换跳 LLM |
-| `packages/agent/test/prompts-ab-contract.test.ts` | 加断言：5 layer-1 + 3 sub-section 标题 + 16 组件段 + 决策树关键句 |
-| `packages/slidev/global.css` | 默认 fallback 读 `--ld-*` |
-| `docs/requirements/roadmap.md` | Phase 7.5 状态 + 路线图变更记录 |
+| 文件                                                        | 改动摘要                                                                                              |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/template-manifest.ts`                  | 加 `commonComponents?: string[]` + zod 校验                                                           |
+| `packages/slidev/templates/beitou-standard/tokens.css`      | 增补 22 个 `--ld-*`                                                                                   |
+| `packages/slidev/templates/jingyeda-standard/tokens.css`    | 同上                                                                                                  |
+| 两套 manifest.json                                          | layouts 7→5；新增 `commonComponents`（16 个）；删 `*-data` / `*-two-col` / `*-image-content`          |
+| 两套 starter.md                                             | 用 layer-1 + 公共组件                                                                                 |
+| `packages/slidev/components/BarChart.vue` / `LineChart.vue` | token rename `--chart-primary-*` → `--ld-color-chart-primary-*`；fontFamily 读 `--ld-font-family-ui`  |
+| 两套 `*-content.vue` layer-1 layout                         | 增强为 heading 容器 + 默认 slot（保留装饰）                                                           |
+| `packages/agent/src/prompts/buildSystemPrompt.ts`           | 加 `renderCommonComponentsSection(manifest)`（按 category 分 grid/decoration/block 三小节）+ 决策树段 |
+| `packages/agent/src/services/template-switch-job.ts`        | 加 deterministic 路径分支：`analyzeDeckPurity` → 纯净则字符串替换跳 LLM                               |
+| `packages/agent/test/prompts-ab-contract.test.ts`           | 加断言：5 layer-1 + 3 sub-section 标题 + 16 组件段 + 决策树关键句                                     |
+| `packages/slidev/global.css`                                | 默认 fallback 读 `--ld-*`                                                                             |
+| `docs/requirements/roadmap.md`                              | Phase 7.5 状态 + 路线图变更记录                                                                       |
 
 ### 删除
 
-| 文件 | 原因 |
-| ---- | ---- |
+| 文件                                                                   | 原因                                                   |
+| ---------------------------------------------------------------------- | ------------------------------------------------------ |
 | 两套 `*-data.vue` / `*-two-col.vue` / `*-image-content.vue`（共 6 个） | 功能被 layer-1 `*-content` + 公共栅格 + 公共内容块替代 |
-| `packages/slidev/components/LBeitouMetricCard.vue` | `<MetricCard>` 替代 |
+| `packages/slidev/components/LBeitouMetricCard.vue`                     | `<MetricCard>` 替代                                    |
 
 `LBeitouCoverLogo` / `LBeitouTitleBlock` / `LJydHeader` 保留（layer-1 layout 内部装饰）。
 
@@ -326,16 +326,16 @@ interface TemplateManifest {
 - `packages/slidev/vitest.config.ts` + `test/_setup/index.ts` 首次配置（复用 creator vitest.config 模式）
 - 8 个栅格组件：
 
-| 组件 | slots | props |
-|---|---|---|
-| `<TwoColLayout>` | `#left` / `#right` | `leftTitle?` / `rightTitle?` / `divider?: 'on'\|'off'` |
-| `<ThreeCol>` | `#left` / `#center` / `#right` | `leftWidth?` / `centerWidth?` / `rightWidth?`（fr 单位，默认 1/1/1） |
-| `<OneLeftThreeRight>` | `#main` / `#item1` / `#item2` / `#item3` | `mainWidth?`（默认 0.5fr） |
-| `<OneRightThreeLeft>` | `#main` / `#item1..#item3` | 同上对称 |
-| `<OneTopThreeBottom>` | `#main` / `#item1..#item3` | 主在上，下方 3 等列 |
-| `<TwoColumnsTwoRows>` | `#slot1..#slot4` | 田字格 2×2 |
-| `<NineGrid>` | `#slot1..#slot9` | 3×3 |
-| `<ImageTextLayout>` | `#text` | `image: string` / `imageBorder?: 'thin'\|'thick'\|'none'` / `direction?: 'image-left'\|'image-right'` |
+| 组件                  | slots                                    | props                                                                                                 |
+| --------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `<TwoCol>`            | `#left` / `#right`                       | `leftTitle?` / `rightTitle?` / `divider?: 'on'\|'off'`                                                |
+| `<ThreeCol>`          | `#left` / `#center` / `#right`           | `leftWidth?` / `centerWidth?` / `rightWidth?`（fr 单位，默认 1/1/1）                                  |
+| `<OneLeftThreeRight>` | `#main` / `#item1` / `#item2` / `#item3` | `mainWidth?`（默认 0.5fr）                                                                            |
+| `<OneRightThreeLeft>` | `#main` / `#item1..#item3`               | 同上对称                                                                                              |
+| `<OneTopThreeBottom>` | `#main` / `#item1..#item3`               | 主在上，下方 3 等列                                                                                   |
+| `<TwoColumnsTwoRows>` | `#slot1..#slot4`                         | 田字格 2×2                                                                                            |
+| `<NineGrid>`          | `#slot1..#slot9`                         | 3×3                                                                                                   |
+| `<ImageText>`         | `#text`                                  | `image: string` / `imageBorder?: 'thin'\|'thick'\|'none'` / `direction?: 'image-left'\|'image-right'` |
 
 - 所有栅格组件分隔线 / 边框颜色读 `--ld-color-brand-primary`、宽度读 `--ld-border-width-*`、间距读 `--ld-radius-sm`
 - COMPONENTS.md 起草"## 栅格类组件"section
@@ -397,14 +397,14 @@ interface TemplateManifest {
 
 - 6 个内容块组件：
 
-| 组件 | props/slots |
-|---|---|
+| 组件           | props/slots                                                                                           |
+| -------------- | ----------------------------------------------------------------------------------------------------- |
 | `<MetricCard>` | `value: string\|number` / `unit?: string` / `label: string` / `variant?: 'fill'\|'subtle'\|'outline'` |
-| `<KVList>` | `items: Array<{ label, value }>` / `columns?: number` |
-| `<Quote>` | default slot + `author?` / `cite?` |
-| `<Callout>` | default slot + `type?: 'info'\|'warning'\|'success'` / `title?` |
-| `<BarChart>` | rename token：`--ld-color-chart-primary-bg/border` |
-| `<LineChart>` | 同上 |
+| `<KVList>`     | `items: Array<{ label, value }>` / `columns?: number`                                                 |
+| `<Quote>`      | default slot + `author?` / `cite?`                                                                    |
+| `<Callout>`    | default slot + `type?: 'info'\|'warning'\|'success'` / `title?`                                       |
+| `<BarChart>`   | rename token：`--ld-color-chart-primary-bg/border`                                                    |
+| `<LineChart>`  | 同上                                                                                                  |
 
 - COMPONENTS.md "## 内容块类组件" section
 - 旧组件清退：删 `LBeitouMetricCard.vue`（layout 引用方在 7.5D 一并清）
@@ -446,7 +446,7 @@ interface TemplateManifest {
   ## 可用 Components（在 layout slot 内按需用）
 
   ### 栅格类（决定页内多区域分布；通常作 content 默认 slot 的根元素）
-  - <TwoColLayout> / <ThreeCol> / <OneLeftThreeRight> / <OneRightThreeLeft> / <OneTopThreeBottom> / <TwoColumnsTwoRows> / <NineGrid> / <ImageTextLayout>
+  - <TwoCol> / <ThreeCol> / <OneLeftThreeRight> / <OneRightThreeLeft> / <OneTopThreeBottom> / <TwoColumnsTwoRows> / <NineGrid> / <ImageText>
 
   ### 装饰类（提供美化几何骨架；颜色随模板 token 自动适配）
   - <PetalFour> 花瓣 4 区
@@ -553,7 +553,6 @@ pnpm -F @big-ppt/agent tsx scripts/migrate-deprecated-layouts.ts --apply
 - AI prompt smoke：dev 模式手动让 AI 生成 5 页 deck（"Q1 业务汇报含工作内容方阵 / 数据指标 / 流程"），观察输出含至少 1 个栅格 + 1 个装饰 + 1 个内容块组件 + 适量自由 markdown
 
 - **切模板手验（产品断言验证，由用户跑）**：
-
   - dev 模式建一个 beitou deck，AI 生成 5 页（含 PetalFour / TwoColumnsTwoRows / MetricCard 等）
   - 切到 jingyeda：观察 `template-switch-job` 走 deterministic 路径（log 应有"deck pure → deterministic"）
   - 肉眼对比切换前后两份 `deck_versions.content`：
@@ -621,51 +620,51 @@ pnpm dev
 
 ## 风险登记
 
-| 风险 | 影响 | 缓解 |
-| ---- | ---- | ---- |
-| LLM 不积极用栅格 / 装饰 / 老惯性输出 markdown 长列表 | 失去公共层价值 | 决策树 + smoke 紧观察 + 调措辞 |
-| 数据迁移脚本 frontmatter→组件转换 bug 损坏 deck | 用户体验灾难 | dry-run 必跑 + 双份 log 给人审 + 落新 version 而非原地改 |
-| `--ld-*` token 22 项偏多扩 schema 痛 | 模板生态长期僵化 | TOKENS.md 顶部留"变更日志"段 |
-| slidev 包首次配置 vitest 踩 vue plugin 坑 | 阻塞 7.5C-1 | 复用 creator vitest.config 模式 |
-| jingyeda 仿宋 → 雅黑 chart 视觉变化 | 视觉差异 | 用户手验判断（理论改进） |
-| 删除老 layout 让现有 deck 渲染 404 | 老 deck 打不开 | migrate-deprecated-layouts.ts 一次性扫 dev / prod |
-| section-title 视觉两套各自定义 | 7.5D 设计期反复 | 7.5D 实施初期一次拍板，smoke 微调 |
-| nine-grid 在 1080p 内每格 ~300×200 太挤 | AI 在九宫格 slot 塞 chart 撑爆 | COMPONENTS.md 明示限制 + prompt 写"九宫格 slot 仅放短文字 / 单 metric" |
-| analyzeDeckPurity 误判把含私有组件 deck 判 pure | 切模板字节级一致失败 | 测试覆盖三类污染信号；保守判断（任一可疑 → not pure） |
-| deterministic 路径仅适用 pure deck，含遗留 deck 仍走 LLM 重写 | 切模板字节级一致只保 pure | 7.5D 一次性迁移脚本把存量遗留扫干净 |
-| PetalFour SVG 在缩放下走形 | 装饰类视觉灾难 | viewBox + preserveAspectRatio + 强方形容器 |
-| ProcessFlow cols=2 / cols≥6 边界视觉错位 | 装饰类视觉灾难 | 单测覆盖 cols 边界 |
-| chart.js Chart.defaults.font.family 单例覆盖 | chart 字体随机 | 改用 chart-level option |
+| 风险                                                          | 影响                           | 缓解                                                                   |
+| ------------------------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------- |
+| LLM 不积极用栅格 / 装饰 / 老惯性输出 markdown 长列表          | 失去公共层价值                 | 决策树 + smoke 紧观察 + 调措辞                                         |
+| 数据迁移脚本 frontmatter→组件转换 bug 损坏 deck               | 用户体验灾难                   | dry-run 必跑 + 双份 log 给人审 + 落新 version 而非原地改               |
+| `--ld-*` token 22 项偏多扩 schema 痛                          | 模板生态长期僵化               | TOKENS.md 顶部留"变更日志"段                                           |
+| slidev 包首次配置 vitest 踩 vue plugin 坑                     | 阻塞 7.5C-1                    | 复用 creator vitest.config 模式                                        |
+| jingyeda 仿宋 → 雅黑 chart 视觉变化                           | 视觉差异                       | 用户手验判断（理论改进）                                               |
+| 删除老 layout 让现有 deck 渲染 404                            | 老 deck 打不开                 | migrate-deprecated-layouts.ts 一次性扫 dev / prod                      |
+| section-title 视觉两套各自定义                                | 7.5D 设计期反复                | 7.5D 实施初期一次拍板，smoke 微调                                      |
+| nine-grid 在 1080p 内每格 ~300×200 太挤                       | AI 在九宫格 slot 塞 chart 撑爆 | COMPONENTS.md 明示限制 + prompt 写"九宫格 slot 仅放短文字 / 单 metric" |
+| analyzeDeckPurity 误判把含私有组件 deck 判 pure               | 切模板字节级一致失败           | 测试覆盖三类污染信号；保守判断（任一可疑 → not pure）                  |
+| deterministic 路径仅适用 pure deck，含遗留 deck 仍走 LLM 重写 | 切模板字节级一致只保 pure      | 7.5D 一次性迁移脚本把存量遗留扫干净                                    |
+| PetalFour SVG 在缩放下走形                                    | 装饰类视觉灾难                 | viewBox + preserveAspectRatio + 强方形容器                             |
+| ProcessFlow cols=2 / cols≥6 边界视觉错位                      | 装饰类视觉灾难                 | 单测覆盖 cols 边界                                                     |
+| chart.js Chart.defaults.font.family 单例覆盖                  | chart 字体随机                 | 改用 chart-level option                                                |
 
 ---
 
 ## 关键文件清单
 
-| 用途 | 文件 |
-|---|---|
-| roadmap | `/Users/zhangxu/workspace/big-ppt/docs/requirements/roadmap.md` |
-| token spec（NEW） | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/TOKENS.md` |
-| 公共组件目录文档（NEW） | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/COMPONENTS.md` |
-| token 校验脚本（NEW） | `/Users/zhangxu/workspace/big-ppt/scripts/validate-template-tokens.ts` |
-| 公共组件 catalog（NEW） | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/prompts/commonComponentsCatalog.ts` |
-| analyzeDeckPurity（NEW） | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/services/analyzeDeckPurity.ts` |
-| switch-template-job 改造 | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/services/template-switch-job.ts` |
-| prompt 拼装 | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/prompts/buildSystemPrompt.ts` |
-| A/B contract test | `/Users/zhangxu/workspace/big-ppt/packages/agent/test/prompts-ab-contract.test.ts` |
-| manifest schema | `/Users/zhangxu/workspace/big-ppt/packages/shared/src/template-manifest.ts` |
-| beitou tokens | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/beitou-standard/tokens.css` |
-| jingyeda tokens | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/jingyeda-standard/tokens.css` |
-| beitou manifest | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/beitou-standard/manifest.json` |
-| jingyeda manifest | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/jingyeda-standard/manifest.json` |
-| beitou layouts | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/beitou-standard/layouts/` |
-| jingyeda layouts | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/jingyeda-standard/layouts/` |
-| 公共栅格组件目录（NEW） | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/grid/` |
-| 公共装饰组件目录（NEW） | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/decoration/` |
-| 公共内容块组件目录 | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/` |
-| 现有 chart 组件 | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/BarChart.vue` / `LineChart.vue` |
-| 数据迁移脚本（NEW） | `/Users/zhangxu/workspace/big-ppt/packages/agent/scripts/migrate-deprecated-layouts.ts` |
-| starter | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/<id>/starter.md` |
-| 模板 registry | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/templates/registry.ts` |
+| 用途                     | 文件                                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| roadmap                  | `/Users/zhangxu/workspace/big-ppt/docs/requirements/roadmap.md`                              |
+| token spec（NEW）        | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/TOKENS.md`                      |
+| 公共组件目录文档（NEW）  | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/COMPONENTS.md`                  |
+| token 校验脚本（NEW）    | `/Users/zhangxu/workspace/big-ppt/scripts/validate-template-tokens.ts`                       |
+| 公共组件 catalog（NEW）  | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/prompts/commonComponentsCatalog.ts`     |
+| analyzeDeckPurity（NEW） | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/services/analyzeDeckPurity.ts`          |
+| switch-template-job 改造 | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/services/template-switch-job.ts`        |
+| prompt 拼装              | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/prompts/buildSystemPrompt.ts`           |
+| A/B contract test        | `/Users/zhangxu/workspace/big-ppt/packages/agent/test/prompts-ab-contract.test.ts`           |
+| manifest schema          | `/Users/zhangxu/workspace/big-ppt/packages/shared/src/template-manifest.ts`                  |
+| beitou tokens            | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/beitou-standard/tokens.css`      |
+| jingyeda tokens          | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/jingyeda-standard/tokens.css`    |
+| beitou manifest          | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/beitou-standard/manifest.json`   |
+| jingyeda manifest        | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/jingyeda-standard/manifest.json` |
+| beitou layouts           | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/beitou-standard/layouts/`        |
+| jingyeda layouts         | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/jingyeda-standard/layouts/`      |
+| 公共栅格组件目录（NEW）  | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/grid/`                          |
+| 公共装饰组件目录（NEW）  | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/decoration/`                    |
+| 公共内容块组件目录       | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/`                               |
+| 现有 chart 组件          | `/Users/zhangxu/workspace/big-ppt/packages/slidev/components/BarChart.vue` / `LineChart.vue` |
+| 数据迁移脚本（NEW）      | `/Users/zhangxu/workspace/big-ppt/packages/agent/scripts/migrate-deprecated-layouts.ts`      |
+| starter                  | `/Users/zhangxu/workspace/big-ppt/packages/slidev/templates/<id>/starter.md`                 |
+| 模板 registry            | `/Users/zhangxu/workspace/big-ppt/packages/agent/src/templates/registry.ts`                  |
 
 ---
 
@@ -673,17 +672,17 @@ pnpm dev
 
 > 本节记录 Phase 7.5 实施期间识别出的"将来可能需要做"事项；不在本 phase 范围内但已有触发条件。**7.5E 关闭报告时**把这些条目正式加进 99-tech-debt.md 并标定优先级。
 
-| 候选项 | 触发条件 | 推荐优先级 |
-|---|---|---|
-| **Prompt 切分层（选项 C）** | 公共组件库扩到 25+ 个时，system prompt token 占用过大；改为"决策树 + 组件名 + 一句职责"驻留 system prompt + 详情走 `get_component_doc(name)` tool 按需查 | P3：触发后再做 |
-| **装饰类组件扩展**（CircleFour / HexThree / TimelineHorizontal / PyramidLevels / VennTwo / FlowCircular / RadialSix / ...） | 用户在使用中发现 PetalFour / ProcessFlow 不够覆盖某场景 | P3：按需加 |
-| **栅格类组件扩展**（OneTopThreeBottom 倒装 / 主从更多比例 / 5 列 + / 2x3 等） | 用户提需求 | P3 |
-| **AI 工作模式 UI 提示**（在 ChatPanel 显示当前 deck 当前 level，让用户感知"这个 deck 是 deterministic 还是 LLM-fallback"） | 用户报告"切模板视觉走样" | P3 |
-| **`commonComponents` 字段细粒度禁用某 props** | 模板想 opt-out 某组件部分 variant | P4：暂无强需求 |
-| **模板 override 机制**（templates/X/overrides/PetalFour.vue 自动覆盖公共版） | Phase 16+ 模板生态系统启动；vision.md 已记录长期方向 | P4：留 Phase 16+ |
-| **公共组件提 npm 公开包**（`@lumideck/template-components`） | 同上 Phase 16+ | P4 |
-| **一次性迁移脚本归档** | Phase 7.5 完毕后 `migrate-deprecated-layouts.ts` 跑完两个库；如 Phase 9 仓库卫生清理同步进行可一并归档 | Phase 9 |
-| **typography size + spacing token 业务消费方** | 7.5A 立了 size-h1/h2/body 等 token 但当前模板里很多字号还是 hardcoded；扫一遍替换 | P3：未来重构 |
+| 候选项                                                                                                                      | 触发条件                                                                                                                                                 | 推荐优先级       |
+| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| **Prompt 切分层（选项 C）**                                                                                                 | 公共组件库扩到 25+ 个时，system prompt token 占用过大；改为"决策树 + 组件名 + 一句职责"驻留 system prompt + 详情走 `get_component_doc(name)` tool 按需查 | P3：触发后再做   |
+| **装饰类组件扩展**（CircleFour / HexThree / TimelineHorizontal / PyramidLevels / VennTwo / FlowCircular / RadialSix / ...） | 用户在使用中发现 PetalFour / ProcessFlow 不够覆盖某场景                                                                                                  | P3：按需加       |
+| **栅格类组件扩展**（OneTopThreeBottom 倒装 / 主从更多比例 / 5 列 + / 2x3 等）                                               | 用户提需求                                                                                                                                               | P3               |
+| **AI 工作模式 UI 提示**（在 ChatPanel 显示当前 deck 当前 level，让用户感知"这个 deck 是 deterministic 还是 LLM-fallback"）  | 用户报告"切模板视觉走样"                                                                                                                                 | P3               |
+| **`commonComponents` 字段细粒度禁用某 props**                                                                               | 模板想 opt-out 某组件部分 variant                                                                                                                        | P4：暂无强需求   |
+| **模板 override 机制**（templates/X/overrides/PetalFour.vue 自动覆盖公共版）                                                | Phase 16+ 模板生态系统启动；vision.md 已记录长期方向                                                                                                     | P4：留 Phase 16+ |
+| **公共组件提 npm 公开包**（`@lumideck/template-components`）                                                                | 同上 Phase 16+                                                                                                                                           | P4               |
+| **一次性迁移脚本归档**                                                                                                      | Phase 7.5 完毕后 `migrate-deprecated-layouts.ts` 跑完两个库；如 Phase 9 仓库卫生清理同步进行可一并归档                                                   | Phase 9          |
+| **typography size + spacing token 业务消费方**                                                                              | 7.5A 立了 size-h1/h2/body 等 token 但当前模板里很多字号还是 hardcoded；扫一遍替换                                                                        | P3：未来重构     |
 
 ---
 
@@ -701,13 +700,13 @@ pnpm dev
 
 ## 测试数量落地（关闭后追加）
 
-| 阶段（commit）| agent | creator | shared | slidev | E2E | 合计 |
-| ------------- | ----- | ------- | ------ | ------ | --- | ---- |
-| 入口（Phase 7D 收）| 294 | 71 | 3 | 0 | 9 | 377 |
-| 7.5A | | | | | | |
-| 7.5B | | | | | | |
-| 7.5C-1 | | | | | | |
-| 7.5C-2 | | | | | | |
-| 7.5C-3 | | | | | | |
-| 7.5D | | | | | | |
-| 7.5E | | | | | | |
+| 阶段（commit）      | agent | creator | shared | slidev | E2E | 合计 |
+| ------------------- | ----- | ------- | ------ | ------ | --- | ---- |
+| 入口（Phase 7D 收） | 294   | 71      | 3      | 0      | 9   | 377  |
+| 7.5A                |       |         |        |        |     |      |
+| 7.5B                |       |         |        |        |     |      |
+| 7.5C-1              |       |         |        |        |     |      |
+| 7.5C-2              |       |         |        |        |     |      |
+| 7.5C-3              |       |         |        |        |     |      |
+| 7.5D                |       |         |        |        |     |      |
+| 7.5E                |       |         |        |        |     |      |
