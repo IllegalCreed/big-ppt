@@ -1,14 +1,17 @@
 /**
- * Phase 6C — A/B Contract Test
+ * Phase 6C / 7.5D — A/B Contract Test
  *
- * 断言 manifest 驱动的 prompt 拼装结果跟 Phase 6B 之前的硬编码版本结构等价：
- *   - 7 个 layout 段都出现且字段名齐
- *   - frontmatter 字段名 / required 信息保留
- *   - bodyGuidance 关键短语保留（::left:: / metrics inline JSON / chart 提示）
- *   - 工作方式 / 架构约束 / 输出约束等文本不丢
+ * Phase 7.5D 起每模板 layer-1 layout 收敛到 5 个（cover / toc / section-title /
+ * content / back-cover），公共组件由 commonComponentsCatalog 段（7.5D-2 引入）
+ * 单独提供。本测试保证：
+ *   - 5 个 layer-1 layout 段标题都出现 + frontmatter 字段名齐全
+ *   - 新增 section-title 字段：chapterNumber / chapterTitle
+ *   - content bodyGuidance 含公共组件用法引导（栅格 / 装饰 / 内容块）
+ *   - 工作方式 / 工具参数约定 / 输出约束 / promptPersona 等文本保留
+ *   - HTTP /api/system-prompt 端点契约不变
  *
- * baseline 指令（≥10 条用户视角的典型指令）虽然不直接喂给 LLM 跑，但每条指令背后
- * 依赖的 layout 字段在 manifest → prompt 映射里必须**仍然出现**，否则就是回归。
+ * 7.5D-2 完整化时会追加：4 个栅格 + 2 个装饰 + 6 个内容块 catalog 段断言、
+ * 工作模式 5 档自由度断言、决策树关键短语断言。
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import fs from 'node:fs'
@@ -55,14 +58,12 @@ afterEach(() => {
 })
 
 describe('buildSystemPrompt（A/B contract）', () => {
-  it('七个 layout 段标题全部出现', () => {
+  it('5 个 layer-1 layout 段标题全部出现', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toContain('### `beitou-cover`')
     expect(prompt).toContain('### `beitou-toc`')
+    expect(prompt).toContain('### `beitou-section-title`')
     expect(prompt).toContain('### `beitou-content`')
-    expect(prompt).toContain('### `beitou-two-col`')
-    expect(prompt).toContain('### `beitou-data`')
-    expect(prompt).toContain('### `beitou-image-content`')
     expect(prompt).toContain('### `beitou-back-cover`')
   })
 
@@ -80,36 +81,27 @@ describe('buildSystemPrompt（A/B contract）', () => {
     expect(prompt).toMatch(/`active` \(number, 可选\)/)
   })
 
-  it('two-col bodyGuidance 含 ::left:: / ::right:: 提示', () => {
+  it('section-title 字段：chapterNumber / chapterTitle 必填', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
-    expect(prompt).toContain('::left::')
-    expect(prompt).toContain('::right::')
+    expect(prompt).toMatch(/`chapterNumber`/)
+    expect(prompt).toMatch(/`chapterTitle`/)
   })
 
-  it('data bodyGuidance 含 BarChart 组件示例 + metrics inline JSON 写法', () => {
+  it('content bodyGuidance 引导使用公共组件（栅格 + 装饰 + 内容块）', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
-    expect(prompt).toContain('BarChart')
-    expect(prompt).toMatch(/metrics: \[/)
-  })
-
-  it('image-content 字段：heading / image / textTitle', () => {
-    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
-    expect(prompt).toMatch(/`image`/)
-    expect(prompt).toMatch(/`textTitle`/)
+    // 内容页骨架的 bodyGuidance 应至少 mention 几类公共组件名
+    expect(prompt).toContain('<TwoCol>')
+    expect(prompt).toContain('<NineGrid>')
+    expect(prompt).toContain('<PetalFour>')
+    expect(prompt).toContain('<MetricCard>')
+    expect(prompt).toContain('<BarChart>')
   })
 
   it('back-cover 字段：message + date 可选', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toMatch(/`message`/)
-    // back-cover 的 date 是可选
     const backCoverSection = prompt.split('### `beitou-back-cover`')[1] ?? ''
     expect(backCoverSection).toMatch(/`date`.*可选/)
-  })
-
-  it('content layout 含 body 指引', () => {
-    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
-    const contentSection = prompt.split('### `beitou-content`')[1]?.split('### `')[0] ?? ''
-    expect(contentSection).toContain('**body**')
   })
 
   it('保留四件套 + edit_slides + 工具参数约定文本', () => {
@@ -132,7 +124,6 @@ describe('buildSystemPrompt（A/B contract）', () => {
 
   it('promptPersona 段落出现在 prompt 开头附近', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
-    // beitou-standard manifest 的 promptPersona 关键词
     expect(prompt).toContain('商务正式')
   })
 
@@ -148,9 +139,7 @@ describe('buildSystemPrompt（A/B contract）', () => {
   })
 
   it('未知 templateId 抛错', () => {
-    expect(() => buildSystemPrompt({ templateId: 'does-not-exist' })).toThrowError(
-      /未知模板/,
-    )
+    expect(() => buildSystemPrompt({ templateId: 'does-not-exist' })).toThrowError(/未知模板/)
   })
 })
 
@@ -171,13 +160,14 @@ describe('GET /api/system-prompt', () => {
     expect(res.status).toBe(404)
   })
 
-  it('templateId=beitou-standard → 200 + 含 7 个 layout', async () => {
+  it('templateId=beitou-standard → 200 + 含 5 个 layer-1 layout', async () => {
     const res = await buildApp().request('/api/system-prompt?templateId=beitou-standard')
     expect(res.status).toBe(200)
     const json = await res.json()
     expect(json.success).toBe(true)
     expect(json.templateId).toBe('beitou-standard')
     expect(json.prompt).toContain('### `beitou-cover`')
+    expect(json.prompt).toContain('### `beitou-section-title`')
     expect(json.prompt).toContain('### `beitou-back-cover`')
   })
 

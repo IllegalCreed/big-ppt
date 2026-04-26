@@ -54,6 +54,12 @@ export interface TemplateManifest {
   starterSlidesPath: string
   /** 支持的 layout 清单 */
   layouts: TemplateManifestLayout[]
+  /**
+   * Phase 7.5D 起：模板 opt-in 的公共组件名清单（栅格 / 装饰 / 内容块）。
+   * prompt 拼装时按 catalog 渲染对应段落让 AI 知道可用组件；缺省时不暴露公共组件。
+   * 值必须是 `commonComponentsCatalog` 中已知组件名。
+   */
+  commonComponents?: string[]
 }
 
 /** 校验结果。`ok: true` 时 `value` 必定为合法 manifest。 */
@@ -115,10 +121,7 @@ function validateLayout(path: string, raw: unknown, errors: string[]): void {
     errors.push(`${path}.frontmatterSchema.type 必须是 "object"`)
   }
   if (schema.required !== undefined) {
-    if (
-      !Array.isArray(schema.required) ||
-      schema.required.some((v) => typeof v !== 'string')
-    ) {
+    if (!Array.isArray(schema.required) || schema.required.some((v) => typeof v !== 'string')) {
       errors.push(`${path}.frontmatterSchema.required 若存在必须是字符串数组`)
     }
   }
@@ -127,11 +130,7 @@ function validateLayout(path: string, raw: unknown, errors: string[]): void {
     return
   }
   for (const [fieldName, fieldRaw] of Object.entries(schema.properties)) {
-    validateFieldSchema(
-      `${path}.frontmatterSchema.properties.${fieldName}`,
-      fieldRaw,
-      errors,
-    )
+    validateFieldSchema(`${path}.frontmatterSchema.properties.${fieldName}`, fieldRaw, errors)
   }
 }
 
@@ -188,6 +187,15 @@ export function validateManifest(raw: unknown): ValidateManifestResult {
         seen.add(layout.name)
       }
     })
+  }
+
+  if (raw.commonComponents !== undefined) {
+    if (
+      !Array.isArray(raw.commonComponents) ||
+      raw.commonComponents.some((v) => typeof v !== 'string')
+    ) {
+      errors.push('commonComponents 若存在必须是字符串数组')
+    }
   }
 
   if (errors.length > 0) return { ok: false, errors }

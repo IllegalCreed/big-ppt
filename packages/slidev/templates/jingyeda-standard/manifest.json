@@ -16,9 +16,7 @@
       "description": "封面页（顶右 logo + 中间 banner 视觉横幅 + 下方大字标题 + 四字段信息栏：汇报人 / 部门 / BU / 日期）",
       "frontmatterSchema": {
         "type": "object",
-        "required": [
-          "mainTitle"
-        ],
+        "required": ["mainTitle"],
         "properties": {
           "mainTitle": {
             "type": "string",
@@ -52,9 +50,7 @@
       "description": "目录页（蓝色标题栏 + 编号圆 + 绿色装饰条 + 文字项；active 时编号圈外发光绿色、文字加粗变蓝）",
       "frontmatterSchema": {
         "type": "object",
-        "required": [
-          "items"
-        ],
+        "required": ["items"],
         "properties": {
           "items": {
             "type": "array",
@@ -71,13 +67,29 @@
       }
     },
     {
-      "name": "jingyeda-content",
-      "description": "纯文字页（顶部蓝色标题栏 + 白底正文 + 右下 logo 水印）",
+      "name": "jingyeda-section-title",
+      "description": "章节标题页（全屏蓝底 banner + 居中\"第 N 章\"+ 大字章节名 + 底部绿色装饰条，用于章节切换）",
       "frontmatterSchema": {
         "type": "object",
-        "required": [
-          "heading"
-        ],
+        "required": ["chapterNumber", "chapterTitle"],
+        "properties": {
+          "chapterNumber": {
+            "type": "number",
+            "description": "章节序号（如 1 / 2 / 3）"
+          },
+          "chapterTitle": {
+            "type": "string",
+            "description": "章节标题"
+          }
+        }
+      }
+    },
+    {
+      "name": "jingyeda-content",
+      "description": "通用内容页骨架（顶部蓝色标题栏 + 默认 slot + 右下 logo 水印；body 中可放栅格 / 装饰 / 内容块组件，或自由 markdown）",
+      "frontmatterSchema": {
+        "type": "object",
+        "required": ["heading"],
         "properties": {
           "heading": {
             "type": "string",
@@ -85,83 +97,7 @@
           }
         }
       },
-      "bodyGuidance": "body 是 markdown，可用 **加粗**（会染成品牌蓝），或 markdown 要点列表 / 有序列表。"
-    },
-    {
-      "name": "jingyeda-two-col",
-      "description": "两栏对比页（左栏蓝底小标题、右栏绿底小标题，利用双主色做 A/B 语义区分；常用于前后对比 / 业务与技术 / 产品与市场）",
-      "frontmatterSchema": {
-        "type": "object",
-        "required": [
-          "heading"
-        ],
-        "properties": {
-          "heading": {
-            "type": "string",
-            "description": "页标题"
-          },
-          "leftTitle": {
-            "type": "string",
-            "description": "左栏小标题（蓝底白字）"
-          },
-          "rightTitle": {
-            "type": "string",
-            "description": "右栏小标题（绿底白字）"
-          }
-        }
-      },
-      "bodyGuidance": "body 必须用 Slidev 命名 slot：`::left::` 分左栏、`::right::` 分右栏。两栏内部用 markdown 要点列表。"
-    },
-    {
-      "name": "jingyeda-data",
-      "description": "数据页（左图表区 + 右蓝底指标卡列；图表数据色用蓝+绿双色）",
-      "frontmatterSchema": {
-        "type": "object",
-        "required": [
-          "heading",
-          "metrics"
-        ],
-        "properties": {
-          "heading": {
-            "type": "string",
-            "description": "页标题"
-          },
-          "metrics": {
-            "type": "array",
-            "description": "指标卡数组 inline JSON，如 metrics: [{ \"value\": \"629\", \"unit\": \"点\", \"label\": \"年度交付总量\" }]",
-            "items": {
-              "type": "object"
-            }
-          }
-        }
-      },
-      "bodyGuidance": "body 放 chart 组件，可选：<BarChart :labels=\"[...]\" :values=\"[...]\" label=\"...\" /> 或 <LineChart :labels=\"[...]\" :values=\"[...]\" label=\"...\" />。"
-    },
-    {
-      "name": "jingyeda-image-content",
-      "description": "图文页（左 45% 图片带蓝色细边 + 右 55% 文字含可选 textTitle）",
-      "frontmatterSchema": {
-        "type": "object",
-        "required": [
-          "heading",
-          "image"
-        ],
-        "properties": {
-          "heading": {
-            "type": "string",
-            "description": "页标题"
-          },
-          "image": {
-            "type": "string",
-            "description": "图片 URL（推荐 /templates/jingyeda-standard/ 下的白名单资源）"
-          },
-          "textTitle": {
-            "type": "string",
-            "description": "文字区小标题（可选）"
-          }
-        }
-      },
-      "bodyGuidance": "body 是文字正文，markdown 语法。"
+      "bodyGuidance": "body 是 markdown，可嵌公共组件：\n- 整页要并列 / 主从 / 网格分块 → 必须用栅格组件包整 body（<TwoCol> / <ThreeCol> / <OneLeftThreeRight> / <OneRightThreeLeft> / <OneTopThreeBottom> / <TwoColumnsTwoRows> / <NineGrid> / <ImageText>），不要在默认 slot 用 div 硬拆\n- 4 小节方阵 / 阶段流程要美化骨架 → 优先 <PetalFour> / <ProcessFlow>\n- 数字+标签结构 → <MetricCard>；图表 → <BarChart> / <LineChart>；引文 → <Quote>；高亮块 → <Callout>；键值列表 → <KVList>\n- 段落自由叙述 / 简单列表 → 直接 markdown，不硬塞组件"
     },
     {
       "name": "jingyeda-back-cover",
@@ -184,6 +120,24 @@
         }
       }
     }
+  ],
+  "commonComponents": [
+    "TwoCol",
+    "ThreeCol",
+    "OneLeftThreeRight",
+    "OneRightThreeLeft",
+    "OneTopThreeBottom",
+    "TwoColumnsTwoRows",
+    "NineGrid",
+    "ImageText",
+    "PetalFour",
+    "ProcessFlow",
+    "MetricCard",
+    "KVList",
+    "Quote",
+    "Callout",
+    "BarChart",
+    "LineChart"
   ],
   "thumbnail": "thumbnail.png"
 }
