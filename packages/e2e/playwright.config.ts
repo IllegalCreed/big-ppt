@@ -38,6 +38,9 @@ export default defineConfig({
         // 大改 frontmatter 触发 slidev cli full reload，dev iframe 闪/状态错乱）。
         // e2e spec 都断 DB + UI selector 不验 iframe 渲染，写哪都不影响通过率。
         BIG_PPT_SLIDES_PATH: '/tmp/lumideck-e2e-slides.md',
+        // Phase 9-E：e2e 共享同一个 webServer，rate-limit 跨 spec 累计撞 5/15min/IP
+        // 上限会让 register/login spec 挂；测试场景下统一禁用。
+        RATE_LIMIT_ENABLED: 'false',
       },
     },
     {

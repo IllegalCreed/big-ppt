@@ -21,20 +21,20 @@
 | A03.3 | Slidev iframe 加 sandbox | ✅ | 9-C | `SlidePreview.vue` sandbox + 4 条测试守卫 |
 | A03.4 | markdown-it 默认 html: false | ✅ | 9-C | Slidev 内置默认 false；项目自身无显式调用 |
 | A03.5 | Hono sub-router wildcard 守卫不泄漏 | ✅ | 9-C | `routes-mount-integration.test.ts` 10 测；CLAUDE.md 已知坑提炼 |
-| A04.1 | login / register rate limit | ⚠ | 9-E | 5 / 15min / IP |
-| A04.2 | llm-chat rate limit | ⚠ | 9-E | 30 / hour / user |
-| A04.3 | log-event rate limit | ⚠ | 9-E | 10 / min / user |
+| A04.1 | login / register rate limit | ✅ | 9-E | 5 / 15min / IP；防爆破他人凭据 |
+| A04.2 | llm-chat rate limit | – | 9-E | **刻意不限**：API key 用户自有，自掏腰包；provider 自带 quota |
+| A04.3 | log-event rate limit | ✅ | 9-E | 60 / min / user；写 agent disk 是服务器资源 |
 | A05.1 | CSP Report-Only | ✅ | 9-D | `middleware/csp.ts` 仅生产注入；含 frame-ancestors 防点击劫持；3 测 |
 | A05.2 | Origin/Referer 校验 | ✅ | 9-D | `middleware/origin-check.ts` POST/PUT/DELETE/PATCH 必校验；13 单测 + 1 集成 prevent-regression |
-| A05.3 | error 消息生产脱敏 | ⚠ | 9-E | `errorResponse(err, isProd)` |
+| A05.3 | error 消息生产脱敏 | ✅ | 9-E | `errorResponse` helper；接 auth llm-settings 加密路径；prod 仅 generic + errorId |
 | A06.1 | pnpm audit --audit-level=high = 0 | ✅ | 9-A | Phase 8 + 复核 |
 | A06.2 | moderate 全 transitive + verdict | ✅ | 9-A | 11 unique 漏洞，dompurify/uuid/postcss/esbuild 等上游 |
-| A07.1 | session 过期策略评估 | TBD | 9-B | TTL 30 天 |
-| A07.2 | 登录暴力破解防护 | ⚠ | 9-E | 同 A04.1 |
+| A07.1 | session 过期策略评估 | ✅ | 9-B | TTL 30 天合理（普通 SaaS 范围）；可在 P10 部署期按需调短 |
+| A07.2 | 登录暴力破解防护 | ✅ | 9-E | 同 A04.1（5 / 15min / IP） |
 | A08.1 | pnpm lockfile 锁版本 + verify | ✅ | – | pnpm 默认 |
 | A08.2 | 无反序列化 user input | ✅ | – | Hono JSON parser + schema |
-| A09.1 | log payload redact 敏感字段 | ⚠ | 9-E | password/apiKey/authorization/cookie/token/secret |
-| A09.2 | log payload ≤ 64KB 截断 | ⚠ | 9-E | – |
+| A09.1 | log payload redact 敏感字段 | ✅ | 9-E | `utils/redact.ts` 深度递归 + 大小写 + 子串匹配；logger 写盘前调用 |
+| A09.2 | log payload ≤ 64KB 截断 | ✅ | 9-E | `truncate()` 超出标记 `__truncated`；indexFields 也走 redact |
 | A10.1 | 无用户可控 SSRF 路径 | ✅ | – | LLM/MCP URL 由后端配置 |
 | 卫生.1 | scripts 全部有保留/归档判定 | ⚠ | 9-G | 4 归档 + 5 保留 |
 | 卫生.2 | knip 死代码扫描 baseline | ⚠ | 9-G | – |

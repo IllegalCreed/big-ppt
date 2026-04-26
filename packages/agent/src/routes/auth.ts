@@ -9,6 +9,8 @@ import { eq } from 'drizzle-orm'
 import { getDb, users, sessions } from '../db/index.js'
 import { SESSION_COOKIE, SESSION_TTL_MS, type AuthVars } from '../middleware/auth.js'
 import { encryptApiKey, decryptApiKey } from '../crypto/apikey.js'
+import { createRateLimit } from '../middleware/rate-limit.js'
+import { errorResponse } from '../utils/error-response.js'
 
 const BCRYPT_ROUNDS = 10
 
@@ -57,6 +59,15 @@ function isValidEmail(email: string): boolean {
 }
 
 export const auth = new Hono<{ Variables: AuthVars }>()
+
+// Phase 9-E（A04）：登录 / 注册 5 / 15min / IP 限速防暴力破解
+const authLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  errorMessage: '请求过于频繁，请稍后再试',
+})
+auth.use('/login', authLimit)
+auth.use('/register', authLimit)
 
 type AuthBody = { email?: string; password?: string }
 type LlmSettingsBody = { provider?: string; apiKey?: string; baseUrl?: string; model?: string }
@@ -135,7 +146,8 @@ auth.get('/llm-settings', async (c) => {
       hasApiKey: !!parsed.apiKey,
     })
   } catch (err) {
-    return c.json({ error: `解密失败：${(err as Error).message}` }, 500)
+    // Phase 9-E：生产模式仅返 generic + errorId（解密细节可能泄漏 master key 状态）
+    return errorResponse(c, err, { publicMessage: 'LLM 配置读取失败' })
   }
 })
 
@@ -153,7 +165,8 @@ auth.put('/llm-settings', async (c) => {
       const prev = JSON.parse(decryptApiKey(user.llmSettings)) as LlmSettingsBody
       apiKey = prev.apiKey ?? ''
     } catch (err) {
-      return c.json({ error: `旧配置解密失败：${(err as Error).message}` }, 500)
+      // Phase 9-E：同上，加密细节生产不外泄
+      return errorResponse(c, err, { publicMessage: '旧 LLM 配置读取失败' })
     }
     if (!apiKey) return c.json({ error: 'apiKey 为空' }, 400)
   }

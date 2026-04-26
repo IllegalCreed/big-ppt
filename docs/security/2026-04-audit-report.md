@@ -184,13 +184,27 @@ const NOW_ON_UPDATE = sql`CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`
 
 ---
 
-## 4. OWASP A04 Insecure Design
+## 4. OWASP A04 Insecure Design ✅（Task 9-E）
 
-**适用项**：rate limit + 登录暴力破解防护 + 资源耗尽。
+### 4.1 Rate Limit 范围抉择
 
-**当前状态**：全栈 0 rate limit → ⚠ 待 Task 9-E 实施（自撸 LRU + token bucket，per-IP/user）。
+**核心原则**：只限"用 agent 服务器资源"的攻击面，不限"用户用自己资源"的端点。
 
-**iframe 防点击劫持**：CSP `frame-ancestors 'self'` 已在 9-D 落地（详 5.3）。
+| 端点 | 是否限速 | 理由 |
+| ---- | -------- | ---- |
+| `POST /api/auth/login` | ✅ 5 / 15min / IP | 防暴力破解他人邮箱密码（攻击者用 agent 服务器尝试登录） |
+| `POST /api/auth/register` | ✅ 5 / 15min / IP | 防自动批量注册 |
+| `POST /api/log-event` | ✅ 60 / min / user | 写 agent disk 是服务器资源；防灌日志 |
+| `POST /api/llm/chat/completions` | ❌ **刻意不限** | API Key 是用户自己提供（`users.llm_settings` 加密存），用户用自己的 key 烧自己的钱；upstream provider（智谱 / DeepSeek / OpenAI）按用户 key 自有 quota，agent 不该再加一层 |
+| 其他业务端点（decks / templates / mcp / slides / tools） | ❌ 不限 | 用户操作自己数据，无攻击放大；登录后才能访问，已有 auth + ownership 守卫 |
+
+**实现**：[`packages/agent/src/middleware/rate-limit.ts`](../../packages/agent/src/middleware/rate-limit.ts) 自撸内存 token-bucket，单进程 Map<key, Bucket> + 周期性 sweep stale。`keyResolver` 支持 per-IP / per-user。`RATE_LIMIT_ENABLED=false` env 全局禁用（test / e2e 用）。Phase 11 多实例时迁集中式（Redis）。
+
+**测试**：[`middleware-rate-limit.test.ts`](../../packages/agent/test/middleware-rate-limit.test.ts) 8 测覆盖：未达上限 / 超限 429 + Retry-After / 不同 IP 独立 / 不同 scope 独立 / 全局禁用 / 跨 window 重置 / userOrIpKey 已登录走 user / 未登录 fallback IP。
+
+### 4.2 iframe 防点击劫持
+
+CSP `frame-ancestors 'self'` 已在 9-D 落地（详 5.3）。SlidePreview iframe sandbox 已在 9-C 落地（详 3.3）。
 
 ---
 
@@ -239,9 +253,20 @@ frame-ancestors 'self'  ← 防点击劫持，Slidev iframe 不会被嵌进恶�
 
 **测试**：[`middleware-csp.test.ts`](../../packages/agent/test/middleware-csp.test.ts) 3 条（生产注入 / dev 不注入 / 仅 Report-Only 不写 enforce header）。
 
-### 5.4 错误消息脱敏 ⚠（待 Task 9-E）
+### 5.4 错误消息脱敏 ✅（Task 9-E）
 
-`errorResponse(err, isProd)` helper 待 9-E 实施。当前 prod 可能吐 stack trace / 内部错误细节。
+[`packages/agent/src/utils/error-response.ts`](../../packages/agent/src/utils/error-response.ts) `errorResponse(c, err, opts)` helper：
+- prod 模式：仅返 `{ error: <publicMessage>, errorId: <16hex> }`，stack trace 写到 `console.error`（含同 errorId 关联）
+- dev 模式：返 `{ error: <fullMessage>, errorId, stack }` 方便调试
+- 前端可凭 `errorId` 让用户报告问题，运维 grep 日志
+
+**接入位置**（最敏感的两处加密路径）：
+- `routes/auth.ts` GET /api/auth/llm-settings 解密失败 → `LLM 配置读取失败`
+- `routes/auth.ts` PUT /api/auth/llm-settings 旧配置解密失败 → `旧 LLM 配置读取失败`
+
+其他 routes 的 catch 保留原 message（业务错误如 DB 连接失败 / 文件读取失败等无敏感价值，暴露反而便于调试）。
+
+**测试**：[`utils-error-response.test.ts`](../../packages/agent/test/utils-error-response.test.ts) 5 测（prod generic / publicMessage 覆盖 / silent / dev 完整 / status 覆盖）。
 
 ---
 
@@ -291,14 +316,21 @@ info: 0 / low: 0 / moderate: 15 / high: 0 / critical: 0
 
 ---
 
-## 9. OWASP A09 Security Logging & Monitoring Failures
+## 9. OWASP A09 Security Logging & Monitoring Failures ✅（Task 9-E）
 
-**当前状态**：详查待 Task 9-E。
+**Logger 改造**（[`packages/agent/src/logger/index.ts`](../../packages/agent/src/logger/index.ts)）：
+- 写盘前调 [`utils/redact.ts`](../../packages/agent/src/utils/redact.ts) 深度递归过滤 password / apiKey / authorization / cookie / token / secret 等字段（不分大小写 + 子串匹配 access_token / refresh_token / *Cookie 等变体），值替换为 `[REDACTED]`
+- payload 单文件 ≤ 64KB（`truncate()` 超出截断 + 标记 `__truncated`），防 logger 撑爆
+- indexFields（顶层日志元数据）也走 redact，防业务方在顶层字段塞凭据
+- 刻意保留 `session` 字段不脱敏 —— logger 用它作日志关联 ID 不是凭据；脱敏会破坏日志可读性
 
-**已知缺口**：
-- Logger 透传整个 payload（`packages/agent/src/logger/index.ts:32-57` `handleLogEvent`），未过滤 password / apiKey / Authorization 字段 → ⚠ 待 9-E 加 redact
-- 单条 payload 无大小限制 → 9-E 加 64KB 截断
-- `/log-event` 无鉴权 → 9-B 加 requireAuth + 9-E rate limit
+**`LOG_REDACT_FIELDS` env**：CSV 自定义补充字段（项目特定的敏感字段名）。
+
+**`/log-event` 鉴权 + 限速**：
+- 9-B 加 `requireAuth`（仅登录用户能写日志）
+- 9-E 加 60 / min / user 限速（防灌日志撑 disk）
+
+**测试**：[`utils-redact.test.ts`](../../packages/agent/test/utils-redact.test.ts) 11 测（password / 大小写 / 嵌套 / 数组 / 子串匹配 / 循环引用 / env 自定义 / 不 mutate / 截断 / safeForLog 组合）。
 
 ---
 

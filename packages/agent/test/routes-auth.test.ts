@@ -208,7 +208,9 @@ describe('routes/auth', () => {
       body: JSON.stringify({ provider: 'openai', apiKey: '' }),
     })
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toMatch(/旧配置解密失败/)
+    // Phase 9-E：errorResponse dev 模式返完整 message + errorId，prod 仅 generic
+    const body = (await res.json()) as { error: string; errorId: string }
+    expect(body.errorId).toMatch(/^[0-9a-f]{16}$/)
   })
 
   it('llm-settings GET: 未登录 → 401', async () => {
@@ -261,7 +263,8 @@ describe('routes/auth', () => {
     await db.update(users).set({ llmSettings: 'garbage' }).where(eq(users.id, user.id))
     const res = await app.request('/api/auth/llm-settings', { headers: { Cookie: cookie } })
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toMatch(/解密失败/)
+    const body = (await res.json()) as { error: string; errorId: string }
+    expect(body.errorId).toMatch(/^[0-9a-f]{16}$/)
   })
 
   it('llm-settings GET（经 me）: hasLlmSettings 反映 DB 状态', async () => {

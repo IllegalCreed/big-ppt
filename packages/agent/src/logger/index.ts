@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { LogPayload } from '@big-ppt/shared'
 import { getPaths } from '../workspace.js'
+import { redact, truncate } from '../utils/redact.js'
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -28,7 +29,14 @@ export interface LogEventResult {
 
 /**
  * 处理一条事件：大 payload 单独落盘到 logs/payloads/<session>/，索引行只保留 payload_file 引用。
+ *
+ * Phase 9-E（A09）：写盘前 redact + truncate
+ *  - 递归过滤 password / apiKey / authorization / cookie / token / secret 等字段
+ *  - payload 单文件 ≤ 64KB（超出截断 + 标记 truncated）
+ *  - indexFields 也走 redact（防 logger 调用方在顶层字段塞凭据）
  */
+const PAYLOAD_MAX_BYTES = 64 * 1024
+
 export function handleLogEvent(raw: LogPayload): LogEventResult {
   const { logsDir } = getPaths()
   ensureDir(logsDir)
@@ -41,14 +49,19 @@ export function handleLogEvent(raw: LogPayload): LogEventResult {
     const seq = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     const kindSafe = sanitizeSegment(String(indexFields.kind ?? 'event'), 40)
     const filename = `${seq}-${kindSafe}.json`
-    fs.writeFileSync(path.join(payloadDir, filename), JSON.stringify(payload, null, 2))
+    const safePayload = truncate(redact(payload), PAYLOAD_MAX_BYTES)
+    fs.writeFileSync(path.join(payloadDir, filename), JSON.stringify(safePayload, null, 2))
     ;(indexFields as Record<string, unknown>).payload_file = `payloads/${session}/${filename}`
     ;(indexFields as Record<string, unknown>).payload_bytes = Buffer.byteLength(
       JSON.stringify(payload),
     )
   }
 
-  const line = JSON.stringify({ ts: new Date().toISOString(), ...indexFields })
+  const safeIndex = redact({ ts: new Date().toISOString(), ...indexFields }) as Record<
+    string,
+    unknown
+  >
+  const line = JSON.stringify(safeIndex)
   fs.appendFileSync(currentLogFile(), `${line}\n`)
   return {
     success: true,

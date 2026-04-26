@@ -49,6 +49,16 @@ function resolveUpstream(settings: StoredLlmSettings): { url: string } {
 export const llm = new Hono<{ Variables: AuthVars }>()
 
 /**
+ * Phase 9-E：**LLM 代理刻意不挂 rate limit**。
+ * Why：API Key 是用户自己提供的（users.llm_settings 加密存），用户用自己的 key
+ * 烧自己的钱；upstream provider（智谱 / DeepSeek / OpenAI 等）自己会按用户 key 做
+ * quota 限制，agent 不应在用户和自己 key 之间再加一层限流。
+ *
+ * 真正需要限流的是"用 agent 服务器资源"的攻击面（登录爆破 / 写日志），见
+ * routes/auth.ts + routes/log.ts。LLM 用户配额超了由 provider 直接拒。
+ */
+
+/**
  * LLM 流式代理（Phase 5 起必须登录 + 服务端加密 API Key）：
  * 前端只发 POST body，agent 用当前用户的 llm_settings 解密后加 Authorization 转发上游。
  */
