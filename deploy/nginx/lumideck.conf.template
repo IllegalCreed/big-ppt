@@ -52,6 +52,18 @@ server {
     proxy_read_timeout 600s;
     proxy_send_timeout 600s;
 
+    # gzip 压缩(对 Slidev iframe 内 Vite dev module 加载至关重要,
+    # 实测无 gzip 时 925KB index.js 走 12 秒,加 gzip 后 ~250KB ~3 秒)
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript
+               application/javascript application/x-javascript application/json
+               application/xml application/xml+rss application/wasm
+               font/woff2 image/svg+xml;
+
     # 安全头(Phase 9-D CSP report-only 已在 agent 注入,这里加补充层)
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options "SAMEORIGIN" always;
