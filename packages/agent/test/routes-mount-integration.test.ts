@@ -32,9 +32,15 @@ describe('Hono sub-router 挂载完整性（A01 防 wildcard 泄漏）', () => {
     expect(res.status).toBe(200)
   })
 
-  it('GET /api/healthz 维持公开', async () => {
+  it('GET /healthz 维持公开（根路径）', async () => {
     const res = await app.fetch(new Request('http://test/healthz'))
-    expect(res.status).toBe(200)
+    // DB 测试库连得上时 200 ok；连不上 503 down；两种都允许通过此挂载完整性检查
+    expect([200, 503]).toContain(res.status)
+  })
+
+  it('GET /api/healthz 维持公开（nginx /api 反代规则适用）', async () => {
+    const res = await app.fetch(new Request('http://test/api/healthz'))
+    expect([200, 503]).toContain(res.status)
   })
 
   // Phase 9-D：state-changing POST 必须带 Origin（dev 兜底允许 localhost），

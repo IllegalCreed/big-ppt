@@ -11,7 +11,6 @@
  *   - 不监听端口（仅 export `app` 实例）
  */
 import { Hono } from 'hono'
-import { getPaths } from './workspace.js'
 import { llm } from './routes/llm.js'
 import { slides } from './routes/slides.js'
 import { templates } from './routes/templates.js'
@@ -22,6 +21,7 @@ import { mcp as mcpRoute } from './routes/mcp.js'
 import { auth } from './routes/auth.js'
 import { decksRoute } from './routes/decks.js'
 import { lockRoute } from './routes/lock.js'
+import { healthz } from './routes/healthz.js'
 import { authOptional, type AuthVars } from './middleware/auth.js'
 import { requestContextMiddleware } from './middleware/request-context.js'
 import { originCheck } from './middleware/origin-check.js'
@@ -39,20 +39,11 @@ app.use('*', originCheck)
 app.use('*', cspReportOnly)
 
 app.get('/', (c) => c.text('Big-PPT Agent'))
-app.get('/healthz', (c) => {
-  const paths = getPaths()
-  return c.json({
-    ok: true,
-    service: 'big-ppt-agent',
-    version: '0.1.0',
-    paths: {
-      root: paths.root,
-      slides: paths.slidesPath,
-      templates: paths.templatesDir,
-      logs: paths.logsDir,
-    },
-  })
-})
+
+// Healthcheck：根路径与 /api 路径都暴露，让 nginx 既能用 /api/ 反代规则
+// 又能让本机 / Phase 11 反代灰度直连根路径。Phase 10 升级后不再泄漏内部 paths。
+app.route('/healthz', healthz)
+app.route('/api/healthz', healthz)
 
 // 业务路由：挂载到 /api 前缀下
 app.route('/api/auth', auth)
