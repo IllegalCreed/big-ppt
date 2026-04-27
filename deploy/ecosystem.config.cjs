@@ -9,10 +9,11 @@
  * 启动顺序:slidev 先(restart_delay=0),agent 后(restart_delay=2000),
  * 让 agent 启动时反代 + 健康检查不抖动。
  *
- * env 加载:agent 用 dotenv preload(`-r dotenv/config` + DOTENV_CONFIG_PATH);
+ * env 加载:agent 用 start-agent.sh wrapper 调 dotenv-cli(`pnpm exec dotenv -e .env.production.local -- node dist/index.js`),
+ * 与本地 `pnpm start` 行为一致;之前用 `-r dotenv/config` + DOTENV_CONFIG_PATH 通过 pm2 ecosystem 传给 node CLI 实测不可靠。
  * slidev 不需要 env(纯前端 dev server)。
  *
- * 配套脚本:start-slidev.sh / db-backup.sh 由 deploy.sh 同步到远端。
+ * 配套脚本:start-agent.sh / start-slidev.sh / db-backup.sh 由 deploy.sh 同步到远端。
  */
 module.exports = {
   apps: [
@@ -31,19 +32,17 @@ module.exports = {
     {
       name: 'lumideck-agent',
       cwd: '/root/server/lumideck/packages/agent',
-      script: 'dist/index.js',
-      interpreter: 'node',
-      // dotenv 通过 preload + DOTENV_CONFIG_PATH 读 .env.production.local;
-      // 比 wrap dotenv-cli 更稳(避免 ESM 加载顺序坑,quiz 上踩过)
-      interpreter_args: '-r dotenv/config',
-      node_args: '--enable-source-maps',
+      script: '/root/server/lumideck/deploy/scripts/start-agent.sh',
+      interpreter: 'bash',
+      // start-agent.sh 用 `pnpm exec dotenv -e .env.production.local -- node dist/index.js`,
+      // 与本地 `pnpm start` 行为一致;之前用 `-r dotenv/config` + DOTENV_CONFIG_PATH 通过
+      // pm2 ecosystem 传给 node CLI 不可靠(实测 process.env.DATABASE_URL 仍未被注入)
       max_memory_restart: '768M',
       restart_delay: 2000,
       listen_timeout: 10000,
       kill_timeout: 5000,
       env: {
         NODE_ENV: 'production',
-        DOTENV_CONFIG_PATH: '/root/server/lumideck/packages/agent/.env.production.local',
       },
     },
   ],

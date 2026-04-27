@@ -1,9 +1,9 @@
 # Phase 10 — 首次部署(单实例上线) 实施文档
 
-> **状态**:待启动
-> **目标 plan 路径**(批准后我会把本文件 cp 进仓):`docs/plans/19-phase10-production-deploy.md`
-> **前置阶段**:[plan 18 — Phase 9 安全 Audit](../../workspace/big-ppt/docs/plans/18-phase9-security-audit.md)
-> **路线图**:[roadmap.md Phase 10](../../workspace/big-ppt/docs/requirements/roadmap.md)
+> **状态**:进行中(2026-04-27;agent + slidev 已上线 healthz=ok,等浏览器手验)
+> **前置阶段**:[plan 18 — Phase 9 安全 Audit](18-phase9-security-audit.md)
+> **路线图**:[roadmap.md Phase 10](../requirements/roadmap.md)
+> **运维 runbook**:[deploy.md](../runbooks/deploy.md)
 > **执行子技能**:`superpowers:subagent-driven-development`(粒度细 + 远端 ssh 操作多,每 Task fresh subagent 安全)
 
 **Goal**:把当前已通过 Phase 9 审计的 Lumideck 单实例版本部署到 `47.120.26.143`(复用 quiz 服务器),通过 `lumideck.illegalscreed.cn` 子域对外提供完整 Web 体验:注册 / 登录 / 建 deck / AI 对话生成 / 切模板 / 历史版本。**不做** CI/CD、多实例、灰度回滚——这些全部留 Phase 11+。本 Phase 产物 = 一键部署脚本 + nginx/pm2 配置入库 + healthcheck + 每日 DB 备份 + runbook 文档。
@@ -710,17 +710,94 @@ deploy_backend() {
 
 ## 执行期偏离(关闭后追加)
 
-> 实际跑下来与 plan 不一致的点,关闭时回填。
+> 实际跑下来与 plan 不一致的点。
 
-(待填)
+### 偏离 1:DATABASE_URL 用 RDS 域名而非 127.0.0.1
+
+- **原 plan**:`mysql://lumideck_prod_user:PASS@127.0.0.1:3306/lumideck`
+- **实际**:`mysql://lumideck_prod_user:***@rm-bp1ezwg4a7ugd67mx4o.mysql.rds.aliyuncs.com:3306/lumideck`
+- **原因**:quiz 服务器实际用阿里云 RDS,ECS 47.120.26.143 上没装 mysql server。runbook 在执行期已修正为 RDS 路径 + RDS 控制台建库
+
+### 偏离 2:加了 deploy/scripts/start-agent.sh wrapper
+
+- **原 plan**:agent 用 ecosystem.config.cjs 的 `interpreter_args: '-r dotenv/config'` 自动加载 secrets
+- **实际**:加 `start-agent.sh` 用 `pnpm exec dotenv -e .env.production.local -- node dist/index.js`(详见踩坑 #5)
+- **原因**:pm2 + `-r dotenv/config` 注入 env 不可靠,改用 wrapper 与本地 `pnpm start` 行为一致
+
+### 偏离 3:加了 lumideck-http-only.conf.template + install-server.sh 两阶段 bootstrap
+
+- **原 plan**:install-server.sh 一次性 envsubst 完整 nginx 模板 → certbot --nginx
+- **实际**:阶段 A 写 80-only conf → certbot --webroot 申请证书 → 阶段 B 写完整 conf
+- **原因**:nginx -t 在 ssl_certificate 文件不存在时直接 fail,certbot 接管不了(详见踩坑 #3)
+
+### 偏离 4:init-db.mjs 加了 --allow-prod 标志
+
+- **原 plan**:生产 secrets 由 ops 在远端手工 `cat > .env.production.local` 写入
+- **实际**:复用 init-db.mjs(本来 production 是被显式拒绝的安全护栏),加 `--allow-prod` 显式覆盖标志,本地一行命令完成"连 root 建库 + 生成强密码 + 写 .env.production.local + 随机生成 SESSION_SECRET / APIKEY_MASTER_KEY"
+- **原因**:简化部署体验,同时保留护栏(默认仍拒绝,必须显式 `--allow-prod`)
+
+### 偏离 5:packages/shared 加了 build script
+
+- **原 plan**:plan 19 假设 shared 不需要 build(沿用 CLAUDE.md "直接 import 源文件不打包")
+- **实际**:shared 加 `"build": "tsc"` 输出 src/*.js,deploy.sh build_agent 之前先 build shared
+- **原因**:shared/src/index.ts 用 NodeNext ESM `from './chat.js'`,生产 node 必须有真实 .js 才能 resolve(详见踩坑 #4)
+
+### 偏离 6:SLIDEV_ORIGIN 默认值改为 localhost
+
+- **原 plan**:`SLIDEV_ORIGIN=http://127.0.0.1:3031`(plan 19 + .env.production.example 默认)
+- **实际**:`SLIDEV_ORIGIN=http://localhost:3031`
+- **原因**:slidev v52 + Vite 5+ 默认 bind [::1] IPv6 only,127.0.0.1 ECONNREFUSED(详见踩坑 #6)
 
 ---
 
-## 踩坑与解决(实施期/关闭后追加)
+## 踩坑与解决(实施期 / 关闭后追加)
 
-> 每条按 "症状 / 根因 / 修复 / 防再犯" 四段;符合 CLAUDE.md 提炼标准的同步加到已知坑章节。
+### 坑 1:macOS 自带 openrsync 协议版本 29 跟远端真 rsync 协议 31 不兼容
 
-(待填)
+- **症状**:本地 `./scripts/deploy.sh ecosystem` 报 `rsync(8751): error: unexpected end of file`,无 rsync 输出明细
+- **根因**:macOS Sequoia 起默认 `/usr/bin/rsync` 是 Apple 的 openrsync(协议 29);远端装的 rsync 3.1.3(协议 31)
+- **修复**:`brew install rsync`(3.4.1 协议 32),`/opt/homebrew/bin/rsync` 优先于系统 PATH
+- **防再犯**:**未提炼到 CLAUDE.md** — 一次性 onboarding 坑,新成员看本 plan 即可
+
+### 坑 2:Alibaba Cloud Linux 用 dnf,不是 apt
+
+- **症状**:`apt-get install rsync` 报 `bash: apt-get: command not found`
+- **根因**:服务器是 Alibaba Cloud Linux 3(RHEL/CentOS 系),包管理是 dnf/yum
+- **修复**:`dnf install -y rsync`
+- **防再犯**:已在 [runbook](../runbooks/deploy.md) 注明
+
+### 坑 3:nginx 模板含 `listen 443 ssl` 但证书未申请,nginx -t 直接 fail
+
+- **症状**:首次跑 install-server.sh 时 `nginx: [emerg] no "ssl_certificate" is defined`,脚本 set -e 退出,但**坏 conf 已写入** `/etc/nginx/conf.d/`,任何后续 `systemctl reload nginx` 都会让 nginx 拒绝重载,quiz 风险
+- **根因**:certbot 需要先申请证书才有 ssl_certificate 文件,但我的模板默认带 443 ssl block,bootstrap 阶段证书还不存在
+- **修复**:install-server.sh 改两阶段
+  - 阶段 A:写 `lumideck-http-only.conf.template`(只 80 + ACME challenge webroot),reload,跑 `certbot certonly --webroot`
+  - 阶段 B:写完整 `lumideck.conf.template`(80 跳 443 + 443 ssl,直接 hardcode `ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem`),reload
+- **防再犯**:**已提炼到 CLAUDE.md "Slidev 反代 + HMR" 旁边新增"nginx HTTPS bootstrap"一条**
+
+### 坑 4:packages/shared 未 build,prod node 找不到 .js
+
+- **症状**:agent 启动报 `Cannot find module '/root/server/lumideck/packages/shared/src/chat.js' imported from .../shared/src/index.ts`
+- **根因**:shared 走"src/*.ts 直接 import,不打包"的设计(CLAUDE.md "包与端口" 章节),只在 dev/tsx 模式 work;生产 node 解析 main 字段 `./src/index.ts` 后,index.ts 用 ESM `export * from './chat.js'`,Node 找不到 .js
+- **修复**:
+  - shared 加 `"build": "tsc"`,产物落 `src/*.js`(NodeNext 风格,跟 .ts 同目录共存)
+  - deploy.sh `build_agent` 函数先 build shared 再 build agent
+  - .gitignore 加 `packages/shared/src/*.js` `*.js.map` 避免 build 产物入 git
+- **防再犯**:**已提炼到 CLAUDE.md "已知坑 → 工具链 / 构建"** — "monorepo 内部 ts 包用 ESM `from './x.js'` 风格,生产部署前必须先 build 出 .js"
+
+### 坑 5:pm2 ecosystem 用 `-r dotenv/config` + DOTENV_CONFIG_PATH 不可靠
+
+- **症状**:agent 启动后 `process.env.DATABASE_URL` 仍是 undefined,落到 src/index.ts 的 fallback `loadDotenv({ path: ['.env.development.local', '.env.local'] })`,健康检查 `db.error: '[agent/db] DATABASE_URL 未设置'`
+- **根因**:pm2 通过 ecosystem.config.cjs 的 `interpreter_args: '-r dotenv/config'` + `env: { DOTENV_CONFIG_PATH: '...' }` 让 node 预加载 dotenv,但 dotenv preload 只支持 CLI 参数 `dotenv_config_path=...` 不读 env vars,加上 pm2 environment 注入顺序与 -r 标志的交互不可靠
+- **修复**:写 `deploy/scripts/start-agent.sh` wrapper,内容是 `pnpm exec dotenv -e .env.production.local -- node dist/index.js`(跟本地 `pnpm start` 行为一致),pm2 通过 `script: '.../start-agent.sh'` `interpreter: 'bash'` 调起
+- **防再犯**:**已提炼到 CLAUDE.md "已知坑 → 工具链 / 构建"** — "pm2 跑 ESM Node app 时 secrets 通过 bash wrapper + dotenv-cli 注入,不要走 -r dotenv/config + DOTENV_CONFIG_PATH"
+
+### 坑 6:slidev v52 + Vite 5+ 默认只 bind IPv6 [::1],SLIDEV_ORIGIN=http://127.0.0.1 不通
+
+- **症状**:agent healthz `slidev.error: 'fetch failed'`,本机 `curl http://127.0.0.1:3031/...` 报 `Connection refused`,但 `curl http://localhost:3031/...` 正常 200
+- **根因**:`ss -tlnp` 看到 slidev 监听 `[::1]:3031`(IPv6 loopback only),不绑 127.0.0.1;`localhost` 在 glibc resolver 下解析为 `::1, 127.0.0.1`,fetch 自动跑到 IPv6 通路
+- **修复**:.env.production.local 把 `SLIDEV_ORIGIN=http://127.0.0.1:3031` 改为 `http://localhost:3031`;同步更新 `.env.production.example` 默认值 + 注释
+- **防再犯**:**已提炼到 CLAUDE.md "已知坑 → Slidev 反代 + HMR"** — "agent fetch slidev 用 localhost 不要用 127.0.0.1,Vite 5 默认 bind ::1"
 
 ---
 

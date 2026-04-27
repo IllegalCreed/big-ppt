@@ -9,6 +9,9 @@
  *   node scripts/init-db.mjs --env=production \
  *     --database-url=mysql://prod_user:pw@host:3306/lumideck
  *                                                      # 部署期：直接注入 URL，跳过 root 连接
+ *   node scripts/init-db.mjs --env=production --allow-prod
+ *                                                      # 部署期：连 root 自动建库 + 生成 lumideck_prod_user
+ *                                                      #         (Phase 10 引入,需要 .env.create-db.local)
  *
  * 行为：
  *   1. 若 --database-url 指定：仅把 URL 写进对应 .env.{env}.local（不连 DB）
@@ -50,6 +53,7 @@ function arg(name, fallback = undefined) {
 const env = arg('env', 'development')
 const databaseUrlOverride = arg('database-url')
 const rotate = !!arg('rotate', false)
+const allowProd = !!arg('allow-prod', false)
 const rootEnvFile = resolve(
   process.cwd(),
   arg('root-env-file') || process.env.LUMIDECK_DB_ROOT_ENV || DEFAULT_ROOT_ENV_FILE,
@@ -147,8 +151,10 @@ async function main() {
     }
   }
 
-  if (env === 'production') {
-    console.error(`✗ production 环境不支持自动建库。请用 --database-url=mysql://prod_user:...@host/db 直接注入`)
+  if (env === 'production' && !allowProd) {
+    console.error(`✗ production 环境默认不允许自动建库,二选一:`)
+    console.error(`    1) 显式加 --allow-prod 标志(连 root 建 lumideck + lumideck_prod_user)`)
+    console.error(`    2) 直接 --database-url=mysql://prod_user:...@host:3306/lumideck`)
     process.exit(1)
   }
 

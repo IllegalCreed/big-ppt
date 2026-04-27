@@ -155,7 +155,10 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 - **bcrypt** 在 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies`，初装时会编译；CI 慢一点正常
 - **`@antdv-next/x`** 0.3 Slot warning bug 已在 1.0 通过 API 重构间接修复（2026-04-26 Phase 8 清 P3-1）；**该包 npm `latest` dist-tag 仍指向 beta**（1.0.2-beta.1），升级时显式锁版本号（`pnpm up "@antdv-next/x@1.0.1"`），不跟 latest（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 踩坑 6）
 - **UnoCSS presetIcons** 有图标解析 bug（P3-7），用 `scripts/gen-icons.mjs` workaround；2026-04-26 Phase 8 复检 v66.6.8 仍未修，下次 Phase 11/14 复检（详见 [plan 06-monorepo](docs/plans/06-phase3-monorepo-agent.md) 踩坑 1）
-- **`drizzle-kit push`** 改 schema 后，dev 与 test 库都要 push（`db:push` + `db:push:test`）
+- **`drizzle-kit push`** 改 schema 后，dev 与 test 库都要 push（`db:push` + `db:push:test`）；生产部署用 `db:push:prod` 推到 RDS lumideck 库（plan 19）
+- **monorepo 内部 ts 包用 ESM `from './x.js'` 风格,生产部署前必须先 build 出 .js**：dev/tsx 模式可以直接读 .ts,但 prod node 解析 main 字段读 ts 后,内部 import './x.js' 找不到真实 .js 文件 → ERR_MODULE_NOT_FOUND。`packages/shared` 加了 `build: tsc` 输出 src/*.js 与 .ts 共存,deploy.sh build_agent 之前必须先 build shared（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 4）
+- **pm2 跑 ESM Node app 时 secrets 不要走 `-r dotenv/config` + `DOTENV_CONFIG_PATH`**:dotenv preload 只支持 CLI 参数 `dotenv_config_path=`,不读 env vars,加上 pm2 environment 注入与 -r 标志的交互不可靠。改用 bash wrapper（`deploy/scripts/start-agent.sh`）调 `pnpm exec dotenv -e .env.production.local -- node dist/index.js`,与本地 `pnpm start` 一致（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 5）
+- **nginx HTTPS bootstrap 必须分两阶段**：模板里 `listen 443 ssl` 含 `ssl_certificate` 路径,但 certbot 申请证书前文件不存在,nginx -t 直接 fail,且坏 conf 写入会让后续 `systemctl reload nginx` 拒绝重载,**全 nginx 站点风险**。先写 80-only conf 让 certbot --webroot 申请证书,成功后再 envsubst 完整模板（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 3）
 - **依赖升级前必看 npm `latest` dist-tag 是否指向 beta**：不是所有库都把 `latest` 严格对齐 stable；升 0.x → 1.x 类跨 major 时 `pnpm outdated` 显示的 latest 可能是 beta，显式锁 stable 版本号避免误升（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 踩坑 6）
 - **`@types/node` 跟 Node LTS 不跟 npm latest**：Node 25 还没 LTS 时 npm latest 已经是 25，但部署/CI 用 Node 22 LTS，类型版本应跟运行时 LTS 才不漂移（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 设计抉择 #7）
 
@@ -165,7 +168,8 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 
 ### Slidev 反代 + HMR
 
-- **Slidev 仅 agent 反代访问**：原生端口 `:3031` 必须绑 `127.0.0.1`，不能直接对外（详见 [plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 1-2）
+- **Slidev 仅 agent 反代访问**：原生端口 `:3031` 必须绑 loopback,不能直接对外（详见 [plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 1-2）
+- **agent 跨进程 fetch slidev 用 `localhost` 不要用 `127.0.0.1`**：slidev v52 + Vite 5+ 默认只 bind `[::1]`(IPv6 loopback),`SLIDEV_ORIGIN=http://127.0.0.1:3031` 会 ECONNREFUSED;`localhost` 走 OS resolver 自动选可达协议族（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 6）
 - **Slidev dev 启动必须带 `--base /api/slidev-preview/`**：否则 HTML 内绝对路径 `/@vite/client` 等全 404（[plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 2）
 - **切换 deck / 切模板时让 Slidev HMR 自己处理**，前端**不要**调 `slideStore.refresh()`，否则会与 HMR race 触发 502（[plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 踩坑 3）
 - **Slidev reload 窗口（200-500ms）期间 dev server 不响应**，前端 fetch iframe URL 要先 probe-then-refresh（[plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 踩坑 4）

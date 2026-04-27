@@ -79,13 +79,23 @@ build_creator() {
 }
 
 build_agent() {
-    log_info "构建 agent(tsc)"
+    log_info "构建 shared + agent(tsc)"
     cd "${PROJECT_ROOT}"
+    # shared 必须先 build:agent dist 里 import '@big-ppt/shared',
+    # shared 的 src/index.ts 用 NodeNext 风格 `from './chat.js'`,
+    # 生产 node 找不到 .js → 必须由 tsc 把 src/*.ts → src/*.js 落盘
+    pnpm -F @big-ppt/shared build
     pnpm -F @big-ppt/agent build
+}
+
+# 远端 mkdir 父目录(rsync 不会自动建)
+ensure_remote_dirs() {
+    ssh "${SERVER_USER}@${SERVER_HOST}" "mkdir -p ${REMOTE_MONOREPO} ${REMOTE_MONOREPO}/deploy ${REMOTE_WEB}"
 }
 
 # ── 部署:ecosystem 配置(deploy/ 目录) ─────
 deploy_ecosystem() {
+    ensure_remote_dirs
     log_info "同步 deploy/ 配置 → ${REMOTE_MONOREPO}/deploy/"
     rsync -az --delete \
         "${PROJECT_ROOT}/deploy/" \
@@ -102,6 +112,7 @@ deploy_creator() {
         log_error "${dist} 不存在,先 build"
         exit 1
     fi
+    ensure_remote_dirs
     log_info "同步 creator/dist → ${REMOTE_WEB}/"
     rsync -az --delete "${dist}/" "${SERVER_USER}@${SERVER_HOST}:${REMOTE_WEB}/"
     log_info "creator ✓"
@@ -109,6 +120,7 @@ deploy_creator() {
 
 # ── 部署:backend(agent dist + slidev 源码 + monorepo lockfile) ─────
 deploy_backend() {
+    ensure_remote_dirs
     log_info "同步 monorepo backend → ${REMOTE_MONOREPO}/"
 
     # rsync monorepo 必要内容,显式排除危险/无关项

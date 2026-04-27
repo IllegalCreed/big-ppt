@@ -2,6 +2,10 @@
 .turbo/
 **/.turbo/
 
+# Phase 10: shared build 产物(deploy.sh 部署期生成,与 .ts 同目录共存)
+packages/shared/src/*.js
+packages/shared/src/*.js.map
+
 # Logs
 logs
 *.log
