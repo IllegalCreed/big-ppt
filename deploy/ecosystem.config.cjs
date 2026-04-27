@@ -26,7 +26,11 @@ module.exports = {
       restart_delay: 0,
       kill_timeout: 5000,
       env: {
-        NODE_ENV: 'production',
+        // Slidev 跑 dev 模式(Vite dev server + HMR),必须 NODE_ENV=development。
+        // 设 production 时 Vite 不注入 __DEV__ build-time constant,iframe 内
+        // env.ts 抛 `ReferenceError: __DEV__ is not defined` 整个 SFC 起不来。
+        // (plan 19 踩坑期发现:dev mode + NODE_ENV=production 是边缘组合,Vite 不支持)
+        NODE_ENV: 'development',
       },
     },
     {
