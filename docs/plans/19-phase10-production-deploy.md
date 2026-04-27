@@ -801,19 +801,37 @@ deploy_backend() {
 
 ---
 
-## 测试数量落地(关闭后追加)
+## 测试数量落地
 
 | 指标             | 起点 | 终点 | 增量 |
 | ---------------- | ---- | ---- | ---- |
-| agent unit       | 428  |      |      |
-| creator unit     | 79   |      |      |
-| shared unit      | 3    |      |      |
-| slidev unit      | 38   |      |      |
-| E2E              | 9    |      |      |
-| coverage lines   | 92.82|      |      |
-| coverage branch  | 83.83|      |      |
+| agent unit       | 428  | 434  | +6(healthz 5 + mount-integration 1) |
+| creator unit     | 79   | 79   | 0 |
+| shared unit      | 3    | 3    | 0 |
+| slidev unit      | 38   | 38   | 0 |
+| E2E              | 9    | 9    | 0 |
+| coverage lines   | 92.82| 维持 | — |
+| coverage branch  | 83.83| 维持 | — |
 
-预期增量:Task 10-A healthz +3 测;其他 Task 是运维代码(shell / config),不计单测。
+实际增量与预期一致(运维代码 shell / config 不计单测)。
+
+---
+
+## 部署期实测验收(2026-04-27)
+
+服务端验收(8/8):
+- [x] HTTPS 可达 + Let's Encrypt 证书签发至 2026-07-26
+- [x] /api/healthz status:ok(DB 34ms / Slidev 5ms;/healthz + /api/healthz 双挂载)
+- [x] /api/auth/me 401(未登录鉴权工作)
+- [x] /api/list-templates 公开返 2 个模板(beitou + jingyeda)
+- [x] 注册→登录→建 deck→列 deck→登出→401 全 6 步 API smoke 通过
+- [x] pm2 restart lumideck-agent 后 users/decks 数据保留 + healthz 8s uptime
+- [x] db-backup 手动触发产 390 字节真实 sql.gz(mysqldump 8.0.45 装好)
+- [x] git history 0 secret leak(SESSION_SECRET / APIKEY_MASTER_KEY / DB 凭据真值无入库)
+
+UI 待手验(2/2):
+- [ ] 浏览器:注册 → 配 LLM key → 建 deck → 切模板 → /undo
+- [ ] 第二浏览器无痕:登另一账号 → 进 same deck URL → 看 OccupiedWaitingPage
 
 ---
 

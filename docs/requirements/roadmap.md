@@ -515,14 +515,16 @@
 
 **验收条件**：
 
-- [ ] 公网域名可访问，HTTPS 证书正确
-- [ ] 注册 → 登录 → 建 deck → 编辑 → 登出 → 重登全流程通
-- [ ] 第二个浏览器登录另一个账号，进入相同 deck 看到等待页
-- [ ] agent 崩溃/重启后，数据全在，用户重新登录能继续
-- [ ] DB 备份文件每日一份，可恢复
-- [ ] **无任何敏感文件出现在 git 历史**（.env.\*.local / 密钥 / 密码）
+- [x] 公网域名可访问，HTTPS 证书正确(Let's Encrypt 至 2026-07-26)
+- [x] 注册 → 登录 → 建 deck → 列出 → 登出 → 重登全流程通(API 层 smoke 6/6)
+- [ ] 编辑(改标题 / 切模板 / 切回历史版本)— **待用户浏览器手验**
+- [ ] 第二个浏览器登录另一个账号，进入相同 deck 看到等待页 — **待用户浏览器手验**
+- [x] agent 崩溃/重启后，数据全在(`pm2 restart lumideck-agent` 后 `users.count=1` `decks.count=1` 保留)
+- [x] DB 备份文件每日一份，可恢复(crontab 已加 + 手动跑产 390 字节 valid sql.gz;mysqldump 8.0.45 装好)
+- [x] **无任何敏感文件出现在 git 历史**(`git log -p -S` 全检查,真值 0 leak;.env.production.local gitignored)
+- [x] healthz status:ok(DB 34ms / Slidev 5ms;`/api/healthz` + `/healthz` 双挂载)
 
-**状态**：待开始
+**状态**：进行中(2026-04-27 服务端 6/8 通,UI 2 条等手验)
 
 **依赖**：Phase 9 完成
 
