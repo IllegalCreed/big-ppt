@@ -1,10 +1,37 @@
 # Phase 10 — 首次部署(单实例上线) 实施文档
 
-> **状态**:进行中(2026-04-27;agent + slidev 已上线 healthz=ok,等浏览器手验)
+> **状态**:✅ 已关闭(2026-04-27)
 > **前置阶段**:[plan 18 — Phase 9 安全 Audit](18-phase9-security-audit.md)
+> **后续候选**:Phase 10.5(Slidev 解耦 spike,未启动) → [Phase 11 多用户并发 + 分享链接](../requirements/roadmap.md#phase-11多用户并发--分享链接--多实例部署切换)
 > **路线图**:[roadmap.md Phase 10](../requirements/roadmap.md)
 > **运维 runbook**:[deploy.md](../runbooks/deploy.md)
-> **执行子技能**:`superpowers:subagent-driven-development`(粒度细 + 远端 ssh 操作多,每 Task fresh subagent 安全)
+> **执行子技能**:`superpowers:subagent-driven-development`(实际跑下来更接近 inline executing-plans,因为远端实操多每 Task 都需要主 agent 持续协调)
+
+---
+
+## 实施摘要(关闭)
+
+**11 commit**:608297a 10-A healthz / 96c0da2 10-B deploy 脚手架 / 569ce68 10-D deploy.sh / eec6691 runbook + roadmap 入口 / 7400b35 RDS 路径修正 / 61f311a nginx 两阶段 bootstrap / 3efc857 跨过 6 踩坑 / fe2ef86 db-backup pipefail / a3b313e 验收回填 / 9b7af19 NODE_ENV=development / 6ba5d15 nginx gzip
+
+**核心成果**:
+- `https://lumideck.illegalscreed.cn` 上线运行
+- HTTPS Let's Encrypt 至 2026-07-26(certbot.timer 自动续期)
+- 阿里云 RDS 复用 quiz 实例新建 `lumideck` 库 + `lumideck_prod_user` 独立账号
+- pm2 双进程:`lumideck-agent`(:4000) + `lumideck-slidev`(:3031,localhost-only)
+- crontab 02:00 daily mysqldump 备份保留 30 天(mysql client 8.0.45 装好)
+- nginx HTTPS + SPA 静态托管 + /api/ 反代 + Slidev 绝对路径 5 个 location ^~ + WebSocket upgrade
+
+**6 条实施期踩坑**(全部提炼到 [CLAUDE.md 已知坑](../../CLAUDE.md#已知坑)):
+1. macOS openrsync 协议 29 vs 远端 rsync 协议 31 不兼容 → brew install rsync(协议 32)
+2. Alibaba Cloud Linux 用 dnf 不是 apt
+3. nginx HTTPS 必须分两阶段 bootstrap(80-only conf → certbot --webroot → 完整 conf;一阶段会让 nginx -t fail 拖死全 nginx)
+4. monorepo ts 包用 NodeNext ESM `from './x.js'` 写法,生产部署前必须先 build 出 .js
+5. pm2 跑 ESM Node app 用 bash wrapper + dotenv-cli,`-r dotenv/config` + DOTENV_CONFIG_PATH 不可靠
+6. agent fetch slidev 用 localhost 不用 127.0.0.1(slidev v52 + Vite 5 默认只 bind [::1] IPv6)
+
+**性能优化**:nginx gzip 让 SPA 大 chunk 2.35MB → 632KB,加载时间 5.32s → 1.15s(-78%)
+
+**关闭后发现的架构议题**(已记入 roadmap):用户浏览器实测 Slidev iframe 内 dev mode 累计 30-40 秒首屏,Phase 11 进程池方案不解决此问题(编辑路径仍依赖 dev mode HMR)。真正解药是 Phase 10.5 候选"DeckRenderer Vue 组件自封装"——已在 roadmap 立条目,触发条件为 P10 实测体验不可接受。
 
 **Goal**:把当前已通过 Phase 9 审计的 Lumideck 单实例版本部署到 `47.120.26.143`(复用 quiz 服务器),通过 `lumideck.illegalscreed.cn` 子域对外提供完整 Web 体验:注册 / 登录 / 建 deck / AI 对话生成 / 切模板 / 历史版本。**不做** CI/CD、多实例、灰度回滚——这些全部留 Phase 11+。本 Phase 产物 = 一键部署脚本 + nginx/pm2 配置入库 + healthcheck + 每日 DB 备份 + runbook 文档。
 

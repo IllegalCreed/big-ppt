@@ -15,6 +15,7 @@
 > - Phase 8 依赖全量升级：[docs/plans/17-phase8-deps-upgrade.md](../plans/17-phase8-deps-upgrade.md)
 > - Phase 9 安全 Audit L3：[docs/plans/18-phase9-security-audit.md](../plans/18-phase9-security-audit.md) + [audit-report](../security/2026-04-audit-report.md)
 > - Phase 10 首次部署：[docs/plans/19-phase10-production-deploy.md](../plans/19-phase10-production-deploy.md) + [runbook](../runbooks/deploy.md)
+> - Phase 10.5 候选：Slidev 解耦 spike（_未启动_,触发条件见 Phase 10.5 章节）
 > - 技术债：[docs/plans/99-tech-debt.md](../plans/99-tech-debt.md)
 
 ---
@@ -515,28 +516,89 @@
 
 **验收条件**：
 
-- [x] 公网域名可访问，HTTPS 证书正确(Let's Encrypt 至 2026-07-26)
-- [x] 注册 → 登录 → 建 deck → 列出 → 登出 → 重登全流程通(API 层 smoke 6/6)
-- [ ] 编辑(改标题 / 切模板 / 切回历史版本)— **待用户浏览器手验**
-- [ ] 第二个浏览器登录另一个账号，进入相同 deck 看到等待页 — **待用户浏览器手验**
+- [x] 公网域名可访问，HTTPS 证书正确(Let's Encrypt 至 2026-07-26,certbot.timer 自动续期)
+- [x] 注册 → 登录 → 建 deck → 列出 → 登出 → 重登全流程通(API 层 smoke 6/6 + 用户浏览器手验)
+- [x] 编辑(改标题 / 切模板 / 切回历史版本)— 用户手验通过
+- [x] 第二浏览器无痕登录另一账号 → 进同 deck URL → OccupiedWaitingPage — 用户手验通过
 - [x] agent 崩溃/重启后，数据全在(`pm2 restart lumideck-agent` 后 `users.count=1` `decks.count=1` 保留)
-- [x] DB 备份文件每日一份，可恢复(crontab 已加 + 手动跑产 390 字节 valid sql.gz;mysqldump 8.0.45 装好)
+- [x] DB 备份文件每日一份，可恢复(crontab 02:00 + 手动跑产 390 字节 valid sql.gz;mysqldump 8.0.45 装好)
 - [x] **无任何敏感文件出现在 git 历史**(`git log -p -S` 全检查,真值 0 leak;.env.production.local gitignored)
 - [x] healthz status:ok(DB 34ms / Slidev 5ms;`/api/healthz` + `/healthz` 双挂载)
 
-**状态**：进行中(2026-04-27 服务端 6/8 通,UI 2 条等手验)
+**状态**：✅ 已完成(2026-04-27 关闭,详见 [plan 19](../plans/19-phase10-production-deploy.md))
+
+**实施摘要**(11 commit):
+
+- **代码侧**(3 commit):agent /api/healthz 增强版(DB ping + slidev reach + uptime + gitSha)+ deploy/ 脚手架(nginx 模板 + pm2 ecosystem + 远端脚本)+ scripts/deploy.sh 一键部署(creator/backend/ecosystem/healthz/all 子目标 + 安全防误触 confirm)
+- **跨过 6 条实施期踩坑**(全部提炼到 CLAUDE.md):
+  1. macOS openrsync 协议 29 vs 远端 rsync 协议 31 不兼容 → brew install rsync
+  2. Alibaba Cloud Linux 用 dnf 不是 apt
+  3. nginx HTTPS 必须分两阶段 bootstrap(80-only conf → certbot --webroot → 完整 conf,否则坏 conf 写入风险拖死全 nginx)
+  4. monorepo ts 包 NodeNext ESM 必须先 build 出 .js(packages/shared 加 build script)
+  5. pm2 跑 ESM Node app 用 bash wrapper + dotenv-cli,不要走 -r dotenv/config + DOTENV_CONFIG_PATH(不可靠)
+  6. agent fetch slidev 用 localhost 不用 127.0.0.1(slidev v52 + Vite 5 默认只 bind [::1] IPv6)
+- **基础设施落地**:阿里云 RDS 复用 quiz 实例新建 lumideck 库 + lumideck_prod_user(init-db.mjs 加 --allow-prod 保留护栏);Let's Encrypt certbot --webroot 申请;crontab 02:00 daily mysqldump 备份保留 30 天
+- **性能优化**:nginx gzip(JS/CSS gzip_types,大 chunk 2.35MB → 632KB,加载时间 5.32s → 1.15s = -78%);lumideck-slidev NODE_ENV=development 修复 Vite `__DEV__` build-time constant 注入
+- **测试增量**:agent 428 → 434(+6:healthz 5 + mount-integration 1)
 
 **依赖**：Phase 9 完成
 
 **不做什么**：
 
-- ❌ 多实例并发（Phase 11）
+- ❌ 多实例并发（Phase 11)
 - ❌ CDN / 多地区部署
-- ❌ 自动化 CI/CD 流水线（Phase 16+）
+- ❌ 自动化 CI/CD 流水线（Phase 16+)
+- ❌ 监控告警 / Sentry / Datadog（MVP 用 pm2 logs + healthz 巡检足够)
 
 ---
 
-## Phase 11：多 Slidev 实例 + 多用户并发 + 多实例部署切换
+## Phase 10.5(候选,待 spike)：Slidev 解耦 — DeckRenderer Vue 组件自封装
+
+> **状态**:候选 / **未启动 spike**
+> 触发条件:Phase 10 上线后实测编辑首屏体验(gzip 后 30-40s)无法接受,或开始规划 Phase 11 时一并评估
+
+**目标**:把 Slidev iframe 形态的预览器换成 creator SPA 内的 `<DeckRenderer markdown=".." templateId=".." />` Vue 组件,从根本上解决 dev mode 几百个 Vite module 累积加载慢的问题,顺便简化整套部署架构。
+
+**为什么**(架构层面的问题,Phase 11 不解决):
+
+- Phase 11"多 Slidev 实例 + 双路径"中,**编辑路径仍然必须跑 Slidev dev mode**(依赖 HMR),首屏几百个 Vite module 串行加载的问题没有改善
+- iframe 隔离带来的复杂度(跨 frame state 同步、cookie 鉴权代理、Phase 9-C sandbox 警告、agent 内 http-proxy 反代)在 Phase 11 不消除反而放大(进程池 N 倍 iframe)
+- Phase 7.5 公共组件库(grid/decoration/block 16 个 + layer-1 layout 5×2)本来就是普通 Vue 组件,接到 SPA 里直接用 = 主动权完全收回
+
+**核心思路**:
+
+- 自写 `<DeckRenderer>`:接收 markdown 文本 + templateId 作为 prop,内部解析 frontmatter + `---` 分页,按 layout 字段动态 `<component :is>` 渲染对应 layout(beitou-cover / jingyeda-content 等)
+- HMR 等价于 Vue 响应式 prop 更新(改 markdown → reactive trigger → 重渲染那一页,毫秒级)
+- 跟 creator 一起 vite build,Rollup 打包成几个大 chunk,加载秒开
+- iframe / agent http-proxy / lumideck-slidev 进程全部消失,部署架构大幅简化
+
+**前置 spike**(1-2 天,通过后才正式立 plan 20):
+
+- 写最小 `<DeckRenderer>` 组件渲染一个真实 deck:cover + content + back-cover 3 页
+- 全仓 `rg "$slidev|$nav|useNav\("` 统计两套模板对 Slidev runtime API 的依赖,**这是估算真实工作量的硬数据**
+- 验证 markdown 解析(unified/remark)+ layout 注册 + 公共组件渲染 + UnoCSS 配置迁移可行
+
+**预计工作量**(spike 通过后):5-8 天交付 Phase 10.5,**同时 Phase 11 的进程池实现废弃,Phase 11 范围缩水**(细化 deck-level 锁 + 容量 spike + 分享链接)
+
+**风险点**:
+
+- markdown parser 边界(嵌套代码块 / Slidev 特殊指令)— unified/remark 生态成熟
+- `<v-clicks>` / `<v-click>` 渐进动画 — 内部汇报场景几乎不用,可放弃或自写 30 行 Vue
+- Slidev 全屏演示模式 — 自写 `<PresentationMode>`,简单
+- **真正硬骨头**:templates layouts 用了多少 `$slidev.nav` 类 Slidev 注入 API,spike 期 grep 决定
+
+**不做什么**:
+
+- ❌ 完全替代 Slidev 所有功能(不做演讲者模式 / 录制 / 标注 / 黑板,我们是编辑器不是演讲软件)
+- ❌ 重写 Slidev md parser 的所有边缘 case(用 remark / unified 抹平)
+- ❌ 提供编辑器 inline 编辑 markdown(仍然 LLM 对话改 → DB 持久化 → 组件 reactive 刷新)
+
+---
+
+## Phase 11：多用户并发 + 分享链接 + 多实例部署切换
+
+> **依赖 Phase 10.5 spike 结果调整范围**:若 P10.5 落地,本 Phase 的"进程池 + LRU + 崩溃重拉 + 双路径切换"全部废弃(Vue 组件天然支持多用户),退化为"细化 deck-level 锁 + 分享链接 + 容量 spike"。
+
 
 **目标**：解决单实例天花板，让多用户真正并行编辑自己的 deck。同时上"公开分享"场景——只读链接不占编辑实例。多实例版本的部署切换并入本 Phase 尾段。
 
@@ -745,3 +807,5 @@
 | 2026-04-26 | **Phase 7.5 关闭后视觉打磨 + 文档回填**：用户跑双 deck demo 反馈多轮调整——(1) **图表色板 token 重设计**：退役 chart-primary-bg/border 双 token，新增 `--ld-color-chart-1..5` 五色色板 + chart-1-fill alpha 版（多分片饼图区分度由"主色色阶"升到"5 色异色错峰"），token spec 22 → 26（color 9 → 13），TOKENS.md / 两套 tokens.css / global.css class scope / Bar/Line/Pie 三组件读源全同步；(2) **PetalFour 三轮重构**：按用户参考图改为"2 行 × 4 列 grid"——左右内容区放胶囊标题 + items 列表（≤ 3 条）+ 中央 4 cell 对角 round 拼花瓣 + 上下行 align-self end/start 聚拢花心；(3) **内容块 6 改 5**：Callout 删除（与 Quote 重叠）/ KVList → Table（视觉更干净）/ 新增 PieChart（驱动了第 1 项色板设计）；(4) **components/ 目录分子目录**：grid / decoration / block / private 四类；(5) **Table 限行 ≤ 5**：slides 视口固定不加滚动，catalog 注明"超过 5 行请拆页或缩描述"；(6) **section-title 视觉拍板**：白底 + 大号章节编号（彩色）+ 标题文字。**文档回填**：plan 16 验收清单全勾（实际单测 484 远超 plan 估的 ≥ 425）/ 执行期偏离 8 条 / 踩坑与解决 8 条（其中 4 条提炼到 CLAUDE.md：`--ld-*` :root 级联 / markdown-it 多行字面量 / Slidev `--base` 对绝对路径无效 / CSS em 相对自身 font-size 撑爆）；CLAUDE.md 阶段进展升到 1–7.5 ✅ | 字节级一致 deterministic 路径已落，但 slides 视觉细节是 token + 几何 + 排版多轮迭代而非一次到位；token 26 项的最终数比 plan 22 项多出来的 4 个全是 7.5E 期色板设计驱动；CLAUDE.md 已知坑 4 条新规则覆盖了未来跨模板 / 跨组件库工作时最容易再撞的工具链层面问题             |
 | 2026-04-26 | **Phase 8 关闭**（按 [plan 17](../plans/17-phase8-deps-upgrade.md) 8 task / 7 commit:c9eb875 / 2b1f9d9 / 22c1192 / d19eeee / 5b240fb / 2f1f00e / 待 Task 8-I）。盘点后实际工作量比 plan 估的小约一半，drizzle/hono SDK/slidev cli/eslint/typescript-eslint/vue-tsc 等已最新无需动；真升的 14 项：8 patch/minor + 6 major。**关键决策**：(1) 不跟 npm `latest` dist-tag 升 beta（@antdv-next/x latest 指向 1.0.2-beta.1，显式锁 1.0.1）；(2) `@types/node` 不跟 25 跟 24 LTS（与 Node 22 LTS 部署目标一致）。**踩坑 6 条**:eslint-plugin-vue 10.9 新增 vue/no-mutating-props 检查暴露 DeckEditorCanvas.vue 真实 prop mutation anti-pattern（顺手用 emit 重写）/ Vitest 4 vi.mock 对 dynamic import 第二次绕过（src/mcp-registry/session.ts 改 static import）/ Vitest 4 unhandled rejection 严格化（mock 加 close()）/ Vitest 4 v8 coverage AST remapping 让 statements/branches 数字按节点级算分母变大微跌（门槛微调到实测 -1pt buffer）/ Vitest 4 test.poolOptions 移除（迁 maxWorkers + fileParallelism）/ npm latest 指向 beta 反模式。**P3-1 verdict**:✅ 已修(1.0.1 把 content 完全做成 prop API)。**P3-7 verdict**:UnoCSS 66.6.8 主线最新 = slidev 内嵌版 = 仍未修，workaround 保留。**测试数**:维持 482（361+71+38+3+9）；coverage agent 92.82/83.83/92.45/89.83 均过新门槛。**audit 前哨**:0 高危 / 15 moderate（全 transitive，详查留 Phase 9）。**Node engines** 全 6 个 package.json 固化 `>=22.0.0`。CLAUDE.md 已知坑加 3 条提炼（vitest 4 dynamic import + coverage 算法差异 + npm latest beta 反模式） | plan 17 关键发现:多数依赖已最新，工作量缩水；vitest 4 跨 major 引入的工具链行为变化是真硬骨头（dynamic import 拦截 / poolOptions / coverage 算法），但都用源码或配置改动绕过，未触发 plan 的"失败立即退回"路径 |
 | 2026-04-26 | **Phase 9 关闭**（按 [plan 18](../plans/18-phase9-security-audit.md) 8 task / 8 commit：bdae53b 9-A / 82387d2 9-B / a0d3e6f 9-C / c41c68d 9-F / 7ed2e95 9-F2 / e2e9684 9-D / 6c25776 9-E / 1336e35 9-G）。**意外发现 2 个**：(1) MCP server 全用户共享单文件 = OWASP A01 漏洞（Phase 5 设计遗漏，不在 plan 原 7 缺口里，9-F 整套 per-user DB 改造修复）；(2) 9-B 中 Hono `slides.use('*', mw)` 经 `app.route('/api', sub)` 挂载后泄漏到 /api/* 全路径，e2e happy-path 一开始挂在 list-templates 401（9-C 联动修 + 加 mount-integration 测防再犯 + CLAUDE.md 已知坑提炼）。**关键决策**：(1) **LLM 刻意不挂 rate limit**——API key 是用户自有自掏腰包，agent 不应在用户和自己 key 之间加一层（用户复核纠正）；(2) **CSP 仅 Report-Only**（Slidev iframe 含 inline + eval，强制易 break）；(3) **CORS 不加 middleware**（同源 + Vite proxy 浏览器视角同源不触发 preflight）；(4) **P3-15 coverage 拉回放弃**——长期维持新基线 lines 90 / branches 80 / functions 85 / statements 87，避免为凑数字写无意义测试。**踩坑 5 条**：Hono wildcard 泄漏（提炼 CLAUDE.md）/ originCheck 加全局后 e2e webServer 复用导致 rate-limit 跨 spec 累计撞限（webServer env 加 RATE_LIMIT_ENABLED=false）/ 集成测 `app.fetch` shim 不带 Origin 被拦 403（shim 自动补 localhost）/ mysql2 没 hoist 让 db:push 报错（.npmrc public-hoist）/ logger session 字段被 redact 误伤（从默认列表移除 session）。**测试数**:482 → 557（+75：agent +67 / creator +4 / e2e/slidev/shared 不变）；OWASP Top 10 10/10 ✅；产出 [docs/security/2026-04-audit-report.md](../security/2026-04-audit-report.md) + checklist + gitleaks/pnpm-audit/knip baseline；4 一次性脚本归档 docs/archive/scripts/。CLAUDE.md 阶段进展升到 1–9 ✅ | Phase 9 真正价值不在 plan 列的 7 缺口而在**审计期发现的 2 个意外漏洞**——MCP per-user 隔离（A01）+ Hono wildcard middleware 泄漏；后者证明"集成 mount 测试"不可缺（sub-router 单测撞不到的 bug） |
+| 2026-04-27 | **Phase 10 关闭**（按 [plan 19](../plans/19-phase10-production-deploy.md) 11 commit:608297a 10-A healthz / 96c0da2 10-B deploy 脚手架 / 569ce68 10-D deploy.sh / eec6691 runbook+roadmap 入口 / 7400b35 RDS 路径 / 61f311a nginx 两阶段 bootstrap / 3efc857 跨过 6 踩坑 / fe2ef86 db-backup pipefail / a3b313e 验收回填 / 9b7af19 NODE_ENV=development / 6ba5d15 nginx gzip）。**部署成果**:`https://lumideck.illegalscreed.cn` 上线、HTTPS Let's Encrypt 自动续期、阿里云 RDS 复用 quiz 实例新建 lumideck 库、agent + slidev pm2 双进程、crontab 02:00 daily mysqldump 备份保留 30 天。**6 条实施期踩坑**(全部提炼 CLAUDE.md 已知坑):(1) macOS openrsync 协议 29 vs 远端 31 → brew rsync;(2) 远端 Alibaba Cloud Linux 用 dnf 不是 apt;(3) **nginx HTTPS 必须分两阶段 bootstrap**(含 ssl_certificate 路径但证书未申请时 nginx -t fail 直接拖死全 nginx,坏 conf 写入是潜在事故源);(4) **monorepo ts 包用 NodeNext ESM `from './x.js'` 写法生产部署前必须 build 出 .js**(packages/shared 加 build script);(5) **pm2 跑 ESM Node app 用 bash wrapper + dotenv-cli**,不要走 -r dotenv/config + DOTENV_CONFIG_PATH 不可靠;(6) **agent fetch slidev 用 localhost 不用 127.0.0.1**,slidev v52 + Vite 5 默认只 bind [::1] IPv6。**性能优化**:nginx gzip 让 SPA 大 chunk 2.35MB → 632KB,加载时间 5.32s → 1.15s(-78%)。**测试增量**:agent 428 → 434(+6:healthz 5 + mount-integration 1)。CLAUDE.md 阶段进展升到 1–10 ✅                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | 实施期 plan 19 设计假设(本地 MySQL / `-r dotenv/config` / shared 不打包 / 一阶段 nginx)全部需要修正,但每条都成为长期受益的工程改进而非 bandage |
+| 2026-04-27 | **新增 Phase 10.5 候选**(Slidev 解耦 spike,未启动)。Phase 10 上线浏览器实测发现:Slidev iframe 内 Vite dev mode 加载几百个 .vue / .ts module(Slidev client + 两套模板 + 公共组件库),即使 gzip 后首屏仍 30-40 秒。**关键洞察**:Phase 11 的"多 Slidev 进程池 + 双路径"**不解决编辑路径首屏慢问题**,因为编辑路径仍依赖 dev mode HMR。真正的解药是把 Slidev iframe 换成 creator SPA 内的 `<DeckRenderer>` Vue 组件——markdown 解析 + layout 注册 + Phase 7.5 公共组件库直接渲染,跟 creator 一起 vite build,Rollup 打包秒开,reactive prop 替代 HMR。**顺序建议**:Phase 10.5 在 Phase 11 之前做(避免 P11 进程池实现做完又被废,沉没成本 50%);先 1-2 天 spike(写最小 DeckRenderer + grep 两套模板对 `$slidev` runtime API 的依赖)验证可行性后才正式立 plan 20;通过则 P10.5 5-8 天 + P11 缩水到 3-5 天。**roadmap 同步**:顶部引用列表加 Phase 10.5 候选条目;Phase 11 标题与依赖说明同步("多 Slidev 实例" → "多用户并发 + 分享链接 + 多实例部署切换",并加注 `依赖 Phase 10.5 spike 结果调整范围`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | 用户 P10 上线后实测发现 dev mode 首屏不可避免地慢(几百个 round trip),提出"提取 Slidev 核心逻辑封装成 Vue 组件"的方向;Claude 评估后认同 — 编辑路径 dev mode 是 P11 双路径方案的盲点,自封装是真正的架构解药;但工作量大且有 markdown parser 边界 / Slidev runtime API 依赖等风险,故先 spike 不直接立 plan |

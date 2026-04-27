@@ -222,4 +222,4 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 
 ## 阶段进展
 
-详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–9 ✅，Phase 10（首次部署）排队中。
+详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–10 ✅(2026-04-27 lumideck.illegalscreed.cn 上线),Phase 10.5(Slidev 解耦 spike)候选未启动,Phase 11(多用户并发 + 分享)依赖 Phase 10.5 spike 结果调整范围。
