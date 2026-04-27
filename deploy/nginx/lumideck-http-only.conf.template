@@ -1,0 +1,23 @@
+# Phase 10 bootstrap 阶段:仅 80 端口,用于 certbot --webroot ACME challenge。
+# certbot 申请证书成功后,install-server.sh 会用 lumideck.conf.template
+# (含 443 ssl block)覆盖此文件 + reload nginx。
+#
+# 占位符:${DOMAIN} / ${WEB_ROOT}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    # ACME challenge 需要的 webroot(certbot 把验证文件落在 ${WEB_ROOT}/.well-known/acme-challenge/)
+    location /.well-known/acme-challenge/ {
+        root ${WEB_ROOT};
+        try_files $uri =404;
+    }
+
+    # 其他路径在 bootstrap 阶段回 503,提示用户证书申请中
+    location / {
+        return 503 "Lumideck bootstrap in progress (HTTPS not yet provisioned)";
+        add_header Content-Type text/plain;
+    }
+}
