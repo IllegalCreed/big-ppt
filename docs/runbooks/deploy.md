@@ -46,26 +46,40 @@ ECS 安全组 **永远只需要 80 / 443 / 22**,其他全部本机回环。
 | ECS 安全组 | 阿里云 ECS 控制台,确认 80 / 443 / 22 已开 | 浏览器 `http://47.120.26.143` 看到默认 nginx 页(若 quiz 也在跑就不一定) |
 | 服务器装好基础软件 | quiz 服务器已有 nginx / certbot / pm2 / Node 22+ / pnpm / mysql | `ssh root@47.120.26.143 'which nginx certbot pm2 node pnpm mysql'` 全有 |
 
-### 1.2 远端建库
+### 1.2 RDS 建库(阿里云 RDS,与 quiz 共用同一实例)
 
+> 实际架构是阿里云 RDS(`rm-bp1ezwg4a7ugd67mx4o.mysql.rds.aliyuncs.com:3306`),
+> 不是 47.120.26.143 上的本地 MySQL。47.120.26.143 上不需要也没装 mysql client。
+
+**推荐路径:阿里云 RDS 控制台网页操作**(无需 root 密码暴露):
+
+1. 打开阿里云 RDS 控制台 → 选实例 `rm-bp1ezwg4a7ugd67mx4o`
+2. **账号管理** → 创建账号:
+   - 账号:`lumideck_prod_user`
+   - 类型:**普通账号**
+   - 密码:点"生成"获取强密码,**记到密码管理器**
+3. **数据库管理** → 创建数据库:
+   - 库名:`lumideck`
+   - 字符集:`utf8mb4`
+   - 排序规则:`utf8mb4_unicode_ci`
+   - 授权账号:勾选刚才的 `lumideck_prod_user`,权限设 `读写`
+4. 校验:登录 RDS 控制台的 DMS(数据管理服务),用 `lumideck_prod_user` 凭据连接,跑 `SELECT 1`。
+
+**或者 SSH + mysql client 路径**(若有 root 凭据):
 ```bash
+ssh root@47.120.26.143 'apt-get install -y mysql-client-core-8.0'
 ssh root@47.120.26.143
-
-# 生成 lumideck DB 密码,记到密码管理器
-DB_PASS=$(openssl rand -hex 16)
-echo "lumideck DB 密码: ${DB_PASS}"
-
-# MySQL 建库 + 用户
-mysql -uroot -p <<SQL
+RDS_HOST=rm-bp1ezwg4a7ugd67mx4o.mysql.rds.aliyuncs.com
+DB_PASS=$(openssl rand -hex 16); echo "lumideck DB 密码: ${DB_PASS}"
+mysql -h "${RDS_HOST}" -uroot -p <<SQL
 CREATE DATABASE IF NOT EXISTS lumideck CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'lumideck_prod_user'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';
-GRANT ALL PRIVILEGES ON lumideck.* TO 'lumideck_prod_user'@'127.0.0.1';
+CREATE USER IF NOT EXISTS 'lumideck_prod_user'@'%' IDENTIFIED BY '${DB_PASS}';
+GRANT ALL PRIVILEGES ON lumideck.* TO 'lumideck_prod_user'@'%';
 FLUSH PRIVILEGES;
 SQL
-
-# 校验
-mysql -ulumideck_prod_user -p"${DB_PASS}" -h 127.0.0.1 lumideck -e "SELECT 1"
 ```
+
+⚠️ RDS 用户的 host 部分用 `'%'`(任意源)而不是 `'127.0.0.1'`,因为 ECS 通过 RDS 内网域名访问,RDS 视角的 client IP 不是 loopback。RDS 默认走 IP 白名单层(在 RDS 控制台配 ECS 内网 IP 白名单)。
 
 ### 1.3 本地推一次 deploy/ 到远端
 
@@ -113,12 +127,13 @@ ssh root@47.120.26.143
 # 生成两个 32 字节随机密钥
 SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 APIKEY_MASTER=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-DB_PASS="<上一步生成的 lumideck DB 密码>"   # 从密码管理器复制
+DB_PASS="<RDS lumideck_prod_user 密码,从密码管理器复制>"
+RDS_HOST=rm-bp1ezwg4a7ugd67mx4o.mysql.rds.aliyuncs.com   # 与 quiz 共用 RDS 实例
 
-# 写入(此处的 here-doc 要在 ssh 进去后的 shell 跑;cat > 是关键)
+# 写入(在 ssh 进去后的远端 shell 跑)
 cat > /root/server/lumideck/packages/agent/.env.production.local <<EOF
 NODE_ENV=production
-DATABASE_URL=mysql://lumideck_prod_user:${DB_PASS}@127.0.0.1:3306/lumideck
+DATABASE_URL=mysql://lumideck_prod_user:${DB_PASS}@${RDS_HOST}:3306/lumideck
 SESSION_SECRET=${SESSION_SECRET}
 APIKEY_MASTER_KEY=${APIKEY_MASTER}
 AGENT_PORT=4000
@@ -129,7 +144,7 @@ EOF
 chmod 600 /root/server/lumideck/packages/agent/.env.production.local
 
 # 不留 history
-unset SESSION_SECRET APIKEY_MASTER DB_PASS
+unset SESSION_SECRET APIKEY_MASTER DB_PASS RDS_HOST
 history -c
 
 exit
