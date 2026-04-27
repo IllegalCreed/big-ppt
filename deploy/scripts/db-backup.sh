@@ -11,6 +11,8 @@
 #   - 临时 my.cnf chmod 600 + trap EXIT 清理
 
 set -euo pipefail
+# pipefail 已在上行包含,显式再说明:mysqldump | gzip 任一失败整个 pipe 失败,
+# 否则 mysqldump 找不到时 gzip 仍读空 stdin 输出 20 字节空 gzip,backup 静默坏。
 
 ENV_FILE="/root/server/lumideck/packages/agent/.env.production.local"
 DEST="/root/backups/lumideck"
