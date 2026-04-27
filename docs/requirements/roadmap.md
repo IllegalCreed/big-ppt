@@ -13,6 +13,8 @@
 > - Phase 7 模板重命名 + 二套 + UI + E2E：[docs/plans/13](../plans/13-phase7-template-rename.md) / [14](../plans/14-phase7c-template-ui.md) / [15](../plans/15-phase7d-e2e-and-undo-fix.md)
 > - Phase 7.5 模板分层重构（公共组件库 POC）：[docs/plans/16-phase75-template-layering.md](../plans/16-phase75-template-layering.md)
 > - Phase 8 依赖全量升级：[docs/plans/17-phase8-deps-upgrade.md](../plans/17-phase8-deps-upgrade.md)
+> - Phase 9 安全 Audit L3：[docs/plans/18-phase9-security-audit.md](../plans/18-phase9-security-audit.md) + [audit-report](../security/2026-04-audit-report.md)
+> - Phase 10 首次部署：[docs/plans/19-phase10-production-deploy.md](../plans/19-phase10-production-deploy.md) + [runbook](../runbooks/deploy.md)
 > - 技术债：[docs/plans/99-tech-debt.md](../plans/99-tech-debt.md)
 
 ---
@@ -493,6 +495,9 @@
 ---
 
 ## Phase 10：首次部署（单实例上线，原 Phase 5.5 下沉）
+
+> 实施计划：[plan 19](../plans/19-phase10-production-deploy.md) ｜ 操作指南：[runbook](../runbooks/deploy.md)
+> 服务器：复用 quiz `47.120.26.143` ｜ 域名：`lumideck.illegalscreed.cn`
 
 **目标**：把 Phase 5 完成的单用户+占用锁版本（+ Phase 6-9 的模板+依赖+Audit）真正放到服务器上跑起来，提供对内可用的 MVP，验证端到端链路。
 
