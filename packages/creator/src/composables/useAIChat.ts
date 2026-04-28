@@ -234,6 +234,11 @@ async function callLLMStream(
       const errJson = JSON.parse(errText)
       errMsg = errJson.error?.message || errMsg
     } catch {}
+    // 上游 429 / 文案命中"速率限制 / 频率 / rate limit / quota" → 加前缀让用户分辨
+    // 不是 Lumideck 在限流（agent LLM 代理刻意没挂 rate limit，详见 routes/llm.ts 注释）
+    if (response.status === 429 || /速率限制|频率|rate.?limit|quota/i.test(errMsg)) {
+      errMsg = `[LLM 服务商上游限制，稍候重试或在设置里更换 provider / 升级套餐] ${errMsg}`
+    }
     throw new Error(errMsg)
   }
 
@@ -356,7 +361,15 @@ export function useAIChat() {
   const status = ref<AgentStatus>('idle')
   const statusText = ref('')
 
-  const isGenerating = computed(() => status.value !== 'idle')
+  /**
+   * 只在"AI 真在干活"的三种状态下转圈。
+   * Why：error / cancelled 是终态（session 已结束、abortController 已被 finally 清掉），
+   * 此时 loading 不应再转。历史上写成 `!== 'idle'` 把 error/cancelled 也算 generating，
+   * 导致 LLM 上游 429 抛错后 ChatUI 假转圈，用户以为还在跑。
+   */
+  const isGenerating = computed(() =>
+    ['thinking', 'calling_tool', 'streaming'].includes(status.value),
+  )
 
   let abortController: AbortController | null = null
 
@@ -367,7 +380,13 @@ export function useAIChat() {
   const toolSteps = ref<ToolStep[]>([])
 
   async function sendMessage(userText: string) {
-    if (status.value !== 'idle') return
+    // 阻止重入只看"真在跑"的三种状态；error / cancelled 终态允许直接重发
+    if (['thinking', 'calling_tool', 'streaming'].includes(status.value)) return
+    // 上一轮 error / cancelled 留下的 statusText 在新一轮开始前清掉，避免误导
+    if (status.value !== 'idle') {
+      status.value = 'idle'
+      statusText.value = ''
+    }
 
     // 首次发送前拉一次 llm-settings（包含当前 model / provider）；后续用缓存
     await loadSettingsOnce()
