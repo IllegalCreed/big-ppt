@@ -22,7 +22,14 @@ log.use('/log-event', logEventLimit)
 log.post('/log-event', async (c) => {
   try {
     const raw = (await c.req.json()) as LogPayload
-    const result = handleLogEvent(raw)
+    // requireAuth 已挂在前面,user 必非空;deckId 来自 session.activeDeckId(可能 null,
+    // 若用户尚未 activate 任何 deck —— 比如刚登录还在 deck 列表页)
+    const user = c.get('user')!
+    const session = c.get('session')!
+    const result = handleLogEvent(raw, {
+      userId: user.id,
+      deckId: session.activeDeckId,
+    })
     return c.json(result)
   } catch (err) {
     return c.json({ success: false, error: (err as Error).message }, 500)

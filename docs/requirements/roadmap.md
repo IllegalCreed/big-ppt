@@ -770,6 +770,7 @@
 - 自动化 CI/CD 流水线（GitHub Actions 自动部署）
 - LLM 微调 / 自托管模型（Ollama / vLLM）+ 多 provider 用量统计与成本看板
 - MCP server 健康监控 / SLA 看板
+- **日志系统体系化**(用户量上 50+ 后再做):当前 agent 业务日志走 jsonl 文件(`creator-YYYY-MM-DD.jsonl` 按天 rotate + payload 单文件分子目录),Phase 10 已加 ctx 派生的 userId / deckId 索引字段(`jq 'select(.userId == 5)'` 可过滤),pm2 进程日志走 pm2-logrotate。**当前不足**:跨用户/跨 deck 检索仍要 grep + jq 手撸,无 admin 查询页;`/root/server/lumideck/logs/` 文件无自动清理(creator-*.jsonl 按日期分但永不删);`logs/payloads/<session>/` 子目录会无限堆积。**Phase 16+ 候选改造**:(a) 新增 `agent_events` 表持久化索引行(deckId/userId/sessionId/kind/ts 索引)+ payload 仍落 fs,db 只存路径;(b) admin 查询页(按 user / deck / 时间 / kind 过滤);(c) 加 cron 清理 N 天前的 creator-*.jsonl + payloads/*;(d) 接 Loki / OpenSearch(过早,内部场景过度工程化)
 - `slides.md.history` 环形缓冲升级（P2-2 已随 Phase 5 的 deck_versions 天然解决，可复盘是否还需要文件级 undo）
 
 ---

@@ -59,6 +59,51 @@ describe('handleLogEvent', () => {
     // 非法字符都应被替换成 _
     expect(sessionDirs[0]).toMatch(/^[a-zA-Z0-9_-]+$/)
   })
+
+  it('Phase 10: 索引行注入 ctx 派生的 userId / deckId', () => {
+    handleLogEvent(
+      { kind: 'user_message', session: 'sess-X', text: 'hi' },
+      { userId: 7, deckId: 42 },
+    )
+    const indexFile = fs.readdirSync(tmpLogs).find((f) => f.startsWith('creator-'))!
+    const line = JSON.parse(fs.readFileSync(path.join(tmpLogs, indexFile), 'utf-8').trim())
+    expect(line.userId).toBe(7)
+    expect(line.deckId).toBe(42)
+  })
+
+  it('Phase 10: ctx.deckId 可为 null(用户未 activate deck 时,如刚登录还在列表页)', () => {
+    handleLogEvent({ kind: 'user_message', session: 'sess-Y' }, { userId: 3, deckId: null })
+    const indexFile = fs.readdirSync(tmpLogs).find((f) => f.startsWith('creator-'))!
+    const line = JSON.parse(fs.readFileSync(path.join(tmpLogs, indexFile), 'utf-8').trim())
+    expect(line.userId).toBe(3)
+    expect(line.deckId).toBeNull()
+  })
+
+  it('Phase 10: ctx 派生字段强制覆盖 raw 里的同名字段(防伪)', () => {
+    // 前端"恶意"传 userId=999 deckId=888 试图伪造身份;后端必须以 ctx 为准
+    handleLogEvent(
+      {
+        kind: 'user_message',
+        session: 'sess-Z',
+        userId: 999,
+        deckId: 888,
+      } as never,
+      { userId: 5, deckId: 10 },
+    )
+    const indexFile = fs.readdirSync(tmpLogs).find((f) => f.startsWith('creator-'))!
+    const line = JSON.parse(fs.readFileSync(path.join(tmpLogs, indexFile), 'utf-8').trim())
+    expect(line.userId).toBe(5)
+    expect(line.deckId).toBe(10)
+  })
+
+  it('Phase 10: 不传 ctx 时仍可用(测试 / 旧调用方兼容)', () => {
+    handleLogEvent({ kind: 'browser_error', session: 'sess-no-ctx' })
+    const indexFile = fs.readdirSync(tmpLogs).find((f) => f.startsWith('creator-'))!
+    const line = JSON.parse(fs.readFileSync(path.join(tmpLogs, indexFile), 'utf-8').trim())
+    expect(line.userId).toBeUndefined()
+    expect(line.deckId).toBeUndefined()
+    expect(line.kind).toBe('browser_error')
+  })
 })
 
 describe('getLatestSession', () => {

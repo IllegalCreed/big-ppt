@@ -28,16 +28,31 @@ export interface LogEventResult {
 }
 
 /**
+ * 后端从 auth/session ctx 派生的可信字段,会**覆盖**前端 raw 里的同名字段(防伪)。
+ * 前端传的 userId / deckId 可能是任意值,后端只信 session cookie 派生的身份。
+ */
+export interface LogEventContext {
+  /** 来自 ctx.var.user.id */
+  userId: number | null
+  /** 来自 ctx.var.session.activeDeckId */
+  deckId: number | null
+}
+
+/**
  * 处理一条事件：大 payload 单独落盘到 logs/payloads/<session>/，索引行只保留 payload_file 引用。
  *
  * Phase 9-E（A09）：写盘前 redact + truncate
  *  - 递归过滤 password / apiKey / authorization / cookie / token / secret 等字段
  *  - payload 单文件 ≤ 64KB（超出截断 + 标记 truncated）
  *  - indexFields 也走 redact（防 logger 调用方在顶层字段塞凭据）
+ *
+ * Phase 10 后续:索引行强制注入 userId / deckId(从 ctx 派生,不信前端值)。
+ *  - 改善检索:能直接 jq 'select(.userId == 5)' 看某用户全部事件
+ *  - 防伪:前端传的 userId/deckId 字段会被覆盖
  */
 const PAYLOAD_MAX_BYTES = 64 * 1024
 
-export function handleLogEvent(raw: LogPayload): LogEventResult {
+export function handleLogEvent(raw: LogPayload, ctx?: LogEventContext): LogEventResult {
   const { logsDir } = getPaths()
   ensureDir(logsDir)
   const { payload, ...indexFields } = raw
@@ -57,10 +72,18 @@ export function handleLogEvent(raw: LogPayload): LogEventResult {
     )
   }
 
-  const safeIndex = redact({ ts: new Date().toISOString(), ...indexFields }) as Record<
-    string,
-    unknown
-  >
+  // 后端 ctx 派生的可信字段最后写入,**覆盖** raw 里的任何同名字段
+  const trusted: Record<string, unknown> = {}
+  if (ctx) {
+    trusted.userId = ctx.userId
+    trusted.deckId = ctx.deckId
+  }
+
+  const safeIndex = redact({
+    ts: new Date().toISOString(),
+    ...indexFields,
+    ...trusted,
+  }) as Record<string, unknown>
   const line = JSON.stringify(safeIndex)
   fs.appendFileSync(currentLogFile(), `${line}\n`)
   return {
