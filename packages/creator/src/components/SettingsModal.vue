@@ -290,6 +290,7 @@ onMounted(() => {
                 :key="srv.id"
                 :server="srv"
                 :llm="settings"
+                :has-llm-key="hasStoredApiKey"
                 @update="handleUpdate(srv.id, $event)"
               />
             </div>

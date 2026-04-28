@@ -197,6 +197,13 @@ export interface McpServerStatus {
 
 export interface McpServerWithStatus extends McpServerConfig {
   status: McpServerStatus
+  /**
+   * 后端在 GET 时计算:headers 任一 value 含 `$LLM_KEY` sentinel 即为 true。
+   * 前端据此显示"复用 LLM Key"复选框为已勾选状态、隐藏 API Key 输入框。
+   * 持久化"复用语义":sentinel 直接落库(不在 PATCH 时替换),
+   * registry.activate 连接 MCP 时才把 sentinel 解析成真 LLM apiKey 注入 HTTP header。
+   */
+  reuseLlmKey: boolean
 }
 
 // === /api/mcp/servers ===

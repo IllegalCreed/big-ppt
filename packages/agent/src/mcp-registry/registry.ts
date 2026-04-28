@@ -1,8 +1,19 @@
 // packages/agent/src/mcp-registry/registry.ts
+import { eq } from 'drizzle-orm'
 import type { McpServerConfig, McpServerStatus } from '@big-ppt/shared'
 import type { McpServerRepo } from '../mcp-server-repo/types.js'
 import { registerForUser, unregisterForUser } from '../tools/registry.js'
 import { McpSession } from './session.js'
+import { getDb, users } from '../db/index.js'
+import { decryptApiKey } from '../crypto/apikey.js'
+import { UNSUPPORTED_SERVER_IDS } from '../mcp-server-repo/presets.js'
+
+/**
+ * 复用 LLM Key sentinel,必须和 packages/agent/src/routes/mcp.ts 一致。
+ * activate() 在 connect 之前把 headers value 里的 `$LLM_KEY` 替换为用户当前 LLM apiKey,
+ * 这样持久化的是 sentinel(语义),实际连接用的是当下的真 key(用户后续改 key 自动同步)。
+ */
+const LLM_KEY_SENTINEL = '$LLM_KEY'
 
 /**
  * Phase 9-F：每个 user 一个 McpRegistry 实例（A01 修复）。
@@ -20,7 +31,11 @@ export class McpRegistry {
 
   async initialize(): Promise<void> {
     const all = await this.repo.list(this.userId)
-    await Promise.all(all.filter((c) => c.enabled).map((c) => this.activate(c)))
+    await Promise.all(
+      all
+        .filter((c) => c.enabled && !UNSUPPORTED_SERVER_IDS.has(c.id))
+        .map((c) => this.activate(c)),
+    )
   }
 
   /**
@@ -69,7 +84,8 @@ export class McpRegistry {
       console.warn(`[mcp-registry] duplicate config.id: ${config.id}, skipping`)
       return
     }
-    const session = new McpSession(config)
+    const resolved = await this.resolveSentinels(config)
+    const session = new McpSession(resolved)
     this.sessions.set(config.id, session)
     await session.connect()
     if (session.status.state !== 'ok') return
@@ -80,6 +96,46 @@ export class McpRegistry {
         parameters: { ...t.inputSchema, properties: t.inputSchema.properties ?? {} },
         exec: async (args) => session.callTool(t.name, args),
       })
+    }
+  }
+
+  /**
+   * 把 headers 里的 `$LLM_KEY` sentinel 替换为用户当前 LLM apiKey。
+   * 没设过 LLM apiKey → 留原样,connect 必失败,session.status='error',UI 显示错误,
+   * 比悄悄连不上更好排查。
+   */
+  private async resolveSentinels(config: McpServerConfig): Promise<McpServerConfig> {
+    const headers = config.headers ?? {}
+    let needsResolve = false
+    for (const v of Object.values(headers)) {
+      if (typeof v === 'string' && v.includes(LLM_KEY_SENTINEL)) {
+        needsResolve = true
+        break
+      }
+    }
+    if (!needsResolve) return config
+    const llmKey = await this.fetchLlmKey()
+    if (!llmKey) return config
+    const resolved: Record<string, string> = {}
+    for (const [k, v] of Object.entries(headers)) {
+      resolved[k] = typeof v === 'string' ? v.replaceAll(LLM_KEY_SENTINEL, llmKey) : v
+    }
+    return { ...config, headers: resolved }
+  }
+
+  private async fetchLlmKey(): Promise<string | null> {
+    const db = getDb()
+    const [u] = await db
+      .select({ llmSettings: users.llmSettings })
+      .from(users)
+      .where(eq(users.id, this.userId))
+      .limit(1)
+    if (!u || !u.llmSettings) return null
+    try {
+      const parsed = JSON.parse(decryptApiKey(u.llmSettings)) as { apiKey?: string }
+      return parsed.apiKey?.trim() || null
+    } catch {
+      return null
     }
   }
 

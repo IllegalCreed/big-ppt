@@ -4,27 +4,50 @@ import { computed, ref, watch } from 'vue'
 import type { LLMSettings, McpServerWithStatus, UpdateMcpServerRequest } from '@big-ppt/shared'
 import { Check, ChevronDown, Copy, Eye, EyeOff } from 'lucide-vue-next'
 
-const props = defineProps<{ server: McpServerWithStatus; llm: LLMSettings }>()
+const props = defineProps<{
+  server: McpServerWithStatus
+  llm: LLMSettings
+  /**
+   * 后端 GET /api/auth/llm-settings 返回的 hasApiKey（用户已保存了 LLM apiKey）。
+   * 因为出于安全，LLM apiKey 明文从不回传前端，要判断"能否复用"必须靠这个布尔位。
+   */
+  hasLlmKey: boolean
+}>()
 const emit = defineEmits<{ update: [patch: UpdateMcpServerRequest] }>()
 
 const REDACTED_VALUE = '***'
+/**
+ * 复用 LLM Key sentinel：勾选"复用 LLM Key"时，前端在 Authorization 里发
+ * `Bearer $LLM_KEY`，后端 mcp.ts 识别后从 users.llmSettings 解密取 apiKey 替换。
+ * 必须和 packages/agent/src/routes/mcp.ts 的 LLM_KEY_SENTINEL 保持一致。
+ */
+const LLM_KEY_SENTINEL = '$LLM_KEY'
 
 /**
  * 后端 GET /mcp/servers 会把 headers 的 value 脱敏为 `***`（Authorization 值变
  * `Bearer ***`），避免明文暴露。前端语义：
  * - input 初始化为空串 + 占位符提示"已设置（留空保留原值）"
- * - hasExistingKey = 后端告知当前已有非空 key
+ * - hasExistingKey = 后端告知当前已有非空 key 且**不是 sentinel**(sentinel 不算真 key)
  * - applyKey() 发送时：若用户没填且 hasExistingKey，就发 `Bearer ***` → 后端
  *   识别为"保留旧值"；否则发新值
  */
 const authHeaderValue = computed(() => props.server.headers.Authorization ?? '')
-const hasExistingKey = computed(() => authHeaderValue.value !== '')
+// reuseLlmKey 模式下,headers 里是 sentinel(GET 也被脱敏成 ***),不算用户填的真 key
+const hasExistingKey = computed(() => authHeaderValue.value !== '' && !props.server.reuseLlmKey)
 
 const apiKey = ref('') // 用户当前在 input 里打的新值；空 = 不改
-const reuseLlmKey = ref(false) // 脱敏后无法再自动判断是否等于 LLM key
+const reuseLlmKey = ref(props.server.reuseLlmKey)
 const showKey = ref(false)
 const copied = ref(false)
 const expanded = ref(false)
+
+// 后端 reuseLlmKey 状态变化（refresh 后）→ 同步本地 ref，让复选框反映持久化语义
+watch(
+  () => props.server.reuseLlmKey,
+  (v) => {
+    reuseLlmKey.value = v
+  },
+)
 
 watch(
   () => props.server.headers.Authorization,
@@ -34,22 +57,29 @@ watch(
   },
 )
 
+/**
+ * 仅 zhipu-* 预置 + LLM provider=zhipu + 用户已保存 LLM apiKey 时显示复用复选框。
+ * 用 hasLlmKey（后端的 hasApiKey 布尔位）判断，因 LLM apiKey 明文从不回传 →
+ * props.llm.apiKey 永远是空串，不能拿来判断。
+ */
 const canReuse = computed(
   () =>
-    props.server.id.startsWith('zhipu-') && props.llm.provider === 'zhipu' && !!props.llm.apiKey,
+    props.server.id.startsWith('zhipu-') &&
+    props.llm.provider === 'zhipu' &&
+    props.hasLlmKey,
 )
 
 /**
  * 返回要发给后端的 Authorization header 值：
- * - 勾了"复用 LLM Key" → 直接用 LLM 明文（`Bearer xxx`）
+ * - 勾了"复用 LLM Key" → 发 sentinel `Bearer $LLM_KEY`，后端解密 LLM key 注入
  * - 用户在 input 里填了新值 → 新值（`Bearer xxx`）
  * - input 空且后端已有 key → 返回 `***`（整个 value，和后端 GET 脱敏值一致）
  *   后端识别 value === '***' 且 key 在旧 headers 里 → 保留原值
  * - input 空且后端没 key → 空串（清空 header）
  */
 function buildAuthValue(): string {
-  if (reuseLlmKey.value && canReuse.value && props.llm.apiKey) {
-    return `Bearer ${props.llm.apiKey}`
+  if (reuseLlmKey.value && canReuse.value) {
+    return `Bearer ${LLM_KEY_SENTINEL}`
   }
   if (apiKey.value !== '') return `Bearer ${apiKey.value}`
   if (hasExistingKey.value) return REDACTED_VALUE
@@ -58,7 +88,7 @@ function buildAuthValue(): string {
 
 /** 是否有可用的 key（真的或保留的）供启用按钮判断 */
 const hasUsableKey = computed(() => {
-  if (reuseLlmKey.value && canReuse.value) return !!props.llm.apiKey
+  if (reuseLlmKey.value && canReuse.value) return true
   return apiKey.value !== '' || hasExistingKey.value
 })
 
@@ -146,7 +176,7 @@ async function copyKey() {
         <input
           type="checkbox"
           :checked="server.enabled"
-          @change="toggleEnabled(($event.target as HTMLInputElement).checked)"
+          @click.prevent="toggleEnabled(!server.enabled)"
         />
         <span class="mcp-toggle__track">
           <span class="mcp-toggle__thumb" />

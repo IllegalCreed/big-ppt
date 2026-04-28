@@ -15,6 +15,13 @@ import { useTestDb } from './_setup/test-db.js'
 import { createLoggedInUser } from './_setup/factories.js'
 import { getDb, userMcpServers } from '../src/db/index.js'
 
+/**
+ * 用 vi.hoisted() 把 transportSpy 提升到 vi.mock 工厂能闭包到的位置。
+ * spy 记录每次创建 transport 时的 headers,sentinel 解析测试用它 verify 真 LLM key 被注入。
+ */
+const transportSpy = vi.hoisted(() => ({
+  lastHeaders: undefined as Record<string, string> | undefined,
+}))
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   Client: class {
     connect = vi.fn().mockResolvedValue(undefined)
@@ -25,7 +32,9 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
 }))
 vi.mock('@modelcontextprotocol/sdk/client/streamableHttp.js', () => ({
   StreamableHTTPClientTransport: class {
-    constructor() {}
+    constructor(_url: URL, opts?: { requestInit?: { headers?: Record<string, string> } }) {
+      transportSpy.lastHeaders = opts?.requestInit?.headers
+    }
   },
 }))
 
@@ -86,12 +95,11 @@ describe('鉴权', () => {
 })
 
 describe('GET /api/mcp/servers', () => {
-  it('首次返回预置 4 个 + status=disabled + headers 脱敏', async () => {
+  it('首次返回预置 3 个 + status=disabled + headers 脱敏(vision 因仅 stdio 不在预置)', async () => {
     const res = await buildApp().request('/api/mcp/servers', authed(cookieA))
     const json = await res.json()
     expect(json.success).toBe(true)
     expect(json.servers.map((s: any) => s.id).sort()).toEqual([
-      'zhipu-vision',
       'zhipu-web-reader',
       'zhipu-web-search',
       'zhipu-zread',
@@ -257,6 +265,113 @@ describe('PATCH /api/mcp/servers/:id', () => {
     expect(stored.Authorization!.startsWith('v1:')).toBe(true)
   })
 
+  it('PATCH headers.Authorization = "Bearer $LLM_KEY" → sentinel 直接落库,GET 返回 reuseLlmKey=true', async () => {
+    // 给 userA 写入 encrypted llm_settings,模拟用户已在 LLM tab 保存过 apiKey
+    const { encryptApiKey } = await import('../src/crypto/apikey.js')
+    const { users } = await import('../src/db/index.js')
+    const llmPayload = JSON.stringify({ provider: 'zhipu', apiKey: 'real-llm-secret', model: 'GLM-5.1' })
+    await getDb().update(users).set({ llmSettings: encryptApiKey(llmPayload) }).where(eq(users.id, userIdA))
+
+    const res = await buildApp().request(
+      '/api/mcp/servers/zhipu-web-search',
+      authed(cookieA, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true, headers: { Authorization: 'Bearer $LLM_KEY' } }),
+      }),
+    )
+    expect(res.status).toBe(200)
+    // 落库的应是 sentinel 的密文,而不是被替换后的真 key
+    const db = getDb()
+    const [row] = await db
+      .select({ headers: userMcpServers.headers })
+      .from(userMcpServers)
+      .where(
+        and(eq(userMcpServers.userId, userIdA), eq(userMcpServers.serverId, 'zhipu-web-search')),
+      )
+      .limit(1)
+    const stored = JSON.parse(row!.headers) as Record<string, string>
+    expect(stored.Authorization!.startsWith('v1:')).toBe(true)
+    const { decryptApiKey } = await import('../src/crypto/apikey.js')
+    expect(decryptApiKey(stored.Authorization!)).toBe('Bearer $LLM_KEY')
+
+    // GET 返回 reuseLlmKey=true,headers 仍脱敏成 ***
+    const list = await (await buildApp().request('/api/mcp/servers', authed(cookieA))).json()
+    const found = list.servers.find((s: any) => s.id === 'zhipu-web-search')
+    expect(found.reuseLlmKey).toBe(true)
+    expect(found.headers.Authorization).toBe('***')
+  })
+
+  it('PATCH 带 $LLM_KEY 但用户没存过 LLM apiKey → 400', async () => {
+    const res = await buildApp().request(
+      '/api/mcp/servers/zhipu-web-search',
+      authed(cookieA, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true, headers: { Authorization: 'Bearer $LLM_KEY' } }),
+      }),
+    )
+    expect(res.status).toBe(400)
+    const json = (await res.json()) as { success: boolean; error?: string }
+    expect(json.success).toBe(false)
+    expect(json.error).toContain('LLM Key')
+  })
+
+  it('enabled=true + sentinel → activate 时 transport headers 拿到真 LLM apiKey', async () => {
+    const { encryptApiKey } = await import('../src/crypto/apikey.js')
+    const { users } = await import('../src/db/index.js')
+    await getDb()
+      .update(users)
+      .set({
+        llmSettings: encryptApiKey(JSON.stringify({ provider: 'zhipu', apiKey: 'real-llm-key' })),
+      })
+      .where(eq(users.id, userIdA))
+    transportSpy.lastHeaders = undefined
+    const res = await buildApp().request(
+      '/api/mcp/servers/zhipu-web-search',
+      authed(cookieA, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true, headers: { Authorization: 'Bearer $LLM_KEY' } }),
+      }),
+    )
+    expect(res.status).toBe(200)
+    // activate → new transport → headers 应是替换后的真 key,不带 sentinel
+    expect(transportSpy.lastHeaders?.Authorization).toBe('Bearer real-llm-key')
+    expect(transportSpy.lastHeaders?.Authorization).not.toContain('$LLM_KEY')
+  })
+
+  it('PATCH 取消复用(发空 headers) → sentinel 被清空,GET 返回 reuseLlmKey=false', async () => {
+    const { encryptApiKey } = await import('../src/crypto/apikey.js')
+    const { users } = await import('../src/db/index.js')
+    await getDb()
+      .update(users)
+      .set({ llmSettings: encryptApiKey(JSON.stringify({ provider: 'zhipu', apiKey: 'k' })) })
+      .where(eq(users.id, userIdA))
+    // 先勾选复用
+    await buildApp().request(
+      '/api/mcp/servers/zhipu-web-search',
+      authed(cookieA, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ headers: { Authorization: 'Bearer $LLM_KEY' } }),
+      }),
+    )
+    // 再取消(发空 headers,前端 buildAuthValue 返回 '')
+    await buildApp().request(
+      '/api/mcp/servers/zhipu-web-search',
+      authed(cookieA, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ headers: {} }),
+      }),
+    )
+    const list = await (await buildApp().request('/api/mcp/servers', authed(cookieA))).json()
+    const found = list.servers.find((s: any) => s.id === 'zhipu-web-search')
+    expect(found.reuseLlmKey).toBe(false)
+    expect(found.headers.Authorization ?? '').toBe('')
+  })
+
   it('PATCH headers.Authorization = "Bearer new-val" → 覆盖旧值', async () => {
     await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
@@ -361,7 +476,7 @@ describe('跨用户隔离（Phase 9-F A01 修复）', () => {
     )
     // B GET
     const list = await (await buildApp().request('/api/mcp/servers', authed(cookieB))).json()
-    expect(list.servers).toHaveLength(4)
+    expect(list.servers).toHaveLength(3)
     const found = list.servers.find((s: any) => s.id === 'zhipu-web-search')
     // B 自己的应是默认 disabled + 空 headers
     expect(found.enabled).toBe(false)

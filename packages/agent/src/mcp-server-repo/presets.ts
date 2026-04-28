@@ -2,11 +2,17 @@
 import type { McpServerConfig } from '@big-ppt/shared'
 
 /**
- * 预置 MCP 目录(智谱 4 个)。
- * 首次启动时 seed 进 data/mcp.json,enabled=false;用户在 Settings 勾选启用 + 填 API key。
+ * 预置 MCP 目录(智谱 3 个 StreamableHTTP)。
+ * 首次启动时 seed 进 user_mcp_servers,enabled=false;用户在 Settings 勾选启用 +
+ * 填 API key 或勾"复用 LLM Key"。
  *
- * TODO(executor): 启动 Task 5 前打开 https://docs.bigmodel.cn/cn/coding-plan/mcp/ 核对 4 个 URL,
- *   尤其是 vision 与 zread 的路径(04 原计划的值是推测)。
+ * 已核对(2026-04-28 https://docs.bigmodel.cn/cn/coding-plan/mcp/):
+ * - zhipu-web-search / zhipu-web-reader / zhipu-zread: StreamableHTTP, URL 正确
+ * - zhipu-vision: 智谱**只提供 npx(stdio)**,无 HTTP endpoint。当前架构
+ *   (StreamableHTTPClientTransport) 不支持 stdio,故 vision **暂不在 preset**;
+ *   等 Phase 11+ 加 stdio transport 后再放回。
+ *   老用户 DB 里若残留 zhipu-vision 行,routes/mcp.ts 用 UNSUPPORTED_SERVER_IDS
+ *   过滤,不返给前端,避免 enable 后报 JSON-RPC schema 错。
  */
 export const PRESET_MCP_SERVERS: McpServerConfig[] = [
   {
@@ -30,16 +36,6 @@ export const PRESET_MCP_SERVERS: McpServerConfig[] = [
     badge: '读网页',
   },
   {
-    id: 'zhipu-vision',
-    displayName: '视觉理解(智谱)',
-    description: '对图片内容进行分析和理解。',
-    url: 'https://open.bigmodel.cn/api/mcp/vision/mcp',
-    headers: {},
-    enabled: false,
-    preset: true,
-    badge: '视觉',
-  },
-  {
     id: 'zhipu-zread',
     displayName: 'GitHub 仓库读取(智谱 Zread)',
     description: '读取 GitHub 仓库结构、文件、搜索文档。',
@@ -50,3 +46,10 @@ export const PRESET_MCP_SERVERS: McpServerConfig[] = [
     badge: 'GitHub',
   },
 ]
+
+/**
+ * 当前架构(仅 StreamableHTTP)不支持的 server id 黑名单。
+ * routes/mcp.ts 在 GET 时过滤这些 id(老用户 DB 残留),PATCH 时拒绝(防御性)。
+ * 解封条件:Phase 11+ 加 stdio transport 后从这里删除并恢复 PRESET 项。
+ */
+export const UNSUPPORTED_SERVER_IDS = new Set<string>(['zhipu-vision'])

@@ -1,5 +1,6 @@
 // packages/agent/src/routes/mcp.ts
 import { Hono } from 'hono'
+import { eq } from 'drizzle-orm'
 import type {
   CreateMcpServerRequest,
   GetMcpServersResponse,
@@ -8,8 +9,11 @@ import type {
   UpdateMcpServerRequest,
 } from '@big-ppt/shared'
 import { getRepo, McpRepoNotFoundError } from '../mcp-server-repo/index.js'
+import { UNSUPPORTED_SERVER_IDS } from '../mcp-server-repo/presets.js'
 import { getRegistry } from '../mcp-registry/index.js'
 import { requireAuth, type AuthVars } from '../middleware/auth.js'
+import { getDb, users } from '../db/index.js'
+import { decryptApiKey } from '../crypto/apikey.js'
 
 export const mcp = new Hono<{ Variables: AuthVars }>()
 
@@ -23,6 +27,42 @@ mcp.use('/mcp/servers/*', requireAuth)
  * 后端识别为"保留"并从 repo 读回 plaintext。
  */
 const REDACTED_VALUE = '***'
+
+/**
+ * 复用 LLM Key 协议(2026-04-28):
+ * - 前端勾"复用 LLM Key"时,在 headers value 里发 `$LLM_KEY` sentinel(例 `Bearer $LLM_KEY`)
+ * - 后端**直接把 sentinel 落库**(不在 PATCH 时替换)
+ * - GET /mcp/servers 计算 reuseLlmKey: headers 含 sentinel → true,前端据此显示已勾选 UI
+ * - 真正解析在 mcp-registry/registry.ts 的 activate(): connect MCP 之前把 sentinel
+ *   替换为 user.llmSettings 里的当前 apiKey。这样:
+ *   - 复用语义持久化(刷新 Modal 后仍显示已勾选)
+ *   - 用户改 LLM key 后会自动同步生效(下次 enable / 重启 registry 时拿到新 key)
+ * - PATCH 时仅校验:写入 sentinel 必须用户已存过 LLM apiKey,否则 400 阻止配置坏掉
+ */
+const LLM_KEY_SENTINEL = '$LLM_KEY'
+
+async function userHasLlmKey(userId: number): Promise<boolean> {
+  const db = getDb()
+  const [u] = await db
+    .select({ llmSettings: users.llmSettings })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+  if (!u || !u.llmSettings) return false
+  try {
+    const parsed = JSON.parse(decryptApiKey(u.llmSettings)) as { apiKey?: string }
+    return !!parsed.apiKey?.trim()
+  } catch {
+    return false
+  }
+}
+
+function headersContainSentinel(headers: Record<string, string>): boolean {
+  for (const v of Object.values(headers)) {
+    if (typeof v === 'string' && v.includes(LLM_KEY_SENTINEL)) return true
+  }
+  return false
+}
 
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {}
@@ -66,11 +106,15 @@ mcp.get('/mcp/servers', async (c) => {
     const registry = getRegistry(userId)
     await registry.ensureInitialized()
     const configs = await repo.list(userId)
-    const servers = configs.map((cfg) => ({
-      ...cfg,
-      headers: redactHeaders(cfg.headers ?? {}),
-      status: registry.getStatus(cfg.id),
-    }))
+    const servers = configs
+      // 过滤老用户 DB 残留的 unsupported preset(如 zhipu-vision: 仅 stdio,当前不支持)
+      .filter((cfg) => !UNSUPPORTED_SERVER_IDS.has(cfg.id))
+      .map((cfg) => ({
+        ...cfg,
+        headers: redactHeaders(cfg.headers ?? {}),
+        status: registry.getStatus(cfg.id),
+        reuseLlmKey: headersContainSentinel(cfg.headers ?? {}),
+      }))
     const payload: GetMcpServersResponse = { success: true, servers }
     return c.json(payload)
   } catch (err) {
@@ -129,6 +173,10 @@ mcp.post('/mcp/servers', async (c) => {
 
 mcp.patch('/mcp/servers/:id', async (c) => {
   const id = c.req.param('id')
+  if (UNSUPPORTED_SERVER_IDS.has(id)) {
+    const resp: MutateMcpServerResponse = { success: false, error: '该预置 MCP 当前不支持(仅 stdio)' }
+    return c.json(resp, 400)
+  }
   let patch: UpdateMcpServerRequest
   try {
     patch = await c.req.json<UpdateMcpServerRequest>()
@@ -148,10 +196,16 @@ mcp.patch('/mcp/servers/:id', async (c) => {
         const resp: MutateMcpServerResponse = { success: false, error: 'not found' }
         return c.json(resp, 404)
       }
-      resolvedPatch = {
-        ...patch,
-        headers: mergeHeadersPatch(patch.headers, existing.headers ?? {}),
+      const merged = mergeHeadersPatch(patch.headers, existing.headers ?? {})
+      // 写入 sentinel 必须用户已存过 LLM apiKey,否则 enable 后 connect 必失败,先阻止
+      if (headersContainSentinel(merged) && !(await userHasLlmKey(userId))) {
+        const resp: MutateMcpServerResponse = {
+          success: false,
+          error: '复用 LLM Key 失败:请先在 LLM 设置里保存 API Key',
+        }
+        return c.json(resp, 400)
       }
+      resolvedPatch = { ...patch, headers: merged }
     }
     const updated = await repo.update(userId, id, resolvedPatch)
     await registry.sync(updated)
