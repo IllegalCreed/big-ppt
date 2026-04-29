@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { AuthVars } from '../middleware/auth.js'
 import { decryptApiKey } from '../crypto/apikey.js'
+import { acquireLlmSlot, LlmConcurrencyTimeoutError } from '../middleware/llm-semaphore.js'
 
 const PROVIDERS: Record<string, { name: string; baseURL: string; defaultModel: string }> = {
   zhipu: {
@@ -85,6 +86,18 @@ llm.post('/chat/completions', async (c) => {
   const { url: upstreamUrl } = resolveUpstream(settings)
   const body = await c.req.text()
 
+  // 拿 LLM slot:超过 per-user 并发上限会 await 排队;超过队列超时才 reject
+  // 解决智谱 GLM-5.1 上游"并发 2"硬限,避免多 tab / chat+切模板撞 429
+  let release: () => void
+  try {
+    release = await acquireLlmSlot(user.id)
+  } catch (err) {
+    if (err instanceof LlmConcurrencyTimeoutError) {
+      return c.json({ error: { message: err.message } }, 503)
+    }
+    throw err
+  }
+
   let upstream: Response
   try {
     upstream = await fetch(upstreamUrl, {
@@ -96,16 +109,45 @@ llm.post('/chat/completions', async (c) => {
       body,
     })
   } catch (err) {
+    release()
     return c.json({ error: { message: `upstream fetch failed: ${(err as Error).message}` } }, 502)
   }
 
-  // Pass-through Response 保留流式语义（上游是 text/event-stream 时直接透传给前端）
+  if (!upstream.body) {
+    release()
+    return new Response(null, { status: upstream.status })
+  }
+
+  // Wrap upstream body:在流结束 / cancel / error 三个出口都释放 slot,
+  // 避免 fetch resolve 后即释放而上游 streaming 仍占着真实 in-flight 名额。
+  const reader = upstream.body.getReader()
+  const wrapped = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          controller.close()
+          release()
+        } else {
+          controller.enqueue(value)
+        }
+      } catch (err) {
+        release()
+        controller.error(err)
+      }
+    },
+    cancel(reason) {
+      reader.cancel(reason).catch(() => undefined)
+      release()
+    },
+  })
+
   const headers = new Headers()
   const contentType = upstream.headers.get('content-type')
   if (contentType) headers.set('Content-Type', contentType)
   headers.set('Cache-Control', 'no-cache')
   headers.set('X-Accel-Buffering', 'no')
-  return new Response(upstream.body, {
+  return new Response(wrapped, {
     status: upstream.status,
     headers,
   })

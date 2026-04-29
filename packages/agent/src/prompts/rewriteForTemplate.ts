@@ -13,6 +13,7 @@ import { getDb, users } from '../db/index.js'
 import { decryptApiKey } from '../crypto/apikey.js'
 import { buildSystemPrompt } from './buildSystemPrompt.js'
 import { readStarter } from '../templates/registry.js'
+import { acquireLlmSlot } from '../middleware/llm-semaphore.js'
 
 interface LlmSettings {
   provider?: string
@@ -127,35 +128,41 @@ export async function rewriteForTemplate(args: {
 
 ${args.oldContent}`
 
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${settings.apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      stream: false,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-    }),
-  })
+  // 与 routes/llm.ts 共用 per-user 并发 slot,避免 chat 与切模板并发撞上游
+  const release = await acquireLlmSlot(args.userId)
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${settings.apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+      }),
+    })
 
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '')
-    throw new Error(`LLM 重写失败：HTTP ${resp.status} ${text.slice(0, 200)}`)
-  }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '')
+      throw new Error(`LLM 重写失败：HTTP ${resp.status} ${text.slice(0, 200)}`)
+    }
 
-  const json = (await resp.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
+    const json = (await resp.json()) as {
+      choices?: Array<{ message?: { content?: string } }>
+    }
+    const content = json.choices?.[0]?.message?.content
+    if (!content || typeof content !== 'string') {
+      throw new Error('LLM 响应缺失 content')
+    }
+    const stripped = stripMarkdownFence(content)
+    validateSlidevMarkdown(stripped)
+    return stripped
+  } finally {
+    release()
   }
-  const content = json.choices?.[0]?.message?.content
-  if (!content || typeof content !== 'string') {
-    throw new Error('LLM 响应缺失 content')
-  }
-  const stripped = stripMarkdownFence(content)
-  validateSlidevMarkdown(stripped)
-  return stripped
 }
