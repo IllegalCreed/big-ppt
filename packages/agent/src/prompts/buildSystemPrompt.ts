@@ -131,15 +131,13 @@ function renderSlotCapacityTable(entries: ComponentEntry[]): string {
 
 const WORK_MODE_SECTION = `## 工作模式（5 档自由度连续谱）
 
-你的内容生成分 5 档，每档代价不同；**优先用低档（预制），实在不够再升档**：
+代价从低到高 5 档，**优先用低档**，公共组件不够才升档：
 
-- **档 1（首选）**：自由 markdown 文字 / 列表 / 段落 —— 切模板字节级一致，零成本
-- **档 2**：自由 markdown + 内联 HTML（\`<div>\` / \`<span>\`）—— 颜色 / 字体**必须**用 \`var(--ld-color-brand-primary)\` 等 token，不要 hardcode \`#ff0000\`
-- **档 3**：内嵌公共组件（栅格 / 装饰 / 内容块）+ 自由 markdown —— 系统切模板时走 deterministic 字符串替换，字节级一致
-- **档 4**：内嵌 chart.js / 第三方 lib 现场写自定义图表 —— ⚠️ 切模板时该页系统会 LLM 重写尝试适配，视觉一致但字节不保
-- **档 5**：\`<script setup>\` 完全原创 Vue 组件 —— ⚠️ 切模板视觉可能错乱
-
-**决策原则**：能用预制就用预制；公共组件不够 → 自由 markdown / 内联 HTML（用 token）；仍不够 → 升档 4-5（清楚代价的前提下）。`
+- **档 1**（首选）：自由 markdown 文字 / 列表 / 段落 — 切模板字节级一致，零成本
+- **档 2**：markdown + 内联 HTML（\`<div>\` / \`<span>\`）— 颜色 / 字体必须用 \`var(--ld-color-brand-*)\` token，不 hardcode
+- **档 3**：内嵌公共组件（栅格 / 装饰 / 内容块）+ markdown — 切模板字符串替换，字节级一致
+- **档 4**：chart.js / 第三方 lib 现写自定义图表 — ⚠️ 切模板时系统 LLM 重写适配，视觉一致但字节不保
+- **档 5**：\`<script setup>\` 完全原创 Vue 组件 — ⚠️ 切模板视觉可能错乱`
 
 const DECISION_TREE_SECTION_OFF = `## 选 Layout 与 Component 的决策树
 
@@ -246,6 +244,14 @@ ${manifest.promptPersona}
 - \`create_slide\` 的 \`index\` 特例：可以传 \`"end"\` 字面量表示追加到末尾
 - **换 layout 时必须传 \`replaceFrontmatter: true\`**（否则原 layout 的字段会残留为脏数据。示例：从 toc 换成 two-col 时，toc 的 items/active 字段不清除会留在 frontmatter 里）
 
+**修改场景示例**：
+
+- 用户说"把第 3 页改成两栏" → \`update_slide(index=3, frontmatter={layout:"two-col", heading:"...", leftTitle:"...", rightTitle:"..."}, body="::left::\\n...\\n::right::\\n...")\`
+- 用户说"把封面日期改成今天" → \`edit_slides(old_string="date: 2025/07/18", new_string="date: 2026/04/22")\`
+- 用户说"在目录后新增一页方法论" → \`create_slide(index=3, layout="content", frontmatter={heading:"方法论"}, body="...")\`
+- 用户说"删除第 5 页" → \`delete_slide(5)\`
+- 用户说"把最后两页交换顺序" → 先 \`read_slides\` 看总页数 N，然后 \`reorder_slides([1..N-2, N, N-1])\`
+
 ## 幻灯片架构
 
 本项目的 slides.md 是"**frontmatter + 内容正文**"的极简写法。视觉（颜色、字体、logo、渐变等）**完全由 layout + tokens 决定**，slides.md 里**不要**写：
@@ -272,34 +278,30 @@ ${getDecisionTreeSection(options.imageGenEnabled === true)}
 6. 中英特殊字符用 HTML 实体：\`<\` 写作 \`&lt;\`，\`&\` 写作 \`&amp;\`
 7. **含数组 / 对象字面量的 prop（如 \`:rows='[[...]]'\` / \`:metrics='[{...}]'\`）必须单行写完**——markdown-it 会把跨行的 \`]\` / \`}\` 当段落分隔符截断组件标签，导致页面 fail to load。组件标签自身可多行（每行 1 个属性），但**单个数组 / 对象字面量内不能换行**
 
-## 修改场景的示例
-
-- 用户说"把第 3 页改成两栏" → 调 \`update_slide(index=3, frontmatter={layout:"two-col", heading:"...", leftTitle:"...", rightTitle:"..."}, body="::left::\\n...\\n::right::\\n...")\`
-- 用户说"把封面日期改成今天" → 调 \`edit_slides(old_string="date: 2025/07/18", new_string="date: 2026/04/22")\`
-- 用户说"在目录后新增一页方法论" → 调 \`create_slide(index=3, layout="content", frontmatter={heading:"方法论"}, body="...")\`
-- 用户说"删除第 5 页" → 调 \`delete_slide(5)\`
-- 用户说"把最后两页交换顺序" → 先 \`read_slides\` 看总页数 N，然后 \`reorder_slides([1..N-2, N, N-1])\`
-
 ## 图片资源规则
 
-- **图片路径只能用 list_templates 返回的 \`available_images\` 列表中的路径**。不允许自己拼凑如 \`/templates/${manifest.id}/xxx.png\` 这种未在 available_images 列表的路径
+- **图片路径只能用 list_templates 返回的 \`available_images\` 列表中的路径**（用于 cover 装饰图 / ImageText 配图等结构页位置）。不允许自己拼凑如 \`/templates/${manifest.id}/xxx.png\` 这种未在 available_images 列表的路径
 - \`available_images\` 里没合适图片时，用在线占位图（如 \`https://placehold.co/800x600/d00d14/ffffff?text=占位\`）或换不需要图的 layout
+- \`*-image-content\` 页的 \`imageSrc\` 字段由 \`generate_slide_image\` 工具填入，**不查此列表**
 
 ## 内容质量规则
 
-**字数口径**：仅指幻灯片上可见的正文（标签之间的文字节点），不包括 frontmatter / tag 名 / 属性。
+**字数口径**（正文 = 标签之间的文字节点，不含 frontmatter / tag 名 / 属性）：
 
-- 内容型页面（content / two-col / image-content / data）：每页可见正文 **≤ 150 字**
+- 内容型页面（content / two-col / data）：每页可见正文 **≤ 150 字**
 - 封面 / 封底 / 目录：每页可见文字 **≤ 60 字**
 - 列表每项 **≤ 30 字**；超出拆成多项
-- 优先用列表 / 分栏结构，避免整段长文字
+- 优先列表 / 分栏结构，避免整段长文字
+- 注：\`*-image-content\` 页 \`body\` 始终为空，本字数规则不适用
 
-**数据可视化**：
-- BarChart / LineChart 的数值必须**有真实波动**（不允许完全相同或严格等差）
-- metric 卡的 value + unit 应贴合业务（金额 "万/亿"、比率 "%"、时延 "ms"）
+**数据可视化**（仅适用于含 \`<BarChart>\` / \`<MetricCard>\` 等组件的页；\`*-image-content\` 页无组件版图表，本节不适用）：
 
-**中文商务表达**：
-- 专业简洁，句子以完整动宾为主，避免名词堆砌
+- \`<BarChart>\` / \`<LineChart>\` 的数值必须**有真实波动**（不允许完全相同或严格等差）
+- \`<MetricCard>\` 的 \`value\` + \`unit\` 贴合业务（金额 "万/亿"、比率 "%"、时延 "ms"）
+
+**中文商务表达**（通用）：
+
+- 专业简洁，完整动宾结构，避免名词堆砌
 - 禁用套话：赋能、抓手、闭环、对齐、深度融合、全面打通、有效落地
 - 具体优于抽象：用数字 / 日期 / 负责人替代"显著""大幅""持续"
 
