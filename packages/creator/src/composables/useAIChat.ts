@@ -404,10 +404,14 @@ export function useAIChat() {
     stepKey: string,
     stepsArray: ToolStep[],
   ): Promise<void> {
+    console.log('[trackImageJob] entered', { jobId, stepKey })
     const job = useGenerateImageJob()
     function patchStep(patch: Partial<ToolStep>): void {
       const idx = stepsArray.findIndex((s) => s.key === stepKey)
-      if (idx < 0) return
+      if (idx < 0) {
+        console.warn('[trackImageJob] step not found in array', { stepKey, arraySize: stepsArray.length })
+        return
+      }
       const cur = stepsArray[idx]
       if (!cur) return
       stepsArray[idx] = { ...cur, ...patch }
@@ -415,13 +419,15 @@ export function useAIChat() {
     // 改回 loading 状态展示进度
     patchStep({ status: 'loading', label: '正在生成 AI 图片...' })
     try {
+      console.log('[trackImageJob] calling job.start', { jobId })
       const final = await job.start({ jobId })
+      console.log('[trackImageJob] job done', { jobId, assetId: final.assetId })
       patchStep({ status: 'success', label: '已生成 AI 图片' })
-      // done 后定位目标页(slides.md HMR 自己推,这里只翻页)
       if (typeof final.slideIndex === 'number') {
         slideStore.setPage(final.slideIndex)
       }
     } catch (err) {
+      console.error('[trackImageJob] job failed', { jobId, error: (err as Error).message })
       patchStep({ status: 'error', error: (err as Error).message })
     }
   }
@@ -606,11 +612,17 @@ export function useAIChat() {
               if (tc.function.name === 'generate_slide_image') {
                 try {
                   const parsed = JSON.parse(result) as { success?: boolean; jobId?: string }
+                  console.log('[generate_slide_image] tool result:', parsed)
                   if (parsed.success && parsed.jobId) {
                     const liveSteps = toolSteps.value
+                    console.log('[generate_slide_image] starting trackImageJob', { jobId: parsed.jobId, stepKey: step.key })
                     void trackImageJob(parsed.jobId, step.key, liveSteps)
+                  } else {
+                    console.warn('[generate_slide_image] tool result missing success/jobId, skip tracking')
                   }
-                } catch { /* result 不是合法 JSON 跳过(走 success 不变) */ }
+                } catch (e) {
+                  console.error('[generate_slide_image] failed to parse tool result:', (e as Error).message, result)
+                }
               }
               logEvent({
                 session,
