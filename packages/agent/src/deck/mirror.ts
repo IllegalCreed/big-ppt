@@ -1,5 +1,6 @@
 /** 把 deck 当前版本内容落地到 packages/slidev/slides.md，供 Slidev 热重载。 */
 import fs from 'node:fs'
+import { fixOrphanedFrontmatter } from '../slides-store/fixer.js'
 import { getPaths } from '../workspace.js'
 
 /**
@@ -79,6 +80,8 @@ export function ensureValidTheme(content: string): string {
 
 export function mirrorSlidesContent(content: string): void {
   const { slidesPath } = getPaths()
-  const sanitized = ensureValidTheme(ensureRouterModeHash(content))
+  // 修旧 deck 在 DB 里 LLM 漏写 slide 分隔符的污染数据,激活 / 切版本时就地规范化
+  const { fixed: fmFixed } = fixOrphanedFrontmatter(content)
+  const sanitized = ensureValidTheme(ensureRouterModeHash(fmFixed))
   fs.writeFileSync(slidesPath, sanitized, 'utf-8')
 }

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import { getPaths } from '../workspace.js'
 import { similarity } from '../utils/similarity.js'
 import { appendHistory, redo, undo, type HistoryActionResult } from './history.js'
+import { fixOrphanedFrontmatter } from './fixer.js'
 import { parseSlides, serializeSlides, type SlidePage } from './pages.js'
 import { persistVersionIfActive } from './persist.js'
 
@@ -53,10 +54,13 @@ export async function writeSlides(content: string): Promise<MutationResult> {
       error: `已有 ${pages.length} 页幻灯片。write_slides 仅用于首次生成；修改请用 create_slide / update_slide / delete_slide / reorder_slides 四件套工具。`,
     }
   }
+  // LLM 偶尔写漏 slide 间空 body 分隔符,导致后续 frontmatter 被吞、用 default 主题。
+  // 落盘 + 持久化 DB 之前规范化,确保 slides.md 与 deck_versions 都是修过的版本。
+  const { fixed: sanitized } = fixOrphanedFrontmatter(content)
   const { slidesPath } = getPaths()
-  appendHistory('write', content)
-  fs.writeFileSync(slidesPath, content, 'utf-8')
-  await persistVersionIfActive(content, 'write')
+  appendHistory('write', sanitized)
+  fs.writeFileSync(slidesPath, sanitized, 'utf-8')
+  await persistVersionIfActive(sanitized, 'write')
   return { success: true }
 }
 
