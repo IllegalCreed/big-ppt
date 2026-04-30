@@ -28,7 +28,22 @@ const PROVIDERS: ProviderMeta[] = [
   { key: 'custom', name: '自定义', avatar: '+', defaultModel: '' },
 ]
 
-const DEFAULT_SETTINGS: LLMSettings = { provider: 'zhipu', apiKey: '', model: 'GLM-5.1' }
+// 接口协议下拉选项。目前仅 OpenAI 兼容(走 /chat/completions),后续加 Anthropic / Gemini 时在此追加。
+const API_TYPES: { value: 'openai-compatible'; label: string; hint: string }[] = [
+  {
+    value: 'openai-compatible',
+    label: 'OpenAI 兼容',
+    hint: '走 /v1/chat/completions,绝大多数中转(duckcoding / one-api / new-api)走此协议',
+  },
+]
+
+const DEFAULT_SETTINGS: LLMSettings = {
+  provider: 'zhipu',
+  apiKey: '',
+  model: 'GLM-5.1',
+  baseUrl: '',
+  apiType: 'openai-compatible',
+}
 
 const activeTab = ref<'llm' | 'mcp'>('llm')
 const settings = ref<LLMSettings>({ ...DEFAULT_SETTINGS })
@@ -47,6 +62,10 @@ const currentProviderHint = computed(() => {
   const p = PROVIDERS.find((x) => x.key === settings.value.provider)
   return p?.defaultModel ? `默认：${p.defaultModel}` : ''
 })
+const isCustomProvider = computed(() => settings.value.provider === 'custom')
+const currentApiTypeHint = computed(
+  () => API_TYPES.find((t) => t.value === settings.value.apiType)?.hint ?? '',
+)
 
 async function loadSettings() {
   try {
@@ -54,18 +73,21 @@ async function loadSettings() {
       provider: string | null
       model: string | null
       baseUrl: string | null
+      apiType: string | null
       hasApiKey: boolean
     }>('/api/auth/llm-settings')
     settings.value = {
       provider: (data.provider as LLMSettings['provider']) ?? DEFAULT_SETTINGS.provider,
-      apiKey: '', // 从不回传，留空让用户选择是否覆盖
+      apiKey: '', // 从不回传,留空让用户选择是否覆盖
       model: data.model ?? DEFAULT_SETTINGS.model,
+      baseUrl: data.baseUrl ?? '',
+      apiType: (data.apiType as LLMSettings['apiType']) ?? 'openai-compatible',
     }
     hasStoredApiKey.value = !!data.hasApiKey
   } catch (err) {
-    // 未登录或网络错误：用默认值，不弹错
+    // 未登录或网络错误:用默认值,不弹错
     if (!(err instanceof ApiError && err.status === 401)) {
-      saveError.value = `加载设置失败：${(err as Error).message}`
+      saveError.value = `加载设置失败:${(err as Error).message}`
     }
     settings.value = { ...DEFAULT_SETTINGS }
     hasStoredApiKey.value = false
@@ -75,6 +97,10 @@ async function loadSettings() {
 function selectProvider(p: ProviderMeta) {
   settings.value.provider = p.key
   if (p.defaultModel) settings.value.model = p.defaultModel
+  // 切换内置 provider 时清空自定义地址(后端按 provider 预设解析);切到 custom 不动 baseUrl
+  if (p.key !== 'custom') {
+    settings.value.baseUrl = ''
+  }
 }
 
 async function saveLlm() {
@@ -84,12 +110,21 @@ async function saveLlm() {
     saveError.value = '请填写 API Key'
     return
   }
+  // 自定义 provider 必须填接口地址,否则后端无法路由
+  const isCustom = settings.value.provider === 'custom'
+  const trimmedBaseUrl = settings.value.baseUrl?.trim() ?? ''
+  if (isCustom && !trimmedBaseUrl) {
+    saveError.value = '自定义 provider 需要填写接口地址'
+    return
+  }
   saving.value = true
   try {
     await saveLlmSettings({
       provider: settings.value.provider,
       apiKey: settings.value.apiKey, // 空串 → 后端保留原 key
       model: settings.value.model,
+      baseUrl: isCustom ? trimmedBaseUrl : undefined,
+      apiType: isCustom ? (settings.value.apiType ?? 'openai-compatible') : undefined,
     })
     invalidateLlmSettingsCache()
     hasStoredApiKey.value = true
@@ -219,6 +254,30 @@ onMounted(() => {
                 </span>
               </button>
             </div>
+          </section>
+
+          <section v-if="isCustomProvider" class="form-section">
+            <header class="section-header">
+              <span class="section-title">接口类型</span>
+              <span v-if="currentApiTypeHint" class="section-hint">{{ currentApiTypeHint }}</span>
+            </header>
+            <select v-model="settings.apiType" class="input-bare">
+              <option v-for="t in API_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+            </select>
+          </section>
+
+          <section v-if="isCustomProvider" class="form-section">
+            <header class="section-header">
+              <span class="section-title">接口地址</span>
+              <span class="section-hint">中转 / 自部署的 base URL,不带 /chat/completions 后缀</span>
+            </header>
+            <input
+              v-model="settings.baseUrl"
+              type="text"
+              placeholder="https://api.duckcoding.ai/v1"
+              autocomplete="off"
+              class="input-bare"
+            />
           </section>
 
           <section class="form-section">

@@ -59,6 +59,7 @@ export function useAuth() {
     apiKey: string
     baseUrl?: string
     model?: string
+    apiType?: 'openai-compatible'
   }): Promise<void> {
     await api.put('/api/auth/llm-settings', settings)
     // 更新本地标志（真正的 apiKey 不会回传）

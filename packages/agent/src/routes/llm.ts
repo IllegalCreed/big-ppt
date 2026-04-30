@@ -36,6 +36,8 @@ type StoredLlmSettings = {
   apiKey?: string
   baseUrl?: string
   model?: string
+  /** 接口协议;目前仅 'openai-compatible',resolveUpstream 暂不分支,留作未来协议适配钩子。 */
+  apiType?: 'openai-compatible'
 }
 
 function resolveUpstream(settings: StoredLlmSettings): { url: string } {

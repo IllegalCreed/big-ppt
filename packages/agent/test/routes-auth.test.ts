@@ -228,32 +228,66 @@ describe('routes/auth', () => {
       provider: null,
       model: null,
       baseUrl: null,
+      apiType: null,
       hasApiKey: false,
     })
   })
 
-  it('llm-settings GET: 有设置 → 返回 provider/model/baseUrl + hasApiKey=true，不泄漏 apiKey', async () => {
+  it('llm-settings GET: 有设置 → 返回 provider/model/baseUrl/apiType + hasApiKey=true，不泄漏 apiKey', async () => {
     const app = makeApp()
     const { cookie } = await createLoggedInUser('llm-get@a.com')
     await app.request('/api/auth/llm-settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json', Cookie: cookie },
       body: JSON.stringify({
-        provider: 'openai',
+        provider: 'custom',
         apiKey: 'sk-TOP-SECRET',
-        model: 'gpt-4o',
+        model: 'gpt-5.5',
         baseUrl: 'https://example.com/v1',
+        apiType: 'openai-compatible',
       }),
     })
     const res = await app.request('/api/auth/llm-settings', { headers: { Cookie: cookie } })
     const body = await res.json()
     expect(body).toEqual({
-      provider: 'openai',
-      model: 'gpt-4o',
+      provider: 'custom',
+      model: 'gpt-5.5',
       baseUrl: 'https://example.com/v1',
+      apiType: 'openai-compatible',
       hasApiKey: true,
     })
     expect(JSON.stringify(body)).not.toContain('sk-TOP-SECRET')
+  })
+
+  it('llm-settings PUT: 不传 apiType → 默认 openai-compatible 写入', async () => {
+    const app = makeApp()
+    const { cookie, user } = await createLoggedInUser('llm-default-apitype@a.com')
+    await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ provider: 'zhipu', apiKey: 'sk-x', model: 'GLM-5.1' }),
+    })
+    const db = getDb()
+    const [u] = await db.select().from(users).where(eq(users.id, user.id)).limit(1)
+    const decrypted = JSON.parse(decryptApiKey(u!.llmSettings!))
+    expect(decrypted.apiType).toBe('openai-compatible')
+  })
+
+  it('llm-settings PUT: 不支持的 apiType → 400', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser('llm-bad-apitype@a.com')
+    const res = await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({
+        provider: 'custom',
+        apiKey: 'sk-x',
+        baseUrl: 'https://example.com/v1',
+        apiType: 'anthropic-native',
+      }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('不支持的 apiType') })
   })
 
   it('llm-settings GET: 密文损坏 → 500', async () => {

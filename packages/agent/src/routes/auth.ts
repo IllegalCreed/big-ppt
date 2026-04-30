@@ -70,7 +70,15 @@ auth.use('/login', authLimit)
 auth.use('/register', authLimit)
 
 type AuthBody = { email?: string; password?: string }
-type LlmSettingsBody = { provider?: string; apiKey?: string; baseUrl?: string; model?: string }
+type LlmApiType = 'openai-compatible'
+const SUPPORTED_API_TYPES: readonly LlmApiType[] = ['openai-compatible'] as const
+type LlmSettingsBody = {
+  provider?: string
+  apiKey?: string
+  baseUrl?: string
+  model?: string
+  apiType?: string
+}
 
 auth.post('/register', async (c) => {
   const body = await c.req.json<AuthBody>().catch((): AuthBody => ({}))
@@ -135,7 +143,7 @@ auth.get('/llm-settings', async (c) => {
   const user = c.get('user')
   if (!user) return c.json({ error: 'unauthorized' }, 401)
   if (!user.llmSettings) {
-    return c.json({ provider: null, model: null, baseUrl: null, hasApiKey: false })
+    return c.json({ provider: null, model: null, baseUrl: null, apiType: null, hasApiKey: false })
   }
   try {
     const parsed = JSON.parse(decryptApiKey(user.llmSettings)) as LlmSettingsBody
@@ -143,6 +151,7 @@ auth.get('/llm-settings', async (c) => {
       provider: parsed.provider ?? null,
       model: parsed.model ?? null,
       baseUrl: parsed.baseUrl ?? null,
+      apiType: parsed.apiType ?? null,
       hasApiKey: !!parsed.apiKey,
     })
   } catch (err) {
@@ -175,7 +184,17 @@ auth.put('/llm-settings', async (c) => {
   const model = body.model?.trim() || undefined
   const baseUrl = body.baseUrl?.trim() || undefined
 
-  const payload = JSON.stringify({ provider, apiKey, baseUrl, model })
+  // apiType 目前仅支持 'openai-compatible';留空时默认它,显式传不在白名单的值 → 400
+  const rawApiType = body.apiType?.trim()
+  let apiType: LlmApiType = 'openai-compatible'
+  if (rawApiType) {
+    if (!SUPPORTED_API_TYPES.includes(rawApiType as LlmApiType)) {
+      return c.json({ error: `不支持的 apiType:${rawApiType}` }, 400)
+    }
+    apiType = rawApiType as LlmApiType
+  }
+
+  const payload = JSON.stringify({ provider, apiKey, baseUrl, model, apiType })
   const encrypted = encryptApiKey(payload)
 
   const db = getDb()
