@@ -1,4 +1,4 @@
-import { inject, ref, computed, type InjectionKey } from 'vue'
+import { inject, ref, computed, watch, type InjectionKey } from 'vue'
 import type {
   AgentStatus,
   CallToolRequest,
@@ -416,8 +416,19 @@ export function useAIChat() {
       if (!cur) return
       stepsArray[idx] = { ...cur, ...patch }
     }
-    // 改回 loading 状态展示进度
-    patchStep({ status: 'loading', label: '正在生成 AI 图片...' })
+    // dogfood 后:监听 job.stage 变化实时更新 ToolStep label,准确反映后端 state。
+    // 早先「从头到尾"正在生成 AI 图片…"」会让用户误以为所有图都在跑,实际后端 pLimit=3 排队
+    // 大量 job 还在 pending。pending → running → done 三阶段分别给不同文案。
+    patchStep({ status: 'loading', label: '排队中…' })
+    const stopWatch = watch(job.stage, (newStage) => {
+      if (newStage === 'pending') {
+        patchStep({ status: 'loading', label: '排队中…' })
+      } else if (newStage === 'running') {
+        patchStep({ status: 'loading', label: '生成中…' })
+      }
+      // terminal 状态(done / fallback-rewrote / failed / fallback-failed / cancelled)
+      // 由下面 try/catch 处理 final label,这里不重复 patch
+    })
     try {
       console.log('[trackImageJob] calling job.start', { jobId })
       const final = await job.start({ jobId })
@@ -438,6 +449,8 @@ export function useAIChat() {
     } catch (err) {
       console.error('[trackImageJob] job failed', { jobId, error: (err as Error).message })
       patchStep({ status: 'error', error: (err as Error).message })
+    } finally {
+      stopWatch()
     }
   }
 

@@ -220,7 +220,13 @@ message: 谢谢观看
 - \`generate_slide_image(slideIndex=3, prompt="The four core stages of a retrieval-augmented generation system showing how user queries flow through a retriever pulling relevant documents from a vector database, then through a generator language model that produces contextualized answers; emphasize the handoff between each stage", fallbackSummary="RAG 系统的 4 个核心模块及衔接关系：检索器、向量库、生成器、编排器")\`
 - \`generate_slide_image(slideIndex=4, prompt="The interaction between a retriever component and a generator language model: the retriever surfaces top-k relevant context chunks which the generator consumes to produce a grounded answer; show the loop where the generator can request additional retrievals when needed", fallbackSummary="检索器与生成器的协同：top-k 召回 → 上下文注入 → 生成器输出 + 必要时反向请求二次检索")\`
 
-注意示例 prompt 里**没有**出现 "bar chart" / "diagram" / "illustration" / "navy palette" 等形式词——只描述了"承载什么内容"，形式由生图 LLM 自决。`
+注意示例 prompt 里**没有**出现 "bar chart" / "diagram" / "illustration" / "navy palette" 等形式词——只描述了"承载什么内容"，形式由生图 LLM 自决。
+
+**最终回复给用户时的措辞约束**(异步语义,务必准确):
+- \`generate_slide_image\` 同步返回 \`{jobId, status: "queued"}\` **仅表示"任务已入队"**,**图还没出来**。后台 worker 按 per-user 并发限流(默认 3)依次跑 OpenAI image API,N 张图实际耗时约 N/3 × 30-60s
+- **不要说**"已生成 N 页 PPT"、"配图已完成"等暗示"图都好了"的措辞
+- **应该说**"已生成 N 页大纲,正在为 X 个内容页配图(后台异步,可在编辑器查看进度)"。让用户明白文字结构 + 配图任务排队都已就位,但**图还在跑**
+- 用户后续可能问"图怎么还没出来"——告诉用户 N 张图按 per-user 3 并发跑,并发位由后端 image-semaphore 排队\``
 
 function getDecisionTreeSection(imageGenEnabled: boolean): string {
   return imageGenEnabled ? DECISION_TREE_SECTION_ON : DECISION_TREE_SECTION_OFF

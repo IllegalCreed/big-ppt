@@ -16,8 +16,20 @@ import { useDecks, type ImageJobInfo, type ImageJobState } from './useDecks'
 const FAST_INTERVAL_MS = 1_500
 const SLOW_INTERVAL_MS = 3_000
 const FAST_PHASE_MS = 30_000
-// Phase 11.6 兜底重写额外吃 5-15s,加宽 timeout
-const TOTAL_TIMEOUT_MS = 3 * 60_000
+/**
+ * dogfood 后:**完全删前端 hard timeout**,靠后端 + 用户 cancel 兜底。
+ *
+ * 历史:
+ *   v1: TOTAL_TIMEOUT_MS = 3min hard。LLM 一 turn 触发 22 张图,后端 pLimit=3,排队尾的 job
+ *       前端 3min 早 timeout 标 failed,但后端 worker 还在 pending 队列实际跑成。前端 / 后端
+ *       状态背离 → 用户看到「失败但还在跑」错觉。
+ *   v2: STATE_CHANGE_TIMEOUT_MS = 5min(state 不变化就超时)。仍有 bug:pending 排队就是
+ *       state 不变化的合理状态,5min 内没拿到 slot 就误超时。
+ *   v3(当前): 删 timeout。pending 长时间排队是合理的;后端 acquireImageSlot 自身有
+ *       IMAGE_QUEUE_TIMEOUT_MS=10min 兜底(超时后 worker 标 job state='failed',前端 polling
+ *       自然看到 terminal 状态结束)。用户失耐心可点 cancel(发 DELETE /api/image-jobs/<id>
+ *       触发 worker controller.abort)。
+ */
 
 const STAGE_RATIO: Record<ImageJobState, number> = {
   pending: 0.05,
@@ -93,7 +105,6 @@ export function useGenerateImageJob() {
 
   async function _doStart(params: StartParams, ctrl: AbortController): Promise<ImageJobInfo> {
     try {
-      const deadline = Date.now() + TOTAL_TIMEOUT_MS
       const startTs = Date.now()
 
       // 立即查一次,拿到初始 state
@@ -116,10 +127,9 @@ export function useGenerateImageJob() {
         throw new Error(initial.errorMsg ?? `image job ${initial.state}`)
       }
 
+      // dogfood 后:无前端 hard timeout。靠后端 image-semaphore (10min 排队 timeout) +
+      // 用户 cancel 兜底。pending 长时间排队是合理状态,前端不该误超时。
       while (!ctrl.signal.aborted) {
-        if (Date.now() >= deadline) {
-          throw new Error('image job timeout (2min)')
-        }
         const interval =
           Date.now() - startTs < FAST_PHASE_MS ? FAST_INTERVAL_MS : SLOW_INTERVAL_MS
         await sleep(interval, ctrl.signal)
