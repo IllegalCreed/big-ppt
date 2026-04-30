@@ -85,7 +85,48 @@ function renderCommonComponentsSection(manifest: TemplateManifest): string {
     parts.push('### 内容块类（决定单个区域内的渲染）')
     parts.push(block.map(renderComponentEntry).join('\n'))
   }
+
+  // Phase 11.6:Slot 容量速查表,让 LLM 拼组合时不撞「九宫格塞 BarChart」「TwoCol 塞单数字」类错配
+  const capacityTable = renderSlotCapacityTable([...grid, ...decoration])
+  if (capacityTable) parts.push(capacityTable)
+
   return parts.join('\n\n')
+}
+
+/**
+ * 按容量等级聚合栅格 + 装饰类组件,生成「Slot 容量速查表」段。
+ * 仅含有 slotCapacity 字段的组件;block 类是叶子组件无 slot,不展示。
+ */
+function renderSlotCapacityTable(entries: ComponentEntry[]): string {
+  const buckets: Record<'small' | 'medium' | 'large', string[]> = {
+    small: [],
+    medium: [],
+    large: [],
+  }
+  for (const e of entries) {
+    if (e.slotCapacity) buckets[e.slotCapacity].push(`\`<${e.name}>\``)
+  }
+  const hasAny = buckets.small.length + buckets.medium.length + buckets.large.length > 0
+  if (!hasAny) return ''
+
+  const lines = [
+    '### Slot 容量速查（决定每个 slot 该塞多大尺度的内容,避免「九宫格塞 BarChart」「TwoCol 塞单数字」类错配）',
+    '',
+    '| 容量 | 适合放什么 | 此分组的 grid / decoration |',
+    '| --- | --- | --- |',
+  ]
+  if (buckets.small.length > 0) {
+    lines.push(`| **small** | 1-3 字短词 / 单数字 / 单图标 / 单 metric value | ${buckets.small.join(' / ')} |`)
+  }
+  if (buckets.medium.length > 0) {
+    lines.push(`| **medium** | ≤30 字短句 / 单 metric 卡 / icon+标签 | ${buckets.medium.join(' / ')} |`)
+  }
+  if (buckets.large.length > 0) {
+    lines.push(`| **large** | 整段 ≤80 字 + 嵌入子组件(BarChart/MetricCard 等) | ${buckets.large.join(' / ')} |`)
+  }
+  lines.push('')
+  lines.push('主从型组件(`<OneLeftThreeRight>` / `<OneRightThreeLeft>` / `<OneTopThreeBottom>`)主 slot 偏 large、3 个 itemN 偏 small,以 catalog 描述为准。')
+  return lines.join('\n')
 }
 
 const WORK_MODE_SECTION = `## 工作模式（5 档自由度连续谱）

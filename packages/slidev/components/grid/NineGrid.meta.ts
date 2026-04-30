@@ -7,4 +7,5 @@ export const meta: ComponentEntry = {
   propsOrSlots: 'slots: #slot1..#slot9',
   example:
     '<NineGrid><template #slot1>A</template><template #slot2>B</template>...<template #slot9>I</template></NineGrid>',
+  slotCapacity: 'small',
 }

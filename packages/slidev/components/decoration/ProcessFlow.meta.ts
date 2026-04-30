@@ -7,4 +7,5 @@ export const meta: ComponentEntry = {
   propsOrSlots: 'cols?: number (1-6, 默认 3); slots: #step1..#step6',
   example:
     '<ProcessFlow :cols="4"><template #step1>需求</template><template #step2>设计</template>...<template #step4>上线</template></ProcessFlow>',
+  slotCapacity: 'small',
 }

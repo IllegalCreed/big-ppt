@@ -8,4 +8,5 @@ export const meta: ComponentEntry = {
   propsOrSlots:
     'sections: Array<{ title: string; items: string[] }>（4 段；每段 items ≤ 3 条，超出会撑破花瓣布局）',
   example: `<PetalFour :sections='[{"title":"设计","items":["改版","布局"]},{"title":"开发","items":["开发","对接"]},{"title":"测试","items":["用例","脚本"]},{"title":"文档","items":["报告","手册"]}]' />`,
+  slotCapacity: 'medium',
 }

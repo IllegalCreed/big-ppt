@@ -11,6 +11,17 @@
 
 export type ComponentCategory = 'grid' | 'decoration' | 'block'
 
+/**
+ * Slot 容量等级,告诉 LLM 该组件的 slot 适合塞多大尺度的内容,避免 NineGrid 里塞 BarChart
+ * 撑爆 / TwoCol 里塞「89%」单数字浪费空间这类错配。仅 grid / decoration 类有 slot 概念,
+ * block 类是叶子组件不填。
+ *
+ * - small : 仅适合 1-3 字短词 / 单数字 / 单图标(NineGrid 每格、ProcessFlow 每 step)
+ * - medium: 适合 ≤30 字短句 / 单 metric 卡 / icon+标签(田字格、PetalFour 每段)
+ * - large : 适合整段(≤80 字) + 子组件(图表/卡)(TwoCol、ImageText #text)
+ */
+export type SlotCapacity = 'small' | 'medium' | 'large'
+
 export interface ComponentEntry {
   /** Vue 组件名(PascalCase),与 .vue 文件名一致 */
   name: string
@@ -22,4 +33,6 @@ export interface ComponentEntry {
   propsOrSlots: string
   /** 一行最小用法示例(markdown 内) */
   example: string
+  /** Slot 容量等级,仅 grid / decoration 类填(block 类是叶子无 slot) */
+  slotCapacity?: SlotCapacity
 }

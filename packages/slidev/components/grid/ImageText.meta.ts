@@ -8,4 +8,5 @@ export const meta: ComponentEntry = {
     'image: string / alt? / imageBorder?: "none"|"thin"|"thick" / direction?: "image-left"|"image-right"; slots: #text',
   example:
     '<ImageText image="/templates/X/y.png" direction="image-right"><template #text>说明</template></ImageText>',
+  slotCapacity: 'medium',
 }

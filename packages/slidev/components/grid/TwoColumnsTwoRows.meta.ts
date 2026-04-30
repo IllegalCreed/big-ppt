@@ -7,4 +7,5 @@ export const meta: ComponentEntry = {
   propsOrSlots: 'slots: #slot1 / #slot2 / #slot3 / #slot4',
   example:
     '<TwoColumnsTwoRows><template #slot1>A</template><template #slot2>B</template><template #slot3>C</template><template #slot4>D</template></TwoColumnsTwoRows>',
+  slotCapacity: 'medium',
 }

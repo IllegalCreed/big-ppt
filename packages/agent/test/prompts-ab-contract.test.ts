@@ -173,6 +173,23 @@ describe('buildSystemPrompt（A/B contract）', () => {
     }
   })
 
+  it('Slot 容量速查表段含 small/medium/large 三档 + grid/decoration 组件分桶', () => {
+    const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
+    expect(prompt).toContain('Slot 容量速查')
+    expect(prompt).toContain('**small**')
+    expect(prompt).toContain('**medium**')
+    expect(prompt).toContain('**large**')
+    // small 应含 NineGrid + ProcessFlow
+    expect(prompt).toMatch(/\*\*small\*\*[^\n]*<NineGrid>/)
+    expect(prompt).toMatch(/\*\*small\*\*[^\n]*<ProcessFlow>/)
+    // large 应含 TwoCol
+    expect(prompt).toMatch(/\*\*large\*\*[^\n]*<TwoCol>/)
+    // block 类(MetricCard / BarChart 等)不应出现在容量表(它们是叶子组件,无 slot)
+    const tableSection = prompt.split('Slot 容量速查')[1]?.split('## ')[0] ?? ''
+    expect(tableSection).not.toMatch(/\| .*<BarChart>.* \|/)
+    expect(tableSection).not.toMatch(/\| .*<MetricCard>.* \|/)
+  })
+
   it('工作模式 5 档段落 + 关键代价短语', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     expect(prompt).toContain('## 工作模式')

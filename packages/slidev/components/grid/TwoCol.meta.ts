@@ -7,4 +7,5 @@ export const meta: ComponentEntry = {
   propsOrSlots: 'leftTitle? / rightTitle? / divider?: "on"|"off"; slots: #left / #right',
   example:
     '<TwoCol left-title="旧" right-title="新"><template #left>A</template><template #right>B</template></TwoCol>',
+  slotCapacity: 'large',
 }
