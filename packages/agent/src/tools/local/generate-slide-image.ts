@@ -106,13 +106,17 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   if (slideIndex === null || slideIndex < 1) {
     return JSON.stringify({ success: false, error: 'slideIndex 必须是 ≥1 的整数' })
   }
-  const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
-  if (!prompt || prompt.length > PROMPT_MAX) {
+  const userPrompt = typeof args.prompt === 'string' ? args.prompt.trim() : ''
+  if (!userPrompt || userPrompt.length > PROMPT_MAX) {
     return JSON.stringify({
       success: false,
       error: `prompt 必填且长度 ≤ ${PROMPT_MAX}`,
     })
   }
+  // **强制 negative constraint**:防止 OpenAI 在图里画大标题/banner/水印,
+  // 因为 slide 顶部 LBtHeader/LJydHeader 已经有外层标题。LLM 即使忘了写
+  // 这条提示,工具层也要兜底追加,确保最终 prompt 一定包含。
+  const prompt = `${userPrompt}\n\n---\nIMPORTANT visual constraints (the image is embedded in a slide that already has its own external red/blue header bar at the top with the slide title — do NOT duplicate it):\n- Do NOT render any outer title, heading, banner, or large decorative text strip at the top or bottom of the image.\n- Do NOT include any image caption, watermark, signature, logo, or English/Chinese subtitle line.\n- Internal labels INSIDE diagram nodes/boxes (like '用户层', 'API') are OK and necessary for diagrams — but keep them small and contained within their nodes.\n- The image is body-only, edge-to-edge illustration. The slide's own header text will sit ABOVE this image, so leave clean visual content from edge to edge without any title overlay.`
   // **size 自动选**:模板的 image-content layout body 实际比例约 2:1
   // (Slidev 默认 16:9 canvas 减去 LBtHeader/LJydHeader 高度约 4.5em ≈ 15%)。
   // 1536x720 满足 OpenAI gpt-image-2 约束(min 655360 像素 + 16 倍数 + ≤3:1)
