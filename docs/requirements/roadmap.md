@@ -647,6 +647,40 @@
 
 ---
 
+## Phase 11.7：栅格组件库收敛（按内容数量定组件）
+
+> 详细实施:[plan 22-phase11.7-grid-refactor.md](../plans/22-phase11.7-grid-refactor.md)
+> 前置:Phase 11.6 ✅
+> 后续:Phase 11
+
+**目标**:Phase 11.6 把组件 catalog 迁到组件旁后,顺势收敛 grid 类组件设计语言。原来 7 个 grid 组件按"形状"区分(TwoCol / ThreeCol / OneTopThreeBottom / OneVsThree / TwoColumnsTwoRows / NineGrid / ImageText),LLM 选哪个组件依赖判断"页面有几列"。新设计按**内容数量**分桶:LLM 数完页面要承载几个平级元素直接选对应组件。
+
+**新组件清单**:
+- `EqualSplit`(新):2-4 平级 — 取代 TwoCol / ThreeCol。`count: 2|3|4 + direction?: 'row'|'col'(default row)`
+- `OneVsThree`(扩展):1 主 3 从 — 现 'left'/'right' 扩到 'top'/'bottom'/'left'/'right' 4 方向,取代 OneTopThreeBottom
+- `TwoColumnsTwoRows`(保留):田字格 4 等格,与 EqualSplit 语义不同(田字格强调"4 维度对比",平级 4 横排是"4 阶段")
+- `SixGrid`(新):5-6 平级 — `layout?: '2x3' | '3x2'(default '3x2')`
+- `NineGrid`(扩展):8-9 平级 — 加 `:show-center-decoration?: boolean` prop + `#decoration` slot,8 个时中央放装饰 icon
+- `ImageText`(保留):图文 45/55,语义独立
+
+**关键决策**:
+- **API 风格**:EqualSplit 用 `count + direction`(数量 + 方向)而非 `rows + cols`(更直观,LLM 对话语义友好);SixGrid 用 `layout: '2x3' | '3x2'` 双字符串直接表达拓扑;NineGrid 中央装饰用显式 prop 切换,避免 slot 推断歧义
+- **不向后兼容旧标签**:旧 deck 里 `<TwoCol>` / `<ThreeCol>` / `<OneTopThreeBottom>` 失效,沿用 Phase 11.6 Commit 10 同款策略(切模板时 LLM 自动重写)
+- **TwoColumnsTwoRows 田字格保留独立**:跟 EqualSplit 语义区分(对比 vs 平铺),不强行合并
+
+**包含内容**:
+- 新组件:EqualSplit / SixGrid 各一套(.vue / .test.ts / .meta.ts)
+- 扩展组件:OneVsThree direction 加 top/bottom + NineGrid 加 :show-center-decoration prop
+- 删除组件:TwoCol / ThreeCol / OneTopThreeBottom 各一套
+- 同步:_catalog/index.ts + 两个 manifest.json commonComponents + bodyGuidance + COMPONENTS.md + 测试断言
+
+**不在范围**:
+- ❌ TwoColumnsTwoRows 合并到 EqualSplit(用户明确说保留)
+- ❌ 旧组件 thin wrapper 兼容(切模板 LLM 重写已经够)
+- ❌ ImageText 重构(语义独立,不收敛)
+
+---
+
 ## Phase 11：多用户并发 + 分享链接 + 多实例部署切换
 
 > **依赖 Phase 10.5 spike 结果调整范围**:若 P10.5 落地,本 Phase 的"进程池 + LRU + 崩溃重拉 + 双路径切换"全部废弃(Vue 组件天然支持多用户),退化为"细化 deck-level 锁 + 分享链接 + 容量 spike"。
