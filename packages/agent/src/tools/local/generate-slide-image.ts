@@ -167,11 +167,18 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
       error: `prompt 必填且长度 ≤ ${PROMPT_MAX}`,
     })
   }
-  // Phase 11.6:fallbackSummary 是 graceful-degradation 输入。可选(为 undefined 时
-  // worker 失败仍会尝试用 heading 兜底,但效果差)。LLM 应该传,prompt 已强约束。
+  // Phase 11.6 dogfood 后改:fallbackSummary 改必填(LLM 不传 = 拒收)。
+  // 没它 worker 失败时无法做 graceful-degradation,slides.md 留空壳;system prompt 也强约束。
   const fallbackSummaryRaw =
     typeof args.fallbackSummary === 'string' ? args.fallbackSummary.trim() : ''
-  const fallbackSummary = fallbackSummaryRaw.length > 0 ? fallbackSummaryRaw : undefined
+  if (!fallbackSummaryRaw) {
+    return JSON.stringify({
+      success: false,
+      error:
+        'fallbackSummary 必填(中文 1-2 句概括本页应承载的信息)。worker 失败时 graceful-degradation 需要它作为重写组件版的输入,不传 = 失败时 slides.md 留 *-image-content 空壳。',
+    })
+  }
+  const fallbackSummary = fallbackSummaryRaw
   // Phase 11.6 dogfood 后改造:从自由文本 negative constraint 改为结构化
   // augmentation schema(参考 Codex imagegen skill /Users/zhangxu/.codex/skills/.system/imagegen/SKILL.md):
   // - 每次调用注入同一份 deck-level invariants(productivity-visual + 模板色板 hex + 中文 label + 边界约束)
@@ -372,12 +379,13 @@ export const generateSlideImageTool: ToolDef = {
       },
       fallbackSummary: {
         type: 'string',
+        minLength: 1,
         maxLength: 500,
         description:
-          '中文,1-2 句概括本页应承载的信息(例:「列举 RAG 系统的 4 个核心模块及作用」)。worker 在 OpenAI 路 A/B 都失败时,会用此摘要 + 整 deck 上下文调一次 LLM 自动重写为 *-content + 组件版本(graceful-degradation)。强烈建议传;不传时 worker 仅靠 heading 兜底,效果差。',
+          '中文,1-2 句概括本页应承载的信息(例:「列举 RAG 系统的 4 个核心模块及作用」)。**必填**:worker 在 OpenAI 路 A/B 都失败时,用此摘要 + 整 deck 上下文调一次 LLM 自动重写为 *-content + 组件版本(graceful-degradation)。不传 = 工具拒收;无此字段 worker 失败 → slides.md 留 *-image-content 空壳,体验差。',
       },
     },
-    required: ['slideIndex', 'prompt'],
+    required: ['slideIndex', 'prompt', 'fallbackSummary'],
   },
   exec: runTool,
 }

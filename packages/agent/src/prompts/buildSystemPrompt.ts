@@ -157,13 +157,13 @@ const DECISION_TREE_SECTION_ON = `## 选 Layout 与 Component 的决策树（图
 
 **Layout 选择**：
 - 结构页 → 仍按结构 layout 选：\`cover\` / \`toc\` / \`section-title\` / \`back-cover\`
-- 内容页（其他全部，含原本会用图表 / 数据卡 / 流程图的页）→ 一律写 \`layout: <模板 prefix>-image-content\`（例：\`beitou-image-content\`），仅保留 \`heading\` 字段，\`body\` 留空
+- 内容页（其他全部，含原本会用图表 / 数据卡 / 流程图的页）→ 一律写 \`layout: <模板 prefix>-image-content\`（例：\`beitou-image-content\`）+ \`heading\` 字段（**强制必填,不可省**——layout 顶部红/蓝 header bar 渲染这条 heading,缺失会留白丑陋），\`body\` 留空
 - **绝对不要**给内容页选 \`*-content\` 等组件 layout、不写 BarChart / MetricCard / ProcessFlow / markdown 文字兜底、不写 \`imageSrc\` 字段（工具层填）
 
-**工具调用契约**：\`write_slides\` 输出整 deck 后，**同一 turn 内对每个内容页发一个 \`generate_slide_image\` tool_call**（OpenAI / Anthropic 单轮支持多 tool_calls 并发执行，**不要**串行等待，**不要**因为同步只返 \`{jobId}\` 就重发 \`write_slides\`）：
+**工具调用契约**：\`write_slides\` 输出整 deck 后，**同一 turn 内对每个内容页发一个 \`generate_slide_image\` tool_call**（OpenAI / Anthropic 单轮支持多 tool_calls,工具层会按 per-user 并发 3 排队跑,你不需要顾虑 RPS,**不要**因为同步只返 \`{jobId}\` 就重发 \`write_slides\`）：
 - \`slideIndex\`: 1-based 页号
-- \`prompt\`: **英文**，仅描述本页要承载的**内容**（业务点 / 关键信息 / 主题氛围）；**不要指定展示形式**——任何 "bar chart" / "infographic" / "illustration" / "realistic photo" 等形态限定词都不要写，让生图 LLM 自决；工具层会自动追加 "this is a slide page" 与 no-text 约束
-- \`fallbackSummary\`: **中文 1-2 句**概括本页应承载的信息（例：「列举 RAG 系统的 4 个核心模块及作用」）；worker 失败时按此摘要重写为 \`*-content\` + 组件版
+- \`prompt\`: **英文**，仅描述本页要承载的**内容**（业务点 / 关键信息 / 主题氛围）；**不要指定展示形式**——任何 "bar chart" / "infographic" / "illustration" / "realistic photo" 等形态限定词都不要写,让生图 LLM 自决；工具层会自动追加结构化 schema(productivity-visual + 模板色板 + Chinese labels + edge-to-edge 约束),你不需要在 prompt 里写
+- \`fallbackSummary\`: **中文 1-2 句必填**概括本页应承载的信息（例：「列举 RAG 系统的 4 个核心模块及作用」）。**不传 = 工具拒收 + worker 失败时无兜底**——LLM 必须每次都传,这是 graceful-degradation 的唯一信息源
 
 **示例**（user: "生成 5 页关于 RAG 系统的 PPT"）：
 

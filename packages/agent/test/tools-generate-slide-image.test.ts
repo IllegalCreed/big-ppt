@@ -112,6 +112,11 @@ describe('generate_slide_image 工具', () => {
     expect(props).toHaveProperty('fallbackSummary')
   })
 
+  it('Phase 11.6 dogfood 后:fallbackSummary 改必填(在 required 数组里 + 工具内拒收)', () => {
+    const required = (generateSlideImageTool.parameters as { required?: string[] }).required
+    expect(required).toContain('fallbackSummary')
+  })
+
   it('未登录 → 失败', async () => {
     const result = await runTool({ slideIndex: 2, prompt: 'a' })
     const json = JSON.parse(result)
@@ -126,7 +131,7 @@ describe('generate_slide_image 工具', () => {
 
     const result = await runInRequest(
       { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
-      () => runTool({ slideIndex: 'abc', prompt: 'p' }),
+      () => runTool({ slideIndex: 'abc', prompt: 'p', fallbackSummary: 's' }),
     )
     const json = JSON.parse(result)
     expect(json.success).toBe(false)
@@ -155,7 +160,7 @@ describe('generate_slide_image 工具', () => {
     const before = fs.readFileSync(slidesFile, 'utf-8')
     const result = await runInRequest(
       { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
-      () => runTool({ slideIndex: 99, prompt: 'p' }),
+      () => runTool({ slideIndex: 99, prompt: 'p', fallbackSummary: 's' }),
     )
     const json = JSON.parse(result)
     expect(json.success).toBe(false)
@@ -170,7 +175,7 @@ describe('generate_slide_image 工具', () => {
 
     const result = await runInRequest(
       { userId: b.id, sessionId: null, activeDeckId: deck.id, turnId: null },
-      () => runTool({ slideIndex: 2, prompt: 'p' }),
+      () => runTool({ slideIndex: 2, prompt: 'p', fallbackSummary: 's' }),
     )
     const json = JSON.parse(result)
     expect(json.success).toBe(false)
@@ -184,7 +189,7 @@ describe('generate_slide_image 工具', () => {
       const { deck } = await createDeckDirect(user.id)
       const result = await runInRequest(
         { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
-        () => runTool({ slideIndex: 2, prompt: 'p' }),
+        () => runTool({ slideIndex: 2, prompt: 'p', fallbackSummary: 's' }),
       )
       const json = JSON.parse(result)
       expect(json.success).toBe(false)
@@ -192,6 +197,34 @@ describe('generate_slide_image 工具', () => {
     } finally {
       process.env.BIG_PPT_TEST_IMAGE_MODE = 'stub'
     }
+  })
+
+  it('Phase 11.6 dogfood 后:fallbackSummary 缺失 → 工具拒收', async () => {
+    const { user } = await createLoggedInUser('nofallback@a.com')
+    const { deck } = await createDeckDirect(user.id)
+    await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
+
+    const result = await runInRequest(
+      { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
+      () => runTool({ slideIndex: 2, prompt: 'p' }),
+    )
+    const json = JSON.parse(result)
+    expect(json.success).toBe(false)
+    expect(json.error).toMatch(/fallbackSummary/)
+  })
+
+  it('Phase 11.6 dogfood 后:fallbackSummary 全空白字符串 → 工具拒收(trim 后非空才算)', async () => {
+    const { user } = await createLoggedInUser('emptyfb@a.com')
+    const { deck } = await createDeckDirect(user.id)
+    await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
+
+    const result = await runInRequest(
+      { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
+      () => runTool({ slideIndex: 2, prompt: 'p', fallbackSummary: '   ' }),
+    )
+    const json = JSON.parse(result)
+    expect(json.success).toBe(false)
+    expect(json.error).toMatch(/fallbackSummary/)
   })
 
   it('happy path:同步立返 jobId 且 slides.md/DB 暂未变;stub 跑完后 DB+slides.md 都更新', async () => {
@@ -203,7 +236,12 @@ describe('generate_slide_image 工具', () => {
 
     const result = await runInRequest(
       { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
-      () => runTool({ slideIndex: 2, prompt: 'a futuristic city' }),
+      () =>
+        runTool({
+          slideIndex: 2,
+          prompt: 'a futuristic city',
+          fallbackSummary: '某段中文兜底摘要',
+        }),
     )
     const json = JSON.parse(result)
     expect(json.success).toBe(true)
