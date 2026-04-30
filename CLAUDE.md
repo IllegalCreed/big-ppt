@@ -150,6 +150,39 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 - MCP server headers 同样 AES-256-GCM 加密（Phase 5 P2-4）
 - MCP server **per-user 入库**（Phase 9-F A01 修复）：`user_mcp_servers` 表，`(userId, serverId)` 唯一；同 serverId 在不同 user 下是独立记录；registry / tool-registry 都按 user 分区，工具命名 `mcp__<serverId>__<toolName>` 不变（不暴露 userId 到 prompt）
 
+## 后端日志规范（重要功能必须落盘）
+
+**核心规则**：后端关键事件**必须**用 `logServerEvent`（[`packages/agent/src/logger/server-log.ts`](packages/agent/src/logger/server-log.ts)）落盘到 `logs/server-YYYY-MM-DD.jsonl`，**不能只 `console.log`**。
+
+**为什么**：dev server 的 stdout 不持久化，关掉终端就丢；用户 dogfood 反馈「图没出来 / 任务卡住」时事后无从排查。落盘 JSONL 长期保留供 grep / 分析。Phase 11.6 dogfood 期间已踩过这坑（用户报"两张图没生成"，dev 终端日志已翻飞）。
+
+**必须落盘的事件**：
+- **异步 worker 状态转移**：`image-gen-job` / `template-switch-job` / `regenerate-image-pages` 等的 enqueued / running / success / failed / fallback / cancelled
+- **外部 API 调用结果**：OpenAI image / 主 LLM completion 的成功 + 失败 + 重试 + 限速
+- **用户主动操作的 audit-worthy 副作用**：删 deck / 切模板 / 上传 asset / 切换 LLM 配置等
+
+**不必落盘**：纯查询路由（`GET /api/decks/:id`）、debug-only 临时 `console.log`、tool 同步 schema 校验失败（这种属 LLM 行为问题，console 即可）。
+
+**调用约定**：
+
+```ts
+logServerEvent({
+  category: 'image-gen',  // 模块名,grep 友好
+  event: 'gen-failed',     // state transition / milestone
+  jobId, deckId, userId, slideIndex,  // 业务字段任意附加
+  errorMsg: e.message,
+})
+```
+
+**配套实践**：保留 `console.log` 给 dev 终端实时反馈（mirror 模式）—— 既给开发者看又落盘。`logServerEvent` 内部自带 try/catch，文件写失败被吞掉不影响业务流。
+
+**事后排查方式**：
+```bash
+grep '"event":"gen-failed"' logs/server-*.jsonl   # 找所有失败事件
+grep '"jobId":"abc12345"' logs/server-*.jsonl     # 追踪某 job 全生命周期
+jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-30.jsonl  # 复杂过滤
+```
+
 ## 测试基建注意点
 
 - agent 单测用 `lumideck_test` 真 MySQL，每个 `beforeEach` TRUNCATE（不用 mock DB）

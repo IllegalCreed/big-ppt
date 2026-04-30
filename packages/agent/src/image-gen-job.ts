@@ -17,6 +17,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { acquireImageSlot } from './middleware/image-semaphore.js'
+import { logServerEvent } from './logger/server-log.js'
 
 export type ImageJobState =
   | 'pending'
@@ -200,6 +201,15 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
     console.error(
       `[image-gen-job ${jobId.slice(0, 8)}] image semaphore acquire failed: ${e.message}`,
     )
+    logServerEvent({
+      category: 'image-gen',
+      event: 'queue-timeout',
+      jobId,
+      deckId: job.deckId,
+      userId: job.userId,
+      slideIndex: job.slideIndex,
+      errorMsg: e.message,
+    })
     mutate(jobId, { state: 'failed', errorMsg: e.message, finishedAt: new Date() })
     return
   }
@@ -213,9 +223,19 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
   mutate(jobId, { state: 'running' })
 
   try {
+    const baseFields = {
+      category: 'image-gen',
+      jobId,
+      deckId: job.deckId,
+      userId: job.userId,
+      slideIndex: job.slideIndex,
+      templateId: job.templateId,
+    }
     console.log(
       `[image-gen-job ${jobId.slice(0, 8)}] running: deck=${job.deckId} slide=${job.slideIndex} model=${job.model ?? 'default'}`,
     )
+    logServerEvent({ ...baseFields, event: 'running', model: job.model ?? 'default' })
+
     const gen = await deps.generateImage({
       prompt: job.prompt,
       size: job.size,
@@ -225,6 +245,13 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
     console.log(
       `[image-gen-job ${jobId.slice(0, 8)}] gen ok: model=${gen.modelUsed} pathTaken=${gen.pathTaken} bytes=${gen.b64.length}`,
     )
+    logServerEvent({
+      ...baseFields,
+      event: 'gen-success',
+      modelUsed: gen.modelUsed,
+      pathTaken: gen.pathTaken,
+      bytesB64: gen.b64.length,
+    })
 
     if (job.controller.signal.aborted) {
       mutate(jobId, { state: 'cancelled', finishedAt: new Date() })
@@ -263,6 +290,7 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
     console.log(
       `[image-gen-job ${jobId.slice(0, 8)}] done: assetId=${asset.id}`,
     )
+    logServerEvent({ ...baseFields, event: 'done', assetId: asset.id, modelUsed: gen.modelUsed })
     mutate(jobId, {
       state: 'done',
       pathTaken: gen.pathTaken,
@@ -276,12 +304,31 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
     // ImageCancelled / AbortError 走 cancelled,其他走 failed / 兜底重写
     if (e.name === 'ImageCancelled' || e.name === 'AbortError') {
       console.warn(`[image-gen-job ${jobId.slice(0, 8)}] cancelled: ${msg}`)
+      logServerEvent({
+        category: 'image-gen',
+        event: 'cancelled',
+        jobId,
+        deckId: job.deckId,
+        userId: job.userId,
+        slideIndex: job.slideIndex,
+        errorMsg: msg,
+      })
       mutate(jobId, { state: 'cancelled', errorMsg: msg, finishedAt: new Date() })
       return
     }
     console.error(
       `[image-gen-job ${jobId.slice(0, 8)}] image gen FAILED: ${e.name}: ${msg}\n${e.stack ?? ''}`,
     )
+    logServerEvent({
+      category: 'image-gen',
+      event: 'gen-failed',
+      jobId,
+      deckId: job.deckId,
+      userId: job.userId,
+      slideIndex: job.slideIndex,
+      errorName: e.name,
+      errorMsg: msg,
+    })
 
     // Phase 11.6 graceful-degradation:rewriteSinglePage + readSlides + updateSlideRaw 三件 DI
     // 全提供 + job.fallbackSummary + job.templateId 都存在时,触发兜底重写。
@@ -316,6 +363,15 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
       console.log(
         `[image-gen-job ${jobId.slice(0, 8)}] fallback-rewrote ok (image gen failed: ${msg})`,
       )
+      logServerEvent({
+        category: 'image-gen',
+        event: 'fallback-rewrote',
+        jobId,
+        deckId: job.deckId,
+        userId: job.userId,
+        slideIndex: job.slideIndex,
+        originalErrorMsg: msg,
+      })
       mutate(jobId, {
         state: 'fallback-rewrote',
         errorMsg: msg,
@@ -327,6 +383,17 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
       console.error(
         `[image-gen-job ${jobId.slice(0, 8)}] fallback rewrite ALSO FAILED: ${rE.name}: ${rMsg}`,
       )
+      logServerEvent({
+        category: 'image-gen',
+        event: 'fallback-failed',
+        jobId,
+        deckId: job.deckId,
+        userId: job.userId,
+        slideIndex: job.slideIndex,
+        originalErrorMsg: msg,
+        fallbackErrorName: rE.name,
+        fallbackErrorMsg: rMsg,
+      })
       mutate(jobId, {
         state: 'fallback-failed',
         errorMsg: `image gen failed: ${msg}; fallback rewrite also failed: ${rMsg}`,

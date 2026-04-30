@@ -342,11 +342,22 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
     )
     } catch (err) {
       // 兜底:任何意外抛错(包括 runInRequest / setImageLlmSettings 解构等同步失败)
-      // 都到 stderr,避免 unhandled rejection 静默吞错;同时把 job 标 failed。
+      // 都到 stderr + 持久化日志,避免 unhandled rejection 静默吞错;同时把 job 标 failed。
       const e = err as Error
       console.error(
         `[generate_slide_image worker] unhandled error for job ${job.id.slice(0, 8)}: ${e.name}: ${e.message}\n${e.stack ?? ''}`,
       )
+      const { logServerEvent } = await import('../../logger/server-log.js')
+      logServerEvent({
+        category: 'image-gen',
+        event: 'worker-wrapper-error',
+        jobId: job.id,
+        deckId,
+        userId,
+        slideIndex,
+        errorName: e.name,
+        errorMsg: e.message,
+      })
     }
   })()
 
