@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import type { LLMSettings, McpServerWithStatus, UpdateMcpServerRequest } from '@big-ppt/shared'
+import type {
+  ImageLlmSettings,
+  LLMSettings,
+  McpServerWithStatus,
+  UpdateMcpServerRequest,
+} from '@big-ppt/shared'
 import { Check, Copy, Eye, EyeOff, X } from 'lucide-vue-next'
 import { useMCP } from '../composables/useMCP'
 import { useAuth } from '../composables/useAuth'
@@ -45,15 +50,36 @@ const DEFAULT_SETTINGS: LLMSettings = {
   apiType: 'openai-compatible',
 }
 
-const activeTab = ref<'llm' | 'mcp'>('llm')
+const activeTab = ref<'llm' | 'mcp' | 'image'>('llm')
 const settings = ref<LLMSettings>({ ...DEFAULT_SETTINGS })
 const hasStoredApiKey = ref(false)
 const showApiKey = ref(false)
 const copiedKey = ref(false)
 const saving = ref(false)
 const saveError = ref('')
+
+// Phase 11.5：生图模型(独立于主 LLM)
+const DEFAULT_IMAGE_SETTINGS: ImageLlmSettings = {
+  provider: 'openai',
+  apiKey: '',
+  baseUrl: '',
+  model: '',
+}
+const imageSettings = ref<ImageLlmSettings>({ ...DEFAULT_IMAGE_SETTINGS })
+const hasStoredImageApiKey = ref(false)
+const showImageApiKey = ref(false)
+const savingImage = ref(false)
+const imageSaveError = ref('')
+
+const IMAGE_MODEL_OPTIONS: { value: string; label: string; hint: string }[] = [
+  { value: '', label: '默认（gpt-5.5 主 + gpt-image-2 兜底）', hint: 'Responses API 带 reasoning 自动改写 prompt' },
+  { value: 'gpt-5.5', label: 'gpt-5.5（路 A）', hint: 'Responses API + image_generation tool' },
+  { value: 'gpt-image-2', label: 'gpt-image-2（路 B）', hint: '直接 /v1/images/generations,无 reasoning' },
+  { value: 'gpt-image-1.5', label: 'gpt-image-1.5（路 B 旧）', hint: '兜底降级用,仅在 image-2 不可用时考虑' },
+]
+
 const { servers, refresh, create, update, remove } = useMCP()
-const { saveLlmSettings } = useAuth()
+const { saveLlmSettings, saveImageLlmSettings } = useAuth()
 
 const presetServers = computed<McpServerWithStatus[]>(() => servers.value.filter((s) => s.preset))
 const customServers = computed<McpServerWithStatus[]>(() => servers.value.filter((s) => !s.preset))
@@ -91,6 +117,30 @@ async function loadSettings() {
     }
     settings.value = { ...DEFAULT_SETTINGS }
     hasStoredApiKey.value = false
+  }
+}
+
+async function loadImageSettings() {
+  try {
+    const data = await api.get<{
+      provider: 'openai' | null
+      baseUrl: string | null
+      model: string | null
+      hasApiKey: boolean
+    }>('/api/image-llm-settings')
+    imageSettings.value = {
+      provider: data.provider ?? 'openai',
+      apiKey: '',
+      baseUrl: data.baseUrl ?? '',
+      model: data.model ?? '',
+    }
+    hasStoredImageApiKey.value = !!data.hasApiKey
+  } catch (err) {
+    if (!(err instanceof ApiError && err.status === 401)) {
+      imageSaveError.value = `加载生图模型设置失败:${(err as Error).message}`
+    }
+    imageSettings.value = { ...DEFAULT_IMAGE_SETTINGS }
+    hasStoredImageApiKey.value = false
   }
 }
 
@@ -134,6 +184,31 @@ async function saveLlm() {
     saveError.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
   } finally {
     saving.value = false
+  }
+}
+
+async function saveImage() {
+  if (savingImage.value) return
+  imageSaveError.value = ''
+  if (!imageSettings.value.apiKey && !hasStoredImageApiKey.value) {
+    imageSaveError.value = '请填写 OpenAI API Key'
+    return
+  }
+  savingImage.value = true
+  try {
+    await saveImageLlmSettings({
+      provider: imageSettings.value.provider,
+      apiKey: imageSettings.value.apiKey, // 空串 → 后端保留原 key
+      baseUrl: imageSettings.value.baseUrl?.trim() || undefined,
+      model: imageSettings.value.model?.trim() || undefined,
+    })
+    hasStoredImageApiKey.value = true
+    imageSettings.value.apiKey = ''
+    emit('update:open', false)
+  } catch (err) {
+    imageSaveError.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
+  } finally {
+    savingImage.value = false
   }
 }
 
@@ -183,8 +258,7 @@ watch(
   () => props.open,
   async (val) => {
     if (val) {
-      await loadSettings()
-      await refresh()
+      await Promise.all([loadSettings(), loadImageSettings(), refresh()])
     }
   },
 )
@@ -207,8 +281,14 @@ onMounted(() => {
         </div>
 
         <div class="modal-tabs-wrap">
-          <div class="seg-tabs" role="tablist">
-            <div class="seg-indicator" :class="{ 'seg-indicator--right': activeTab === 'mcp' }" />
+          <div class="seg-tabs seg-tabs--three" role="tablist">
+            <div
+              class="seg-indicator seg-indicator--three"
+              :class="{
+                'seg-indicator--mid': activeTab === 'mcp',
+                'seg-indicator--right': activeTab === 'image',
+              }"
+            />
             <button
               type="button"
               class="seg-tab"
@@ -229,6 +309,16 @@ onMounted(() => {
             >
               MCP Servers
               <span v-if="enabledMcpCount > 0" class="seg-count">{{ enabledMcpCount }}</span>
+            </button>
+            <button
+              type="button"
+              class="seg-tab"
+              :class="{ active: activeTab === 'image' }"
+              role="tab"
+              :aria-selected="activeTab === 'image'"
+              @click="activeTab = 'image'"
+            >
+              生图模型
             </button>
           </div>
         </div>
@@ -338,7 +428,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-else class="modal-body">
+        <div v-else-if="activeTab === 'mcp'" class="modal-body">
           <section class="form-section">
             <header class="section-header">
               <span class="section-title">预置服务</span>
@@ -370,6 +460,95 @@ onMounted(() => {
 
           <div class="modal-footer">
             <button type="button" class="btn-secondary" @click="close">关闭</button>
+          </div>
+        </div>
+
+        <div v-else class="modal-body">
+          <section class="form-section">
+            <p class="image-intro">
+              生图能力独立于主 LLM。当你在 Chat 里明确要求"生成图片 / 画一张..."时，
+              工具会调 OpenAI 的 image_generation 能力出图并放入对应 slide。
+              <strong>仅支持 OpenAI 付费账号（任意 Tier 1+）</strong>，未配置时该工具不可用。
+            </p>
+          </section>
+
+          <section class="form-section">
+            <header class="section-header">
+              <span class="section-title">Provider</span>
+              <span class="section-hint">v1 仅支持 OpenAI；后续会加 Midjourney / Flux</span>
+            </header>
+            <select v-model="imageSettings.provider" class="input-bare" disabled>
+              <option value="openai">OpenAI</option>
+            </select>
+          </section>
+
+          <section class="form-section">
+            <header class="section-header">
+              <span class="section-title">OpenAI API Key</span>
+              <span class="section-hint">
+                {{
+                  hasStoredImageApiKey
+                    ? '已保存（服务端加密）。如需更换请重新输入'
+                    : '服务端 AES-256-GCM 加密存储，不回传'
+                }}
+              </span>
+            </header>
+            <div class="input-group">
+              <input
+                v-model="imageSettings.apiKey"
+                :type="showImageApiKey ? 'text' : 'password'"
+                :placeholder="hasStoredImageApiKey ? '留空表示不修改' : 'sk-...'"
+                autocomplete="off"
+                class="input-group__input"
+              />
+              <button
+                type="button"
+                class="input-group__action"
+                :title="showImageApiKey ? '隐藏' : '显示'"
+                :aria-label="showImageApiKey ? '隐藏' : '显示'"
+                @click="showImageApiKey = !showImageApiKey"
+              >
+                <EyeOff v-if="showImageApiKey" :size="16" :stroke-width="1.8" />
+                <Eye v-else :size="16" :stroke-width="1.8" />
+              </button>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <header class="section-header">
+              <span class="section-title">接口地址（可选）</span>
+              <span class="section-hint">中转 / 自部署的 base URL；留空走 https://api.openai.com/v1</span>
+            </header>
+            <input
+              v-model="imageSettings.baseUrl"
+              type="text"
+              placeholder="https://api.openai.com/v1"
+              autocomplete="off"
+              class="input-bare"
+            />
+          </section>
+
+          <section class="form-section">
+            <header class="section-header">
+              <span class="section-title">模型</span>
+              <span class="section-hint">默认自动 fallback，特殊情况可锁定模型</span>
+            </header>
+            <select v-model="imageSettings.model" class="input-bare">
+              <option v-for="m in IMAGE_MODEL_OPTIONS" :key="m.value" :value="m.value">
+                {{ m.label }}
+              </option>
+            </select>
+          </section>
+
+          <p v-if="imageSaveError" class="form-error">{{ imageSaveError }}</p>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" :disabled="savingImage" @click="close">
+              取消
+            </button>
+            <button type="button" class="btn-primary" :disabled="savingImage" @click="saveImage">
+              {{ savingImage ? '保存中...' : '保存' }}
+            </button>
           </div>
         </div>
       </div>
@@ -469,6 +648,23 @@ onMounted(() => {
 
 .seg-indicator--right {
   transform: translateX(100%);
+}
+
+/* Phase 11.5：3-tab 变体（生图模型 tab 加入后） */
+.seg-indicator--three {
+  width: calc((100% - 8px) / 3);
+}
+
+.seg-indicator--three.seg-indicator--mid {
+  transform: translateX(100%);
+}
+
+.seg-indicator--three.seg-indicator--right {
+  transform: translateX(200%);
+}
+
+.seg-tabs--three .seg-tab {
+  min-width: 100px;
 }
 
 .seg-tab {
@@ -690,6 +886,22 @@ onMounted(() => {
 .input-bare:focus {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+/* ---- Image LLM intro ---- */
+.image-intro {
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-md);
+  color: var(--color-fg-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+.image-intro strong {
+  color: var(--color-accent);
+  font-weight: var(--fw-semibold);
 }
 
 /* ---- MCP List ---- */

@@ -30,6 +30,12 @@ export const users = mysqlTable('users', {
   passwordHash: varchar('password_hash', { length: 60 }).notNull(), // bcrypt hash 固定 60
   /** AES-256-GCM ciphertext (JSON: {provider, apiKey, baseUrl, model})，master key 存环境变量 */
   llmSettings: text('llm_settings'),
+  /**
+   * Phase 11.5：生图模型独立配置（与主 LLM 完全解耦）。
+   * AES-256-GCM ciphertext (JSON: {provider, apiKey, baseUrl?, model?})。
+   * NULL 表示未配置 → generate_slide_image 工具显式拒绝。
+   */
+  imageLlmSettings: text('image_llm_settings'),
   createdAt: timestamp('created_at').default(NOW).notNull(),
   updatedAt: timestamp('updated_at').default(NOW_ON_UPDATE).notNull(),
 })

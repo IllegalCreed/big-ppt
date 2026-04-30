@@ -66,6 +66,19 @@ export function useAuth() {
     if (currentUser.value) currentUser.value.hasLlmSettings = true
   }
 
+  /**
+   * Phase 11.5：保存生图模型独立配置（与主 LLM 解耦）。
+   * 空 apiKey 表示保留旧值，仅替换 baseUrl/model。
+   */
+  async function saveImageLlmSettings(settings: {
+    provider: 'openai'
+    apiKey: string
+    baseUrl?: string
+    model?: string
+  }): Promise<void> {
+    await api.put('/api/image-llm-settings', settings)
+  }
+
   return {
     currentUser,
     isLoggedIn,
@@ -75,5 +88,6 @@ export function useAuth() {
     register,
     logout,
     saveLlmSettings,
+    saveImageLlmSettings,
   }
 }
