@@ -6,6 +6,11 @@ const content = ref('')
 const currentPage = ref(1)
 /** iframe src 带此 token 作为 query；bump 后强制 iframe 重新加载（手动刷新按钮用） */
 const refreshToken = ref(0)
+/**
+ * dogfood 后:LLM 工作中标记。useAIChat 在 status 变化时同步,SlidePreview 的「重启 Slidev」
+ * 按钮读它判断是否警示用户(LLM 正在 stream / 调 tool 时重启会中断 tool_call)。
+ */
+const aiBusy = ref(false)
 
 export function useSlideStore() {
   const pages = computed(() => {
@@ -56,15 +61,21 @@ export function useSlideStore() {
     }
   }
 
+  function setAIBusy(busy: boolean) {
+    aiBusy.value = busy
+  }
+
   return {
     content,
     pages,
     currentPage,
     totalPages,
     refreshToken,
+    aiBusy,
     setPage,
     update,
     exportMarkdown,
     refresh,
+    setAIBusy,
   }
 }

@@ -25,6 +25,7 @@ import { healthz } from './routes/healthz.js'
 import { imageLlmSettingsRoute } from './routes/image-llm-settings.js'
 import { assetsRoute } from './routes/assets.js'
 import { imageJobsRoute } from './routes/image-jobs.js'
+import { slidevRestartRoute } from './routes/slidev-restart.js'
 import { authOptional, type AuthVars } from './middleware/auth.js'
 import { requestContextMiddleware } from './middleware/request-context.js'
 import { originCheck } from './middleware/origin-check.js'
@@ -62,3 +63,4 @@ app.route('/api', mcpRoute)
 app.route('/api', imageLlmSettingsRoute)
 app.route('/api', assetsRoute)
 app.route('/api', imageJobsRoute)
+app.route('/api', slidevRestartRoute)

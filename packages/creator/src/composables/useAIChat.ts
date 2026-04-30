@@ -378,6 +378,17 @@ export function useAIChat() {
   const status = ref<AgentStatus>('idle')
   const statusText = ref('')
 
+  // dogfood 后:LLM 工作时同步标记到 slideStore.aiBusy,SlidePreview 的「重启 Slidev」按钮
+  // 读它在 thinking / streaming / calling_tool 期间警示用户(重启会中断 tool_call)。
+  watch(
+    status,
+    (s) => {
+      const busy = s === 'thinking' || s === 'streaming' || s === 'calling_tool'
+      slideStore.setAIBusy(busy)
+    },
+    { immediate: true },
+  )
+
   /**
    * 只在"AI 真在干活"的三种状态下转圈。
    * Why：error / cancelled 是终态（session 已结束、abortController 已被 finally 清掉），

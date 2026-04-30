@@ -2,8 +2,11 @@
 import { computed, ref, watch } from 'vue'
 import { Download, Play, RefreshCw } from 'lucide-vue-next'
 import { useSlideStore } from '../composables/useSlideStore'
+import { api, ApiError } from '../api/client'
 
 const slideStore = useSlideStore()
+const restarting = ref(false)
+const restartError = ref<string | null>(null)
 
 // 走 agent 反代（/api/slidev-preview/*），agent 校验 session cookie + 当前是锁持有者才放行。
 // 这样外网拿到 URL 没登录/没占用锁的用户看不到别人的 deck。
@@ -65,8 +68,47 @@ watch(
   },
 )
 
-function refresh() {
-  slideStore.refresh()
+/**
+ * dogfood 后改造:这个按钮原来只是 slideStore.refresh() 让 iframe 重 load HTML,
+ * 但 Slidev / Vite dev server 进程内的 vite module cache 在 long session 累积错位
+ * 后,iframe reload 拿到的 HTML 还是错的(layout component 缓存对不上)。
+ *
+ * 改成调 POST /api/slidev-restart 真重启 Slidev 进程清进程内存:
+ * - production: agent execFile pm2 restart lumideck-slidev
+ * - development: agent 返 503 + 提示用户手动 cmd+C / pnpm dev
+ *
+ * 重启后 1.5s 等 Slidev ready,再 slideStore.refresh() 让 iframe reload 拿干净 HTML。
+ *
+ * 保护:LLM 工作中(slideStore.aiBusy)弹 confirm,允许用户在卡死场景强制重启,但默认警示。
+ */
+async function refresh() {
+  if (restarting.value) return
+  // LLM 工作中重启会中断 tool_call(slides.md 写一半,Slidev 起来读到中间态)。
+  // 弹 confirm 而不是直接 disable,允许用户在卡死场景仍能强制重启。
+  if (slideStore.aiBusy.value) {
+    const ok = window.confirm(
+      'AI 正在生成或调用工具,重启 Slidev 会中断当前任务并可能让 slides.md 落到不完整中间态。\n\n仅在 SlidePreview 卡死或渲染严重错乱时才强制重启,否则建议等 AI 完成后再操作。\n\n确定要现在重启吗?',
+    )
+    if (!ok) return
+  }
+  restarting.value = true
+  restartError.value = null
+  try {
+    await api.post<{ success: boolean; message?: string }>('/api/slidev-restart', {})
+    // 给 Slidev 进程 1.5s 起来再 reload iframe(probeSlidevReady 会进一步等)
+    await new Promise((r) => setTimeout(r, 1500))
+    slideStore.refresh()
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 503) {
+      // dev 模式 fallback:仅 iframe reload(虽然不能根治,但优于啥都不做)
+      restartError.value = err.message || '当前是 dev 模式,仅 iframe reload(请手动重启 pnpm dev 根治)'
+      slideStore.refresh()
+    } else {
+      restartError.value = err instanceof ApiError ? err.message : (err as Error).message
+    }
+  } finally {
+    restarting.value = false
+  }
 }
 
 function exportFile() {
@@ -89,11 +131,19 @@ function present() {
         <button
           type="button"
           class="icon-btn"
-          title="刷新预览"
-          aria-label="刷新预览"
+          :class="{ 'icon-btn--busy': slideStore.aiBusy.value, 'icon-btn--restarting': restarting }"
+          :title="
+            restarting
+              ? '正在重启 Slidev...'
+              : slideStore.aiBusy.value
+                ? '⚠️ AI 工作中,重启会中断当前任务(慎重)'
+                : '重启 Slidev 预览(清 vite HMR 缓存,1-2s 等待)'
+          "
+          aria-label="重启 Slidev 预览"
+          :disabled="restarting"
           @click="refresh"
         >
-          <RefreshCw :size="16" :stroke-width="1.8" />
+          <RefreshCw :size="16" :stroke-width="1.8" :class="{ spinning: restarting }" />
         </button>
         <button
           type="button"
@@ -192,9 +242,32 @@ function present() {
     color var(--dur-fast) var(--ease-out);
 }
 
-.icon-btn:hover {
+.icon-btn:hover:not(:disabled) {
   background: var(--color-bg-subtle);
   color: var(--color-accent);
+}
+
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* AI 工作中:橙色警示色,鼠标悬停时不变绿(避免误以为可安全点) */
+.icon-btn--busy {
+  color: #d48806;
+}
+.icon-btn--busy:hover:not(:disabled) {
+  background: rgba(212, 136, 6, 0.08);
+  color: #d48806;
+}
+
+/* 正在重启:icon 旋转动画 */
+.icon-btn--restarting .spinning {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .cta-btn {
