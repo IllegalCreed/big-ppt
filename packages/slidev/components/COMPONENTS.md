@@ -14,74 +14,71 @@
 
 ## 栅格类组件（grid）
 
-> Phase 7.5C-1 引入。8 个种子组件覆盖最常见的页内分块需求；未来按需扩展。
+> Phase 11.7 起按"内容数量"分桶设计。LLM 数完页面要承载几个平级元素就直接选对应组件:2-4 用 `EqualSplit`;1 主 3 从用 `OneVsThree`;田字格 4 维度对比用 `TwoColumnsTwoRows`;5-6 用 `SixGrid`;8-9 用 `NineGrid`(8 个时可加中央装饰);图文 45/55 用 `ImageText`。
 
-### `<TwoCol>` 两栏对比
+### `<EqualSplit>` 等分平级 2-4
 
-左右 50/50；中间可选分隔条。
+`count` 决定平铺数量,`direction` 决定横排（默认 row）或竖排（col）。适合"N 个并列要点 / N 个阶段 / N 列对比"。
 
-| Prop / Slot        | 类型 / 说明                                          |
-| ------------------ | ---------------------------------------------------- |
-| `leftTitle?`       | string，左栏顶部标题                                 |
-| `rightTitle?`      | string，右栏顶部标题                                 |
-| `divider?`         | `'on' \| 'off'`，默认 `'on'`；`off` 时隐藏中间分隔条 |
-| `#left` / `#right` | named slot，分别填左右内容                           |
+> Phase 11.7 起取代旧 `<TwoCol>` / `<ThreeCol>`(旧组件镜像合并到本组件 + count=2/3 + direction='row')。
+
+| Prop / Slot         | 类型 / 说明                                  |
+| ------------------- | -------------------------------------------- |
+| `count`             | `2 \| 3 \| 4`(必填)                          |
+| `direction?`        | `'row' \| 'col'`，默认 `'row'`               |
+| `#slot1..#slot{count}` | named slot,按 count 决定渲染几个            |
 
 ```md
-<TwoCol left-title="旧方案" right-title="新方案">
-  <template #left>
-
-- 优势 A
-- 优势 B
-
-  </template>
-  <template #right>
-    <MetricCard value="89" unit="%" label="留存率" />
-  </template>
-</TwoCol>
+<EqualSplit :count="3">
+  <template #slot1>项目 A</template>
+  <template #slot2>项目 B</template>
+  <template #slot3>项目 C</template>
+</EqualSplit>
 ```
-
-### `<ThreeCol>` 三列均分
-
-左 / 中 / 右三段并列。中间常用于装饰组件（如 `<PetalFour>`），左右放文字 / 子组件。
-
-| Prop / Slot                    | 类型 / 说明                                                  |
-| ------------------------------ | ------------------------------------------------------------ |
-| `cols?`                        | string，CSS `grid-template-columns` 值；默认 `'1fr 1fr 1fr'` |
-| `#left` / `#center` / `#right` | named slot                                                   |
 
 ### `<OneVsThree>` 一主三从
 
-1 个主元素 + 3 个次级元素纵向排列。`direction` 控制主区在左还是右；默认 `'left'` 时主元素居左、3 项居右（旧 `OneLeftThreeRight`），`'right'` 时主元素居右（旧 `OneRightThreeLeft`）。适合"主标题 + 3 要点 / 主图 + 3 注解"。
+1 个主元素 + 3 个次级元素。`direction` 4 方向控制主区位置:`'left'`(默认)/`'right'` 横版主从,`'top'`/`'bottom'` 竖版主从。适合"主标题 + 3 要点 / 主图 + 3 注解"。
 
-> Phase 11.6 起取代旧 `<OneLeftThreeRight>` / `<OneRightThreeLeft>` 镜像组件对。
+> Phase 11.6 起取代旧 `<OneLeftThreeRight>` / `<OneRightThreeLeft>` 镜像对。
+> Phase 11.7 起 direction 扩到 4 方向,取代旧 `<OneTopThreeBottom>`。
 
-| Prop / Slot                              | 类型 / 说明                                       |
-| ---------------------------------------- | ------------------------------------------------- |
-| `direction?`                             | `'left' \| 'right'`，主区位置；默认 `'left'`      |
-| `mainFr?`                                | number，主区宽度 fr 单位；默认 `1`（与另一侧等宽） |
-| `#main` / `#item1` / `#item2` / `#item3` | named slot                                        |
-
-### `<OneTopThreeBottom>` 上主下从
-
-主元素在顶部一行，下方 3 个次级元素水平排列。适合"主标题 / 引言句 + 3 阶段"。
-
-| Prop / Slot                              | 类型 / 说明                   |
-| ---------------------------------------- | ----------------------------- |
-| `mainFr?`                                | number，主区行高 fr；默认 `1` |
-| `#main` / `#item1` / `#item2` / `#item3` | named slot                    |
+| Prop / Slot                              | 类型 / 说明                                            |
+| ---------------------------------------- | ------------------------------------------------------ |
+| `direction?`                             | `'left' \| 'right' \| 'top' \| 'bottom'`，默认 `'left'` |
+| `mainFr?`                                | number，主区占比 fr 单位；默认 `1`（与另一侧等大）       |
+| `#main` / `#item1` / `#item2` / `#item3` | named slot                                             |
 
 ### `<TwoColumnsTwoRows>` 田字格 2×2
 
-4 个等大 slot 排成 2 行 2 列。适合"4 维度对比 / 4 季度数据"。**注意**：装饰类组件 `<PetalFour>` 自带 4 区花瓣造型，不需要外套此栅格。
+4 个等大 slot 排成 2 行 2 列。**与 `<EqualSplit count="4">` 语义不同**:田字格强调"4 维度对比"(SWOT 类),EqualSplit count=4 是"4 平铺阶段"。**注意**：装饰类组件 `<PetalFour>` 自带 4 区花瓣造型，不需要外套此栅格。
 
 slot：`#slot1..#slot4`。
 
+### `<SixGrid>` 六格 5-6
+
+`layout` 决定拓扑:`'3x2'`(默认 3 行 2 列) / `'2x3'`(2 行 3 列)。slot 容量介于田字格和九宫格之间。
+
+> Phase 11.7 新增。
+
+| Prop / Slot       | 类型 / 说明                          |
+| ----------------- | ------------------------------------ |
+| `layout?`         | `'2x3' \| '3x2'`，默认 `'3x2'`        |
+| `#slot1..#slot6`  | named slot                            |
+
 ### `<NineGrid>` 九宫格 3×3
 
-9 个等大 slot，3 行 3 列。**约束**：1080p 视口下每格约 280×180px，slot 内**仅放短文字 / 单 metric / 单图标**，避免 chart 撑爆（AI prompt 决策树会明示）。
+9 个等大 slot,3 行 3 列。**约束**:1080p 视口下每格约 280×180px,slot 内**仅放短文字 / 单 metric / 单图标**,避免 chart 撑爆。
 
-slot：`#slot1..#slot9`。
+`:show-center-decoration="true"` 启用 8+1 装饰模式:slot1..slot8 占外圈 8 格(行优先顺序),中央 cell 渲染 `#decoration` slot(放 icon / logo / 主题图)。适合"8 个要点围绕主题图"。
+
+> Phase 11.7 加 `:show-center-decoration` mode。
+
+| Prop / Slot               | 类型 / 说明                                    |
+| ------------------------- | ---------------------------------------------- |
+| `showCenterDecoration?`   | boolean，默认 `false`                          |
+| `#slot1..#slot9`          | 默认模式(showCenterDecoration=false)的 9 slot |
+| `#slot1..#slot8` + `#decoration` | showCenterDecoration=true 时的 8+1 slot       |
 
 ### `<ImageText>` 图文左右
 
