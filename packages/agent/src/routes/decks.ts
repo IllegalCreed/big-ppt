@@ -217,6 +217,14 @@ decksRoute.delete('/decks/:id{[0-9]+}', async (c) => {
 
   const db = getDb()
   await db.update(decks).set({ status: 'deleted' }).where(eq(decks.id, deckId))
+  // Phase 11.5：deck 是 soft delete 不触发 FK cascade,显式清 deck_assets BLOB 行
+  // 避免 DB 长期膨胀。失败不阻塞响应(asset 留库变孤儿是可恢复的)。
+  try {
+    const { deleteAssetsByDeck } = await import('../db/deck-assets.js')
+    await deleteAssetsByDeck(deckId)
+  } catch {
+    // 软失败不影响 deck 删除主流程,长期由 99-tech-debt GC 兜底
+  }
   return c.json({ ok: true })
 })
 

@@ -278,6 +278,27 @@ describe('routes/decks', () => {
     expect(rows.find((d: { id: number }) => d.id === deck.id)).toBeUndefined()
   })
 
+  it('DELETE /decks/:id: Phase 11.5 同步清 deck_assets BLOB 行', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id, 'With Assets')
+
+    const { createAsset, getAsset, listAssetIdsByDeck } = await import('../src/db/deck-assets.js')
+    const { id: assetId } = await createAsset({
+      deckId: deck.id,
+      userId: user.id,
+      mimeType: 'image/png',
+      data: Buffer.from('fake-png-bytes'),
+    })
+    expect(await listAssetIdsByDeck(deck.id)).toContain(assetId)
+
+    const res = await app.request(`/api/decks/${deck.id}`, { method: 'DELETE', headers: { Cookie: cookie } })
+    expect(res.status).toBe(200)
+
+    expect(await getAsset(assetId)).toBeNull()
+    expect(await listAssetIdsByDeck(deck.id)).toEqual([])
+  })
+
   it('POST /decks/:id/restore/:vid: 前移 current_version_id；错 vid → 404', async () => {
     const app = makeApp()
     const { user, cookie } = await createLoggedInUser()
