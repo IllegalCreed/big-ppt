@@ -69,7 +69,7 @@ afterEach(() => {
 })
 
 describe('registerLocalTools', () => {
-  it('注册 11 个本地工具（含四件套 + switch_template + generate_slide_image）', () => {
+  it('注册 10 个本地工具（含四件套 + switch_template + generate_slide_image,Phase 11.6 删 list_templates）', () => {
     expect(hasTool('read_slides')).toBe(true)
     expect(hasTool('write_slides')).toBe(true)
     expect(hasTool('edit_slides')).toBe(true)
@@ -77,11 +77,12 @@ describe('registerLocalTools', () => {
     expect(hasTool('update_slide')).toBe(true)
     expect(hasTool('delete_slide')).toBe(true)
     expect(hasTool('reorder_slides')).toBe(true)
-    expect(hasTool('list_templates')).toBe(true)
     expect(hasTool('read_template')).toBe(true)
     expect(hasTool('switch_template')).toBe(true)
     expect(hasTool('generate_slide_image')).toBe(true)
-    expect(listTools()).toHaveLength(11)
+    // Phase 11.6 dogfood 后删除:list_templates 跨模板返回触发污染
+    expect(hasTool('list_templates')).toBe(false)
+    expect(listTools()).toHaveLength(10)
   })
 
   it('read_slides 返回 slides.md 原文', async () => {
@@ -108,24 +109,11 @@ describe('registerLocalTools', () => {
     expect(out).toBe('# hello\nvitest\n')
   })
 
-  it('list_templates 返回 cover.md 与 usage_guide 与 manifests', async () => {
-    const raw = await getTool('list_templates')!.exec({})
-    const parsed = JSON.parse(raw)
-    expect(parsed.success).toBe(true)
-    expect(parsed.templates).toEqual([{ name: 'cover.md', path: 'beitou-standard/cover.md' }])
-    expect(parsed.usage_guide).toBe('USAGE\n')
-    expect(parsed.manifests).toHaveLength(1)
-    expect(parsed.manifests[0].id).toBe('beitou-standard')
-    expect(parsed.manifests[0].layouts[0].name).toBe('cover')
-  })
-
-  it('read_template 读 cover.md 正文', async () => {
-    const raw = await getTool('read_template')!.exec({ name: 'cover.md' })
-    expect(JSON.parse(raw)).toEqual({ success: true, content: '<cover>封面</cover>\n' })
-  })
-
-  it('read_template 拒绝非 md 后缀', async () => {
-    const raw = await getTool('read_template')!.exec({ name: '../../../etc/passwd' })
+  // Phase 11.6 dogfood 后:read_template 改 ctx-aware,unit test 没 deck context 时
+  // 报「无 active deck」(防跨模板)。完整 ctx-aware 行为测试见 tools-read-template-isolation.test.ts。
+  it('read_template 缺 ctx → 拒收(防跨模板)', async () => {
+    const tool = getTool('read_template')!
+    const raw = await tool.exec.call(tool, { name: 'starter.md' })
     const parsed = JSON.parse(raw)
     expect(parsed.success).toBe(false)
   })

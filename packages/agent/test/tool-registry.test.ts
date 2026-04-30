@@ -35,15 +35,15 @@ describe('tool-registry', () => {
 
   it('listTools returns OpenAI-compatible LLMTool entries', () => {
     register({
-      name: 'list_templates',
-      description: 'list',
+      name: 'dummy_tool',
+      description: 'dummy',
       parameters: { type: 'object', properties: {} },
       exec: async () => '[]',
     })
     const tools = listTools()
     expect(tools).toHaveLength(1)
     expect(tools[0]!.type).toBe('function')
-    expect(tools[0]!.function.name).toBe('list_templates')
+    expect(tools[0]!.function.name).toBe('dummy_tool')
     expect(tools[0]!.function.parameters).toEqual({ type: 'object', properties: {} })
   })
 

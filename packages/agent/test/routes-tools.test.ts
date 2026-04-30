@@ -62,13 +62,12 @@ describe('GET /api/tools', () => {
     const { cookie } = await createLoggedInUser()
     const res = await buildApp().request('/api/tools', { headers: { Cookie: cookie } })
     const json = await res.json()
-    expect(json.tools).toHaveLength(11)
+    expect(json.tools).toHaveLength(10)
     expect(json.tools.map((t: any) => t.function.name).sort()).toEqual([
       'create_slide',
       'delete_slide',
       'edit_slides',
       'generate_slide_image',
-      'list_templates',
       'read_slides',
       'read_template',
       'reorder_slides',

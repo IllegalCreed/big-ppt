@@ -10,7 +10,7 @@ export interface ToolDef {
 /**
  * Phase 9-F：tool registry 拆"全局工具" + "per-user 工具"分区。
  *
- * - 全局：本地 5 工具（read_slides / write_slides / edit_slides / create_slide / ... / switch_template / list_templates / read_template）
+ * - 全局：本地 10 工具（read_slides / write_slides / edit_slides + 4 件套 create/update/delete/reorder_slide / switch_template / read_template / generate_slide_image。Phase 11.6 删 list_templates。）
  *   + slidev 操作四件套，全用户共享同一份代码
  * - per-user：MCP 工具 `mcp__<serverId>__<toolName>`，由 mcp-registry/registry.ts 在该 user 启用 server 后注册
  *

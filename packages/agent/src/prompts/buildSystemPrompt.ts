@@ -6,12 +6,15 @@
  * - 非 layouts 的段（工作方式 / 架构约束 / 输出约束）保留原文本
  * - 只接受 templateId，不依赖 deckId；未来 switch_template 完成后 caller 需传当前 deck 的 templateId
  */
+import fs from 'node:fs'
+import path from 'node:path'
 import type {
   TemplateManifest,
   TemplateManifestLayout,
   FrontmatterFieldSchema,
 } from '@big-ppt/shared'
 import { getManifest } from '../templates/registry.js'
+import { getPaths } from '../workspace.js'
 import { getCatalogByCategory, type ComponentEntry } from '@big-ppt/slidev/components-catalog'
 
 export interface BuildSystemPromptOptions {
@@ -50,6 +53,26 @@ function renderLayoutSection(layout: TemplateManifestLayout): string {
     lines.push(`- **body** — ${layout.bodyGuidance}`)
   }
   return lines.join('\n')
+}
+
+/**
+ * Phase 11.6 dogfood 后:扫当前模板目录的图片文件,拼到 system prompt 的「图片资源」段。
+ * 替代旧的 list_templates 工具(已删除),让 LLM 一开始就看到当前模板的可用图片白名单,
+ * 不再需要工具调用 + 不可能跨模板拿到其他模板的图片路径。
+ */
+function listAvailableImages(templateId: string): string[] {
+  try {
+    const { templatesDir } = getPaths()
+    const dir = path.join(templatesDir, templateId)
+    if (!fs.existsSync(dir)) return []
+    return fs
+      .readdirSync(dir)
+      .filter((f) => /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f))
+      .sort()
+      .map((f) => `/templates/${templateId}/${f}`)
+  } catch {
+    return []
+  }
 }
 
 function renderLayoutsSection(manifest: TemplateManifest): string {
@@ -222,8 +245,8 @@ ${manifest.promptPersona}
 **修改前必须先调用 \`read_slides\` 读取当前 slides.md 内容**，不要依赖记忆。读完后按以下流程：
 
 1. **首次生成**（slides.md 为空或无分页）：
-   - 调用 list_templates 了解可用模板和 design_spec
-   - 按需 read_template 查看模板细节
+   - 当前模板的 layouts / frontmatter schema / 公共组件 / 可用图片清单都已在本 system prompt 内列全;**不需要调任何"查模板"工具**就能直接动手
+   - 仅当需要看完整视觉规范时,可 \`read_template name="DESIGN.md"\` 读当前模板的 DESIGN.md(范围限定在当前 deck 的模板,看不到其他模板)
    - 用 \`write_slides\` 一次性写入完整 slides.md
 2. **局部修改**（slides.md 已有页）—— **禁止用 write_slides**，用四件套：
    - \`update_slide(index, frontmatter?, body?)\` — 整页改动：换 layout、换标题、替换整段正文
@@ -280,9 +303,19 @@ ${getDecisionTreeSection(options.imageGenEnabled === true)}
 
 ## 图片资源规则
 
-- **图片路径只能用 list_templates 返回的 \`available_images\` 列表中的路径**（用于 cover 装饰图 / ImageText 配图等结构页位置）。不允许自己拼凑如 \`/templates/${manifest.id}/xxx.png\` 这种未在 available_images 列表的路径
-- \`available_images\` 里没合适图片时，用在线占位图（如 \`https://placehold.co/800x600/d00d14/ffffff?text=占位\`）或换不需要图的 layout
-- \`*-image-content\` 页的 \`imageSrc\` 字段由 \`generate_slide_image\` 工具填入，**不查此列表**
+当前模板 \`${manifest.id}\` 可用图片白名单（**仅这些路径合法**，不允许自己拼路径）：
+
+${
+  listAvailableImages(manifest.id).length > 0
+    ? listAvailableImages(manifest.id)
+        .map((p) => `- \`${p}\``)
+        .join('\n')
+    : '_（当前模板无内置图片资源）_'
+}
+
+- 用于 cover 装饰图 / \`<ImageText image="...">\` 配图等结构页位置
+- 白名单里没合适图片时，用在线占位图（如 \`https://placehold.co/800x600/d00d14/ffffff?text=占位\`）或换不需要图的 layout
+- \`*-image-content\` 页的 \`imageSrc\` 字段由 \`generate_slide_image\` 工具填入，**不在此白名单**
 
 ## 内容质量规则
 
