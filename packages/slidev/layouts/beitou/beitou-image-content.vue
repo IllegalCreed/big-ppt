@@ -65,25 +65,21 @@ defineProps<{
   flex-shrink: 0;
 }
 .image-content-body {
-  padding: 32px 60px 48px;
+  /* 图直接充满 header 下所有空间;不留 padding 不留装饰 */
+  padding: 0;
   flex: 1;
   min-height: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
 }
 .image-content-img {
+  /* 撑满 body,无圆角无阴影,纯净充满 */
+  display: block;
   width: 100%;
-  max-width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
-  border-radius: 8px;
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.18),
-    0 2px 6px rgba(0, 0, 0, 0.08);
-  background: rgba(0, 0, 0, 0.04);
+  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 .image-content-img--cover {
   object-fit: cover;
@@ -92,12 +88,18 @@ defineProps<{
   object-fit: contain;
 }
 .image-content-caption {
+  /* caption 叠在图底部不挤占 img(无 caption 时根本不渲染) */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   margin: 0;
-  color: var(--bt-fg-secondary);
+  padding: 12px 60px;
+  color: #ffffff;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);
   font-size: 14px;
   line-height: 1.5;
   text-align: center;
-  max-width: 80%;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;

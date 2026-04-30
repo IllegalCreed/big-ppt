@@ -66,25 +66,20 @@ defineProps<{
   line-height: 1.3;
 }
 .jyd-image-content-body {
-  padding: 1.5em 3em 2.5em;
+  /* 图直接充满 header 下所有空间;不留 padding 不留装饰 */
+  padding: 0;
   flex: 1;
   min-height: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6em;
 }
 .jyd-image-content-img {
+  display: block;
   width: 100%;
-  max-width: 100%;
-  height: auto;
-  aspect-ratio: 16 / 9;
-  border-radius: 8px;
-  box-shadow:
-    0 12px 32px rgba(13, 27, 62, 0.22),
-    0 2px 6px rgba(13, 27, 62, 0.1);
-  background: rgba(13, 27, 62, 0.04);
+  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 .jyd-image-content-img--cover {
   object-fit: cover;
@@ -93,12 +88,18 @@ defineProps<{
   object-fit: contain;
 }
 .jyd-image-content-caption {
+  /* caption 叠在图底部不挤占 img(无 caption 时根本不渲染) */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   margin: 0;
-  color: var(--jyd-fg-secondary);
+  padding: 0.6em 3em;
+  color: #ffffff;
+  background: linear-gradient(to top, rgba(13, 27, 62, 0.65), transparent);
   font-size: 0.7em;
   line-height: 1.5;
   text-align: center;
-  max-width: 80%;
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
