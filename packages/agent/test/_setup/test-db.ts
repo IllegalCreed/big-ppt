@@ -20,6 +20,7 @@ export async function resetDb(): Promise<void> {
   const db = getDb()
   await db.execute(sql`SET FOREIGN_KEY_CHECKS=0`)
   await db.execute(sql`TRUNCATE TABLE user_mcp_servers`)
+  await db.execute(sql`TRUNCATE TABLE deck_assets`)
   await db.execute(sql`TRUNCATE TABLE deck_chats`)
   await db.execute(sql`TRUNCATE TABLE deck_versions`)
   await db.execute(sql`TRUNCATE TABLE decks`)

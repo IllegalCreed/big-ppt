@@ -18,7 +18,19 @@ import {
   mysqlEnum,
   index,
   uniqueIndex,
+  customType,
 } from 'drizzle-orm/mysql-core'
+
+/**
+ * MySQL MEDIUMBLOB(上限 16MB)。drizzle-orm 0.45 无内置 mediumBlob,用 customType 包一层。
+ * mysql2 driver 读出 Buffer,写入接受 Buffer/string,这里都按 Buffer 处理。
+ * Phase 11.5 用于 deck_assets.data(单图通常 1-3MB,远低于 16MB 上限)。
+ */
+const mediumBlob = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'mediumblob'
+  },
+})
 
 // Aliyun RDS 的 MySQL 5.7 不支持 `DEFAULT (now())` 括号表达式，统一用 raw CURRENT_TIMESTAMP
 const NOW = sql`CURRENT_TIMESTAMP`
@@ -162,6 +174,41 @@ export const userMcpServers = mysqlTable(
   }),
 )
 
+/**
+ * Phase 11.5：deck 维度的图片资源(主要是 generate_slide_image 工具产物)。
+ *
+ * - 图片字节直接存 DB MEDIUMBLOB(单图 1-3MB,16MB 上限够用)
+ * - 通过 GET /api/assets/:id 鉴权后返字节,Slidev 不碰资源
+ * - onDelete cascade 让 deck/user 删除时 BLOB 自动清,无文件孤儿
+ * - 无 slideIndex 字段:asset 与 slide 是松耦合,关联仅靠 slides.md 的 imageSrc 反向引用
+ *   这样 deck_versions restore 回旧版本时 asset 仍可用
+ * - bytesSize 冗余存储,后续做配额统计无需 OCTET_LENGTH 全表扫
+ */
+export const deckAssets = mysqlTable(
+  'deck_assets',
+  {
+    id: varchar('id', { length: 36 }).primaryKey(), // crypto.randomUUID()
+    deckId: int('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    userId: int('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    mimeType: varchar('mime_type', { length: 50 }).notNull(),
+    bytesSize: int('bytes_size').notNull(),
+    data: mediumBlob('data').notNull(),
+    /** 出图 prompt 留档(可选,纯审计/分析用) */
+    prompt: text('prompt'),
+    /** 出图模型,如 'gpt-5.5' / 'gpt-image-2',用于成本核算 */
+    model: varchar('model', { length: 50 }),
+    createdAt: timestamp('created_at').default(NOW).notNull(),
+  },
+  (t) => ({
+    deckIdx: index('deck_assets_deck_idx').on(t.deckId),
+    userIdx: index('deck_assets_user_idx').on(t.userId),
+  }),
+)
+
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type Session = typeof sessions.$inferSelect
@@ -174,3 +221,5 @@ export type DeckChat = typeof deckChats.$inferSelect
 export type NewDeckChat = typeof deckChats.$inferInsert
 export type UserMcpServer = typeof userMcpServers.$inferSelect
 export type NewUserMcpServer = typeof userMcpServers.$inferInsert
+export type DeckAsset = typeof deckAssets.$inferSelect
+export type NewDeckAsset = typeof deckAssets.$inferInsert
