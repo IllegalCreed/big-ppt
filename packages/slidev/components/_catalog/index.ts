@@ -11,13 +11,15 @@ export type { ComponentCategory, ComponentEntry } from './types.js'
 
 import type { ComponentEntry } from './types.js'
 
-// ── 栅格类 grid (5) ─────────────────────────────────────────────
+// ── 栅格类 grid (6) ─────────────────────────────────────────────
 // Phase 11.6 起 OneLeftThreeRight + OneRightThreeLeft 合并为 OneVsThree(direction)
 // Phase 11.7 起 TwoCol + ThreeCol 合并为 EqualSplit(count + direction);
-//             OneTopThreeBottom 并入 OneVsThree(direction='top'/'bottom')
+//             OneTopThreeBottom 并入 OneVsThree(direction='top'/'bottom');
+//             新增 SixGrid (5-6 平级);NineGrid 加 :show-center-decoration mode
 import { meta as EqualSplitMeta } from '../grid/EqualSplit.meta.js'
 import { meta as OneVsThreeMeta } from '../grid/OneVsThree.meta.js'
 import { meta as TwoColumnsTwoRowsMeta } from '../grid/TwoColumnsTwoRows.meta.js'
+import { meta as SixGridMeta } from '../grid/SixGrid.meta.js'
 import { meta as NineGridMeta } from '../grid/NineGrid.meta.js'
 import { meta as ImageTextMeta } from '../grid/ImageText.meta.js'
 
@@ -38,6 +40,7 @@ export const commonComponentsCatalog: ComponentEntry[] = [
   EqualSplitMeta,
   OneVsThreeMeta,
   TwoColumnsTwoRowsMeta,
+  SixGridMeta,
   NineGridMeta,
   ImageTextMeta,
   // decoration

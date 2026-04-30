@@ -141,17 +141,20 @@ describe('buildSystemPrompt（A/B contract）', () => {
     expect(prompt).toContain('### 内容块类')
   })
 
-  it('栅格类 5 个组件名都列在 Components 段（Phase 11.7 起 OneTopThreeBottom 并入 OneVsThree direction=top/bottom）', () => {
+  it('栅格类 6 个组件名都列在 Components 段（Phase 11.7 加 SixGrid + NineGrid 中央装饰 mode）', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     for (const name of [
       'EqualSplit',
       'OneVsThree',
       'TwoColumnsTwoRows',
+      'SixGrid',
       'NineGrid',
       'ImageText',
     ]) {
       expect(prompt).toContain(`\`<${name}>\``)
     }
+    // NineGrid 描述应含中央装饰 mode 提示
+    expect(prompt).toContain('show-center-decoration')
     // 旧组件名不应再出现在 prompt 里
     expect(prompt).not.toContain('`<TwoCol>`')
     expect(prompt).not.toContain('`<ThreeCol>`')
