@@ -51,6 +51,84 @@ function deriveImageLayoutName(templateId: string): string {
 }
 
 /**
+ * 模板图像风格表 — Phase 11.6 dogfood 后加,解决"22 页并发风格不统一 + 英文图"问题。
+ *
+ * 参考 Codex imagegen skill 的 structured prompt schema:工具层在每次调用都注入
+ * 同一份 deck-level invariants(色板 hex + 风格关键词 + 中文 label),让 OpenAI 生图
+ * LLM 在跨调用之间保持视觉一致,而非每页自由编一种形式。
+ *
+ * 色板从 packages/slidev/templates/<id>/tokens.css 的 chart-1..chart-5 + brand-primary
+ * 抄过来,跟 layout 视觉同源。新模板加进来时同步加一行;若 templateId 不在表里,fallback
+ * 通用 palette + style。
+ */
+interface TemplateImageStyle {
+  /** 色板 hex 列表(带语义标签),作为生图色调 anchor */
+  palette: string[]
+  /** 风格关键词,跟模板 layout 视觉氛围对齐(红色品牌 / 蓝色品牌 等) */
+  styleHint: string
+}
+
+const TEMPLATE_IMAGE_STYLE: Record<string, TemplateImageStyle> = {
+  'beitou-standard': {
+    palette: [
+      '#d00d14 (brand red, primary anchor)',
+      '#f59e0b (amber gold, warm secondary)',
+      '#2a9d8f (teal green, cool counter-balance)',
+      '#6366f1 (indigo, cool accent)',
+      '#94a3b8 (neutral slate gray)',
+    ],
+    styleHint:
+      'corporate red anchor with warm-cool secondary tones, formal Chinese business presentation aesthetic',
+  },
+  'jingyeda-standard': {
+    palette: [
+      '#003da5 (brand blue, primary anchor)',
+      '#8fc31f (brand green, secondary anchor)',
+      '#f59e0b (amber gold, warm accent)',
+      '#e76f51 (warm coral, accent)',
+      '#94a3b8 (neutral slate gray)',
+    ],
+    styleHint:
+      'corporate blue + green dual-anchor with warm accents, formal Chinese business presentation aesthetic',
+  },
+}
+
+const FALLBACK_IMAGE_STYLE: TemplateImageStyle = {
+  palette: [
+    '#1f2937 (neutral charcoal)',
+    '#3b82f6 (modern blue)',
+    '#10b981 (emerald)',
+    '#f59e0b (amber)',
+    '#94a3b8 (neutral slate)',
+  ],
+  styleHint: 'modern corporate business aesthetic',
+}
+
+/**
+ * 把 LLM 提供的自由 prompt 包成 Codex imagegen skill 的结构化 schema。
+ * 这样工具层强制注入 deck-level invariants(色板 / 风格 / 中文 label / 边界约束),
+ * LLM 即使写得 generic 也不会让生图模型乱发挥。
+ */
+function buildStructuredImagePrompt(userPrompt: string, style: TemplateImageStyle): string {
+  const paletteList = style.palette.join(', ')
+  return [
+    `Use case: productivity-visual`,
+    `Asset type: corporate slide deck body image (16:9 wide, edge-to-edge illustration; the slide already has its own external header bar above this image)`,
+    ``,
+    `Primary request: ${userPrompt.trim()}`,
+    ``,
+    `Style/medium: clean modern flat infographic / business diagram illustration with subtle gradients and soft shadows. ${style.styleHint}. **Apply this consistent aesthetic across ALL images in this deck — deck-wide invariant, do not drift between flat / 3D / photo / cartoon / line-art per page.**`,
+    `Composition/framing: wide 16:9 body-only layout. The slide's own header bar with the Chinese title sits ABOVE this image, so do NOT add any title / banner / large decorative text strip inside the image itself.`,
+    `Color palette: anchor on these brand colors — ${paletteList}. Use these tones cohesively; do not introduce off-palette saturated colors.`,
+    ``,
+    `Internal labels: if the diagram needs labels inside boxes / nodes / chart axes, they must be in **Chinese only** (例如「检索器」「向量库」「核心模块」), **never English**. If labels would feel forced or unnatural, omit them entirely — the slide's external Chinese header already provides context.`,
+    ``,
+    `Constraints: edge-to-edge body content; no outer chrome.`,
+    `Avoid: outer title / heading / banner / large decorative text strip; image caption / watermark / signature / logo overlay; English-only labels; photo-realistic 3D renders; cluttered text walls; cartoon mascots; comic strips; placeholder lorem ipsum.`,
+  ].join('\n')
+}
+
+/**
  * stub 模式:E2E / CI 跑时跳真 OpenAI,直接读 fixture 字节。
  * fixture 文件由 Task H 添加在 packages/agent/test/fixtures/test-image.png。
  * 工具内只在 NODE_ENV !== 'production' && BIG_PPT_TEST_IMAGE_MODE === 'stub' 时启用,
@@ -124,11 +202,12 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   const fallbackSummaryRaw =
     typeof args.fallbackSummary === 'string' ? args.fallbackSummary.trim() : ''
   const fallbackSummary = fallbackSummaryRaw.length > 0 ? fallbackSummaryRaw : undefined
-  // Phase 11.5 强制 negative constraint + Phase 11.6 加 positive constraint「slide page」:
-  // - negative 防 OpenAI 在图里画大标题/banner/水印(与 layout header 重复)
-  // - positive 让生图 LLM 走演示语境,不出怪图(写实人像/招贴等)
-  // 主 LLM 不需要在 prompt 里写这两条,工具层兜底追加,确保最终 prompt 一定包含。
-  const prompt = `${userPrompt}\n\n---\nThis is a slide page in a presentation deck (the image will be embedded as the body content of a slide that already has its own external red/blue header bar at the top with the slide title — DO NOT duplicate it).\n\nIMPORTANT visual constraints:\n- Do NOT render any outer title, heading, banner, or large decorative text strip at the top or bottom of the image.\n- Do NOT include any image caption, watermark, signature, logo, or English/Chinese subtitle line.\n- Internal labels INSIDE diagram nodes/boxes (like '用户层', 'API') are OK and necessary for diagrams — but keep them small and contained within their nodes.\n- The image is body-only, edge-to-edge illustration. The slide's own header text will sit ABOVE this image, so leave clean visual content from edge to edge without any title overlay.`
+  // Phase 11.6 dogfood 后改造:从自由文本 negative constraint 改为结构化
+  // augmentation schema(参考 Codex imagegen skill /Users/zhangxu/.codex/skills/.system/imagegen/SKILL.md):
+  // - 每次调用注入同一份 deck-level invariants(productivity-visual + 模板色板 hex + 中文 label + 边界约束)
+  // - 让生图 LLM 跨调用保持视觉一致,而非 22 页各自漂出 22 个风格
+  // - 解决 dogfood 报告的「图片风格不统一 + 英文图」问题
+  // 注:实际 prompt 在 createImageJob 之后才拼,因为要拿 deck.templateId(在下方)
   // **size 自动选**:模板的 image-content layout body 实际比例约 2:1
   // (Slidev 默认 16:9 canvas 减去 LBtHeader/LJydHeader 高度约 4.5em ≈ 15%)。
   // 1536x720 满足 OpenAI gpt-image-2 约束(min 655360 像素 + 16 倍数 + ≤3:1)
@@ -193,11 +272,15 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
     }
   }
 
+  // 拿到 deck.templateId 后再拼最终 prompt(注入对应模板的色板 + 风格 invariants)
+  const templateStyle = TEMPLATE_IMAGE_STYLE[deck.templateId] ?? FALLBACK_IMAGE_STYLE
+  const finalPrompt = buildStructuredImagePrompt(userPrompt, templateStyle)
+
   const job = createImageJob({
     deckId,
     userId: ctx.userId,
     slideIndex,
-    prompt,
+    prompt: finalPrompt,
     size,
     model: imageSettings.model,
     fallbackSummary,
