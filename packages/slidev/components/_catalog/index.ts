@@ -11,10 +11,10 @@ export type { ComponentCategory, ComponentEntry } from './types.js'
 
 import type { ComponentEntry } from './types.js'
 
-// ── 栅格类 grid (7) ─────────────────────────────────────────────
+// ── 栅格类 grid (6) ─────────────────────────────────────────────
 // Phase 11.6 起 OneLeftThreeRight + OneRightThreeLeft 合并为 OneVsThree(direction)
-import { meta as TwoColMeta } from '../grid/TwoCol.meta.js'
-import { meta as ThreeColMeta } from '../grid/ThreeCol.meta.js'
+// Phase 11.7 起 TwoCol + ThreeCol 合并为 EqualSplit(count + direction)
+import { meta as EqualSplitMeta } from '../grid/EqualSplit.meta.js'
 import { meta as OneVsThreeMeta } from '../grid/OneVsThree.meta.js'
 import { meta as OneTopThreeBottomMeta } from '../grid/OneTopThreeBottom.meta.js'
 import { meta as TwoColumnsTwoRowsMeta } from '../grid/TwoColumnsTwoRows.meta.js'
@@ -35,8 +35,7 @@ import { meta as PieChartMeta } from '../block/PieChart.meta.js'
 
 export const commonComponentsCatalog: ComponentEntry[] = [
   // grid
-  TwoColMeta,
-  ThreeColMeta,
+  EqualSplitMeta,
   OneVsThreeMeta,
   OneTopThreeBottomMeta,
   TwoColumnsTwoRowsMeta,

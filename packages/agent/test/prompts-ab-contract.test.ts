@@ -96,7 +96,7 @@ describe('buildSystemPrompt（A/B contract）', () => {
   it('content bodyGuidance 引导使用公共组件（栅格 + 装饰 + 内容块）', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     // 内容页骨架的 bodyGuidance 应至少 mention 几类公共组件名
-    expect(prompt).toContain('<TwoCol>')
+    expect(prompt).toContain('<EqualSplit')
     expect(prompt).toContain('<NineGrid>')
     expect(prompt).toContain('<PetalFour>')
     expect(prompt).toContain('<MetricCard>')
@@ -141,11 +141,10 @@ describe('buildSystemPrompt（A/B contract）', () => {
     expect(prompt).toContain('### 内容块类')
   })
 
-  it('栅格类 7 个组件名都列在 Components 段（Phase 11.6 起 OneLeftThreeRight + OneRightThreeLeft 合并为 OneVsThree）', () => {
+  it('栅格类 6 个组件名都列在 Components 段（Phase 11.7 起 TwoCol + ThreeCol 合并为 EqualSplit）', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     for (const name of [
-      'TwoCol',
-      'ThreeCol',
+      'EqualSplit',
       'OneVsThree',
       'OneTopThreeBottom',
       'TwoColumnsTwoRows',
@@ -154,7 +153,9 @@ describe('buildSystemPrompt（A/B contract）', () => {
     ]) {
       expect(prompt).toContain(`\`<${name}>\``)
     }
-    // 旧镜像组件名不应再出现在 prompt 里
+    // 旧组件名不应再出现在 prompt 里
+    expect(prompt).not.toContain('`<TwoCol>`')
+    expect(prompt).not.toContain('`<ThreeCol>`')
     expect(prompt).not.toContain('`<OneLeftThreeRight>`')
     expect(prompt).not.toContain('`<OneRightThreeLeft>`')
   })
@@ -184,8 +185,8 @@ describe('buildSystemPrompt（A/B contract）', () => {
     // small 应含 NineGrid + ProcessFlow
     expect(prompt).toMatch(/\*\*small\*\*[^\n]*<NineGrid>/)
     expect(prompt).toMatch(/\*\*small\*\*[^\n]*<ProcessFlow>/)
-    // large 应含 TwoCol
-    expect(prompt).toMatch(/\*\*large\*\*[^\n]*<TwoCol>/)
+    // large 桶应含 ImageText(45/55 #text slot 容量大)
+    expect(prompt).toMatch(/\*\*large\*\*[^\n]*<ImageText>/)
     // block 类(MetricCard / BarChart 等)不应出现在容量表(它们是叶子组件,无 slot)
     const tableSection = prompt.split('Slot 容量速查')[1]?.split('## ')[0] ?? ''
     expect(tableSection).not.toMatch(/\| .*<BarChart>.* \|/)
@@ -214,11 +215,11 @@ describe('buildSystemPrompt（A/B contract）', () => {
     expect(prompt).toContain('仅替换 frontmatter')
   })
 
-  it('jingyeda-standard manifest 的 Components 段同样含 16 个组件 + 决策树', () => {
+  it('jingyeda-standard manifest 的 Components 段同样含组件 + 决策树', () => {
     const prompt = buildSystemPrompt({ templateId: 'jingyeda-standard' })
     expect(prompt).toContain('### 栅格类')
     expect(prompt).toContain('`<PetalFour>`')
-    expect(prompt).toContain('`<TwoCol>`')
+    expect(prompt).toContain('`<EqualSplit>`')
     expect(prompt).toContain('## 选 Layout 与 Component 的决策树')
   })
 
