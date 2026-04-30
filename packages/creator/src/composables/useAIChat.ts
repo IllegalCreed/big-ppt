@@ -14,6 +14,7 @@ import type {
 import { buildSystemPrompt } from '../prompts/buildSystemPrompt'
 import { logEvent, setCurrentSession, truncate } from './logger'
 import { useSlideStore } from './useSlideStore'
+import { useGenerateImageJob } from './useGenerateImageJob'
 
 /**
  * 由 DeckEditorCanvas 通过 provide() 注入。useAIChat 在 setup 时 inject 拿到：
@@ -50,6 +51,13 @@ function extractFocusPage(toolName: string, args: Record<string, unknown>, resul
       if (typeof raw === 'string' && /^-?\d+$/.test(raw.trim())) return Number(raw.trim())
       return null
     }
+    case 'generate_slide_image': {
+      // Phase 11.5：图片 job 异步,工具同步返 jobId 时已经定位到目标页便于用户看到 "正在生成"
+      const raw = args.slideIndex
+      if (typeof raw === 'number') return raw
+      if (typeof raw === 'string' && /^-?\d+$/.test(raw.trim())) return Number(raw.trim())
+      return null
+    }
     default:
       return null
   }
@@ -67,6 +75,7 @@ const TOOL_STATUS_MAP: Record<string, string> = {
   reorder_slides: '正在重新排序...',
   read_template: '正在读取模板...',
   list_templates: '正在查询可用模板...',
+  generate_slide_image: '正在生成 AI 图片...',
 }
 
 const MAX_ITERATIONS = 20
@@ -379,6 +388,36 @@ export function useAIChat() {
   // 当前轮的工具调用步骤（思维链可视化数据源）
   const toolSteps = ref<ToolStep[]>([])
 
+  /**
+   * Phase 11.5：generate_slide_image 同步只返 jobId,工具 step 立即变 success 是错的 ——
+   * 用户期待"图出来"才算完成。本方法启 useGenerateImageJob 轮询,
+   * - running:把 step 改回 loading + 实时进度 label
+   * - done:step → success + setPage 定位
+   * - failed/cancelled:step → error
+   */
+  async function trackImageJob(jobId: string, stepKey: string): Promise<void> {
+    const job = useGenerateImageJob()
+    function patchStep(patch: Partial<ToolStep>): void {
+      const idx = toolSteps.value.findIndex((s) => s.key === stepKey)
+      if (idx < 0) return
+      const cur = toolSteps.value[idx]
+      if (!cur) return
+      toolSteps.value[idx] = { ...cur, ...patch }
+    }
+    // 改回 loading 状态展示进度
+    patchStep({ status: 'loading', label: '正在生成 AI 图片...' })
+    try {
+      const final = await job.start({ jobId })
+      patchStep({ status: 'success', label: '已生成 AI 图片' })
+      // done 后定位目标页(slides.md HMR 自己推,这里只翻页)
+      if (typeof final.slideIndex === 'number') {
+        slideStore.setPage(final.slideIndex)
+      }
+    } catch (err) {
+      patchStep({ status: 'error', error: (err as Error).message })
+    }
+  }
+
   async function sendMessage(userText: string) {
     // 阻止重入只看"真在跑"的三种状态；error / cancelled 终态允许直接重发
     if (['thinking', 'calling_tool', 'streaming'].includes(status.value)) return
@@ -547,6 +586,18 @@ export function useAIChat() {
                 const focus = extractFocusPage(tc.function.name, parsedArgs, result)
                 if (focus !== null) slideStore.setPage(focus)
               } catch { /* args 不是合法 JSON 就跳过 */ }
+
+              // Phase 11.5：generate_slide_image 同步只返 jobId,真正出图是异步 60s。
+              // 把 ToolStep 改回 loading,启 useGenerateImageJob 轮询;done 才标 success。
+              // (LLM 已经拿到 queued ack 进入下一轮,UI 仍展示进度直到图真的就绪)
+              if (tc.function.name === 'generate_slide_image') {
+                try {
+                  const parsed = JSON.parse(result) as { success?: boolean; jobId?: string }
+                  if (parsed.success && parsed.jobId) {
+                    void trackImageJob(parsed.jobId, step.key)
+                  }
+                } catch { /* result 不是合法 JSON 跳过(走 success 不变) */ }
+              }
               logEvent({
                 session,
                 turn: i + 1,

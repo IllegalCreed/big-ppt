@@ -69,6 +69,26 @@ export type SwitchJobState =
   | 'success'
   | 'failed'
 
+// Phase 11.5：generate_slide_image job 类型(后端 ImageJob 字段镜像)
+export type ImageJobState = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+
+export type ImageJobInfo = {
+  id: string
+  deckId: number
+  userId: number
+  slideIndex: number
+  prompt: string
+  caption?: string
+  size: string
+  state: ImageJobState
+  pathTaken?: 'A' | 'B'
+  assetId?: string
+  modelUsed?: string
+  errorMsg?: string
+  startedAt: string
+  finishedAt?: string
+}
+
 export type SwitchJobInfo = {
   id: string
   deckId: number
@@ -142,6 +162,15 @@ export function useDecks() {
     return api.get<{ job: SwitchJobInfo }>(`/api/switch-template-jobs/${jobId}`)
   }
 
+  // Phase 11.5：image-gen-job 配套 API
+  async function getImageJob(jobId: string) {
+    return api.get<{ job: ImageJobInfo }>(`/api/image-jobs/${jobId}`)
+  }
+
+  async function cancelImageJob(jobId: string) {
+    return api.delete<{ ok: true }>(`/api/image-jobs/${jobId}`)
+  }
+
   return {
     listDecks,
     getDeck,
@@ -154,6 +183,8 @@ export function useDecks() {
     appendChat,
     switchTemplate,
     getSwitchTemplateJob,
+    getImageJob,
+    cancelImageJob,
   }
 }
 
