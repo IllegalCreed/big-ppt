@@ -141,7 +141,7 @@ roadmap.md 插 Phase 11.6 段；新建本 plan 文件。
 ## 执行期偏离
 
 - **plan 设计阶段以为 image_jobs 是 DB 表**（plan 段 C 写「加 fallback_summary 字段 + db:push」），落地时核实 image-gen-job.ts 注释明确「不依赖 DB 表（不做跨设备同步）」，所以扩展字段直接加 `ImageJobInput` TS interface 即可。**实际省了 drizzle schema 改动和 3 处 db:push**，工作量减少。
-- **dogfood 阶段加了 7 件原 plan 没列的事**:首次跑 22 页 deck 暴露多个真实问题(并行风格漂移 / 第 6/7 页空 frontmatter / heading 缺失等),触发后续 7 个 commit 收尾(`6f6f80d` ~ `0e488ef`):
+- **dogfood 阶段加了 8 件原 plan 没列的事**(详见 [plan 23 dogfood follow-up](23-phase11.6-dogfood-followup.md)):首次跑 22 页 deck 暴露多个真实问题(并行风格漂移 / 第 6/7 页空 frontmatter / heading 缺失 / 跨模板污染 / 撞 RPS 限制等),触发 8 个 commit 收尾(`19c6278` ~ `bebcdc4`):
   - **结构化 image prompt augmentation**:工具层把 LLM 传的自由文本 prompt 重新组装成「This is slide N/M of deck:<heading>. Visual concept: <prompt>. Mandatory style anchor: clean editorial illustration, terracotta + cream + navy palette, paper texture, subtle gradient, no text/title/banner anywhere」结构化模板,所有页风格统一(原 22 页并行各画各的)
   - **fallbackSummary 改必填**:Phase 11.6 v1 设为可选,dogfood 时 LLM 经常不传 → worker 失败兜底无输入 → 整页空白。改为 schema required + 入口校验
   - **删 list_templates 工具**:跨模板返回所有 manifest 触发污染(beitou deck 里 LLM 看到 jingyeda layout 引用,生成出 jingyeda-cover layout)。当前 deck 模板 id 已在 system prompt 中,LLM 不需要再 list

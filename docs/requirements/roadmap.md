@@ -622,7 +622,8 @@
 
 ## Phase 11.6：图片优先模式（image-gen ON 时所有内容页直走 image-content）✅
 
-> 详细实施:[plan 21-phase11.6-image-first.md](../plans/21-phase11.6-image-first.md)
+> 详细实施:[plan 21-phase11.6-image-first.md](../plans/21-phase11.6-image-first.md) +
+> [plan 23-phase11.6-dogfood-followup.md](../plans/23-phase11.6-dogfood-followup.md)（dogfood 收尾 8 commit）
 > 前置:Phase 11.5 ✅
 > 后续:Phase 11.7 ✅
 
