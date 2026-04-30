@@ -595,6 +595,31 @@
 
 ---
 
+## Phase 11.5：AI 图片内容页 ✅ (2026-04-30 落地)
+
+> 详细实施:[plan 20-phase11.5-image-content.md](../plans/20-phase11.5-image-content.md)
+
+**目标**:在不动现有模板体系的前提下,加一种"图片内容页"形态。用户在 ChatPanel 明确要求时,LLM 调 `generate_slide_image` 工具走 OpenAI Responses API + image_generation tool(底层 gpt-image-2),把图存 DB BLOB,slides.md 里只存 `imageSrc: /api/assets/<uuid>` 引用。
+
+**关键决策**:
+- **图片存 DB BLOB(`deck_assets.data` MEDIUMBLOB)**,不走 Slidev `public/` 磁盘 —— 为 Phase 10.5/11 的 Slidev 多实例化做准备(资源跟 deck 走,不绑 Slidev 进程)
+- **生图模型独立配置**(Settings 第三 tab "生图模型"),与主 LLM 解耦 —— 主聊天用 GLM、生图单独配 OpenAI key 完全可行
+- **路 A 主 + 路 B fallback**:Responses API + image_generation tool(带 reasoning + 改写 prompt)走 A;失败降级 `/v1/images/generations` + `gpt-image-2`
+- **付费 tier 要求**:gpt-image-2 在 OpenAI Free tier 不可用,用户必须 Tier 1+
+
+**包含内容**:
+- 后端:`deck_assets` 表 + `users.image_llm_settings` 字段 + GET/PUT `/api/image-llm-settings` + GET `/api/assets/:id`(鉴权后流式返字节) + GET/DELETE `/api/image-jobs/:id` + 11 个本地工具(新增 `generate_slide_image`)
+- 前端:Settings 第三 tab UI + `useGenerateImageJob` 轮询 composable + ChatPanel 接管 ToolStep loading→success
+- E2E:`BIG_PPT_TEST_IMAGE_MODE=stub` 跳真 OpenAI 直接读 fixture PNG,3 个 spec 跑通全链路
+
+**不在范围**:
+- ❌ 多 provider image gen(GLM/Kimi 等没原生 image_generation,本 phase 不开)
+- ❌ slide 删除时清旧 asset(故意保留供 deck_versions restore;长期由 99-tech-debt GC 兜底)
+- ❌ 多页批处理 `plan_and_generate_images`(用户选了单页单次原子)
+- ❌ 用户上传图片(只生成,上传是另一个独立功能)
+
+---
+
 ## Phase 11：多用户并发 + 分享链接 + 多实例部署切换
 
 > **依赖 Phase 10.5 spike 结果调整范围**:若 P10.5 落地,本 Phase 的"进程池 + LRU + 崩溃重拉 + 双路径切换"全部废弃(Vue 组件天然支持多用户),退化为"细化 deck-level 锁 + 分享链接 + 容量 spike"。

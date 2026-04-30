@@ -156,6 +156,7 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 - **`@antdv-next/x`** 0.3 Slot warning bug 已在 1.0 通过 API 重构间接修复（2026-04-26 Phase 8 清 P3-1）；**该包 npm `latest` dist-tag 仍指向 beta**（1.0.2-beta.1），升级时显式锁版本号（`pnpm up "@antdv-next/x@1.0.1"`），不跟 latest（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 踩坑 6）
 - **UnoCSS presetIcons** 有图标解析 bug（P3-7），用 `scripts/gen-icons.mjs` workaround；2026-04-26 Phase 8 复检 v66.6.8 仍未修，下次 Phase 11/14 复检（详见 [plan 06-monorepo](docs/plans/06-phase3-monorepo-agent.md) 踩坑 1）
 - **`drizzle-kit push`** 改 schema 后，dev 与 test 库都要 push（`db:push` + `db:push:test`）；生产部署用 `db:push:prod` 推到 RDS lumideck 库（plan 19）
+- **drizzle-orm 0.45 mysql-core 没原生 mediumBlob/longBlob**:加二进制大字段时用 `customType<{data: Buffer; driverData: Buffer}>({dataType: () => 'mediumblob'})` 自定义,drizzle-kit push 会正确 emit MySQL `mediumblob` 列定义。同套路适用 LONGBLOB / TINYBLOB / 任何标准 SQL 列类型（[plan 20](docs/plans/20-phase11.5-image-content.md) 踩坑 2）
 - **monorepo 内部 ts 包用 ESM `from './x.js'` 风格,生产部署前必须先 build 出 .js**：dev/tsx 模式可以直接读 .ts,但 prod node 解析 main 字段读 ts 后,内部 import './x.js' 找不到真实 .js 文件 → ERR_MODULE_NOT_FOUND。`packages/shared` 加了 `build: tsc` 输出 src/*.js 与 .ts 共存,deploy.sh build_agent 之前必须先 build shared（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 4）
 - **pm2 跑 ESM Node app 时 secrets 不要走 `-r dotenv/config` + `DOTENV_CONFIG_PATH`**:dotenv preload 只支持 CLI 参数 `dotenv_config_path=`,不读 env vars,加上 pm2 environment 注入与 -r 标志的交互不可靠。改用 bash wrapper（`deploy/scripts/start-agent.sh`）调 `pnpm exec dotenv -e .env.production.local -- node dist/index.js`,与本地 `pnpm start` 一致（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 5）
 - **nginx HTTPS bootstrap 必须分两阶段**：模板里 `listen 443 ssl` 含 `ssl_certificate` 路径,但 certbot 申请证书前文件不存在,nginx -t 直接 fail,且坏 conf 写入会让后续 `systemctl reload nginx` 拒绝重载,**全 nginx 站点风险**。先写 80-only conf 让 certbot --webroot 申请证书,成功后再 envsubst 完整模板（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 3）
@@ -222,4 +223,4 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 
 ## 阶段进展
 
-详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–10 ✅(2026-04-27 lumideck.illegalscreed.cn 上线),Phase 10.5(Slidev 解耦 spike)候选未启动,Phase 11(多用户并发 + 分享)依赖 Phase 10.5 spike 结果调整范围。
+详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–10 ✅(2026-04-27 lumideck.illegalscreed.cn 上线),Phase 11.5(AI 图片内容页 / `generate_slide_image` 工具) ✅(2026-04-30),Phase 10.5(Slidev 解耦 spike)候选未启动,Phase 11(多用户并发 + 分享)依赖 Phase 10.5 spike 结果调整范围。
