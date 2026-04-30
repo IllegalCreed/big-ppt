@@ -12,7 +12,7 @@ import type {
   FrontmatterFieldSchema,
 } from '@big-ppt/shared'
 import { getManifest } from '../templates/registry.js'
-import { getCatalogByCategory, type ComponentEntry } from './commonComponentsCatalog.js'
+import { getCatalogByCategory, type ComponentEntry } from '@big-ppt/slidev/components-catalog'
 
 export interface BuildSystemPromptOptions {
   templateId: string
@@ -114,30 +114,51 @@ const DECISION_TREE_SECTION_OFF = `## 选 Layout 与 Component 的决策树
 
 const DECISION_TREE_SECTION_ON = `## 选 Layout 与 Component 的决策树（图片优先模式）
 
-> 本会话已配置 AI 出图。**所有内容页一律走 image-content layout + AI 出图**，不再走 layout/组件路径。封面、目录、章节标题、封底等结构页保持原选法（这些页 AI 出图意义不大，是高度定制的固定形态）。
+> 本会话已配置 AI 出图。**所有内容页直走 image-content layout + AI 出图**；layout/组件路径仅作生图失败兜底（后台 worker 自动处理，你无需写兜底版本）。
 
-**决策规则**：
-- 封面 / 目录 / 章节标题 / 封底（结构页）→ 仍按结构 layout 选（cover / toc / section-title / back-cover）
-- **其他所有内容页**（无论原本会用 BarChart / MetricCard / ProcessFlow / 还是纯文字）→ frontmatter 一律写 \`layout: <prefix>-image-content\`，仅保留 \`heading\` 字段，body 为空
-  - **绝对不要**在内容页写 BarChart / MetricCard / ProcessFlow / 栅格 / 自由 markdown 文字版作为兜底。失败兜底由后台 worker 自动处理（见下方契约）
+**Layout 选择**：
+- 结构页 → 仍按结构 layout 选：\`cover\` / \`toc\` / \`section-title\` / \`back-cover\`
+- 内容页（其他全部，含原本会用图表 / 数据卡 / 流程图的页）→ 一律写 \`layout: <模板 prefix>-image-content\`（例：\`beitou-image-content\`），仅保留 \`heading\` 字段，\`body\` 留空
+- **绝对不要**给内容页选 \`*-content\` 等组件 layout、不写 BarChart / MetricCard / ProcessFlow / markdown 文字兜底、不写 \`imageSrc\` 字段（工具层填）
 
-**工具调用契约**：
-首次 \`write_slides\` 输出整 deck 后（结构页选结构 layout，内容页 layout 写 \`*-image-content\` + 空 body + heading），**必须**对每个内容页串联调一次 \`generate_slide_image\`：
+**工具调用契约**：\`write_slides\` 输出整 deck 后，**同一 turn 内对每个内容页发一个 \`generate_slide_image\` tool_call**（OpenAI / Anthropic 单轮支持多 tool_calls 并发执行，**不要**串行等待，**不要**因为同步只返 \`{jobId}\` 就重发 \`write_slides\`）：
 - \`slideIndex\`: 1-based 页号
-- \`prompt\`: 英文，**只描述本页要承载的内容**（业务点 / 关键信息 / 主题氛围）。**不要指定展示形式**（不要写 "bar chart style" / "infographic" / "illustration" / "realistic photo" 等形式限定词），让生图 LLM 自决。工具层会自动追加 "this is a slide page" 与 no-text 约束，你无需在 prompt 里写
-- \`fallbackSummary\`: 中文 1-2 句，描述本页应承载的信息（例：「列举 RAG 系统的 4 个核心模块及作用」），worker 失败兜底时由系统调一次 LLM 用此摘要 + 整 deck 上下文自动重写为 layout/组件版本
+- \`prompt\`: **英文**，仅描述本页要承载的**内容**（业务点 / 关键信息 / 主题氛围）；**不要指定展示形式**——任何 "bar chart" / "infographic" / "illustration" / "realistic photo" 等形态限定词都不要写，让生图 LLM 自决；工具层会自动追加 "this is a slide page" 与 no-text 约束
+- \`fallbackSummary\`: **中文 1-2 句**概括本页应承载的信息（例：「列举 RAG 系统的 4 个核心模块及作用」）；worker 失败时按此摘要重写为 \`*-content\` + 组件版
 
-**典型 6 页 deck 调用序列**（cover + toc + 3 内容页 + back-cover）：
-1. \`write_slides\`（写 6 页：第 3-5 页 layout 都是 \`*-image-content\` + heading + 空 body）
-2. \`generate_slide_image(slideIndex=3, prompt="…", fallbackSummary="…")\`
-3. \`generate_slide_image(slideIndex=4, prompt="…", fallbackSummary="…")\`
-4. \`generate_slide_image(slideIndex=5, prompt="…", fallbackSummary="…")\`
+**示例**（user: "生成 5 页关于 RAG 系统的 PPT"）：
 
-**禁忌**：
-- 不要给内容页选 \`*-content\` 等组件 layout
-- 不要在内容页 body 里写 BarChart / MetricCard / ProcessFlow / 任何文字
-- 不要主动写 imageSrc 字段（工具层填）
-- 不要因为 \`generate_slide_image\` 同步返 \`{jobId}\` 看似没出图就再次 \`write_slides\`（异步语义，jobId 即视为成功入队）`
+第一步 \`write_slides\` 写整 deck（cover + toc + 2 个 image-content + back-cover）：
+\`\`\`
+---
+theme: seriph
+layout: beitou-cover
+mainTitle: RAG 系统架构
+date: 2026/04/30
+---
+---
+layout: beitou-toc
+items: [核心架构, 检索与生成]
+---
+---
+layout: beitou-image-content
+heading: 核心架构
+---
+---
+layout: beitou-image-content
+heading: 检索与生成
+---
+---
+layout: beitou-back-cover
+message: 谢谢观看
+---
+\`\`\`
+
+第二步同一 assistant turn 内并发 2 个 \`generate_slide_image\` tool_calls：
+- \`generate_slide_image(slideIndex=3, prompt="The four core stages of a retrieval-augmented generation system showing how user queries flow through a retriever pulling relevant documents from a vector database, then through a generator language model that produces contextualized answers; emphasize the handoff between each stage", fallbackSummary="RAG 系统的 4 个核心模块及衔接关系：检索器、向量库、生成器、编排器")\`
+- \`generate_slide_image(slideIndex=4, prompt="The interaction between a retriever component and a generator language model: the retriever surfaces top-k relevant context chunks which the generator consumes to produce a grounded answer; show the loop where the generator can request additional retrievals when needed", fallbackSummary="检索器与生成器的协同：top-k 召回 → 上下文注入 → 生成器输出 + 必要时反向请求二次检索")\`
+
+注意示例 prompt 里**没有**出现 "bar chart" / "diagram" / "illustration" / "navy palette" 等形式词——只描述了"承载什么内容"，形式由生图 LLM 自决。`
 
 function getDecisionTreeSection(imageGenEnabled: boolean): string {
   return imageGenEnabled ? DECISION_TREE_SECTION_ON : DECISION_TREE_SECTION_OFF

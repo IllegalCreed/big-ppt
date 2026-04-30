@@ -12,7 +12,7 @@
  * pure 判定：所有页 level ≤ 3 = pure，可走 deterministic 字符串替换；level ≥ 4 →
  * not-pure，fallback LLM 重写。
  */
-import { ALL_COMPONENT_NAMES } from '../prompts/commonComponentsCatalog.js'
+import { ALL_COMPONENT_NAMES } from '@big-ppt/slidev/components-catalog'
 
 export type Level = 1 | 2 | 3 | 4 | 5
 

@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./components-catalog": {
+      "types": "./components/_catalog/index.ts",
+      "import": "./components/_catalog/index.ts"
+    }
+  },
   "scripts": {
     "ensure-slides": "node -e \"const fs=require('fs');if(!fs.existsSync('slides.md'))fs.copyFileSync('slides.example.md','slides.md')\"",
     "dev": "pnpm ensure-slides && slidev --port 3031 --base /api/slidev-preview/",

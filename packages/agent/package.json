@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@big-ppt/shared": "workspace:*",
+    "@big-ppt/slidev": "workspace:*",
     "@hono/node-server": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "bcrypt": "^6.0.0",

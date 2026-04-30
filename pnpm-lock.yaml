@@ -26,6 +26,9 @@ importers:
       '@big-ppt/shared':
         specifier: workspace:*
         version: link:../shared
+      '@big-ppt/slidev':
+        specifier: workspace:*
+        version: link:../slidev
       '@hono/node-server':
         specifier: ^2.0.0
         version: 2.0.0(hono@4.12.15)
