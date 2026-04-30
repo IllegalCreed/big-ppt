@@ -33,6 +33,8 @@ export default defineConfig({
         // Phase 7D：让 rewriteForTemplate 跳 LLM 直接读 starter.md，
         // 使切模板状态机端到端跑通无需调真 LLM
         BIG_PPT_TEST_REWRITE_MODE: 'skeleton',
+        // Phase 11.5：让 generate_slide_image 工具跳真 OpenAI,直接读 fixture PNG
+        BIG_PPT_TEST_IMAGE_MODE: 'stub',
         // 让 e2e 的 mirror 写到 tmp 而非 packages/slidev/slides.md，
         // 避免你 dev 跑着的 :3031 slidev HMR 被 e2e 切模板搞乱（root cause：
         // 大改 frontmatter 触发 slidev cli full reload，dev iframe 闪/状态错乱）。

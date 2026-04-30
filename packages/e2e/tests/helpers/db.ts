@@ -25,6 +25,7 @@ export async function truncateAllTables(): Promise<void> {
   try {
     await conn.query('SET FOREIGN_KEY_CHECKS=0')
     await conn.query('TRUNCATE TABLE user_mcp_servers')
+    await conn.query('TRUNCATE TABLE deck_assets')
     await conn.query('TRUNCATE TABLE deck_chats')
     await conn.query('TRUNCATE TABLE deck_versions')
     await conn.query('TRUNCATE TABLE decks')
@@ -99,6 +100,34 @@ export async function getTemplateLayoutNames(templateId: string): Promise<string
   return m.layouts.map((l) => l.name)
   // path 本身没用上，只是确保 import 类型不会报错（rg ts-prune 时清理）
   void path
+}
+
+// ─── Phase 11.5：deck_assets 直读 helper ──────────────────────────────
+
+export type DeckAssetRow = {
+  id: string
+  deck_id: number
+  user_id: number
+  mime_type: string
+  bytes_size: number
+}
+
+/** 数指定 deck 的 asset 行数 */
+export async function countAssetsByDeck(deckId: number): Promise<number> {
+  const [rows] = await getPool().query<mysql.RowDataPacket[]>(
+    'SELECT COUNT(*) AS n FROM deck_assets WHERE deck_id = ?',
+    [deckId],
+  )
+  return Number((rows[0] as { n: number }).n)
+}
+
+/** 列指定 deck 的全部 asset 元数据(不带字节) */
+export async function listAssetsByDeckSql(deckId: number): Promise<DeckAssetRow[]> {
+  const [rows] = await getPool().query<mysql.RowDataPacket[]>(
+    'SELECT id, deck_id, user_id, mime_type, bytes_size FROM deck_assets WHERE deck_id = ?',
+    [deckId],
+  )
+  return rows as DeckAssetRow[]
 }
 
 /** 提取 slides.md 全文里所有 frontmatter 的 layout 字段 */
