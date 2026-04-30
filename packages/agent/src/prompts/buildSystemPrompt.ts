@@ -17,6 +17,12 @@ import { getCatalogByCategory, type ComponentEntry } from './commonComponentsCat
 export interface BuildSystemPromptOptions {
   templateId: string
   mcpBadges?: string[]
+  /**
+   * Phase 11.6：用户是否配置了 image LLM。
+   * true → 决策树切到「图片优先」分支：内容页一律 *-image-content + generate_slide_image。
+   * false / undefined → 现状决策树（layout / 组件路径）。
+   */
+  imageGenEnabled?: boolean
 }
 
 function fieldTypeLabel(field: FrontmatterFieldSchema): string {

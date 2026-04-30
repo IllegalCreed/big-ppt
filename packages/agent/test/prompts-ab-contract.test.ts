@@ -219,6 +219,60 @@ describe('buildSystemPrompt（A/B contract）', () => {
   })
 })
 
+/**
+ * Phase 11.6：图片优先模式（imageGenEnabled）双分支契约测试
+ *
+ * 关键认知：OFF 是当前行为；ON 用全新决策树**替换**原决策树
+ * （不是叠加），把内容页流程导向 image-content layout + generate_slide_image。
+ */
+describe('buildSystemPrompt（Phase 11.6 图片优先双分支）', () => {
+  it('imageGenEnabled=true → prompt 含图片优先决策树关键短语', () => {
+    const prompt = buildSystemPrompt({
+      templateId: 'beitou-standard',
+      imageGenEnabled: true,
+    })
+    expect(prompt).toContain('图片优先')
+    expect(prompt).toContain('image-content')
+    expect(prompt).toContain('generate_slide_image')
+    expect(prompt).toContain('fallbackSummary')
+    // 显式列出例外的结构页（cover/toc/section/back-cover 仍走结构 layout）
+    expect(prompt).toContain('cover')
+    expect(prompt).toContain('toc')
+    expect(prompt).toContain('section-title')
+    expect(prompt).toContain('back-cover')
+    // 关键约束：主 LLM 不指定形式，让生图 LLM 自决
+    expect(prompt).toMatch(/不(要|得)指定(展示)?形式/)
+  })
+
+  it('imageGenEnabled=true → prompt 不再含 OFF 决策树的「优先 MetricCard / 必须 BarChart」组件指引', () => {
+    const prompt = buildSystemPrompt({
+      templateId: 'beitou-standard',
+      imageGenEnabled: true,
+    })
+    // ON 模式下两条流程独立：内容页直走 image-content,不应让 LLM 再走组件路径
+    expect(prompt).not.toContain('**必须** `<BarChart>`')
+    expect(prompt).not.toContain('**优先** `<MetricCard>`')
+    expect(prompt).not.toContain('**必须**用栅格类组件')
+  })
+
+  it('imageGenEnabled 默认 / false → 维持当前 OFF 决策树（含 BarChart / MetricCard / 栅格指引）', () => {
+    const promptDefault = buildSystemPrompt({ templateId: 'beitou-standard' })
+    const promptFalse = buildSystemPrompt({
+      templateId: 'beitou-standard',
+      imageGenEnabled: false,
+    })
+    for (const p of [promptDefault, promptFalse]) {
+      expect(p).toContain('**必须** `<BarChart>`')
+      expect(p).toContain('**优先** `<MetricCard>`')
+      expect(p).toContain('必须**用栅格类组件')
+      // 不能含 ON 独有短语（注：generate_slide_image 字面量在 manifest 的 image-content layout
+      // 描述里就有,不算 ON 标记;真正的 ON 标记是「图片优先」+「fallbackSummary」+「写完 deck 后**必须**调」)
+      expect(p).not.toContain('图片优先')
+      expect(p).not.toContain('fallbackSummary')
+    }
+  })
+})
+
 describe('GET /api/system-prompt', () => {
   function buildApp() {
     const app = new Hono()

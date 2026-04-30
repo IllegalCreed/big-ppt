@@ -95,9 +95,21 @@ async function pollUntilDone(jobId: string, timeoutMs = 5000): Promise<ReturnTyp
 }
 
 describe('generate_slide_image 工具', () => {
-  it('描述包含 "explicitly" + "BarChart" 关键词(防未来弱化)', () => {
-    expect(generateSlideImageTool.description).toContain('explicitly')
+  it('Phase 11.6：描述含 DEFAULT for every content slide + fallbackSummary 引导（防未来弱化）', () => {
+    // Phase 11.6 起 image-gen 配置后默认对每个 content 页都调用，所以描述
+    // 不能再写"only when explicitly asks";但 BarChart 例外提示仍保留（数据图不走生图）。
+    expect(generateSlideImageTool.description).toContain('DEFAULT for every content slide')
+    expect(generateSlideImageTool.description).toContain('fallbackSummary')
     expect(generateSlideImageTool.description).toContain('BarChart')
+    // graceful-degradation 关键词：worker 失败兜底契约
+    expect(generateSlideImageTool.description).toMatch(/graceful[- ]degradation/i)
+  })
+
+  it('Phase 11.6：parameters schema 含 fallbackSummary 字段（中文兜底摘要）', () => {
+    const props = (generateSlideImageTool.parameters as { properties?: Record<string, unknown> })
+      .properties
+    expect(props).toBeDefined()
+    expect(props).toHaveProperty('fallbackSummary')
   })
 
   it('未登录 → 失败', async () => {
