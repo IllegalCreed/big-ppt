@@ -620,6 +620,33 @@
 
 ---
 
+## Phase 11.6：图片优先模式（image-gen ON 时所有内容页直走 image-content）
+
+> 详细实施:[plan 21-phase11.6-image-first.md](../plans/21-phase11.6-image-first.md)
+> 前置:Phase 11.5 ✅
+> 后续:Phase 11
+
+**目标**:策略反转——用户配了 image LLM 后,**所有内容页**(原本会走 BarChart / MetricCard / 流程图 / 文字 markdown 的页)默认改走 `*-image-content` layout + AI 出图。封面、目录、章节标题、封底等结构页保持原选法(高度定制,AI 出图意义不大)。layout/组件路径降级为「生图失败时自动兜底」(graceful-degradation 由后台 worker 调一次主 LLM 把单页重写为 *-content + 组件版,用户无感)。
+
+**关键决策**:
+- **两条独立流程**:OFF 走 layout/component 决策树(现状);ON 走「主 LLM 提炼每页生图 prompt → 生图 LLM 出图」直通车,**slides.md 里同时只存在一种形态**
+- **触发条件**:`getImageLlmSettings(userId)` 不为 null 即 ON,不加独立总开关 —— 配 key 本身即 explicit consent
+- **形式由生图 LLM 自决**:主 LLM prompt 只描述本页内容(业务点 / 关键信息 / 主题氛围),不指定柱状图 / 流程图 / 插画等形式;工具层末尾自动追加 "this is a slide page" 正向约束
+- **graceful-degradation**:`generate_slide_image` 加 `fallbackSummary` 中文摘要参数,worker 失败时调 `rewriteSinglePageToComponents` 用此摘要 + 整 deck 上下文非流式调主 LLM 把单页重写为组件版(state: `fallback-rewrote`);兜底也崩 → `fallback-failed`
+- **buildSystemPrompt** 加 `imageGenEnabled` 参数双分支;**rewriteForTemplate** 切模板期强制 OFF(不重新生图,imageSrc 透传)
+
+**包含内容**:
+- 后端:buildSystemPrompt 双分支决策树 + routes/prompts.ts authOptional + image-gen-job 状态机扩 fallback-rewrote/fallback-failed + 新建 rewriteSinglePageToComponents 模块 + worker 失败兜底接线
+- 前端:useGenerateImageJob 处理新状态;trackImageJob 文案分支(成功出图 / 已自动降级为组件版)
+
+**不在范围**:
+- ❌ 已有 deck 自动回填生图(只对新生成 deck 生效)
+- ❌ Settings 加「图片优先」总开关(配了 image LLM 即默认 ON)
+- ❌ 切模板期间重新生图(layout 前缀替换 + imageSrc 透传)
+- ❌ N 个生图 job 的 worker 并发限流(假定 OpenAI tier 1+ RPS 足够,撞 429 由 fallback 兜底)
+
+---
+
 ## Phase 11：多用户并发 + 分享链接 + 多实例部署切换
 
 > **依赖 Phase 10.5 spike 结果调整范围**:若 P10.5 落地,本 Phase 的"进程池 + LRU + 崩溃重拉 + 双路径切换"全部废弃(Vue 组件天然支持多用户),退化为"细化 deck-level 锁 + 分享链接 + 容量 spike"。
