@@ -183,10 +183,40 @@ const DECISION_TREE_SECTION_ON = `## 选 Layout 与 Component 的决策树（图
 - 内容页（其他全部，含原本会用图表 / 数据卡 / 流程图的页）→ 一律写 \`layout: <模板 prefix>-image-content\`（例：\`beitou-image-content\`）+ \`heading\` 字段（**强制必填,不可省**——layout 顶部红/蓝 header bar 渲染这条 heading,缺失会留白丑陋），\`body\` 留空
 - **绝对不要**给内容页选 \`*-content\` 等组件 layout、不写 BarChart / MetricCard / ProcessFlow / markdown 文字兜底、不写 \`imageSrc\` 字段（工具层填）
 
-**工具调用契约**：\`write_slides\` 输出整 deck 后，**同一 turn 内对每个内容页发一个 \`generate_slide_image\` tool_call**（OpenAI / Anthropic 单轮支持多 tool_calls,工具层会按 per-user 并发 3 排队跑,你不需要顾虑 RPS,**不要**因为同步只返 \`{jobId}\` 就重发 \`write_slides\`）：
+**工具调用契约（关键!三种入口都要调生图,缺一会让该页空着没图)**：
+
+**只要你创建 / 改写出一个 \`*-image-content\` 页**(无论通过 \`write_slides\` 一次性整 deck / \`create_slide\` 增页 / \`update_slide\` 把已有页换成 image-content layout)，**接下来必须给该页调一次 \`generate_slide_image\`**(slideIndex 对应该页位置)。漏掉这一步 = 用户看到红色 header bar 下方一片空白,等于半成品。
+
+工具层 OpenAI / Anthropic 单轮支持多 tool_calls,会按 per-user 并发 3 排队跑,你不需要顾虑 RPS。**不要**因为同步只返 \`{jobId, queued}\` 就以为图没出来去重发 write_slides / create_slide。
+
+**generate_slide_image 三个参数**：
 - \`slideIndex\`: 1-based 页号
 - \`prompt\`: **英文**，仅描述本页要承载的**内容**（业务点 / 关键信息 / 主题氛围）；**不要指定展示形式**——任何 "bar chart" / "infographic" / "illustration" / "realistic photo" 等形态限定词都不要写,让生图 LLM 自决；工具层会自动追加结构化 schema(productivity-visual + 模板色板 + Chinese labels + edge-to-edge 约束),你不需要在 prompt 里写
 - \`fallbackSummary\`: **中文 1-2 句必填**概括本页应承载的信息（例：「列举 RAG 系统的 4 个核心模块及作用」）。**不传 = 工具拒收 + worker 失败时无兜底**——LLM 必须每次都传,这是 graceful-degradation 的唯一信息源
+
+**三种典型入口的调用序列**：
+
+A. **首次生成空 deck**(\`write_slides\` 路径):
+\`\`\`
+write_slides(整 deck N 页:cover + toc + K 个 *-image-content + back-cover)
+→ 同一 turn 并发 K 个 generate_slide_image(每个对应一个 image-content 页)
+\`\`\`
+
+B. **在已有 deck 增页**(\`create_slide\` 路径,deck 非空时常见):
+\`\`\`
+create_slide(layout="*-image-content", frontmatter:{heading:"X"}, body="")
+→ 工具返 {success:true, index:N}
+→ **下一 turn** generate_slide_image(slideIndex=N, prompt="...", fallbackSummary="...")
+\`\`\`
+
+C. **把已有页换成 image-content**(\`update_slide\` 路径):
+\`\`\`
+update_slide(index=N, frontmatter:{layout:"*-image-content", heading:"X"}, body="", replaceFrontmatter:true)
+→ 工具返 {success:true}
+→ **下一 turn** generate_slide_image(slideIndex=N, prompt="...", fallbackSummary="...")
+\`\`\`
+
+**记住**:你每输出一个 \`*-image-content\` layout 字段(write_slides body 里 / create_slide layout 参数 / update_slide frontmatter.layout),都必须配一次 generate_slide_image,**没有例外**。
 
 **示例**（user: "生成 5 页关于 RAG 系统的 PPT"）：
 

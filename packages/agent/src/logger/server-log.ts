@@ -54,6 +54,11 @@ function currentLogFile(): string {
  *   })
  */
 export function logServerEvent(payload: ServerEvent): void {
+  // 测试环境(NODE_ENV=test)且未显式覆盖 logsDir → skip,避免污染仓库 logs/(混 dogfood 真日志)。
+  // 想验证落盘的测试自己 setEnv BIG_PPT_LOGS_DIR 到 tmp 即可(见 server-log.test.ts)。
+  if (process.env.NODE_ENV === 'test' && !process.env.BIG_PPT_LOGS_DIR) {
+    return
+  }
   try {
     const { logsDir } = getPaths()
     ensureDir(logsDir)
