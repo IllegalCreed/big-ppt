@@ -125,7 +125,7 @@ function renderSlotCapacityTable(entries: ComponentEntry[]): string {
     lines.push(`| **large** | 整段 ≤80 字 + 嵌入子组件(BarChart/MetricCard 等) | ${buckets.large.join(' / ')} |`)
   }
   lines.push('')
-  lines.push('主从型组件(`<OneLeftThreeRight>` / `<OneRightThreeLeft>` / `<OneTopThreeBottom>`)主 slot 偏 large、3 个 itemN 偏 small,以 catalog 描述为准。')
+  lines.push('主从型组件(`<OneVsThree>` / `<OneTopThreeBottom>`)主 slot 偏 large、3 个 itemN 偏 small,以 catalog 描述为准。')
   return lines.join('\n')
 }
 

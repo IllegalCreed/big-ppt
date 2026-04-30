@@ -50,18 +50,17 @@
 | `cols?`                        | string，CSS `grid-template-columns` 值；默认 `'1fr 1fr 1fr'` |
 | `#left` / `#center` / `#right` | named slot                                                   |
 
-### `<OneLeftThreeRight>` 左主右从
+### `<OneVsThree>` 一主三从
 
-左侧 1 个主元素，右侧 3 个次级元素纵向排列。适合"主标题 + 3 要点 / 主图 + 3 注解"。
+1 个主元素 + 3 个次级元素纵向排列。`direction` 控制主区在左还是右；默认 `'left'` 时主元素居左、3 项居右（旧 `OneLeftThreeRight`），`'right'` 时主元素居右（旧 `OneRightThreeLeft`）。适合"主标题 + 3 要点 / 主图 + 3 注解"。
 
-| Prop / Slot                              | 类型 / 说明                                      |
-| ---------------------------------------- | ------------------------------------------------ |
-| `mainFr?`                                | number，主区宽度 fr 单位；默认 `1`（与右栏等宽） |
-| `#main` / `#item1` / `#item2` / `#item3` | named slot                                       |
+> Phase 11.6 起取代旧 `<OneLeftThreeRight>` / `<OneRightThreeLeft>` 镜像组件对。
 
-### `<OneRightThreeLeft>` 右主左从
-
-`OneLeftThreeRight` 的镜像版（主元素在右侧）。slot 名一致：`#main` / `#item1` / `#item2` / `#item3`。
+| Prop / Slot                              | 类型 / 说明                                       |
+| ---------------------------------------- | ------------------------------------------------- |
+| `direction?`                             | `'left' \| 'right'`，主区位置；默认 `'left'`      |
+| `mainFr?`                                | number，主区宽度 fr 单位；默认 `1`（与另一侧等宽） |
+| `#main` / `#item1` / `#item2` / `#item3` | named slot                                        |
 
 ### `<OneTopThreeBottom>` 上主下从
 

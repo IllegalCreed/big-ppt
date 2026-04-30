@@ -11,11 +11,11 @@ export type { ComponentCategory, ComponentEntry } from './types.js'
 
 import type { ComponentEntry } from './types.js'
 
-// ── 栅格类 grid (8) ─────────────────────────────────────────────
+// ── 栅格类 grid (7) ─────────────────────────────────────────────
+// Phase 11.6 起 OneLeftThreeRight + OneRightThreeLeft 合并为 OneVsThree(direction)
 import { meta as TwoColMeta } from '../grid/TwoCol.meta.js'
 import { meta as ThreeColMeta } from '../grid/ThreeCol.meta.js'
-import { meta as OneLeftThreeRightMeta } from '../grid/OneLeftThreeRight.meta.js'
-import { meta as OneRightThreeLeftMeta } from '../grid/OneRightThreeLeft.meta.js'
+import { meta as OneVsThreeMeta } from '../grid/OneVsThree.meta.js'
 import { meta as OneTopThreeBottomMeta } from '../grid/OneTopThreeBottom.meta.js'
 import { meta as TwoColumnsTwoRowsMeta } from '../grid/TwoColumnsTwoRows.meta.js'
 import { meta as NineGridMeta } from '../grid/NineGrid.meta.js'
@@ -37,8 +37,7 @@ export const commonComponentsCatalog: ComponentEntry[] = [
   // grid
   TwoColMeta,
   ThreeColMeta,
-  OneLeftThreeRightMeta,
-  OneRightThreeLeftMeta,
+  OneVsThreeMeta,
   OneTopThreeBottomMeta,
   TwoColumnsTwoRowsMeta,
   NineGridMeta,
