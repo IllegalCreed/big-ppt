@@ -178,7 +178,7 @@ pnpm gen:thumbnails                       # 新增模板后跑，playwright 自�
 
 ### 测试基建
 
-- **集成测共享 lumideck_test 库**：`vitest.config.ts` 必须 `fileParallelism: false`，否则跨 spec 数据竞争（[plan 11](docs/plans/11-phase5-tests-and-env-split.md) 踩坑 1 / [plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 7D-C）
+- **集成测共享 lumideck_test 库**：`vitest.config.ts` 必须 `fileParallelism: false`（同包内串行）+ 根 `package.json` 的 `pnpm test` 用 `turbo run test --concurrency=1`（跨包 turbo 也强制串行,否则 agent + creator 集成测同时连库撞 TRUNCATE）。用 `pnpm test` 一次跑全 monorepo 时这条是必须的（[plan 11](docs/plans/11-phase5-tests-and-env-split.md) 踩坑 1 / [plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 7D-C / Phase 11.7 顺手补 turbo concurrency）
 - **进程内 stateful 模块**（如 slidev-lock）必须在 test env 暴露 reset hook（如 `_test/reset-lock`），否则跨 case 污染（[plan 14](docs/plans/14-phase7c-template-ui.md) 踩坑 6）
 - **fs 写入路径在 test env 下必须接受 env 覆盖**到临时目录，否则跑测试会污染 dev 数据（[plan 09](docs/plans/09-phase4-edit-iterate.md) 踩坑 3 / [plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 踩坑 7）
 - **依赖外部不稳定能力的工具走 DI seam**：如 `rewriteForTemplate` 用 `RewriteFn` interface DI 注入，测试时 mock 跑完整状态机不烧 token（[plan 12](docs/plans/12-phase6-template-architecture.md) 踩坑 2）
