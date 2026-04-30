@@ -33,7 +33,7 @@ const API_TYPES: { value: 'openai-compatible'; label: string; hint: string }[] =
   {
     value: 'openai-compatible',
     label: 'OpenAI 兼容',
-    hint: '走 /v1/chat/completions,绝大多数中转(duckcoding / one-api / new-api)走此协议',
+    hint: '走 /chat/completions,绝大多数中转 / 自部署网关都走此协议',
   },
 ]
 
@@ -196,7 +196,8 @@ onMounted(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="modal-overlay" @click.self="close">
+    <!-- 不挂 @click.self:用户反馈点击遮罩误关频繁,只允许 X 按钮 / 取消按钮显式关闭 -->
+    <div v-if="open" class="modal-overlay">
       <div class="modal-content">
         <div class="modal-header">
           <h3>设置</h3>
@@ -274,7 +275,7 @@ onMounted(() => {
             <input
               v-model="settings.baseUrl"
               type="text"
-              placeholder="https://api.duckcoding.ai/v1"
+              placeholder="https://your-endpoint/v1"
               autocomplete="off"
               class="input-bare"
             />

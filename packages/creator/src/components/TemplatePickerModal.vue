@@ -126,11 +126,6 @@ async function onPrimary() {
   }
 }
 
-function onOverlayClick() {
-  if (view.value === 'progress') return
-  close()
-}
-
 function close() {
   // 与 overlay 同样规则：progress 阶段不可关，防误关丢任务（X 按钮也走这里）
   if (view.value === 'progress') return
@@ -180,11 +175,8 @@ async function onRetry() {
 
 <template>
   <Teleport to="body" :disabled="disableTeleport">
-    <div
-      v-if="open"
-      class="modal-overlay"
-      @click.self="onOverlayClick"
-    >
+    <!-- 不挂 @click.self:用户反馈点击遮罩误关频繁,只允许 X 按钮 / 取消按钮显式关闭 -->
+    <div v-if="open" class="modal-overlay">
       <div class="modal-content">
         <div class="modal-header">
           <h3>{{ mode === 'create' ? '新建 Deck' : '切换模板' }}</h3>
