@@ -1,0 +1,208 @@
+/**
+ * Phase 11.5 Task D：OpenAI 出图 client 单测。
+ *
+ * 关键覆盖:
+ * - 路 A 成功
+ * - 路 A 缺 image_generation_call → fallback 到路 B
+ * - 路 A 5xx → fallback 到路 B
+ * - 401 → ImageAuthError(无 fallback)
+ * - 路 A + B 都失败 → 抛 last error
+ * - signal aborted → ImageCancelled
+ * - 用户 settings.model='gpt-image-2' → 直走路 B(无 fallback)
+ *
+ * Vitest 4 起 vi.mock 对 dynamic import 不稳,用 vi.spyOn(globalThis,'fetch')(plan 17 踩坑 2)。
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  generateImage,
+  ImageAuthError,
+  ImageCancelled,
+} from '../src/llm/openai-image.js'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+const TEST_BASE = 'https://test.openai/v1'
+const FAKE_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEUAAACnej3aAAAAAXRSTlMAQObYZgAAAApJREFUCNdjYAAAAAIAAeIhvDMAAAAASUVORK5CYII='
+
+function mockFetch(impl: (url: string, init?: RequestInit) => Promise<Response>) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(((u, init) => impl(u as string, init as RequestInit)) as typeof fetch)
+}
+
+function jsonResponse(body: unknown, init: { status?: number; headers?: Record<string, string> } = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status: init.status ?? 200,
+    headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+  })
+}
+
+describe('llm/openai-image generateImage', () => {
+  it('路 A 成功:gpt-5.5 + image_generation_call.result → b64 / pathA', async () => {
+    mockFetch(async (url) => {
+      expect(url).toBe(`${TEST_BASE}/responses`)
+      return jsonResponse({
+        output: [{ type: 'image_generation_call', result: FAKE_B64 }],
+      })
+    })
+    const out = await generateImage({
+      prompt: 'a city',
+      size: '1280x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk-x',
+      baseUrl: TEST_BASE,
+    })
+    expect(out.b64).toBe(FAKE_B64)
+    expect(out.pathTaken).toBe('A')
+    expect(out.modelUsed).toBe('gpt-5.5')
+  })
+
+  it('路 A 容错:item.type 以 image_generation_call 结尾(防字段微调)', async () => {
+    mockFetch(async () =>
+      jsonResponse({
+        output: [
+          { type: 'reasoning', text: '...' },
+          { type: 'tool.image_generation_call', result: FAKE_B64 },
+        ],
+      }),
+    )
+    const out = await generateImage({
+      prompt: 'a',
+      size: '1280x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+    })
+    expect(out.pathTaken).toBe('A')
+    expect(out.b64).toBe(FAKE_B64)
+  })
+
+  it('路 A 缺 image_generation_call → fallback 路 B 成功', async () => {
+    let callCount = 0
+    mockFetch(async (url) => {
+      callCount++
+      if (url.endsWith('/responses')) {
+        return jsonResponse({ output: [{ type: 'reasoning', text: 'forgot tool' }] })
+      }
+      expect(url).toBe(`${TEST_BASE}/images/generations`)
+      return jsonResponse({ data: [{ b64_json: FAKE_B64 }] })
+    })
+    const out = await generateImage({
+      prompt: 'a',
+      size: '1280x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+    })
+    expect(callCount).toBe(2)
+    expect(out.pathTaken).toBe('B')
+    expect(out.modelUsed).toBe('gpt-image-2')
+    expect(out.b64).toBe(FAKE_B64)
+  })
+
+  it('路 A 5xx → fallback 路 B', async () => {
+    mockFetch(async (url) => {
+      if (url.endsWith('/responses')) {
+        return new Response('upstream error', { status: 503 })
+      }
+      return jsonResponse({ data: [{ b64_json: FAKE_B64 }] })
+    })
+    const out = await generateImage({
+      prompt: 'a',
+      size: '1280x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+    })
+    expect(out.pathTaken).toBe('B')
+  })
+
+  it('401 → ImageAuthError,**不**走 fallback', async () => {
+    let callCount = 0
+    mockFetch(async () => {
+      callCount++
+      return jsonResponse({ error: { message: 'Invalid API key' } }, { status: 401 })
+    })
+    await expect(
+      generateImage({
+        prompt: 'a',
+        size: '1280x720',
+        signal: new AbortController().signal,
+        apiKey: 'sk-bad',
+        baseUrl: TEST_BASE,
+      }),
+    ).rejects.toBeInstanceOf(ImageAuthError)
+    expect(callCount).toBe(1) // 不应 fallback
+  })
+
+  it('路 A + B 都失败 → 抛错', async () => {
+    mockFetch(async (url) => {
+      if (url.endsWith('/responses')) return new Response('boom', { status: 503 })
+      return new Response('also boom', { status: 502 })
+    })
+    await expect(
+      generateImage({
+        prompt: 'a',
+        size: '1280x720',
+        signal: new AbortController().signal,
+        apiKey: 'sk',
+        baseUrl: TEST_BASE,
+      }),
+    ).rejects.toThrow()
+  })
+
+  it('signal aborted before call → ImageCancelled', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    mockFetch(async () => {
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' })
+    })
+    await expect(
+      generateImage({
+        prompt: 'a',
+        size: '1280x720',
+        signal: controller.signal,
+        apiKey: 'sk',
+        baseUrl: TEST_BASE,
+      }),
+    ).rejects.toBeInstanceOf(ImageCancelled)
+  })
+
+  it('用户 settings.model=gpt-image-2 → 直走路 B,不试路 A', async () => {
+    let callCount = 0
+    let lastUrl = ''
+    mockFetch(async (url) => {
+      callCount++
+      lastUrl = url
+      return jsonResponse({ data: [{ b64_json: FAKE_B64 }] })
+    })
+    const out = await generateImage({
+      prompt: 'a',
+      size: '1280x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+      primaryModel: 'gpt-image-2',
+    })
+    expect(callCount).toBe(1)
+    expect(lastUrl).toBe(`${TEST_BASE}/images/generations`)
+    expect(out.pathTaken).toBe('B')
+    expect(out.modelUsed).toBe('gpt-image-2')
+  })
+
+  it('baseUrl 末尾斜杠 trim:不重复 //', async () => {
+    let captured = ''
+    mockFetch(async (url) => {
+      captured = url
+      return jsonResponse({ output: [{ type: 'image_generation_call', result: FAKE_B64 }] })
+    })
+    await generateImage({
+      prompt: 'a',
+      size: '1280x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: `${TEST_BASE}/`,
+    })
+    expect(captured).toBe(`${TEST_BASE}/responses`)
+  })
+})
