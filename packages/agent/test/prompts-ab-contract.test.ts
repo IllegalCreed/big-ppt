@@ -141,12 +141,11 @@ describe('buildSystemPrompt（A/B contract）', () => {
     expect(prompt).toContain('### 内容块类')
   })
 
-  it('栅格类 6 个组件名都列在 Components 段（Phase 11.7 起 TwoCol + ThreeCol 合并为 EqualSplit）', () => {
+  it('栅格类 5 个组件名都列在 Components 段（Phase 11.7 起 OneTopThreeBottom 并入 OneVsThree direction=top/bottom）', () => {
     const prompt = buildSystemPrompt({ templateId: 'beitou-standard' })
     for (const name of [
       'EqualSplit',
       'OneVsThree',
-      'OneTopThreeBottom',
       'TwoColumnsTwoRows',
       'NineGrid',
       'ImageText',
@@ -158,6 +157,7 @@ describe('buildSystemPrompt（A/B contract）', () => {
     expect(prompt).not.toContain('`<ThreeCol>`')
     expect(prompt).not.toContain('`<OneLeftThreeRight>`')
     expect(prompt).not.toContain('`<OneRightThreeLeft>`')
+    expect(prompt).not.toContain('`<OneTopThreeBottom>`')
   })
 
   it('装饰类 2 个组件 + 内容块类 6 个组件全部列出', () => {

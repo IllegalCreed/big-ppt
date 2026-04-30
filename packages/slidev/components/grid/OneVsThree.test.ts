@@ -18,34 +18,57 @@ describe('OneVsThree', () => {
     expect(wrapper.find('[data-test="i3"]').text()).toBe('3')
   })
 
-  it('默认 direction=left:主区在左 + grid-template-columns 主区在前', () => {
+  it('默认 direction=left:横向布局,main 在左 (order=0) + items 内部纵向 3 行', () => {
     const wrapper = mountWithTokens(OneVsThree)
     const root = wrapper.find('.ld-one-vs-three')
+    expect(root.attributes('data-direction')).toBe('left')
     expect(root.attributes('style')).toContain('grid-template-columns: 1fr 1fr')
-    // direction 默认 left,main 的 order=0, items 的 order=1
     expect(wrapper.find('.ld-main').attributes('style')).toContain('order: 0')
     expect(wrapper.find('.ld-items').attributes('style')).toContain('order: 1')
+    expect(wrapper.find('.ld-items').attributes('style')).toContain(
+      'grid-template-rows: repeat(3, minmax(0, 1fr))',
+    )
   })
 
-  it('direction=right:主区在右 + items 在左', () => {
+  it('direction=right:横向布局,main 在右 (order=1) + items 在左', () => {
     const wrapper = mountWithTokens(OneVsThree, { props: { direction: 'right' } })
     expect(wrapper.find('.ld-main').attributes('style')).toContain('order: 1')
     expect(wrapper.find('.ld-items').attributes('style')).toContain('order: 0')
   })
 
-  it('mainFr=2 + direction=left → grid 2fr 1fr', () => {
+  it('direction=top:竖向布局,main 在上 + items 内部横向 3 列', () => {
+    const wrapper = mountWithTokens(OneVsThree, { props: { direction: 'top' } })
+    const root = wrapper.find('.ld-one-vs-three')
+    expect(root.attributes('data-direction')).toBe('top')
+    expect(root.attributes('style')).toContain('grid-template-rows: 1fr 1fr')
+    expect(wrapper.find('.ld-main').attributes('style')).toContain('order: 0')
+    expect(wrapper.find('.ld-items').attributes('style')).toContain(
+      'grid-template-columns: repeat(3, minmax(0, 1fr))',
+    )
+  })
+
+  it('direction=bottom:竖向布局,main 在下 (order=1) + items 在上', () => {
+    const wrapper = mountWithTokens(OneVsThree, { props: { direction: 'bottom' } })
+    expect(wrapper.find('.ld-main').attributes('style')).toContain('order: 1')
+    expect(wrapper.find('.ld-items').attributes('style')).toContain('order: 0')
+    expect(wrapper.find('.ld-items').attributes('style')).toContain(
+      'grid-template-columns: repeat(3, minmax(0, 1fr))',
+    )
+  })
+
+  it('mainFr=2 + direction=left → grid-template-columns: 2fr 1fr', () => {
     const wrapper = mountWithTokens(OneVsThree, { props: { mainFr: 2 } })
     expect(wrapper.find('.ld-one-vs-three').attributes('style')).toContain(
       'grid-template-columns: 2fr 1fr',
     )
   })
 
-  it('mainFr=2 + direction=right → grid 1fr 2fr', () => {
+  it('mainFr=2 + direction=top → grid-template-rows: 2fr 1fr', () => {
     const wrapper = mountWithTokens(OneVsThree, {
-      props: { mainFr: 2, direction: 'right' },
+      props: { direction: 'top', mainFr: 2 },
     })
     expect(wrapper.find('.ld-one-vs-three').attributes('style')).toContain(
-      'grid-template-columns: 1fr 2fr',
+      'grid-template-rows: 2fr 1fr',
     )
   })
 })
