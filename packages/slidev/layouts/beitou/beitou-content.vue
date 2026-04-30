@@ -11,7 +11,9 @@ defineProps<{ heading?: string }>()
 <template>
   <div class="slidev-layout beitou-template content-slide">
     <div class="content-root">
-      <h1 v-if="heading" class="content-title">{{ heading }}</h1>
+      <LBtHeader>
+        <h1 v-if="heading" class="content-title">{{ heading }}</h1>
+      </LBtHeader>
       <div class="content-body">
         <slot />
       </div>
@@ -25,7 +27,6 @@ defineProps<{ heading?: string }>()
   inset: 0;
   background: var(--bt-bg-page);
   overflow: hidden;
-  padding: 48px 60px;
   box-sizing: border-box;
   font-family: var(--bt-ff-brand);
   /* Phase 7.5E：flex column 让 .content-body 撑满剩余高度，
@@ -34,7 +35,7 @@ defineProps<{ heading?: string }>()
   flex-direction: column;
 }
 .content-title {
-  color: var(--bt-brand);
+  color: #ffffff;
   font-size: 40px;
   font-weight: 900;
   letter-spacing: 4px;
@@ -43,7 +44,7 @@ defineProps<{ heading?: string }>()
   flex-shrink: 0;
 }
 .content-body {
-  margin-top: 48px;
+  padding: 48px 60px;
   color: var(--bt-fg-primary);
   font-size: 22px;
   line-height: 1.8;

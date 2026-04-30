@@ -21,7 +21,9 @@ defineProps<{
 <template>
   <div class="slidev-layout beitou-template image-content-slide">
     <div class="image-content-root">
-      <h1 v-if="heading" class="image-content-title">{{ heading }}</h1>
+      <LBtHeader>
+        <h1 v-if="heading" class="image-content-title">{{ heading }}</h1>
+      </LBtHeader>
       <div class="image-content-body">
         <!--
           关键:imageSrc 是 agent 绝对路径(/api/assets/<uuid>),
@@ -48,14 +50,13 @@ defineProps<{
   inset: 0;
   background: var(--bt-bg-page);
   overflow: hidden;
-  padding: 48px 60px;
   box-sizing: border-box;
   font-family: var(--bt-ff-brand);
   display: flex;
   flex-direction: column;
 }
 .image-content-title {
-  color: var(--bt-brand);
+  color: #ffffff;
   font-size: 40px;
   font-weight: 900;
   letter-spacing: 4px;
@@ -64,7 +65,7 @@ defineProps<{
   flex-shrink: 0;
 }
 .image-content-body {
-  margin-top: 32px;
+  padding: 32px 60px 48px;
   flex: 1;
   min-height: 0;
   display: flex;
