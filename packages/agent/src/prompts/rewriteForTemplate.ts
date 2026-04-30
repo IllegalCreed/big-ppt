@@ -15,7 +15,8 @@ import { buildSystemPrompt } from './buildSystemPrompt.js'
 import { readStarter } from '../templates/registry.js'
 import { acquireLlmSlot } from '../middleware/llm-semaphore.js'
 
-interface LlmSettings {
+/** Phase 11.6 起被 rewriteSinglePageToComponents 复用 */
+export interface LlmSettings {
   provider?: string
   apiKey?: string
   baseUrl?: string
@@ -33,7 +34,7 @@ const PROVIDER_BASE: Record<string, { baseURL: string; defaultModel: string }> =
   },
 }
 
-function resolveUpstream(settings: LlmSettings): { url: string; model: string } {
+export function resolveUpstream(settings: LlmSettings): { url: string; model: string } {
   const provider = settings.provider ?? 'zhipu'
   const base = settings.baseUrl
     ? settings.baseUrl.replace(/\/$/, '')
@@ -46,7 +47,7 @@ function resolveUpstream(settings: LlmSettings): { url: string; model: string } 
 }
 
 /** 读取用户 llm_settings 并解密 */
-async function loadUserLlmSettings(userId: number): Promise<LlmSettings> {
+export async function loadUserLlmSettings(userId: number): Promise<LlmSettings> {
   const db = getDb()
   const [u] = await db
     .select({ llmSettings: users.llmSettings })
@@ -63,7 +64,7 @@ async function loadUserLlmSettings(userId: number): Promise<LlmSettings> {
 }
 
 /** 从 LLM 回复中提取 slides.md 正文（去掉 ```markdown 代码块包裹） */
-function stripMarkdownFence(raw: string): string {
+export function stripMarkdownFence(raw: string): string {
   const trimmed = raw.trim()
   const fenceMatch = trimmed.match(/^```(?:markdown|md)?\n([\s\S]*?)\n```$/)
   if (fenceMatch) return fenceMatch[1]!.trim()
