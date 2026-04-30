@@ -39,6 +39,7 @@ import {
 import { createAsset } from '../../db/deck-assets.js'
 import { updateSlide as storeUpdateSlide, readSlides } from '../../slides-store/index.js'
 import { parseSlides } from '../../slides-store/pages.js'
+import { rewriteSinglePageToComponents } from '../../prompts/rewriteSinglePageToComponents.js'
 import { coerceInt } from './utils.js'
 
 const PROMPT_MAX = 1000
@@ -257,6 +258,21 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
               throw new Error(result.error ?? 'updateSlide 失败')
             }
           },
+          // Phase 11.6 graceful-degradation:三件 DI 注入,worker 在出图失败时
+          // 自动调 rewriteSinglePage 用 fallbackSummary + 整 deck 上下文重写为组件版
+          updateSlideRaw: async (args2) => {
+            const result = await storeUpdateSlide({
+              index: args2.slideIndex,
+              frontmatter: args2.frontmatter,
+              body: args2.body,
+              replaceFrontmatter: args2.replaceFrontmatter,
+            })
+            if (!result.success) {
+              throw new Error(result.error ?? 'updateSlideRaw 失败')
+            }
+          },
+          readSlides: () => readSlides(),
+          rewriteSinglePage: rewriteSinglePageToComponents,
           targetLayout,
           preservedHeading,
         }

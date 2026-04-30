@@ -123,6 +123,13 @@ function toPublic(j: InternalJob): ImageJob {
  * - createAsset:DB BLOB 写入
  * - updateSlide:slides-store 改写 frontmatter
  *
+ * Phase 11.6 加 3 个可选依赖,合一起开启 graceful-degradation:
+ * - readSlides:失败兜底时拿当前 slides.md 给 LLM 当上下文
+ * - updateSlideRaw:用 LLM 重写后的任意 frontmatter+body 替换该页
+ * - rewriteSinglePage:调主 LLM 把单页重写为 *-content + 组件
+ * 三者全提供 + job.fallbackSummary + job.templateId 都存在时,worker 失败走兜底;
+ * 否则维持 Phase 11.5 老语义(标 failed)。
+ *
  * stub 模式(BIG_PPT_TEST_IMAGE_MODE=stub)由调用方决定如何注入(读 fixture 字节)。
  */
 export interface RunImageJobDeps {
@@ -140,6 +147,7 @@ export interface RunImageJobDeps {
     prompt: string
     model: string
   }) => Promise<{ id: string }>
+  /** 出图成功路径:specialized signature,worker 内部组装最小 frontmatter */
   updateSlide: (args: {
     deckId: number
     userId: number
@@ -152,6 +160,24 @@ export interface RunImageJobDeps {
   targetLayout: string
   /** 保留原 slide 的 heading 文本(如有),传给 updateSlide */
   preservedHeading?: string
+  /** Phase 11.6:失败兜底专用——通用 update_slide,接受任意 frontmatter + body 替换该页 */
+  updateSlideRaw?: (args: {
+    slideIndex: number
+    frontmatter: Record<string, unknown>
+    body: string
+    replaceFrontmatter: boolean
+  }) => Promise<void>
+  /** Phase 11.6:失败兜底专用——拿当前 slides.md 内容给 LLM 当上下文 */
+  readSlides?: () => string
+  /** Phase 11.6:失败兜底专用——单页重写为 *-content + 组件版 */
+  rewriteSinglePage?: (args: {
+    currentSlidesContent: string
+    slideIndex: number
+    heading?: string
+    fallbackSummary?: string
+    templateId: string
+    userId: number
+  }) => Promise<{ frontmatter: Record<string, unknown>; body: string }>
 }
 
 export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise<void> {
@@ -225,15 +251,65 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
   } catch (err) {
     const e = err as Error
     const msg = e.message ?? String(err)
-    // ImageCancelled / AbortError 走 cancelled,其他走 failed
+    // ImageCancelled / AbortError 走 cancelled,其他走 failed / 兜底重写
     if (e.name === 'ImageCancelled' || e.name === 'AbortError') {
       console.warn(`[image-gen-job ${jobId.slice(0, 8)}] cancelled: ${msg}`)
       mutate(jobId, { state: 'cancelled', errorMsg: msg, finishedAt: new Date() })
-    } else {
-      console.error(
-        `[image-gen-job ${jobId.slice(0, 8)}] FAILED: ${e.name}: ${msg}\n${e.stack ?? ''}`,
-      )
+      return
+    }
+    console.error(
+      `[image-gen-job ${jobId.slice(0, 8)}] image gen FAILED: ${e.name}: ${msg}\n${e.stack ?? ''}`,
+    )
+
+    // Phase 11.6 graceful-degradation:rewriteSinglePage + readSlides + updateSlideRaw 三件 DI
+    // 全提供 + job.fallbackSummary + job.templateId 都存在时,触发兜底重写。
+    // 否则退化为 Phase 11.5 行为标 failed,保持向后兼容(现有测试不带 DI 时仍走老路径)。
+    const canFallback =
+      !!deps.rewriteSinglePage &&
+      !!deps.readSlides &&
+      !!deps.updateSlideRaw &&
+      !!job.fallbackSummary &&
+      !!job.templateId
+    if (!canFallback) {
       mutate(jobId, { state: 'failed', errorMsg: msg, finishedAt: new Date() })
+      return
+    }
+
+    try {
+      const slidesContent = deps.readSlides!()
+      const rewritten = await deps.rewriteSinglePage!({
+        currentSlidesContent: slidesContent,
+        slideIndex: job.slideIndex,
+        heading: job.heading,
+        fallbackSummary: job.fallbackSummary,
+        templateId: job.templateId!,
+        userId: job.userId,
+      })
+      await deps.updateSlideRaw!({
+        slideIndex: job.slideIndex,
+        frontmatter: rewritten.frontmatter,
+        body: rewritten.body,
+        replaceFrontmatter: true,
+      })
+      console.log(
+        `[image-gen-job ${jobId.slice(0, 8)}] fallback-rewrote ok (image gen failed: ${msg})`,
+      )
+      mutate(jobId, {
+        state: 'fallback-rewrote',
+        errorMsg: msg,
+        finishedAt: new Date(),
+      })
+    } catch (rwErr) {
+      const rE = rwErr as Error
+      const rMsg = rE.message ?? String(rwErr)
+      console.error(
+        `[image-gen-job ${jobId.slice(0, 8)}] fallback rewrite ALSO FAILED: ${rE.name}: ${rMsg}`,
+      )
+      mutate(jobId, {
+        state: 'fallback-failed',
+        errorMsg: `image gen failed: ${msg}; fallback rewrite also failed: ${rMsg}`,
+        finishedAt: new Date(),
+      })
     }
   }
 }
