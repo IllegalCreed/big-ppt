@@ -16,6 +16,7 @@
  * - 不依赖 DB 表(不做跨设备同步)
  */
 import { randomUUID } from 'node:crypto'
+import { acquireImageSlot } from './middleware/image-semaphore.js'
 
 export type ImageJobState =
   | 'pending'
@@ -188,6 +189,27 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
     mutate(jobId, { state: 'cancelled', finishedAt: new Date() })
     return
   }
+
+  // Phase 11.6 dogfood 后:per-user 并发限流(默认 3),防 22 页一波 fire-and-forget
+  // 把 OpenAI image API RPS 打爆。state 保持 'pending' 直到拿到 slot,前端展示「排队中」。
+  let releaseSlot: () => void
+  try {
+    releaseSlot = await acquireImageSlot(job.userId)
+  } catch (err) {
+    const e = err as Error
+    console.error(
+      `[image-gen-job ${jobId.slice(0, 8)}] image semaphore acquire failed: ${e.message}`,
+    )
+    mutate(jobId, { state: 'failed', errorMsg: e.message, finishedAt: new Date() })
+    return
+  }
+
+  // 拿到 slot 后再检查 cancelled(排队期间用户可能已取消)
+  if (job.controller.signal.aborted) {
+    releaseSlot()
+    mutate(jobId, { state: 'cancelled', finishedAt: new Date() })
+    return
+  }
   mutate(jobId, { state: 'running' })
 
   try {
@@ -311,5 +333,9 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
         finishedAt: new Date(),
       })
     }
+  } finally {
+    // Phase 11.6:无论 done / failed / fallback-rewrote / fallback-failed / cancelled,
+    // 都释放 image semaphore slot,让排队的下一个 job 接过来跑(release 幂等,多次调用 noop)
+    releaseSlot()
   }
 }
