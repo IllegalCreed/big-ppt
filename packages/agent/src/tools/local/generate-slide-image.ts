@@ -19,6 +19,7 @@
  */
 import path from 'node:path'
 import fs from 'node:fs'
+import type { ImageGenStyle } from '@big-ppt/shared'
 import type { ToolDef } from '../registry.js'
 import { getRequestContext, runInRequest } from '../../context.js'
 import { getDb, decks } from '../../db/index.js'
@@ -51,49 +52,18 @@ function deriveImageLayoutName(templateId: string): string {
 }
 
 /**
- * 模板图像风格表 — Phase 11.6 dogfood 后加,解决"22 页并发风格不统一 + 英文图"问题。
+ * Phase 11.6 dogfood 后加结构化 prompt augmentation,解决"22 页并发风格不统一 + 英文图"问题。
+ * 参考 Codex imagegen skill 的 Shared prompt schema:工具层在每次调用都注入同一份
+ * deck-level invariants(色板 hex + 风格关键词 + 中文 label),让 OpenAI 生图 LLM 跨调用
+ * 保持视觉一致,而非每页自由编一种形式。
  *
- * 参考 Codex imagegen skill 的 structured prompt schema:工具层在每次调用都注入
- * 同一份 deck-level invariants(色板 hex + 风格关键词 + 中文 label),让 OpenAI 生图
- * LLM 在跨调用之间保持视觉一致,而非每页自由编一种形式。
+ * 色板等模板视觉数据放在 manifest.json 的 imageGenStyle 字段(跟 tokens.css 同源,
+ * 模板元数据跟模板同包),工具层只负责拼装 prompt,不维护数据。新模板加色板只改 manifest,
+ * 不需要改 agent 代码。
  *
- * 色板从 packages/slidev/templates/<id>/tokens.css 的 chart-1..chart-5 + brand-primary
- * 抄过来,跟 layout 视觉同源。新模板加进来时同步加一行;若 templateId 不在表里,fallback
- * 通用 palette + style。
+ * 若模板未配置 imageGenStyle,工具层用通用 fallback。
  */
-interface TemplateImageStyle {
-  /** 色板 hex 列表(带语义标签),作为生图色调 anchor */
-  palette: string[]
-  /** 风格关键词,跟模板 layout 视觉氛围对齐(红色品牌 / 蓝色品牌 等) */
-  styleHint: string
-}
-
-const TEMPLATE_IMAGE_STYLE: Record<string, TemplateImageStyle> = {
-  'beitou-standard': {
-    palette: [
-      '#d00d14 (brand red, primary anchor)',
-      '#f59e0b (amber gold, warm secondary)',
-      '#2a9d8f (teal green, cool counter-balance)',
-      '#6366f1 (indigo, cool accent)',
-      '#94a3b8 (neutral slate gray)',
-    ],
-    styleHint:
-      'corporate red anchor with warm-cool secondary tones, formal Chinese business presentation aesthetic',
-  },
-  'jingyeda-standard': {
-    palette: [
-      '#003da5 (brand blue, primary anchor)',
-      '#8fc31f (brand green, secondary anchor)',
-      '#f59e0b (amber gold, warm accent)',
-      '#e76f51 (warm coral, accent)',
-      '#94a3b8 (neutral slate gray)',
-    ],
-    styleHint:
-      'corporate blue + green dual-anchor with warm accents, formal Chinese business presentation aesthetic',
-  },
-}
-
-const FALLBACK_IMAGE_STYLE: TemplateImageStyle = {
+const FALLBACK_IMAGE_STYLE: ImageGenStyle = {
   palette: [
     '#1f2937 (neutral charcoal)',
     '#3b82f6 (modern blue)',
@@ -109,7 +79,7 @@ const FALLBACK_IMAGE_STYLE: TemplateImageStyle = {
  * 这样工具层强制注入 deck-level invariants(色板 / 风格 / 中文 label / 边界约束),
  * LLM 即使写得 generic 也不会让生图模型乱发挥。
  */
-function buildStructuredImagePrompt(userPrompt: string, style: TemplateImageStyle): string {
+function buildStructuredImagePrompt(userPrompt: string, style: ImageGenStyle): string {
   const paletteList = style.palette.join(', ')
   return [
     `Use case: productivity-visual`,
@@ -272,8 +242,9 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
     }
   }
 
-  // 拿到 deck.templateId 后再拼最终 prompt(注入对应模板的色板 + 风格 invariants)
-  const templateStyle = TEMPLATE_IMAGE_STYLE[deck.templateId] ?? FALLBACK_IMAGE_STYLE
+  // 拿到 deck.templateId 后再拼最终 prompt:从 manifest.imageGenStyle 读色板 + 风格(模板
+  // 元数据跟模板同包,新模板加色板只改 manifest 不动 agent),缺省走通用 fallback
+  const templateStyle = manifest.imageGenStyle ?? FALLBACK_IMAGE_STYLE
   const finalPrompt = buildStructuredImagePrompt(userPrompt, templateStyle)
 
   const job = createImageJob({

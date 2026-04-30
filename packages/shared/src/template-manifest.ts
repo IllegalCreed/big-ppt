@@ -60,6 +60,20 @@ export interface TemplateManifest {
    * 值必须是 `commonComponentsCatalog` 中已知组件名。
    */
   commonComponents?: string[]
+  /**
+   * Phase 11.6 dogfood 后引入：AI 出图(generate_slide_image 工具)用的视觉 invariants。
+   * 跟 tokens.css 同源(色板从 chart-1..5 + brand 抄过来),让生图 LLM 跨 N 个并发调用
+   * 保持 deck-wide 视觉一致(色调 / 风格 / 中文 label)。
+   * 缺省时工具层用通用 fallback。
+   */
+  imageGenStyle?: ImageGenStyle
+}
+
+export interface ImageGenStyle {
+  /** 色板 hex 列表(带语义标签),作为生图色调 anchor。例: '#d00d14 (brand red, primary anchor)' */
+  palette: string[]
+  /** 风格关键词,跟模板 layout 视觉氛围对齐(红色品牌 / 蓝色品牌 等),会拼到 Style/medium 字段后 */
+  styleHint: string
 }
 
 /** 校验结果。`ok: true` 时 `value` 必定为合法 manifest。 */
@@ -195,6 +209,24 @@ export function validateManifest(raw: unknown): ValidateManifestResult {
       raw.commonComponents.some((v) => typeof v !== 'string')
     ) {
       errors.push('commonComponents 若存在必须是字符串数组')
+    }
+  }
+
+  if (raw.imageGenStyle !== undefined) {
+    if (!isPlainObject(raw.imageGenStyle)) {
+      errors.push('imageGenStyle 若存在必须是对象')
+    } else {
+      const style = raw.imageGenStyle
+      if (
+        !Array.isArray(style.palette) ||
+        style.palette.length === 0 ||
+        style.palette.some((v) => typeof v !== 'string')
+      ) {
+        errors.push('imageGenStyle.palette 必须是非空字符串数组')
+      }
+      if (!isNonEmptyString(style.styleHint)) {
+        errors.push('imageGenStyle.styleHint 必填(非空字符串)')
+      }
     }
   }
 

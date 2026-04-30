@@ -18,6 +18,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **反模式**：把 `--ld-*` token CSS、组件类名、SDK 名写进 vision/roadmap；把"商业模式"写进 CLAUDE.md。
 
+## 模板元数据归属（跟模板同包，绝不分散）
+
+**硬约束**：模板的视觉 / prompt 元数据**必须**跟模板源文件放同一目录或同一包，**不能**散落到 agent 等消费方。
+
+| 模板元数据 | 唯一归属位置 |
+| --- | --- |
+| 视觉 token 色值 / 字体 / 间距 | `packages/slidev/templates/<id>/tokens.css` |
+| layout 列表 / frontmatter schema / bodyGuidance / promptPersona | `packages/slidev/templates/<id>/manifest.json` |
+| 公共组件 prompt 元数据（描述 / props / slotCapacity / 用法示例） | `packages/slidev/components/<category>/<Name>.meta.ts` |
+| AI 出图色板 / 风格 invariants（generate_slide_image 用） | `packages/slidev/templates/<id>/manifest.json` 的 `imageGenStyle` 字段 |
+| 任何"模板独有"的 prompt 引导 / 视觉默认值 | `packages/slidev/templates/<id>/manifest.json` 或同目录配套文件 |
+
+agent 端**只**通过 `getManifest(templateId)` 或 import workspace 包读这些数据，**不维护任何映射表**。
+
+**反模式（严禁）**：
+- ❌ 在 `packages/agent/` 下写 `Record<templateId, {palette, ...}>` 之类的硬编表（数据漂移、加新模板要改两处）
+- ❌ 在 agent 提示词里 hardcode 颜色 / 字体 / 风格关键词（只能从 manifest 拼装）
+- ❌ 公共组件 prompt 描述放 agent（必须 `<Name>.meta.ts` 跟组件 sibling，详见 Phase 11.6 commit `1addc80`）
+
+**判断口诀**：「这条数据在跨模板时会变吗？」—— 答案是 yes 就**必须**放模板包；agent 只能放跟具体模板无关的通用规则（比如「数据图必须用 BarChart」）。
+
 ## 常用命令
 
 ### 开发与构建

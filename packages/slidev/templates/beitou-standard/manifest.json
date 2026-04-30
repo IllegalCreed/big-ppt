@@ -150,5 +150,15 @@
     "LineChart",
     "PieChart"
   ],
+  "imageGenStyle": {
+    "palette": [
+      "#d00d14 (brand red, primary anchor)",
+      "#f59e0b (amber gold, warm secondary)",
+      "#2a9d8f (teal green, cool counter-balance)",
+      "#6366f1 (indigo, cool accent)",
+      "#94a3b8 (neutral slate gray)"
+    ],
+    "styleHint": "corporate red anchor with warm-cool secondary tones, formal Chinese business presentation aesthetic"
+  },
   "thumbnail": "thumbnail.png"
 }

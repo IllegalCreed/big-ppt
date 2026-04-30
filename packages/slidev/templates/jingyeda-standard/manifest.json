@@ -161,5 +161,15 @@
     "LineChart",
     "PieChart"
   ],
+  "imageGenStyle": {
+    "palette": [
+      "#003da5 (brand blue, primary anchor)",
+      "#8fc31f (brand green, secondary anchor)",
+      "#f59e0b (amber gold, warm accent)",
+      "#e76f51 (warm coral, accent)",
+      "#94a3b8 (neutral slate gray)"
+    ],
+    "styleHint": "corporate blue + green dual-anchor with warm accents, formal Chinese business presentation aesthetic"
+  },
   "thumbnail": "thumbnail.png"
 }
