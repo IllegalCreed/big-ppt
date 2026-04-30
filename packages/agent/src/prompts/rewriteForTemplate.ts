@@ -111,7 +111,13 @@ export async function rewriteForTemplate(args: {
 
   const settings = await loadUserLlmSettings(args.userId)
   const { url, model } = resolveUpstream(settings)
-  const systemPrompt = buildSystemPrompt({ templateId: args.toTemplateId })
+  // Phase 11.6：切模板期间强制走 OFF 决策树。
+  // 即使用户配了 image LLM,切模板的目的是把旧 deck 重写成新模板的同等版本,
+  // 不应在切模板期重新生图(imageSrc 由调用方透传,layout 名前缀替换由 LLM 完成)。
+  const systemPrompt = buildSystemPrompt({
+    templateId: args.toTemplateId,
+    imageGenEnabled: false,
+  })
 
   const userPrompt = `当前 slides.md 内容来自模板 \`${args.fromTemplateId}\`。请把它重写成符合模板 \`${args.toTemplateId}\` layout 规范的完整 slides.md，保留原有语义（标题 / 要点 / 数据），只调整结构和 frontmatter 字段以适配新模板。
 

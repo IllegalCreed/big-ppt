@@ -100,7 +100,7 @@ const WORK_MODE_SECTION = `## 工作模式（5 档自由度连续谱）
 
 **决策原则**：能用预制就用预制；公共组件不够 → 自由 markdown / 内联 HTML（用 token）；仍不够 → 升档 4-5（清楚代价的前提下）。`
 
-const DECISION_TREE_SECTION = `## 选 Layout 与 Component 的决策树
+const DECISION_TREE_SECTION_OFF = `## 选 Layout 与 Component 的决策树
 
 - frontmatter \`layout:\` 字段：每页必填，且**只能**从模板独有的 5 个 layer-1 layout 中选
 - 整页要并列 / 主从 / 网格分块 → **必须**用栅格类组件包整 body（不要在 content 默认 slot 用 div 硬拆）
@@ -111,6 +111,37 @@ const DECISION_TREE_SECTION = `## 选 Layout 与 Component 的决策树
 - 代码块 → 用 markdown 围栏（\`\`\`ts ... \`\`\`），Slidev 自带 Shiki 高亮，不需要专用组件
 - 段落自由叙述 / 简单列表 → **自由 markdown**，不硬塞组件
 - 切模板任务时（system 调用）：仅替换 frontmatter \`layout:\` 前缀，不要重写公共组件 props 或 slot 内容`
+
+const DECISION_TREE_SECTION_ON = `## 选 Layout 与 Component 的决策树（图片优先模式）
+
+> 本会话已配置 AI 出图。**所有内容页一律走 image-content layout + AI 出图**，不再走 layout/组件路径。封面、目录、章节标题、封底等结构页保持原选法（这些页 AI 出图意义不大，是高度定制的固定形态）。
+
+**决策规则**：
+- 封面 / 目录 / 章节标题 / 封底（结构页）→ 仍按结构 layout 选（cover / toc / section-title / back-cover）
+- **其他所有内容页**（无论原本会用 BarChart / MetricCard / ProcessFlow / 还是纯文字）→ frontmatter 一律写 \`layout: <prefix>-image-content\`，仅保留 \`heading\` 字段，body 为空
+  - **绝对不要**在内容页写 BarChart / MetricCard / ProcessFlow / 栅格 / 自由 markdown 文字版作为兜底。失败兜底由后台 worker 自动处理（见下方契约）
+
+**工具调用契约**：
+首次 \`write_slides\` 输出整 deck 后（结构页选结构 layout，内容页 layout 写 \`*-image-content\` + 空 body + heading），**必须**对每个内容页串联调一次 \`generate_slide_image\`：
+- \`slideIndex\`: 1-based 页号
+- \`prompt\`: 英文，**只描述本页要承载的内容**（业务点 / 关键信息 / 主题氛围）。**不要指定展示形式**（不要写 "bar chart style" / "infographic" / "illustration" / "realistic photo" 等形式限定词），让生图 LLM 自决。工具层会自动追加 "this is a slide page" 与 no-text 约束，你无需在 prompt 里写
+- \`fallbackSummary\`: 中文 1-2 句，描述本页应承载的信息（例：「列举 RAG 系统的 4 个核心模块及作用」），worker 失败兜底时由系统调一次 LLM 用此摘要 + 整 deck 上下文自动重写为 layout/组件版本
+
+**典型 6 页 deck 调用序列**（cover + toc + 3 内容页 + back-cover）：
+1. \`write_slides\`（写 6 页：第 3-5 页 layout 都是 \`*-image-content\` + heading + 空 body）
+2. \`generate_slide_image(slideIndex=3, prompt="…", fallbackSummary="…")\`
+3. \`generate_slide_image(slideIndex=4, prompt="…", fallbackSummary="…")\`
+4. \`generate_slide_image(slideIndex=5, prompt="…", fallbackSummary="…")\`
+
+**禁忌**：
+- 不要给内容页选 \`*-content\` 等组件 layout
+- 不要在内容页 body 里写 BarChart / MetricCard / ProcessFlow / 任何文字
+- 不要主动写 imageSrc 字段（工具层填）
+- 不要因为 \`generate_slide_image\` 同步返 \`{jobId}\` 看似没出图就再次 \`write_slides\`（异步语义，jobId 即视为成功入队）`
+
+function getDecisionTreeSection(imageGenEnabled: boolean): string {
+  return imageGenEnabled ? DECISION_TREE_SECTION_ON : DECISION_TREE_SECTION_OFF
+}
 
 /** 根据 templateId + mcpBadges 拼完整 system prompt 字符串。模板不存在会抛错。 */
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
@@ -167,7 +198,7 @@ ${layoutsSection}
 
 ${componentsSection ? componentsSection + '\n\n' : ''}${WORK_MODE_SECTION}
 
-${DECISION_TREE_SECTION}
+${getDecisionTreeSection(options.imageGenEnabled === true)}
 
 ## Slidev 语法规则
 
