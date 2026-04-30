@@ -137,13 +137,15 @@ describe('TemplatePickerModal · switch mode', () => {
     expect(btn.attributes('disabled')).toBeDefined()
   })
 
-  it('右预览 switch 模式渲染警告条', async () => {
+  it('右预览 switch 模式渲染警告条(切模板触发说明)', async () => {
     mockListTemplates()
     const wrapper = mount(TemplatePickerModal, {
       props: { open: true, mode: 'switch', currentTemplateId: 'beitou-standard', deckId: 1, disableTeleport: true },
     })
     await flushPromises()
-    expect(wrapper.text()).toContain('AI 用新模板风格重写')
+    // dogfood 后改文案:多数情况是字符串替换,只有 chart.js / 原创 Vue 组件等情形会 fallback LLM 重写
+    expect(wrapper.text()).toContain('自动适配到新模板')
+    expect(wrapper.text()).toContain('image-content 页的 AI 图保留')
   })
 
   describe('switch → progress（fake timer）', () => {

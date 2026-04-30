@@ -130,6 +130,7 @@ export async function rewriteForTemplate(args: {
 - 模板归属表达在 \`layout\` 字段（如 \`layout: ${args.toTemplateId.replace('-standard', '')}-cover\`），不是 \`theme\`
 - 严格遵循新模板的 layout 清单与 frontmatter schema
 - 页数可以微调（不要少于原 1/2 也不要超过原 2 倍）
+- **\`*-image-content\` 页的 \`imageSrc\` 字段必须逐字保留**(形如 \`/api/assets/<uuid>\`),不要重新生成、不要省略;layout 名跟着前缀替换(如 \`beitou-image-content\` → \`${args.toTemplateId.replace('-standard', '')}-image-content\`)
 
 原 slides.md：
 

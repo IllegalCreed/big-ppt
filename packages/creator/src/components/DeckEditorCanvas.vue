@@ -285,7 +285,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="icon-btn"
-          title="切换模板（AI 重写）"
+          title="切换模板"
           aria-label="切换模板"
           @click="showTemplatePicker = true"
         >

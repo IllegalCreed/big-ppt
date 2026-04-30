@@ -26,7 +26,8 @@ function thumbnailUrl(m: TemplateManifest): string {
       <div v-if="showSwitchWarning" class="tpl-preview__warning" role="alert">
         <strong>切换会触发：</strong>
         <ul>
-          <li>AI 用新模板风格重写全部内容</li>
+          <li>自动适配到新模板的 layout 与字段（多数情况字符串替换；含 chart.js / 自定义 Vue 组件等情形会 fallback LLM 重写）</li>
+          <li>image-content 页的 AI 图保留，不会重新生成</li>
           <li>当前版本自动保存快照</li>
           <li>失败或不满意可用 <code>/undo</code> 回退</li>
         </ul>

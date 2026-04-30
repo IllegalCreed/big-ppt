@@ -57,7 +57,7 @@ const canSubmit = computed(() => {
 
 const primaryLabel = computed(() => {
   if (submitting.value) return props.mode === 'create' ? '创建中…' : '切换中…'
-  return props.mode === 'create' ? '创建' : '切换（AI 重写）'
+  return props.mode === 'create' ? '创建' : '切换模板'
 })
 
 async function loadManifests() {
@@ -229,7 +229,7 @@ async function onRetry() {
               <span class="stage-dot" />保存当前版本快照
             </li>
             <li :class="stageClass('migrating')">
-              <span class="stage-dot" />AI 重写内容
+              <span class="stage-dot" />适配到新模板
             </li>
             <li :class="stageClass('success')">
               <span class="stage-dot" />写入新版本
