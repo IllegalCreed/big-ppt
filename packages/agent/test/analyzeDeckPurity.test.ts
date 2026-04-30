@@ -35,14 +35,14 @@ layout: jingyeda-content
 heading: Q1 指标
 ---
 
-<TwoCol left-title="旧" right-title="新">
-  <template #left>
+<EqualSplit :count="2">
+  <template #slot1>
     <MetricCard value="89" unit="%" label="留存率" />
   </template>
-  <template #right>
+  <template #slot2>
     <BarChart :labels='["Q1","Q2"]' :values='[10,20]' />
   </template>
-</TwoCol>
+</EqualSplit>
 `
     const result = analyzeDeckPurity(content)
     expect(result.pure).toBe(true)
