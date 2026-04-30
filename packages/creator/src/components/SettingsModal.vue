@@ -650,7 +650,15 @@ onMounted(() => {
   transform: translateX(100%);
 }
 
-/* Phase 11.5：3-tab 变体（生图模型 tab 加入后） */
+/* Phase 11.5：3-tab 变体（生图模型 tab 加入后）。
+   关键:用 grid 强制三 tab 等宽,否则文字长的 tab 会被自然撑开 →
+   indicator 按"三等分"算的位置跟实际 tab 起止边对不上,视觉错位。 */
+.seg-tabs--three {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  min-width: 360px;
+}
+
 .seg-indicator--three {
   width: calc((100% - 8px) / 3);
 }
@@ -664,7 +672,8 @@ onMounted(() => {
 }
 
 .seg-tabs--three .seg-tab {
-  min-width: 100px;
+  /* grid item 自动等宽,移除 min-width 防止 grid 失效 */
+  min-width: 0;
 }
 
 .seg-tab {

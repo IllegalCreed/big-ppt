@@ -58,20 +58,26 @@ imageLlmSettingsRoute.put('/image-llm-settings', async (c) => {
   }
   const provider = rawProvider as ImageLlmProvider
 
-  // 若未给 apiKey:要求已存在旧值,保留旧 apiKey 只更新其他字段(同 llm-settings 行为)
-  let apiKey = body.apiKey?.trim() ?? ''
-  if (!apiKey) {
-    try {
-      const prev = await getImageLlmSettings(user.id)
-      apiKey = prev?.apiKey ?? ''
-    } catch (err) {
-      return errorResponse(c, err, { publicMessage: '旧生图模型配置读取失败' })
-    }
-    if (!apiKey) return c.json({ error: 'apiKey 为空' }, 400)
+  // **关键**:apiKey / baseUrl / model 全部对称 —— 字段在 body 中"未提供"
+  //(undefined / 不存在)= 保留旧值;字段提供且非空 = 写入新值;
+  // **空字符串显式表示清空**(用户主动想去掉 baseUrl / model)。
+  // apiKey 例外:空字符串仍保留旧值(防误清,加密 key 没法回看修正)。
+  let prev: ImageLlmSettings | null = null
+  try {
+    prev = await getImageLlmSettings(user.id)
+  } catch (err) {
+    return errorResponse(c, err, { publicMessage: '旧生图模型配置读取失败' })
   }
 
-  const baseUrl = body.baseUrl?.trim() || undefined
-  const model = body.model?.trim() || undefined
+  // apiKey:空 / 未传 → 保留旧值;非空 → 覆盖
+  const apiKey = body.apiKey?.trim() || prev?.apiKey || ''
+  if (!apiKey) return c.json({ error: 'apiKey 为空' }, 400)
+
+  // baseUrl:body 字段未提供(undefined)→ 保留旧值;提供(包括空串)→ 用户意图清空或更新
+  const baseUrl =
+    body.baseUrl === undefined ? prev?.baseUrl : body.baseUrl.trim() || undefined
+  const model =
+    body.model === undefined ? prev?.model : body.model.trim() || undefined
 
   try {
     const settings: ImageLlmSettings = { provider, apiKey, baseUrl, model }
