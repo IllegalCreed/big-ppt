@@ -137,7 +137,7 @@ const TOOL_NAME = 'generate_slide_image'
 const TOOL_DESCRIPTION = [
   'Generate an AI image with OpenAI image_generation and place it on a slide using the template-specific image-content layout (e.g. beitou-image-content, jingyeda-image-content).',
   '',
-  'Phase 11.6 — DEFAULT for every content slide when image LLM is configured: after `write_slides` emits a deck, call this tool for each content slide so the rendered image populates the *-image-content layout. cover / toc / section-title / back-cover are excepted (use their structural layouts). Data charts (BarChart / LineChart / PieChart) live in OFF-mode component path — when image LLM is configured those slides also become AI-generated images per the system prompt decision tree.',
+  'DEFAULT for every content slide when image LLM is configured: after `write_slides` emits a deck, call this tool for each content slide so the rendered image populates the *-image-content layout. cover / toc / section-title / back-cover are excepted (use their structural layouts). Data charts (BarChart / LineChart / PieChart) live in component path — when image LLM is configured those slides also become AI-generated images per the system prompt decision tree.',
   '',
   'Required arguments:',
   '- `slideIndex`: 1-based page index of the content slide to populate.',

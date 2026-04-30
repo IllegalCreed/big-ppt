@@ -172,7 +172,7 @@ const DECISION_TREE_SECTION_OFF = `## 选 Layout 与 Component 的决策树
 - 引文 / 关键摘要 → **优先** \`<Quote>\`
 - 代码块 → 用 markdown 围栏（\`\`\`ts ... \`\`\`），Slidev 自带 Shiki 高亮，不需要专用组件
 - 段落自由叙述 / 简单列表 → **自由 markdown**，不硬塞组件
-- 切模板任务时（system 调用）：仅替换 frontmatter \`layout:\` 前缀，不要重写公共组件 props 或 slot 内容`
+- 切换模板：用 \`switch_template\` 工具触发(后台 worker 自动重写整 deck 的 layout 前缀);**不要**自己 update_slide 一页页手工改 layout 名`
 
 const DECISION_TREE_SECTION_ON = `## 选 Layout 与 Component 的决策树（图片优先模式）
 

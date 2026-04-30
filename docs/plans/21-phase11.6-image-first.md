@@ -141,6 +141,18 @@ roadmap.md 插 Phase 11.6 段；新建本 plan 文件。
 ## 执行期偏离
 
 - **plan 设计阶段以为 image_jobs 是 DB 表**（plan 段 C 写「加 fallback_summary 字段 + db:push」），落地时核实 image-gen-job.ts 注释明确「不依赖 DB 表（不做跨设备同步）」，所以扩展字段直接加 `ImageJobInput` TS interface 即可。**实际省了 drizzle schema 改动和 3 处 db:push**，工作量减少。
+- **dogfood 阶段加了 7 件原 plan 没列的事**:首次跑 22 页 deck 暴露多个真实问题(并行风格漂移 / 第 6/7 页空 frontmatter / heading 缺失等),触发后续 7 个 commit 收尾(`6f6f80d` ~ `0e488ef`):
+  - **结构化 image prompt augmentation**:工具层把 LLM 传的自由文本 prompt 重新组装成「This is slide N/M of deck:<heading>. Visual concept: <prompt>. Mandatory style anchor: clean editorial illustration, terracotta + cream + navy palette, paper texture, subtle gradient, no text/title/banner anywhere」结构化模板,所有页风格统一(原 22 页并行各画各的)
+  - **fallbackSummary 改必填**:Phase 11.6 v1 设为可选,dogfood 时 LLM 经常不传 → worker 失败兜底无输入 → 整页空白。改为 schema required + 入口校验
+  - **删 list_templates 工具**:跨模板返回所有 manifest 触发污染(beitou deck 里 LLM 看到 jingyeda layout 引用,生成出 jingyeda-cover layout)。当前 deck 模板 id 已在 system prompt 中,LLM 不需要再 list
+  - **read_template 收紧到当前模板 + ALLOWED_NAMES whitelist**:防跨模板 + 限定 DESIGN.md / starter.md 二选一(早期 cover.md / content.md 等 Phase 6 layout-per-file 概念已废弃)
+  - **edit_slides old_string 长度上限 300 char**:LLM 误用它一次替换整段甚至跨页内容,违反「页内字符串小改」语义
+  - **manifest image-content required 修正**:[imageSrc] → [heading]。imageSrc 由工具填、LLM 视角不必填;heading 是顶部 header bar 必填字段
+  - **create_slide / update_slide 加 frontmatter 必填校验**:基于 layout 的 manifest required 字段集校验。LLM 漏字段 → 工具拒收 + 引导
+  - **per-user image worker 并发限流 (默认 3)**:用户 dogfood 时 22 个 job 并发撞 OpenAI Tier 1 RPS,加 `pLimit(IMAGE_GEN_CONCURRENCY)` 默认 3
+  - **buildSystemPrompt 自动注入图片资源清单**:扫当前模板目录下的 png/jpg/webp/svg,拼到 prompt「图片资源」段,告诉 LLM 哪些路径合法
+  - **system prompt 决策树修正**:原「切模板任务时（system 调用）：仅替换 frontmatter `layout:` 前缀」对 LLM 误导,改为「切换模板：用 `switch_template` 工具触发」
+- **manifest tokens.css 色板搬到 imageGenStyle 字段**:Phase 11.6 v1 设计 LLM 在 prompt 里描述配色,但 LLM 不知道当前模板的视觉调性。dogfood 后改:tokens.css 关键色值搬到 `manifest.imageGenStyle.palette` 字段,buildImagePromptWithStyle 把 palette + style invariants 注入每个生图 prompt,实现「同 deck 22 页风格一致」
 
 ---
 
@@ -160,18 +172,51 @@ roadmap.md 插 Phase 11.6 段；新建本 plan 文件。
 - **修复**：用 `pnpm exec dotenv -e .env.test.local -- vitest run <文件>` 替代裸 vitest
 - **防再犯**：CLAUDE.md「常用命令」段已经写了正确入口（`pnpm -F @big-ppt/agent test:coverage` 等），下次先看 package.json scripts 再决定怎么调
 
+### 坑 3:dogfood 22 页 deck 并行生图风格不统一
+
+- **症状**:用户实际跑 dev,22 页内容一次性触发,生图 LLM 各画各的(有插画有照片有图表),deck 视觉碎裂
+- **根因**:v1 设计「主 LLM 只描述内容,形式让生图 LLM 自决」,但生图 LLM 在不同 prompt 里完全独立选风格(无 deck 级 style anchor)。文字"This is a slide page" + no-text 约束只解决「不画文字」,不解决「同 deck 风格一致」
+- **修复**:工具层 prompt augmentation —— 主 LLM 传内容 → 工具层包装成「This is slide N/M of deck:<heading>. Visual concept: <prompt>. Mandatory style anchor: clean editorial illustration, terracotta + cream + navy palette, paper texture, subtle gradient」结构化模板,style anchor 来自 `manifest.imageGenStyle`。所有页用同一 style anchor → 风格一致
+- **防再犯**:已写 CLAUDE.md「模板元数据归属」章——AI 出图色板 / 风格 invariants 必须放 manifest 同包,agent 不维护映射表
+
+### 坑 4:并发出图撞 OpenAI Tier 1 RPS 限制
+
+- **症状**:dogfood 22 页并行触发,部分 job 返 429 / 大量 retry / 最终一些页失败
+- **根因**:OpenAI Tier 1 image gen 默认 RPS 5,Phase 11.6 v1 不加 worker 并发限流(原假定 RPS 足够)
+- **修复**:加 `pLimit(IMAGE_GEN_CONCURRENCY)` per-user 限流,环境变量默认 3
+- **防再犯**:任何后台 worker 调外部 API,默认加并发限流;后续 GLM/Anthropic image API 类似处理
+
+### 坑 5:跨模板 manifest 污染
+
+- **症状**:beitou deck 里 LLM 生成 frontmatter 写了 `layout: jingyeda-cover` 跨模板 layout,渲染失败
+- **根因**:`list_templates` 工具返回所有 template manifest,LLM 看到 jingyeda 的 layout 名直接复用;`read_template` 也接受任意 path 让 LLM 跨模板读
+- **修复**:删 list_templates 工具(当前 deck 模板 id 在 system prompt 已有,LLM 不需要再 list);read_template 收紧到当前 deck 模板 + ALLOWED_NAMES whitelist
+- **防再犯**:任何"返回多模板信息"的工具都要按 deck 上下文过滤;manifest 里 layout 名带模板前缀本来就是为了防混淆,但工具不该把多模板 layout 一起塞给 LLM
+
+### 坑 6:image-content layout required 字段错配 LLM 视角
+
+- **症状**:dogfood 第 6/7 页 frontmatter 完全空白,LLM 写 layout 时漏 heading
+- **根因**:manifest image-content required = `["imageSrc"]`,但 imageSrc 是工具层填的、LLM 视角不应主动填;真正 LLM 视角必填的 heading(顶部 header bar 渲染)反而没列 required
+- **修复**:manifest required 改 `["heading"]`;新建 `validateFrontmatterAgainstManifest` helper,create_slide / update_slide 入口校验缺失字段直接拒收 + 引导
+- **防再犯**:写 manifest required 时区分「LLM 视角」vs「最终落盘视角」——必填 = LLM 必须传
+
 ---
 
 ## 测试数量落地
 
-| 指标             | 起点 | 终点 | 增量 |
-| ---------------- | ---- | ---- | ---- |
-| agent unit       | 525  | 539  | +14  |
-| creator unit     | 79   | 79   | +0   |
-| shared unit      | -    | -    | +0   |
-| E2E              | -    | -    | +0   |
-| coverage lines   | TBD  | TBD  | TBD  |
-| coverage branch  | TBD  | TBD  | TBD  |
+| 指标             | 起点 | Phase 11.6 主体 | dogfood 收尾 | 终点 |
+| ---------------- | ---- | --------------- | ------------ | ---- |
+| agent unit       | 525  | 539 (+14)       | +14          | 553  |
+| creator unit     | 79   | 79              | +0           | 79   |
+| shared unit      | -    | -               | -            | -    |
+| E2E              | -    | -               | -            | -    |
+| coverage lines   | TBD  | TBD             | TBD          | TBD  |
+| coverage branch  | TBD  | TBD             | TBD          | TBD  |
+
+> dogfood 阶段 +14 测试分布:
+> - validate-frontmatter.test.ts (新建): +9
+> - tools-local.test.ts: +5(create_slide / update_slide 校验 + edit_slides 长度上限 + read_template whitelist)
+> - tools-generate-slide-image.test.ts: -? 个老断言改写,净 +0
 
 > agent 的 14 个新测试分布：
 > - prompts-ab-contract: +3（imageGenEnabled true / false / 默认 OFF）

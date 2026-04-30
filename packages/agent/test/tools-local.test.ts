@@ -40,6 +40,18 @@ beforeEach(() => {
             },
           },
         },
+        // Phase 11.6 dogfood:加 prefixed layout 让 validate-frontmatter 能 derive templateId
+        {
+          name: 'beitou-image-content',
+          description: '图片内容页',
+          frontmatterSchema: {
+            type: 'object',
+            required: ['heading'],
+            properties: {
+              heading: { type: 'string', description: '页标题' },
+            },
+          },
+        },
       ],
     }),
   )
@@ -143,6 +155,76 @@ describe('registerLocalTools', () => {
     const props = (tool.parameters as { properties: Record<string, { enum?: string[] }> })
       .properties
     expect(props.name?.enum).toEqual(['DESIGN.md', 'starter.md'])
+  })
+
+  describe('Phase 11.6 dogfood 后:create_slide / update_slide 必填字段校验', () => {
+    it('create_slide layout=beitou-image-content 缺 heading → 拒收 + 引导', async () => {
+      const tool = getTool('create_slide')!
+      const raw = await tool.exec.call(tool, {
+        index: 'end',
+        layout: 'beitou-image-content',
+        frontmatter: {},
+      })
+      const parsed = JSON.parse(raw)
+      expect(parsed.success).toBe(false)
+      expect(parsed.error).toContain('heading')
+      expect(parsed.error).toContain('beitou-image-content')
+    })
+
+    it('create_slide layout=beitou-image-content + heading="X" → 通过', async () => {
+      const tool = getTool('create_slide')!
+      const raw = await tool.exec.call(tool, {
+        index: 'end',
+        layout: 'beitou-image-content',
+        frontmatter: { heading: '系统架构' },
+      })
+      const parsed = JSON.parse(raw)
+      expect(parsed.success).toBe(true)
+    })
+
+    it('update_slide 显式换 layout=beitou-image-content 缺 heading → 拒收', async () => {
+      // 先 create 一页
+      await getTool('create_slide')!.exec({
+        index: 'end',
+        layout: 'beitou-image-content',
+        frontmatter: { heading: '原标题' },
+      })
+      const tool = getTool('update_slide')!
+      // 显式传 layout=beitou-image-content 但不带 heading
+      const raw = await tool.exec.call(tool, {
+        index: 1,
+        frontmatter: { layout: 'beitou-image-content' },
+      })
+      const parsed = JSON.parse(raw)
+      expect(parsed.success).toBe(false)
+      expect(parsed.error).toContain('heading')
+    })
+
+    it('update_slide 不带 layout 字段(部分合并)→ 跳过校验,通过', async () => {
+      // 先 create 一页
+      await getTool('create_slide')!.exec({
+        index: 'end',
+        layout: 'beitou-image-content',
+        frontmatter: { heading: '原标题' },
+      })
+      const tool = getTool('update_slide')!
+      // 仅改 body,frontmatter 不带 layout
+      const raw = await tool.exec.call(tool, { index: 1, body: '新正文' })
+      const parsed = JSON.parse(raw)
+      expect(parsed.success).toBe(true)
+    })
+
+    it('未知 layout(不带 prefix 或不在 manifest)→ 校验跳过,行为同改前', async () => {
+      // 'cover' 不带 prefix,validate 推导 'cover-standard' 找不到 manifest → 跳过
+      const tool = getTool('create_slide')!
+      const raw = await tool.exec.call(tool, {
+        index: 'end',
+        layout: 'cover',
+        frontmatter: { mainTitle: 'X' },
+      })
+      const parsed = JSON.parse(raw)
+      expect(parsed.success).toBe(true)
+    })
   })
 
   // LLM（尤其 GLM）常把 integer 参数包成字符串 —— 工具层要宽容

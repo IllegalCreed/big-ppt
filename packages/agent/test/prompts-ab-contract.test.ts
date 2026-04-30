@@ -215,7 +215,8 @@ describe('buildSystemPrompt（A/B contract）', () => {
     expect(prompt).toContain('**优先**装饰类组件')
     expect(prompt).toContain('**必须** `<BarChart>`')
     expect(prompt).toContain('**优先** `<MetricCard>`')
-    expect(prompt).toContain('仅替换 frontmatter')
+    // Phase 11.6 dogfood:决策树最后一条改成「切换模板用 switch_template 工具」(原"仅替换 frontmatter"对 LLM 误导)
+    expect(prompt).toContain('switch_template')
   })
 
   it('jingyeda-standard manifest 的 Components 段同样含组件 + 决策树', () => {

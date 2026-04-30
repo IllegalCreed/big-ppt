@@ -93,14 +93,14 @@
     },
     {
       "name": "beitou-image-content",
-      "description": "图片内容页(标题 + AI 生成图占满 header 下方)。仅在用户明确要求 AI 出图时使用,正文走 beitou-content。",
+      "description": "图片内容页(顶部红色 header bar 渲染 heading + AI 生成图占满 header 下方)。当用户配置了 image LLM 后,内容页默认走此 layout,工具 generate_slide_image 出图后填 imageSrc。写 layout 时只填 heading(必填),imageSrc 不要主动填。",
       "frontmatterSchema": {
         "type": "object",
-        "required": ["imageSrc"],
+        "required": ["heading"],
         "properties": {
           "heading": {
             "type": "string",
-            "description": "页标题(可选,样式与 beitou-content 一致)"
+            "description": "页标题(必填,渲染在顶部红色 header bar;缺失会让 header 留白丑陋)"
           },
           "imageSrc": {
             "type": "string",

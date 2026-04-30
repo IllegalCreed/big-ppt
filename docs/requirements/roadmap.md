@@ -620,30 +620,39 @@
 
 ---
 
-## Phase 11.6：图片优先模式（image-gen ON 时所有内容页直走 image-content）
+## Phase 11.6：图片优先模式（image-gen ON 时所有内容页直走 image-content）✅
 
 > 详细实施:[plan 21-phase11.6-image-first.md](../plans/21-phase11.6-image-first.md)
 > 前置:Phase 11.5 ✅
-> 后续:Phase 11
+> 后续:Phase 11.7 ✅
 
 **目标**:策略反转——用户配了 image LLM 后,**所有内容页**(原本会走 BarChart / MetricCard / 流程图 / 文字 markdown 的页)默认改走 `*-image-content` layout + AI 出图。封面、目录、章节标题、封底等结构页保持原选法(高度定制,AI 出图意义不大)。layout/组件路径降级为「生图失败时自动兜底」(graceful-degradation 由后台 worker 调一次主 LLM 把单页重写为 *-content + 组件版,用户无感)。
 
-**关键决策**:
+**关键决策(主体阶段)**:
 - **两条独立流程**:OFF 走 layout/component 决策树(现状);ON 走「主 LLM 提炼每页生图 prompt → 生图 LLM 出图」直通车,**slides.md 里同时只存在一种形态**
 - **触发条件**:`getImageLlmSettings(userId)` 不为 null 即 ON,不加独立总开关 —— 配 key 本身即 explicit consent
-- **形式由生图 LLM 自决**:主 LLM prompt 只描述本页内容(业务点 / 关键信息 / 主题氛围),不指定柱状图 / 流程图 / 插画等形式;工具层末尾自动追加 "this is a slide page" 正向约束
 - **graceful-degradation**:`generate_slide_image` 加 `fallbackSummary` 中文摘要参数,worker 失败时调 `rewriteSinglePageToComponents` 用此摘要 + 整 deck 上下文非流式调主 LLM 把单页重写为组件版(state: `fallback-rewrote`);兜底也崩 → `fallback-failed`
 - **buildSystemPrompt** 加 `imageGenEnabled` 参数双分支;**rewriteForTemplate** 切模板期强制 OFF(不重新生图,imageSrc 透传)
 
+**dogfood 收尾追加(主体落地后用户实跑暴露的真问题,7 个 commit 收口)**:
+- **风格统一**:工具层把 LLM 自由 prompt 包装成结构化模板,style anchor 来自 `manifest.imageGenStyle`(色板 / paper texture / palette 等 invariants 跟模板同包)。原"形式让生图 LLM 自决"22 页风格碎裂,加入 deck 级 style anchor 后所有页一致
+- **fallbackSummary 改必填**:LLM 不传 → worker 失败兜底无输入。schema required + 入口校验
+- **删 list_templates 工具 + read_template 收紧**:跨模板返回所有 manifest 触发污染(beitou deck 出 jingyeda layout)。read_template 限 ALLOWED_NAMES whitelist(DESIGN.md / starter.md)
+- **edit_slides old_string ≤ 300 char 上限**:LLM 误用它改大段
+- **manifest image-content required 修正**:[imageSrc] → [heading](imageSrc 工具填、heading 才是 LLM 视角必填)
+- **create_slide / update_slide 入口校验必填字段**:基于 layout 的 manifest required 直接拒收 + 引导
+- **per-user image worker 并发限流(默认 3)**:防撞 OpenAI Tier 1 RPS 限制
+- **buildSystemPrompt 自动注入图片资源清单**:扫当前模板目录的 png/jpg/webp/svg 拼到 prompt
+- **system prompt 决策树修正**:「切模板任务时(system 调用):仅替换 frontmatter `layout:` 前缀」改成「切换模板:用 `switch_template` 工具触发」(原表述对 LLM 误导)
+
 **包含内容**:
-- 后端:buildSystemPrompt 双分支决策树 + routes/prompts.ts authOptional + image-gen-job 状态机扩 fallback-rewrote/fallback-failed + 新建 rewriteSinglePageToComponents 模块 + worker 失败兜底接线
+- 后端:buildSystemPrompt 双分支决策树 + routes/prompts.ts authOptional + image-gen-job 状态机扩 fallback-rewrote/fallback-failed + 新建 rewriteSinglePageToComponents 模块 + worker 失败兜底接线 + dogfood 阶段 7 commit 收尾
 - 前端:useGenerateImageJob 处理新状态;trackImageJob 文案分支(成功出图 / 已自动降级为组件版)
 
 **不在范围**:
 - ❌ 已有 deck 自动回填生图(只对新生成 deck 生效)
 - ❌ Settings 加「图片优先」总开关(配了 image LLM 即默认 ON)
 - ❌ 切模板期间重新生图(layout 前缀替换 + imageSrc 透传)
-- ❌ N 个生图 job 的 worker 并发限流(假定 OpenAI tier 1+ RPS 足够,撞 429 由 fallback 兜底)
 
 ---
 

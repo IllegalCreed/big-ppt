@@ -1,11 +1,12 @@
 import type { ToolDef } from '../registry.js'
 import { createSlide } from '../../slides-store/index.js'
+import { validateFrontmatterAgainstManifest } from '../../templates/validate-frontmatter.js'
 import { coerceIndex } from './utils.js'
 
 export const createSlideTool: ToolDef = {
   name: 'create_slide',
   description:
-    '在幻灯片的指定位置插入一张新页。调用时必须传 layout 名；frontmatter 提供 layout 所需的字段（见 read_template 输出）；body 为 markdown 正文。不要在 body 里写 <style> 块或硬编码颜色 —— 视觉由 layout + tokens 决定。',
+    '在幻灯片的指定位置插入一张新页。调用时必须传 layout 名；frontmatter 提供 layout 所需的字段(参考 system prompt 的「可用 Layouts」段或 read_template 输出);必填字段缺失工具会拒收并告知缺哪些。body 为 markdown 正文。不要在 body 里写 <style> 块或硬编码颜色 —— 视觉由 layout + tokens 决定。',
   parameters: {
     type: 'object',
     properties: {
@@ -40,6 +41,13 @@ export const createSlideTool: ToolDef = {
       args.frontmatter && typeof args.frontmatter === 'object'
         ? (args.frontmatter as Record<string, unknown>)
         : undefined
+    // Phase 11.6 dogfood:LLM 写 layout 漏必填字段(尤其 *-image-content 漏 heading 让顶部
+    // header bar 留白)。工具层根据 layout 的 manifest frontmatterSchema.required 校验,
+    // 缺失直接拒收 + 引导哪些字段必填。
+    const validationErr = validateFrontmatterAgainstManifest(layout, frontmatter)
+    if (validationErr) {
+      return JSON.stringify({ success: false, error: validationErr.message })
+    }
     const body = typeof args.body === 'string' ? args.body : ''
     const result = await createSlide({ index, layout, frontmatter, body })
     return JSON.stringify(result)
