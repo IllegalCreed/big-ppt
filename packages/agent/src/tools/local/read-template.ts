@@ -8,23 +8,28 @@ import { getDb, decks } from '../../db/index.js'
 
 /**
  * Phase 11.6 dogfood 修复:read_template 限制为只能读**当前 deck 所选模板**目录下的 .md 文件,
- * 不允许跨模板。LLM 传相对文件名(如 cover.md / content.md / starter.md),工具内部用
- * deck.templateId 拼绝对路径。
+ * 不允许跨模板。LLM 传白名单文件名,工具内部用 deck.templateId 拼绝对路径。
  *
- * 早先版本接受任意 path(含 jingyeda-standard/cover.md),会让 beitou 用户的 LLM 跨模板看
- * 到 jingyeda 的 layout 引用,引发跨模板污染(beitou deck 出 jingyeda layout 等)。
+ * 早先版本(1)接受任意 path(含 jingyeda-standard/cover.md),会让 beitou 用户的 LLM 跨模板
+ * 看到 jingyeda 的 layout 引用,引发跨模板污染。
+ * 早先版本(2)接受任意 .md 文件名,但当前模板目录下实际只有 DESIGN.md / starter.md,
+ * 别的名字(cover.md / content.md 等 Phase 6 之前遗留概念)不存在,LLM 调用浪费 turn。
+ *
+ * 现在 ALLOWED_NAMES 显式枚举,LLM 一目了然,且 description 也明示。
  */
+const ALLOWED_NAMES = ['DESIGN.md', 'starter.md'] as const
+
 export const readTemplateTool: ToolDef = {
   name: 'read_template',
   description:
-    '读取**当前 deck 所选模板**目录下的 .md 文件内容(如 cover.md / content.md / starter.md),用于了解模板的结构和语法。**仅当前模板**,不允许跨模板读取其他模板的文件。',
+    '读取**当前 deck 所选模板**目录下的 markdown 文件。仅 2 个白名单文件:`DESIGN.md`(完整视觉规范 / 配色字体 / 组件用法等) 或 `starter.md`(新建 deck 时的起点骨架,展示模板的惯用结构)。其他文件名会拒收;**仅当前模板**,不允许跨模板读取其他模板的文件。',
   parameters: {
     type: 'object',
     properties: {
       name: {
         type: 'string',
-        description:
-          '模板内 .md 文件名(纯文件名,不含模板目录前缀),如 cover.md / content.md / starter.md',
+        enum: [...ALLOWED_NAMES],
+        description: '`DESIGN.md` 或 `starter.md`,二选一。其他文件名拒收。',
       },
     },
     required: ['name'],
@@ -43,22 +48,16 @@ export const readTemplateTool: ToolDef = {
     }
 
     const name = typeof args.name === 'string' ? args.name : ''
-    if (!name) return JSON.stringify({ success: false, error: 'name 不能为空' })
-    // 只允许纯文件名(不含 / 不含 ..),严格限制在当前模板目录
-    if (name.includes('/') || name.includes('\\') || name.includes('..')) {
+    if (!ALLOWED_NAMES.includes(name as (typeof ALLOWED_NAMES)[number])) {
       return JSON.stringify({
         success: false,
-        error: 'name 必须是当前模板目录下的纯文件名,不允许 / \\ 或 .. 跨目录',
+        error: `name 仅接受 ${ALLOWED_NAMES.join(' / ')} 二选一,收到 "${name}"`,
       })
-    }
-    const safeName = name.replace(/[^a-zA-Z0-9\-.]/g, '')
-    if (!safeName.endsWith('.md')) {
-      return JSON.stringify({ success: false, error: '只支持 .md 模板文件' })
     }
 
     const { templatesDir } = getPaths()
     const templateDir = path.join(templatesDir, deck.templateId)
-    const templatePath = path.join(templateDir, safeName)
+    const templatePath = path.join(templateDir, name)
     const resolvedTemplate = path.resolve(templatePath)
     const resolvedTemplateDir = path.resolve(templateDir)
     if (!resolvedTemplate.startsWith(resolvedTemplateDir + path.sep)) {
@@ -67,7 +66,7 @@ export const readTemplateTool: ToolDef = {
     if (!fs.existsSync(resolvedTemplate)) {
       return JSON.stringify({
         success: false,
-        error: `模板 ${deck.templateId}/${safeName} 不存在`,
+        error: `模板 ${deck.templateId}/${name} 不存在`,
       })
     }
     return JSON.stringify({

@@ -109,13 +109,40 @@ describe('registerLocalTools', () => {
     expect(out).toBe('# hello\nvitest\n')
   })
 
+  it('Phase 11.6 dogfood 后:edit_slides old_string > 300 char → 拒收(防 LLM 误用改大段)', async () => {
+    await getTool('write_slides')!.exec({ content: '# hello\nworld\n' })
+    const tool = getTool('edit_slides')!
+    const longText = 'x'.repeat(301)
+    const raw = await tool.exec.call(tool, { old_string: longText, new_string: 'short' })
+    const parsed = JSON.parse(raw)
+    expect(parsed.success).toBe(false)
+    expect(parsed.error).toMatch(/长度.*300/)
+    expect(parsed.error).toMatch(/update_slide/)
+  })
+
+  it('Phase 11.6 dogfood 后:edit_slides 边界 = 300 char 通过(若文件中匹配)', async () => {
+    const longText = 'x'.repeat(300)
+    await getTool('write_slides')!.exec({ content: `prefix ${longText} suffix\n` })
+    const tool = getTool('edit_slides')!
+    const raw = await tool.exec.call(tool, { old_string: longText, new_string: 'OK' })
+    const parsed = JSON.parse(raw)
+    expect(parsed.success).toBe(true)
+  })
+
   // Phase 11.6 dogfood 后:read_template 改 ctx-aware,unit test 没 deck context 时
-  // 报「无 active deck」(防跨模板)。完整 ctx-aware 行为测试见 tools-read-template-isolation.test.ts。
+  // 报「无 active deck」(防跨模板)。完整 ctx-aware 行为测试见集成测试。
   it('read_template 缺 ctx → 拒收(防跨模板)', async () => {
     const tool = getTool('read_template')!
     const raw = await tool.exec.call(tool, { name: 'starter.md' })
     const parsed = JSON.parse(raw)
     expect(parsed.success).toBe(false)
+  })
+
+  it('Phase 11.6 dogfood 后:read_template 白名单只接受 DESIGN.md / starter.md', () => {
+    const tool = getTool('read_template')!
+    const props = (tool.parameters as { properties: Record<string, { enum?: string[] }> })
+      .properties
+    expect(props.name?.enum).toEqual(['DESIGN.md', 'starter.md'])
   })
 
   // LLM（尤其 GLM）常把 integer 参数包成字符串 —— 工具层要宽容
