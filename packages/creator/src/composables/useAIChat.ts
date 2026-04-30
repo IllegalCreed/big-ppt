@@ -394,15 +394,23 @@ export function useAIChat() {
    * - running:把 step 改回 loading + 实时进度 label
    * - done:step → success + setPage 定位
    * - failed/cancelled:step → error
+   *
+   * **关键**:接 stepsArray 引用而不是访问 toolSteps.value —— LLM 回复完成时
+   * `toolSteps.value = []` 替换 ref.value,但旧 array 已被 chatMessages 历史 bubble
+   * 持有,直接 patch 旧 array 才能让历史消息里的 ToolStep 实时更新。
    */
-  async function trackImageJob(jobId: string, stepKey: string): Promise<void> {
+  async function trackImageJob(
+    jobId: string,
+    stepKey: string,
+    stepsArray: ToolStep[],
+  ): Promise<void> {
     const job = useGenerateImageJob()
     function patchStep(patch: Partial<ToolStep>): void {
-      const idx = toolSteps.value.findIndex((s) => s.key === stepKey)
+      const idx = stepsArray.findIndex((s) => s.key === stepKey)
       if (idx < 0) return
-      const cur = toolSteps.value[idx]
+      const cur = stepsArray[idx]
       if (!cur) return
-      toolSteps.value[idx] = { ...cur, ...patch }
+      stepsArray[idx] = { ...cur, ...patch }
     }
     // 改回 loading 状态展示进度
     patchStep({ status: 'loading', label: '正在生成 AI 图片...' })
@@ -590,11 +598,17 @@ export function useAIChat() {
               // Phase 11.5：generate_slide_image 同步只返 jobId,真正出图是异步 60s。
               // 把 ToolStep 改回 loading,启 useGenerateImageJob 轮询;done 才标 success。
               // (LLM 已经拿到 queued ack 进入下一轮,UI 仍展示进度直到图真的就绪)
+              //
+              // **关键**:capture toolSteps.value 当前数组引用传给 trackImageJob ——
+              // LLM 回复完成时 toolSteps.value = [] 会替换 ref.value,但 chatMessages
+              // 历史 bubble 仍持有这个旧 array,trackImageJob 直接 mutate 旧 array
+              // 才能让历史消息里的 ToolStep 实时更新到 done/error 状态。
               if (tc.function.name === 'generate_slide_image') {
                 try {
                   const parsed = JSON.parse(result) as { success?: boolean; jobId?: string }
                   if (parsed.success && parsed.jobId) {
-                    void trackImageJob(parsed.jobId, step.key)
+                    const liveSteps = toolSteps.value
+                    void trackImageJob(parsed.jobId, step.key, liveSteps)
                   }
                 } catch { /* result 不是合法 JSON 跳过(走 success 不变) */ }
               }

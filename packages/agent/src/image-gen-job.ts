@@ -145,12 +145,18 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
   mutate(jobId, { state: 'running' })
 
   try {
+    console.log(
+      `[image-gen-job ${jobId.slice(0, 8)}] running: deck=${job.deckId} slide=${job.slideIndex} model=${job.model ?? 'default'}`,
+    )
     const gen = await deps.generateImage({
       prompt: job.prompt,
       size: job.size,
       signal: job.controller.signal,
       model: job.model,
     })
+    console.log(
+      `[image-gen-job ${jobId.slice(0, 8)}] gen ok: model=${gen.modelUsed} pathTaken=${gen.pathTaken} bytes=${gen.b64.length}`,
+    )
 
     if (job.controller.signal.aborted) {
       mutate(jobId, { state: 'cancelled', finishedAt: new Date() })
@@ -187,6 +193,9 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
       caption: job.caption,
     })
 
+    console.log(
+      `[image-gen-job ${jobId.slice(0, 8)}] done: assetId=${asset.id}`,
+    )
     mutate(jobId, {
       state: 'done',
       pathTaken: gen.pathTaken,
@@ -195,11 +204,16 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
       finishedAt: new Date(),
     })
   } catch (err) {
-    const msg = (err as Error).message ?? String(err)
+    const e = err as Error
+    const msg = e.message ?? String(err)
     // ImageCancelled / AbortError 走 cancelled,其他走 failed
-    if ((err as Error).name === 'ImageCancelled' || (err as Error).name === 'AbortError') {
+    if (e.name === 'ImageCancelled' || e.name === 'AbortError') {
+      console.warn(`[image-gen-job ${jobId.slice(0, 8)}] cancelled: ${msg}`)
       mutate(jobId, { state: 'cancelled', errorMsg: msg, finishedAt: new Date() })
     } else {
+      console.error(
+        `[image-gen-job ${jobId.slice(0, 8)}] FAILED: ${e.name}: ${msg}\n${e.stack ?? ''}`,
+      )
       mutate(jobId, { state: 'failed', errorMsg: msg, finishedAt: new Date() })
     }
   }
