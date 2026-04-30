@@ -114,6 +114,45 @@ describe('registerLocalTools', () => {
     expect(out).toBe('# new\n')
   })
 
+  it('write_slides 拒绝覆盖真用户内容(无 starter 占位)', async () => {
+    // 写入真用户内容(无占位 marker)
+    await getTool('write_slides')!.exec({
+      content: '---\nlayout: cover\nmainTitle: 我的真实标题\n---\n',
+    })
+    // 再次 write_slides 应被拒(已有真内容)
+    const out = await getTool('write_slides')!.exec({ content: '---\nlayout: cover\nmainTitle: X\n---\n' })
+    const parsed = JSON.parse(out)
+    expect(parsed.success).toBe(false)
+    expect(parsed.error).toContain('write_slides')
+  })
+
+  it('write_slides 放行覆盖默认 starter 占位骨架(首次生成场景)', async () => {
+    // 模拟新建 deck 时的 starter 占位内容(含 mainTitle/subtitle/YYYY/MM/DD 占位)
+    const starter = `---
+layout: cover
+mainTitle: 请填写标题
+subtitle: 请填写副标题
+date: YYYY/MM/DD
+---
+
+---
+layout: content
+heading: 请填写页标题
+---
+`
+    // 直接写入 starter(绕过 write_slides 第一次自身的拒收检查 — 因为初始 slides.md 为空)
+    await getTool('write_slides')!.exec({ content: starter })
+    // 再次 write_slides 应被放行(starter 占位骨架)
+    const out = await getTool('write_slides')!.exec({
+      content: '---\nlayout: cover\nmainTitle: 真实首次生成\n---\n',
+    })
+    const parsed = JSON.parse(out)
+    expect(parsed.success).toBe(true)
+    const after = await getTool('read_slides')!.exec({})
+    expect(after).toContain('真实首次生成')
+    expect(after).not.toContain('请填写标题')
+  })
+
   it('edit_slides 定位唯一字符串并替换', async () => {
     await getTool('write_slides')!.exec({ content: '# hello\nworld\n' })
     await getTool('edit_slides')!.exec({ old_string: 'world', new_string: 'vitest' })

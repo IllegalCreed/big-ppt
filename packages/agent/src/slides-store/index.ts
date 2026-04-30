@@ -43,16 +43,36 @@ async function writeParsed(pages: SlidePage[], op: string): Promise<void> {
 /**
  * 整文件覆写。**仅**用于首次生成 / 模板重置场景。
  *
- * 护栏：如果 slides.md 已含 ≥1 页，拒绝执行并引导使用四件套。首次生成场景下
- * slides.md 要么不存在要么是空壳（无分页），writeSlides 才允许通过。
+ * 护栏：如果 slides.md 已含真实用户内容(≥1 页且非默认 starter 占位骨架),拒绝执行并引导
+ * 使用四件套。首次生成场景:
+ *   1. slides.md 不存在 / 空壳(无分页)→ 允许 write_slides
+ *   2. slides.md 含模板默认 starter 占位骨架(mainTitle: "请填写标题" + date: "YYYY/MM/DD" 等)
+ *      → **也允许** write_slides 整体覆盖。每个新建 deck 默认填了 starter,LLM 看到 starter
+ *      非空就走逐页 update_slide 路径而不是 write_slides 整体生成,严重退化首次生成体验。
+ *      检测启发式:'YYYY/MM/DD' 占位串只会出现在 starter 里,真用户填了具体日期就替换掉。
  */
+const STARTER_PLACEHOLDER_MARKERS = ['YYYY/MM/DD', '请填写标题', '请填写副标题']
+
+function isDefaultStarterContent(content: string): boolean {
+  // 至少 2 个占位 marker 同时存在视为 starter(防误判 — 用户偶然写"请填写标题"作正文不会同时含 YYYY/MM/DD)
+  let hits = 0
+  for (const m of STARTER_PLACEHOLDER_MARKERS) {
+    if (content.includes(m)) hits++
+  }
+  return hits >= 2
+}
+
 export async function writeSlides(content: string): Promise<MutationResult> {
   const pages = readParsed()
   if (pages.length > 0) {
-    return {
-      success: false,
-      error: `已有 ${pages.length} 页幻灯片。write_slides 仅用于首次生成；修改请用 create_slide / update_slide / delete_slide / reorder_slides 四件套工具。`,
+    const currentContent = readSlides()
+    if (!isDefaultStarterContent(currentContent)) {
+      return {
+        success: false,
+        error: `已有 ${pages.length} 页幻灯片。write_slides 仅用于首次生成；修改请用 create_slide / update_slide / delete_slide / reorder_slides 四件套工具。`,
+      }
     }
+    // 占位 starter 骨架 → 允许整体重写(首次生成场景:用户输入需求,LLM 用 write_slides 替换 starter)
   }
   // LLM 偶尔写漏 slide 间空 body 分隔符,导致后续 frontmatter 被吞、用 default 主题。
   // 落盘 + 持久化 DB 之前规范化,确保 slides.md 与 deck_versions 都是修过的版本。

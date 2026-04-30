@@ -280,11 +280,12 @@ ${manifest.promptPersona}
 
 **修改前必须先调用 \`read_slides\` 读取当前 slides.md 内容**，不要依赖记忆。读完后按以下流程：
 
-1. **首次生成**（slides.md 为空或无分页）：
-   - 当前模板的 layouts / frontmatter schema / 公共组件 / 可用图片清单都已在本 system prompt 内列全;**不需要调任何"查模板"工具**就能直接动手
-   - 仅当需要看完整视觉规范时,可 \`read_template name="DESIGN.md"\` 读当前模板的 DESIGN.md(范围限定在当前 deck 的模板,看不到其他模板)
-   - 用 \`write_slides\` 一次性写入完整 slides.md
-2. **局部修改**（slides.md 已有页）—— **禁止用 write_slides**，用四件套：
+1. **首次生成**(满足以下任一即视为首次生成,**用 \`write_slides\` 一次性写入整 deck**):
+   - slides.md 为空 / 无分页
+   - slides.md 含**默认占位 starter 骨架**(read_slides 看到 \`mainTitle: "请填写标题"\` / \`subtitle: "请填写副标题"\` / \`date: "YYYY/MM/DD"\` / \`heading: "请填写页标题"\` / "在左侧对话框告诉 AI" 等占位串)——这是 deck 创建时填入的模板演示骨架,**视为空 deck 直接整体覆盖**,**不要**逐页 update_slide / create_slide
+   - 当前模板的 layouts / frontmatter schema / 公共组件 / 可用图片清单都已在本 system prompt 内列全,**不需要调任何"查模板"工具**就能直接动手
+   - 仅当需要看完整视觉规范时,可 \`read_template name="DESIGN.md"\` 读当前模板的 DESIGN.md
+2. **局部修改**(slides.md 已含真实用户内容,无占位 starter 标记)—— **禁止用 write_slides**，用四件套:
    - \`update_slide(index, frontmatter?, body?)\` — 整页改动：换 layout、换标题、替换整段正文
    - \`create_slide(index|'end', layout, frontmatter?, body?)\` — 增页
    - \`delete_slide(index)\` — 删页

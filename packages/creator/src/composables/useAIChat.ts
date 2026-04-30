@@ -78,7 +78,15 @@ const TOOL_STATUS_MAP: Record<string, string> = {
   generate_slide_image: '正在生成 AI 图片...',
 }
 
-const MAX_ITERATIONS = 20
+/**
+ * dogfood 后从 20 → 200。原 20 在 Phase 11.6 图片优先模式下不够:
+ * - LLM 走单页路径(create_slide → 下一 turn generate_slide_image)每页吃 2 turn
+ * - 22 页 deck 需要 ~44 turn,加上 cover / toc / 杂事容易撞 50-60
+ * - 50+ 页极长 deck(如年度全面汇报)更需要冗余
+ * 200 是宽松硬上限,正常用户场景下 LLM 会主动结束(最终 assistant message 无 tool_call),
+ * cap 仅防 LLM 进入死循环或调用环。极端 200 turn × 5-10s/turn ≈ 30 min,实际从未达到。
+ */
+const MAX_ITERATIONS = 200
 const MAX_CONTEXT_MESSAGES = 20
 
 let cachedTools: LLMTool[] | null = null
