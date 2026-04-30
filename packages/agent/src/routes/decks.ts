@@ -307,7 +307,12 @@ decksRoute.post('/decks/:id{[0-9]+}/switch-template', async (c) => {
   const check = await getOwnedDeck(user.id, deckId)
   if (!check.ok) return c.json({ error: check.error }, check.status)
 
-  type Body = { targetTemplateId?: string; confirmed?: boolean }
+  type Body = {
+    targetTemplateId?: string
+    confirmed?: boolean
+    /** v1.5:切模板成功后是否按新模板色板重新生成 *-image-content 页 AI 图 */
+    regenerateImages?: boolean
+  }
   const body = await c.req.json<Body>().catch((): Body => ({}))
   if (body.confirmed !== true) {
     return c.json({ error: '必须带 confirmed=true 才能切换模板' }, 400)
@@ -334,6 +339,7 @@ decksRoute.post('/decks/:id{[0-9]+}/switch-template', async (c) => {
     userId: user.id,
     from: check.deck.templateId,
     to: targetTemplateId,
+    regenerateImages: body.regenerateImages === true,
   })
 
   // 异步执行流水：route 立即返回 jobId，前端轮询 GET /switch-template-jobs/:id

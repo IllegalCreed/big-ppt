@@ -43,6 +43,8 @@ const selectedId = ref<string | null>(null)
 const title = ref('未命名幻灯片')
 const submitting = ref(false)
 const submitError = ref<string | null>(null)
+/** v1.5:切模板成功后是否按新模板色板重新生成 AI 图。默认 false。仅 switch 模式可见。 */
+const regenerateImages = ref(false)
 
 const selected = computed(() =>
   manifests.value.find((m) => m.id === selectedId.value) ?? null,
@@ -113,6 +115,7 @@ async function onPrimary() {
         await switchJob.start({
           deckId: props.deckId,
           targetTemplateId: selected.value.id,
+          regenerateImages: regenerateImages.value,
         })
         view.value = 'success'
       } catch {
@@ -165,6 +168,7 @@ async function onRetry() {
     await switchJob.start({
       deckId: props.deckId,
       targetTemplateId: selected.value.id,
+      regenerateImages: regenerateImages.value,
     })
     view.value = 'success'
   } catch {
@@ -266,18 +270,24 @@ async function onRetry() {
         </div>
 
         <div v-if="view === 'picker'" class="modal-footer">
-          <button type="button" class="btn-secondary" :disabled="submitting" @click="close">
-            取消
-          </button>
-          <button
-            type="button"
-            :class="mode === 'switch' ? 'btn-danger' : 'btn-primary'"
-            :disabled="!canSubmit"
-            data-primary-action
-            @click="onPrimary"
-          >
-            {{ primaryLabel }}
-          </button>
+          <label v-if="mode === 'switch'" class="regen-images-toggle" :title="'按新模板色板重新生成所有 image-content 页的 AI 图(每页约 30-60s + 1 次 OpenAI 调用)。不勾选则图保留旧色板。'">
+            <input v-model="regenerateImages" type="checkbox" :disabled="submitting" />
+            <span>按新模板重新生图（耗时 + 成本）</span>
+          </label>
+          <div class="modal-footer__btns">
+            <button type="button" class="btn-secondary" :disabled="submitting" @click="close">
+              取消
+            </button>
+            <button
+              type="button"
+              :class="mode === 'switch' ? 'btn-danger' : 'btn-primary'"
+              :disabled="!canSubmit"
+              data-primary-action
+              @click="onPrimary"
+            >
+              {{ primaryLabel }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -394,10 +404,32 @@ async function onRetry() {
 }
 .modal-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-6);
   border-top: 1px solid var(--color-border-subtle);
+}
+.modal-footer__btns {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+/* v1.5:切模板"按新模板重新生图" checkbox(仅 switch 模式显示) */
+.regen-images-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-sm);
+  color: var(--color-fg-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.regen-images-toggle input[type='checkbox'] {
+  cursor: pointer;
+}
+.regen-images-toggle:hover {
+  color: var(--color-fg-primary);
 }
 .btn-secondary {
   padding: var(--space-2) var(--space-5);

@@ -159,10 +159,18 @@ export function useDecks() {
     await api.post(`/api/decks/${id}/chats`, payload)
   }
 
-  async function switchTemplate(deckId: number, targetTemplateId: string) {
+  async function switchTemplate(
+    deckId: number,
+    targetTemplateId: string,
+    options?: { regenerateImages?: boolean },
+  ) {
     return api.post<{ jobId: string; state: SwitchJobState }>(
       `/api/decks/${deckId}/switch-template`,
-      { targetTemplateId, confirmed: true },
+      {
+        targetTemplateId,
+        confirmed: true,
+        regenerateImages: options?.regenerateImages === true,
+      },
     )
   }
 

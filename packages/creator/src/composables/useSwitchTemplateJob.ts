@@ -15,7 +15,12 @@ const STAGE_RATIO: Record<SwitchJobState, number> = {
   failed: 0,
 }
 
-export type StartParams = { deckId: number; targetTemplateId: string }
+export type StartParams = {
+  deckId: number
+  targetTemplateId: string
+  /** v1.5:切模板成功后是否按新模板色板重新生成 *-image-content 页 AI 图 */
+  regenerateImages?: boolean
+}
 
 export function useSwitchTemplateJob() {
   const { switchTemplate, getSwitchTemplateJob } = useDecks()
@@ -65,7 +70,9 @@ export function useSwitchTemplateJob() {
   async function _doStart(params: StartParams, ctrl: AbortController): Promise<SwitchJobInfo> {
 
     try {
-      const { jobId, state } = await switchTemplate(params.deckId, params.targetTemplateId)
+      const { jobId, state } = await switchTemplate(params.deckId, params.targetTemplateId, {
+        regenerateImages: params.regenerateImages,
+      })
       if (ctrl.signal.aborted) throw new Error('aborted')
       currentJobId = jobId
       stage.value = state

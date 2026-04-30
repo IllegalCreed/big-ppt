@@ -33,6 +33,12 @@ export interface SwitchJob {
   /** 执行过程中创建的 version id（snapshot 版 + 切换后版）。供观测用 */
   snapshotVersionId?: number
   newVersionId?: number
+  /**
+   * v1.5:切模板成功后是否自动按新模板色板重新生成所有 *-image-content 页的 AI 图。
+   * 由路由 body.regenerateImages 传入,worker success 后 fire-and-forget 触发 N 个 image job。
+   * 用户在前端通过现有 /api/image-jobs/<id> 单独轮询每张图进度。
+   */
+  regenerateImages?: boolean
 }
 
 const jobs = new Map<string, SwitchJob>()
@@ -46,6 +52,8 @@ export function createJob(args: {
   userId: number
   from: string
   to: string
+  /** v1.5:成功后是否触发 N 个 image-content 页重新生图(按新模板色板) */
+  regenerateImages?: boolean
 }): SwitchJob {
   const job: SwitchJob = {
     id: randomUUID(),
@@ -55,6 +63,7 @@ export function createJob(args: {
     to: args.to,
     state: 'pending',
     startedAt: new Date(),
+    regenerateImages: args.regenerateImages === true,
   }
   jobs.set(job.id, job)
   return { ...job }
@@ -223,6 +232,30 @@ export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise
       newVersionId: newest.id,
       finishedAt: new Date(),
     })
+
+    // v1.5:用户勾选"切模板后重新生图"则 fire-and-forget 触发 N 个 image job。
+    // 不阻塞 success 状态(前端立刻看到切模板成功),image job 由前端 useGenerateImageJob
+    // 单独轮询 /api/image-jobs/<id> 跟踪进度。
+    if (job.regenerateImages) {
+      void (async () => {
+        try {
+          const { regenerateImageContentPages } = await import('./regenerate-image-pages.js')
+          const r = await regenerateImageContentPages({
+            deckId: job.deckId,
+            userId: job.userId,
+            newContent: rewritten,
+          })
+          console.log(
+            `[switch-template ${jobId.slice(0, 8)}] regenerate-images: triggered=${r.triggered} skipped=${r.skipped}`,
+          )
+        } catch (err) {
+          console.error(
+            `[switch-template ${jobId.slice(0, 8)}] regenerate-images 失败:`,
+            (err as Error).message,
+          )
+        }
+      })()
+    }
   } catch (err) {
     mutateJob(jobId, {
       state: 'failed',
