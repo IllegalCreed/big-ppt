@@ -98,6 +98,12 @@ llm.post('/chat/completions', async (c) => {
     throw err
   }
 
+  // 透传 client AbortSignal 给 upstream fetch:
+  // 客户端断开(刷新 / 取消 / 切 deck / 关 tab)时,c.req.raw.signal 触发 abort →
+  // 上游 fetch 立刻断连 → 智谱端释放 in-flight 名额。
+  // 否则 server 这边的 fetch 仍在等智谱,智谱真实并发占用不会减,
+  // 用户立刻重发会叠加上去撞 429,本地 semaphore 计数与上游真实并发失同步。
+  const clientSignal = c.req.raw.signal
   let upstream: Response
   try {
     upstream = await fetch(upstreamUrl, {
@@ -107,10 +113,16 @@ llm.post('/chat/completions', async (c) => {
         Authorization: `Bearer ${settings.apiKey}`,
       },
       body,
+      signal: clientSignal,
     })
   } catch (err) {
     release()
-    return c.json({ error: { message: `upstream fetch failed: ${(err as Error).message}` } }, 502)
+    const e = err as Error
+    if (e.name === 'AbortError') {
+      // client 主动断开,不算业务错误
+      return new Response(null, { status: 499 })
+    }
+    return c.json({ error: { message: `upstream fetch failed: ${e.message}` } }, 502)
   }
 
   if (!upstream.body) {
