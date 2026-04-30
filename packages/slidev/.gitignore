@@ -4,6 +4,8 @@ dist
 .vite-inspect
 .remote-assets
 components.d.ts
+# Slidev cli 运行时生成的入口 HTML（含本地 /@fs/... 绝对路径，不跨机器）
+index.html
 slides.md.bak
 slides-*.md
 # slides.md 是 dev 时被 agent mirror 写入的运行时产物，不进 git。
