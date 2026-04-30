@@ -70,7 +70,15 @@ export type SwitchJobState =
   | 'failed'
 
 // Phase 11.5：generate_slide_image job 类型(后端 ImageJob 字段镜像)
-export type ImageJobState = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+// Phase 11.6:扩 fallback-rewrote / fallback-failed 两个状态(graceful-degradation)
+export type ImageJobState =
+  | 'pending'
+  | 'running'
+  | 'done'
+  | 'failed'
+  | 'cancelled'
+  | 'fallback-rewrote'
+  | 'fallback-failed'
 
 export type ImageJobInfo = {
   id: string

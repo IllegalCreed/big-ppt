@@ -421,8 +421,17 @@ export function useAIChat() {
     try {
       console.log('[trackImageJob] calling job.start', { jobId })
       const final = await job.start({ jobId })
-      console.log('[trackImageJob] job done', { jobId, assetId: final.assetId })
-      patchStep({ status: 'success', label: '已生成 AI 图片' })
+      console.log('[trackImageJob] job done', { jobId, assetId: final.assetId, state: final.state })
+      // Phase 11.6:done = 出图成功;fallback-rewrote = 出图失败但兜底重写成功(slides.md 已变成组件版)。
+      // 两种 success 都让 SlidePreview 自动刷新,只是用户看到的是"图"还是"组件版"不同,文案分两种。
+      if (final.state === 'fallback-rewrote') {
+        patchStep({
+          status: 'success',
+          label: '生图失败,已自动降级为组件版',
+        })
+      } else {
+        patchStep({ status: 'success', label: '已生成 AI 图片' })
+      }
       if (typeof final.slideIndex === 'number') {
         slideStore.setPage(final.slideIndex)
       }

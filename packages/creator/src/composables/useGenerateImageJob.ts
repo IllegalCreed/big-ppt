@@ -1,11 +1,12 @@
 /**
  * Phase 11.5：image-gen job 前端轮询 composable。
+ * Phase 11.6：扩两个状态 fallback-rewrote(出图失败但兜底重写成功) / fallback-failed(兜底也崩)。
  *
  * 用法:tool 工具 exec 返 { jobId, status: 'queued' };useAIChat 立即调 start(jobId)
- * 由本 composable 接管轮询 + 进度展示;done 后 SlidePreview 通过 Slidev HMR 自动刷新。
+ * 由本 composable 接管轮询 + 进度展示;done / fallback-rewrote 后 SlidePreview 通过 Slidev HMR 自动刷新。
  *
- * 状态机:pending → running → done | failed | cancelled
- * 进度:running 阶段每次 poll +0.02 上限 0.85;done → 1.0
+ * 状态机:pending → running → done | fallback-rewrote | fallback-failed | failed | cancelled
+ * 进度:running 阶段每次 poll +0.02 上限 0.85;done → 1.0;fallback-rewrote → 1.0(也是成功)
  *
  * 沿用 useSwitchTemplateJob 的 abort + 双速 poll 范式(plan 14 踩坑 4:setTimeout 必须清理)。
  */
@@ -15,7 +16,8 @@ import { useDecks, type ImageJobInfo, type ImageJobState } from './useDecks'
 const FAST_INTERVAL_MS = 1_500
 const SLOW_INTERVAL_MS = 3_000
 const FAST_PHASE_MS = 30_000
-const TOTAL_TIMEOUT_MS = 2 * 60_000 // OpenAI 出图典型 30-60s + 缓冲
+// Phase 11.6 兜底重写额外吃 5-15s,加宽 timeout
+const TOTAL_TIMEOUT_MS = 3 * 60_000
 
 const STAGE_RATIO: Record<ImageJobState, number> = {
   pending: 0.05,
@@ -23,6 +25,9 @@ const STAGE_RATIO: Record<ImageJobState, number> = {
   done: 1,
   failed: 0,
   cancelled: 0,
+  // 兜底重写:出图阶段已经走完(50%),重写期间继续推进到 100%
+  'fallback-rewrote': 1,
+  'fallback-failed': 0,
 }
 
 export type StartParams = { jobId: string }
@@ -102,7 +107,7 @@ export function useGenerateImageJob() {
       stage.value = initial.state
       progressRatio.value = STAGE_RATIO[initial.state]
       if (terminal(initial.state)) {
-        if (initial.state === 'done') {
+        if (isSuccess(initial.state)) {
           result.value = initial
           running.value = false
           controller = null
@@ -129,14 +134,19 @@ export function useGenerateImageJob() {
         } else {
           progressRatio.value = STAGE_RATIO[job.state]
         }
-        if (job.state === 'done') {
+        if (isSuccess(job.state)) {
+          // done(出图成功) 或 fallback-rewrote(出图失败但兜底重写成功),
+          // 都让 SlidePreview HMR 自动刷新该页。fallback-rewrote 时 errorMsg 含原因,
+          // 调用方可读 result.value.state 区分给 toast 文案。
           result.value = job
           running.value = false
           controller = null
           return job
         }
-        if (job.state === 'failed') {
-          throw new Error(job.errorMsg ?? 'image job failed')
+        if (job.state === 'failed' || job.state === 'fallback-failed') {
+          // fallback-failed = 出图失败 + 兜底重写也失败,前端把 errorMsg 透传给用户,
+          // 该页保留 *-image-content + 空 imageSrc(slides.md 不动)
+          throw new Error(job.errorMsg ?? `image job ${job.state}`)
         }
         if (job.state === 'cancelled') {
           throw new Error('cancelled')
@@ -156,7 +166,18 @@ export function useGenerateImageJob() {
 }
 
 function terminal(s: ImageJobState): boolean {
-  return s === 'done' || s === 'failed' || s === 'cancelled'
+  return (
+    s === 'done' ||
+    s === 'failed' ||
+    s === 'cancelled' ||
+    s === 'fallback-rewrote' ||
+    s === 'fallback-failed'
+  )
+}
+
+/** Phase 11.6:done 与 fallback-rewrote 都视为"slides.md 已更新成功" */
+function isSuccess(s: ImageJobState): boolean {
+  return s === 'done' || s === 'fallback-rewrote'
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
