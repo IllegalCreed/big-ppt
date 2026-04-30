@@ -117,12 +117,30 @@ describe('llm/openai-image generateImage', () => {
     expect(out.pathTaken).toBe('B')
   })
 
-  it('401 → ImageAuthError,**不**走 fallback', async () => {
+  it('路 A 401 → fallback 到路 B(中转 endpoint 不支持时常返含糊 401)', async () => {
     let callCount = 0
-    mockFetch(async () => {
+    mockFetch(async (url) => {
       callCount++
-      return jsonResponse({ error: { message: 'Invalid API key' } }, { status: 401 })
+      if (url.endsWith('/responses')) {
+        return jsonResponse({ error: { message: 'Invalid API key' } }, { status: 401 })
+      }
+      return jsonResponse({ data: [{ b64_json: FAKE_B64 }] })
     })
+    const out = await generateImage({
+      prompt: 'a',
+      size: '1280x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+    })
+    expect(callCount).toBe(2) // 路 A 401 → 路 B 成功
+    expect(out.pathTaken).toBe('B')
+  })
+
+  it('路 A 401 + 路 B 401 → 双路都失败,最终抛 ImageAuthError(真 key 失效)', async () => {
+    mockFetch(async () =>
+      jsonResponse({ error: { message: 'Invalid API key' } }, { status: 401 }),
+    )
     await expect(
       generateImage({
         prompt: 'a',
@@ -132,7 +150,6 @@ describe('llm/openai-image generateImage', () => {
         baseUrl: TEST_BASE,
       }),
     ).rejects.toBeInstanceOf(ImageAuthError)
-    expect(callCount).toBe(1) // 不应 fallback
   })
 
   it('路 A + B 都失败 → 抛错', async () => {

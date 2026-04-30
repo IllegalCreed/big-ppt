@@ -93,6 +93,7 @@ export async function generateImage(input: ImageGenInput): Promise<ImageGenOutpu
     return { b64, modelUsed: primaryModel, pathTaken: 'B' }
   }
 
+  let pathAError: Error | null = null
   try {
     const b64 = await callResponsesApi({
       baseUrl,
@@ -104,10 +105,15 @@ export async function generateImage(input: ImageGenInput): Promise<ImageGenOutpu
     })
     return { b64, modelUsed: primaryModel, pathTaken: 'A' }
   } catch (err) {
-    if (err instanceof ImageAuthError) throw err
     if (err instanceof ImageCancelled) throw err
-    if (err instanceof ImageRateLimitError) throw err
-    // ImagePathAFailed / 5xx / 网络错误 → 降级
+    // 路 A 任何错误(包括 401/4xx)都 fallback 到路 B 试一次:
+    // 中转代理常见场景 —— /v1/responses 没代理 / 模型 whitelist 没 gpt-5.5,
+    // 返含糊 401 "Invalid token",但 /v1/images/generations + gpt-image-2
+    // 一般都通。fallback 失败再用最后一个错误抛(优先抛路 B 错,带 ImageAuthError 标识)。
+    pathAError = err as Error
+  }
+
+  try {
     const b64 = await callImagesApi({
       baseUrl,
       model: fallbackModel,
@@ -117,6 +123,14 @@ export async function generateImage(input: ImageGenInput): Promise<ImageGenOutpu
       signal: input.signal,
     })
     return { b64, modelUsed: fallbackModel, pathTaken: 'B' }
+  } catch (err) {
+    if (err instanceof ImageCancelled) throw err
+    // 双路都失败:优先暴露路 B 的错(更明确),保留路 A 错作为诊断信息
+    const e = err as Error
+    if (pathAError) {
+      e.message = `${e.message} (path A also failed: ${pathAError.message})`
+    }
+    throw e
   }
 }
 
