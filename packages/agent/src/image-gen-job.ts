@@ -1,7 +1,13 @@
 /**
  * Phase 11.5：image-gen job 管理器(进程内内存)。
+ * Phase 11.6：状态机扩两个状态 fallback-rewrote / fallback-failed,
+ *            ImageJobInput 加 fallbackSummary / heading / templateId(graceful-degradation 输入)。
  *
- * 状态机:pending → running → done | failed | cancelled
+ * 状态机:pending → running → done | fallback-rewrote | fallback-failed | cancelled
+ *   - done:出图成功,slides.md 已切到 *-image-content
+ *   - fallback-rewrote:出图失败,worker 调 rewriteSinglePageToComponents 自动降级为组件版成功
+ *   - fallback-failed:出图失败 + 兜底重写也失败(主 LLM 也挂),slides.md 仍是 *-image-content + 空 imageSrc
+ *   - cancelled:用户主动取消
  * 重启丢失可接受(出图是用户主动触发,失败重发即可,与 template-switch-job 同策略)。
  *
  * 与 template-switch-job.ts 的关键差异:
@@ -11,7 +17,14 @@
  */
 import { randomUUID } from 'node:crypto'
 
-export type ImageJobState = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+export type ImageJobState =
+  | 'pending'
+  | 'running'
+  | 'done'
+  | 'failed'
+  | 'cancelled'
+  | 'fallback-rewrote'
+  | 'fallback-failed'
 
 export interface ImageJobInput {
   deckId: number
@@ -21,6 +34,15 @@ export interface ImageJobInput {
   size: string  // OpenAI gpt-image-2 size '<W>x<H>',工具层硬编最优值,无需此处枚举
   /** 用户在 settings 显式选的模型;空则走默认 gpt-5.5 主 + gpt-image-2 fallback */
   model?: string
+  /**
+   * Phase 11.6:中文兜底摘要,worker 失败时由 rewriteSinglePageToComponents 用作 LLM 输入。
+   * 例:「列举 RAG 系统的 4 个核心模块及作用」。可选,但强烈建议(不传时仅靠 heading,效果差)。
+   */
+  fallbackSummary?: string
+  /** Phase 11.6:页 heading,既给成功路径用于 *-image-content frontmatter,也给 fallback 重写当上下文 */
+  heading?: string
+  /** Phase 11.6:deck.templateId,用于 fallback 重写时构造 OFF 分支 system prompt */
+  templateId?: string
 }
 
 export interface ImageJob extends ImageJobInput {
