@@ -18,8 +18,7 @@ export interface ImageJobInput {
   userId: number
   slideIndex: number
   prompt: string
-  caption?: string
-  size: '1280x720' | '1024x1024' | '720x1280'
+  size: string  // OpenAI gpt-image-2 size '<W>x<H>',工具层硬编最优值,无需此处枚举
   /** 用户在 settings 显式选的模型;空则走默认 gpt-5.5 主 + gpt-image-2 fallback */
   model?: string
 }
@@ -126,7 +125,6 @@ export interface RunImageJobDeps {
     layout: string
     heading?: string
     imageSrc: string
-    caption?: string
   }) => Promise<void>
   /** Task E 算出的目标 layout 名(prefix-image-content),由调用方在创建 job 时已校验 */
   targetLayout: string
@@ -190,7 +188,6 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
       layout: deps.targetLayout,
       heading: deps.preservedHeading,
       imageSrc: `/api/assets/${asset.id}`,
-      caption: job.caption,
     })
 
     console.log(

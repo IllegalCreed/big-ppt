@@ -218,41 +218,6 @@ describe('generate_slide_image 工具', () => {
     expect(after).toContain('第二页标题')
   })
 
-  it('happy path 带 caption:写入 frontmatter.caption', async () => {
-    const { user } = await createLoggedInUser('caption@a.com')
-    const { deck } = await createDeckDirect(user.id)
-    await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
-
-    const result = await runInRequest(
-      { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
-      () => runTool({ slideIndex: 3, prompt: 'p', caption: '示意图说明' }),
-    )
-    const json = JSON.parse(result)
-    expect(json.success).toBe(true)
-
-    const final = await pollUntilDone(json.jobId)
-    expect(final?.state).toBe('done')
-    const after = fs.readFileSync(slidesFile, 'utf-8')
-    expect(after).toContain('caption: 示意图说明')
-  })
-
-  it('caption 超长截断到 120 字', async () => {
-    const { user } = await createLoggedInUser('longcap@a.com')
-    const { deck } = await createDeckDirect(user.id)
-    await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
-    const long = '说明'.repeat(100)
-
-    const result = await runInRequest(
-      { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
-      () => runTool({ slideIndex: 2, prompt: 'p', caption: long }),
-    )
-    const json = JSON.parse(result)
-    expect(json.success).toBe(true)
-    const final = await pollUntilDone(json.jobId)
-    expect(final?.state).toBe('done')
-    const after = fs.readFileSync(slidesFile, 'utf-8')
-    const m = after.match(/caption: (.+)/)
-    expect(m).toBeTruthy()
-    expect(m![1].length).toBeLessThanOrEqual(120)
-  })
+  // caption 字段已从工具/layout 中删除(图片纯净充满 header 下方,
+  // 不再叠加文字标注;LLM 也不会主动给图加文字标题)
 })

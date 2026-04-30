@@ -6,14 +6,12 @@
   frontmatter 字段:
     heading?  : string —— 页标题(红色,40px,与 beitou-content 一致)
     imageSrc  : string —— /api/assets/<uuid>(agent 绝对路径,不要经 templateAsset())
-    caption?  : string —— 图下小字标注(可选)
     imageFit? : 'cover' | 'contain' —— 默认 cover(AI hero 图);diagram/screenshot 用 contain
 -->
 <script setup lang="ts">
 defineProps<{
   heading?: string
   imageSrc: string
-  caption?: string
   imageFit?: 'cover' | 'contain'
 }>()
 </script>
@@ -32,13 +30,12 @@ defineProps<{
         -->
         <img
           :src="imageSrc"
-          :alt="caption || heading || ''"
+          :alt="heading || ''"
           class="image-content-img"
           :class="`image-content-img--${imageFit || 'cover'}`"
           decoding="async"
           loading="eager"
         />
-        <p v-if="caption" class="image-content-caption">{{ caption }}</p>
       </div>
     </div>
   </div>
@@ -86,24 +83,5 @@ defineProps<{
 }
 .image-content-img--contain {
   object-fit: contain;
-}
-.image-content-caption {
-  /* caption 叠在图底部不挤占 img(无 caption 时根本不渲染) */
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  margin: 0;
-  padding: 12px 60px;
-  color: #ffffff;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);
-  font-size: 14px;
-  line-height: 1.5;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
 </style>

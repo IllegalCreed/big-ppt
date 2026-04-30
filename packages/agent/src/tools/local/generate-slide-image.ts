@@ -38,7 +38,6 @@ import { parseSlides } from '../../slides-store/pages.js'
 import { coerceInt } from './utils.js'
 
 const PROMPT_MAX = 1000
-const CAPTION_MAX = 120
 
 /** 计算目标 layout 名:templateId 形如 'beitou-standard' / 'jingyeda-standard' → 取首段 */
 function deriveImageLayoutName(templateId: string): string {
@@ -89,6 +88,10 @@ const TOOL_DESCRIPTION = [
   '',
   'Do NOT use for charts: for charts use BarChart / LineChart / PieChart components, not this tool. Do NOT use to "make a slide more visual" without explicit instruction — this burns the user OpenAI quota.',
   '',
+  '**Image dimensions**: tool 内部硬编 1536x720(贴近 layout body 实际比例约 2.13:1,header 已占顶部);LLM 不需要也不能传 size。',
+  '',
+  '**Prompt 要求**: 必须在 prompt 中**显式让模型不要在图中画任何文字**(例如追加 "no text, no title, no caption, no watermark, pure illustration only")。slide 的标题已由 layout 顶部 header 渲染,图片本身画文字会跟 header 文字重复且常被裁切丑陋。',
+  '',
   'Returns { jobId, status: "queued" } immediately; the frontend polls /api/image-jobs/<jobId> for completion. Do not block waiting; you can continue with other tools while the image generates.',
   '',
   'Side effect: switching the slide to *-image-content layout WIPES the existing body. If the user wants to keep text, use create_slide to add a new image page instead of update_slide here.',
@@ -110,15 +113,12 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
       error: `prompt 必填且长度 ≤ ${PROMPT_MAX}`,
     })
   }
-  const caption =
-    typeof args.caption === 'string' && args.caption.trim()
-      ? args.caption.trim().slice(0, CAPTION_MAX)
-      : undefined
-  const aspect = args.aspectRatio === 'portrait' || args.aspectRatio === 'square'
-    ? args.aspectRatio
-    : 'landscape'
-  const size: ImageJobInput['size'] =
-    aspect === 'portrait' ? '720x1280' : aspect === 'square' ? '1024x1024' : '1280x720'
+  // **size 自动选**:模板的 image-content layout body 实际比例约 2:1
+  // (Slidev 默认 16:9 canvas 减去 LBtHeader/LJydHeader 高度约 4.5em ≈ 15%)。
+  // 1536x720 满足 OpenAI gpt-image-2 约束(min 655360 像素 + 16 倍数 + ≤3:1)
+  // 且更贴近 layout 比例,object-fit:cover 时上下基本不裁。
+  // LLM 不再决定 size — 工具按模板硬编最优值,避免 LLM 选错比例导致裁剪。
+  const size: ImageJobInput['size'] = '1536x720'
 
   const deckId = ctx.activeDeckId
   if (!deckId) {
@@ -182,7 +182,6 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
     userId: ctx.userId,
     slideIndex,
     prompt,
-    caption,
     size,
     model: imageSettings.model,
   })
@@ -230,7 +229,6 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
               imageSrc: args2.imageSrc,
             }
             if (args2.heading) fm.heading = args2.heading
-            if (args2.caption) fm.caption = args2.caption
             const result = await storeUpdateSlide({
               index: args2.slideIndex,
               frontmatter: fm,
@@ -283,16 +281,6 @@ export const generateSlideImageTool: ToolDef = {
         maxLength: PROMPT_MAX,
         description:
           '图像生成 prompt;英文 prompt 通常质量更好。明确描述风格/构图/主体/光线。',
-      },
-      caption: {
-        type: 'string',
-        maxLength: CAPTION_MAX,
-        description: '图下小字标注(可选,≤120 字)',
-      },
-      aspectRatio: {
-        type: 'string',
-        enum: ['landscape', 'portrait', 'square'],
-        description: '默认 landscape (1280×720,与 layout 槽对齐);portrait/square 仅特殊场景',
       },
     },
     required: ['slideIndex', 'prompt'],

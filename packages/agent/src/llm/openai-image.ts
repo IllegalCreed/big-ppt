@@ -19,7 +19,9 @@ const DEFAULT_PRIMARY_MODEL = 'gpt-5.5'
 const DEFAULT_FALLBACK_MODEL = 'gpt-image-2'
 
 export type ImagePathTaken = 'A' | 'B'
-export type ImageSize = '1280x720' | '1024x1024' | '720x1280' | '1024x1536' | '1536x1024'
+// OpenAI gpt-image-2 接受任意 'WIDTHxHEIGHT'(满足 16 倍数 / ≤3:1 / [655360, 8294400] 像素)
+// 不枚举固定值,工具层按模板硬编最优 size 透传
+export type ImageSize = string
 
 export interface ImageGenInput {
   prompt: string

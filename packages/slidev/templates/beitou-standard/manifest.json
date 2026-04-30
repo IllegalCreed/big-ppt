@@ -93,7 +93,7 @@
     },
     {
       "name": "beitou-image-content",
-      "description": "图片内容页(标题 + 16:9 AI 生成图 + 可选标注)。仅在用户明确要求 AI 出图时使用,正文走 beitou-content。",
+      "description": "图片内容页(标题 + AI 生成图占满 header 下方)。仅在用户明确要求 AI 出图时使用,正文走 beitou-content。",
       "frontmatterSchema": {
         "type": "object",
         "required": ["imageSrc"],
@@ -105,10 +105,6 @@
           "imageSrc": {
             "type": "string",
             "description": "图片资源 URL,形如 /api/assets/<uuid>。**由 generate_slide_image 工具填**,LLM 不要直接 update_slide 修改此字段"
-          },
-          "caption": {
-            "type": "string",
-            "description": "图下小字标注(可选,≤120 字)"
           },
           "imageFit": {
             "type": "string",

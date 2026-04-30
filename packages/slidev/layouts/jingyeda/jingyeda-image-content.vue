@@ -6,7 +6,6 @@
   frontmatter 字段:
     heading?  : string —— 页标题(蓝底白字,经 LJydHeader)
     imageSrc  : string —— /api/assets/<uuid>(agent 绝对路径,不要经 templateAsset())
-    caption?  : string —— 图下小字标注(可选)
     imageFit? : 'cover' | 'contain' —— 默认 cover
 -->
 <script setup lang="ts">
@@ -15,7 +14,6 @@ import { templateAsset } from '../../composables/useTemplateAsset'
 defineProps<{
   heading?: string
   imageSrc: string
-  caption?: string
   imageFit?: 'cover' | 'contain'
 }>()
 </script>
@@ -30,13 +28,12 @@ defineProps<{
         <!-- 关键:imageSrc 是 agent 绝对路径,不经 templateAsset() -->
         <img
           :src="imageSrc"
-          :alt="caption || heading || ''"
+          :alt="heading || ''"
           class="jyd-image-content-img"
           :class="`jyd-image-content-img--${imageFit || 'cover'}`"
           decoding="async"
           loading="eager"
         />
-        <p v-if="caption" class="jyd-image-content-caption">{{ caption }}</p>
       </div>
       <img
         :src="templateAsset('/templates/jingyeda-standard/logo.png')"
@@ -86,25 +83,6 @@ defineProps<{
 }
 .jyd-image-content-img--contain {
   object-fit: contain;
-}
-.jyd-image-content-caption {
-  /* caption 叠在图底部不挤占 img(无 caption 时根本不渲染) */
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  margin: 0;
-  padding: 0.6em 3em;
-  color: #ffffff;
-  background: linear-gradient(to top, rgba(13, 27, 62, 0.65), transparent);
-  font-size: 0.7em;
-  line-height: 1.5;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
 .jyd-image-content-watermark {
   position: absolute;
