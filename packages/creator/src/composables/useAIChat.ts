@@ -723,6 +723,11 @@ export function useAIChat() {
         streamingContent.value = ''
         status.value = 'idle'
         statusText.value = ''
+        // dogfood 后:LLM session 结束(无新 tool_call)时主动触发 iframe full refresh,
+        // 强制跟最终 slides.md 对齐。Slidev HMR 在长 session 内逐次 patch 几十次 slides.md
+        // 时会出现 layout component 缓存错位(用户看到第 N 页渲染成另一模板等),仅靠 HMR 不能根
+        // 治。session 结束时一次性 refresh,跟 HMR race 风险也没了(此刻已无新改动)。
+        slideStore.refresh()
         return
       }
 
@@ -738,6 +743,8 @@ export function useAIChat() {
       const timeoutMsg = '生成超时（工具调用轮次过多），请尝试简化需求或重新开始。'
       chatMessages.value.push({ role: 'assistant', content: timeoutMsg })
       status.value = 'idle'
+      // 即使 max_iterations 中断,也强同步一次 iframe(避免中间态卡住)
+      slideStore.refresh()
     } catch (err) {
       const e = err as Error
       const isAbort = e.name === 'AbortError'
