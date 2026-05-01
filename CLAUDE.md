@@ -229,6 +229,7 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - **切换 deck / 切模板时让 Slidev HMR 自己处理**，前端**不要**调 `slideStore.refresh()`，否则会与 HMR race 触发 502（[plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 踩坑 3）
 - **Slidev reload 窗口（200-500ms）期间 dev server 不响应**，前端 fetch iframe URL 要先 probe-then-refresh（[plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 踩坑 4）
 - **Slidev `slides.md` 锁**：dev agent 重启自动复位，免手动 `activate`（[plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 4）
+- **long session 大量 frontmatter 改动 vite module cache 错位 → 重启 Slidev 进程才能根治,iframe full reload 不够**：LLM 跑几十轮 update_slide / create_slide 后 Slidev dev server 进程内 vite components registry 缓存对不上(layout 字面量明明是 beitou-* 但渲染成 jingyeda),`slideStore.refresh()` 只清前端 iframe 缓存清不了 vite module graph。前端 SlidePreview「刷新」按钮已改造为调 `POST /api/slidev-restart`(prod execFile pm2 restart / dev 503 引导手动重启)。LLM busy 时按钮变橙色警示 + confirm 弹窗。长期根治走 Phase 10.5 自研 DeckRenderer Vue 组件取代 Slidev iframe（[plan 23](docs/plans/23-phase11.6-dogfood-followup.md) 踩坑 13）
 
 ### 测试基建
 

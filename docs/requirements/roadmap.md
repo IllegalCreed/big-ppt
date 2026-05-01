@@ -555,7 +555,7 @@
 ## Phase 10.5(候选,待 spike)：Slidev 解耦 — DeckRenderer Vue 组件自封装
 
 > **状态**:候选 / **未启动 spike**
-> 触发条件:Phase 10 上线后实测编辑首屏体验(gzip 后 30-40s)无法接受,或开始规划 Phase 11 时一并评估
+> 触发条件:Phase 10 上线后实测编辑首屏体验(gzip 后 30-40s)无法接受,或开始规划 Phase 11 时一并评估,或 Phase 11.6 dogfood 暴露的 long session HMR 缓存错位频次升高(参见 [plan 23](../plans/23-phase11.6-dogfood-followup.md) 踩坑 13)
 
 **目标**:把 Slidev iframe 形态的预览器换成 creator SPA 内的 `<DeckRenderer markdown=".." templateId=".." />` Vue 组件,从根本上解决 dev mode 几百个 Vite module 累积加载慢的问题,顺便简化整套部署架构。
 
@@ -564,6 +564,7 @@
 - Phase 11"多 Slidev 实例 + 双路径"中,**编辑路径仍然必须跑 Slidev dev mode**(依赖 HMR),首屏几百个 Vite module 串行加载的问题没有改善
 - iframe 隔离带来的复杂度(跨 frame state 同步、cookie 鉴权代理、Phase 9-C sandbox 警告、agent 内 http-proxy 反代)在 Phase 11 不消除反而放大(进程池 N 倍 iframe)
 - Phase 7.5 公共组件库(grid/decoration/block 16 个 + layer-1 layout 5×2)本来就是普通 Vue 组件,接到 SPA 里直接用 = 主动权完全收回
+- **Phase 11.6 dogfood 暴露 long session HMR 缓存错位**:LLM 跑几十轮 update_slide / create_slide 后 Slidev dev server 进程内 vite components registry 缓存对不上(layout 字面量明明是 beitou-* 但渲染成 jingyeda),iframe full reload 清不了,只能重启 Slidev 进程。短期靠 SlidePreview「重启 Slidev」按钮兜底,根治走 DeckRenderer Vue 组件(响应式 prop 更新代替 HMR,无 vite module graph 累积)
 
 **核心思路**:
 
@@ -623,9 +624,9 @@
 ## Phase 11.6：图片优先模式（image-gen ON 时所有内容页直走 image-content）✅
 
 > 详细实施:[plan 21-phase11.6-image-first.md](../plans/21-phase11.6-image-first.md) +
-> [plan 23-phase11.6-dogfood-followup.md](../plans/23-phase11.6-dogfood-followup.md)（dogfood 收尾 8 commit）
+> [plan 23-phase11.6-dogfood-followup.md](../plans/23-phase11.6-dogfood-followup.md)（dogfood 收尾 14 commit,分两波)
 > 前置:Phase 11.5 ✅
-> 后续:Phase 11.7 ✅
+> 后续:Phase 11.7 ✅;HMR 根治线索 → Phase 10.5(候选)
 
 **目标**:策略反转——用户配了 image LLM 后,**所有内容页**(原本会走 BarChart / MetricCard / 流程图 / 文字 markdown 的页)默认改走 `*-image-content` layout + AI 出图。封面、目录、章节标题、封底等结构页保持原选法(高度定制,AI 出图意义不大)。layout/组件路径降级为「生图失败时自动兜底」(graceful-degradation 由后台 worker 调一次主 LLM 把单页重写为 *-content + 组件版,用户无感)。
 
@@ -635,7 +636,7 @@
 - **graceful-degradation**:`generate_slide_image` 加 `fallbackSummary` 中文摘要参数,worker 失败时调 `rewriteSinglePageToComponents` 用此摘要 + 整 deck 上下文非流式调主 LLM 把单页重写为组件版(state: `fallback-rewrote`);兜底也崩 → `fallback-failed`
 - **buildSystemPrompt** 加 `imageGenEnabled` 参数双分支;**rewriteForTemplate** 切模板期强制 OFF(不重新生图,imageSrc 透传)
 
-**dogfood 收尾追加(主体落地后用户实跑暴露的真问题,7 个 commit 收口)**:
+**dogfood 第一波收尾(8 commit `19c6278`~`bebcdc4`)**:
 - **风格统一**:工具层把 LLM 自由 prompt 包装成结构化模板,style anchor 来自 `manifest.imageGenStyle`(色板 / paper texture / palette 等 invariants 跟模板同包)。原"形式让生图 LLM 自决"22 页风格碎裂,加入 deck 级 style anchor 后所有页一致
 - **fallbackSummary 改必填**:LLM 不传 → worker 失败兜底无输入。schema required + 入口校验
 - **删 list_templates 工具 + read_template 收紧**:跨模板返回所有 manifest 触发污染(beitou deck 出 jingyeda layout)。read_template 限 ALLOWED_NAMES whitelist(DESIGN.md / starter.md)
@@ -646,14 +647,23 @@
 - **buildSystemPrompt 自动注入图片资源清单**:扫当前模板目录的 png/jpg/webp/svg 拼到 prompt
 - **system prompt 决策树修正**:「切模板任务时(system 调用):仅替换 frontmatter `layout:` 前缀」改成「切换模板:用 `switch_template` 工具触发」(原表述对 LLM 误导)
 
+**dogfood 第二波收尾(6 commit `e2bab80`~`4b1bfdd`)**:
+- **生图 UX 三件套**:删前端 hard timeout(原 3min total cap → 排队尾的 job 早误标 failed 但后端还在跑) + ToolStep `watch(stage)` 实时反映 pending(排队中)/running(生成中) + LLM 文案约束(「已生成 N 页大纲,正在为 X 个内容页配图(后台异步)」而不是「已生成完成」)
+- **logServerEvent 后端事件落盘**:dev server stdout 不持久化,关掉终端就丢,事后 dogfood 报告无从排查。新建 `logger/server-log.ts` 写 `<logsDir>/server-YYYY-MM-DD.jsonl`,image-gen 全链路接入 8 个事件(running / gen-success / done / cancelled / gen-failed / fallback-rewrote / fallback-failed / queue-timeout)。CLAUDE.md 新增「后端日志规范」章节
+- **修 LLM 不调生图 regression**:Phase 11.6 ON 决策树只描述了 write_slides 路径,没覆盖 create_slide / update_slide 等价入口,LLM 走局部修改路径完全不调 generate_slide_image。重写决策树「工具调用契约」覆盖 3 种入口
+- **starter 占位骨架放行 write_slides + MAX_ITERATIONS 20→200**:第一次生成被 starter.md 演示骨架(占位文字)骗到走「局部修改」路径单页加,2N turn 撞 MAX_ITERATIONS=20 上限。`isDefaultStarterContent` 检测放行整体覆盖 + 调高迭代上限
+- **session-end 主动 refresh iframe**:LLM session 结束(reason=completed/max_iterations)主动调 `slideStore.refresh()` 强同步前端 iframe 跟最终 slides.md,缓解 long session HMR 缓存错位的轻症
+- **SlidePreview 「刷新」按钮改为「重启 Slidev 进程」**:Slidev / Vite long session 内 vite module cache 累积错位(layout 字面量明明是 beitou-* 但渲染成 jingyeda),iframe full reload 清不了 vite module graph,**只有重启 Slidev 进程**才能根治。新增 `POST /api/slidev-restart`(prod execFile pm2 restart / dev 503 引导手动重启) + LLM-busy 时按钮变橙色警示 + confirm 弹窗
+
 **包含内容**:
-- 后端:buildSystemPrompt 双分支决策树 + routes/prompts.ts authOptional + image-gen-job 状态机扩 fallback-rewrote/fallback-failed + 新建 rewriteSinglePageToComponents 模块 + worker 失败兜底接线 + dogfood 阶段 7 commit 收尾
-- 前端:useGenerateImageJob 处理新状态;trackImageJob 文案分支(成功出图 / 已自动降级为组件版)
+- 后端:buildSystemPrompt 双分支决策树 + routes/prompts.ts authOptional + image-gen-job 状态机扩 fallback-rewrote/fallback-failed + 新建 rewriteSinglePageToComponents 模块 + worker 失败兜底接线 + 新建 logger/server-log + 新建 routes/slidev-restart + 14 commit dogfood 收尾
+- 前端:useGenerateImageJob 处理新状态 + ToolStep stage watch + session-end 自动 refresh + SlidePreview 重启 Slidev 进程按钮 + aiBusy 联动
 
 **不在范围**:
 - ❌ 已有 deck 自动回填生图(只对新生成 deck 生效)
 - ❌ Settings 加「图片优先」总开关(配了 image LLM 即默认 ON)
 - ❌ 切模板期间重新生图(layout 前缀替换 + imageSrc 透传)
+- ❌ 根治 Slidev / Vite long session HMR 缓存错位(短期靠重启 Slidev 进程兜底,长期走 Phase 10.5 自研 DeckRenderer)
 
 ---
 
