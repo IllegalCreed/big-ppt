@@ -12,7 +12,12 @@
     "format:check": "prettier . --check",
     "type-check": "turbo run type-check",
     "gen:thumbnails": "tsx scripts/generate-template-thumbnails.ts",
-    "validate:tokens": "tsx scripts/validate-template-tokens.ts"
+    "validate:tokens": "tsx scripts/validate-template-tokens.ts",
+    "deploy:all": "./scripts/deploy.sh all",
+    "deploy:backend": "./scripts/deploy.sh backend",
+    "deploy:creator": "./scripts/deploy.sh creator",
+    "deploy:ecosystem": "./scripts/deploy.sh ecosystem",
+    "deploy:healthz": "./scripts/deploy.sh healthz"
   },
   "devDependencies": {
     "prettier": "^3.8.3",

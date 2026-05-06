@@ -82,6 +82,20 @@ pnpm -F @big-ppt/agent db:push:test       # drizzle-kit push 到测试库
 pnpm gen:thumbnails                       # 新增模板后跑，playwright 自动出 PNG 入库
 ```
 
+### 生产部署
+
+```bash
+pnpm deploy:healthz                       # 只读：打 https://lumideck.illegalscreed.cn/api/healthz
+pnpm deploy:creator                       # 只 build creator + rsync 静态文件到 /var/www/lumideck
+pnpm deploy:backend                       # build agent + 同步 monorepo + 远端 pnpm i + db:push:prod + pm2 reload（前置 confirm）
+pnpm deploy:ecosystem                     # 只同步 deploy/ 配置（ecosystem.config.cjs / nginx 模板 / 远端脚本）
+pnpm deploy:all                           # 完整：ecosystem + creator + backend + healthz（前置 confirm）
+
+FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confirm
+```
+
+底层 `scripts/deploy.sh`，详细前置条件（SSH key / `.env.production.local` / `install-server.sh`）见 [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md)。
+
 ## 架构全景（多文件拼出来的）
 
 ### 包与端口
