@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./components",
+    "noEmit": false,
+    "declaration": false,
+    "sourceMap": false,
+    "types": [],
+    "moduleResolution": "NodeNext",
+    "module": "NodeNext"
+  },
+  "include": ["components/_catalog/**/*.ts", "components/**/*.meta.ts"]
+}

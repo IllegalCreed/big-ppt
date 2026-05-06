@@ -79,12 +79,16 @@ build_creator() {
 }
 
 build_agent() {
-    log_info "构建 shared + agent(tsc)"
+    log_info "构建 shared + slidev catalog + agent(tsc)"
     cd "${PROJECT_ROOT}"
     # shared 必须先 build:agent dist 里 import '@big-ppt/shared',
     # shared 的 src/index.ts 用 NodeNext 风格 `from './chat.js'`,
     # 生产 node 找不到 .js → 必须由 tsc 把 src/*.ts → src/*.js 落盘
     pnpm -F @big-ppt/shared build
+    # 同样 slidev components-catalog 也用 NodeNext `from './x.meta.js'` 风格,
+    # 必须先 emit *.meta.js + _catalog/index.js,否则 prod agent 启动时
+    # ERR_MODULE_NOT_FOUND(Phase 11.6 后引入,deploy.md 已知坑 #5 同套路)
+    pnpm -F @big-ppt/slidev build:catalog
     pnpm -F @big-ppt/agent build
 }
 

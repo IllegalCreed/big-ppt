@@ -6,6 +6,12 @@
 packages/shared/src/*.js
 packages/shared/src/*.js.map
 
+# Phase 11.6: slidev components catalog + meta build 产物(deploy.sh build:catalog 生成)
+packages/slidev/components/_catalog/*.js
+packages/slidev/components/_catalog/*.js.map
+packages/slidev/components/**/*.meta.js
+packages/slidev/components/**/*.meta.js.map
+
 # Logs
 logs
 *.log
