@@ -330,6 +330,14 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
       errorMsg: msg,
     })
 
+    // 出图已挂,后续无论走 fallback rewrite 还是直接标 failed,都不再用 OpenAI image API。
+    // 这里立刻释放 image slot,让排队的下一个 job 接过去跑——fallback rewrite 走主 LLM
+    // (有自己的 llm-semaphore),压在 image-semaphore 上没意义。release 内部幂等,
+    // 后面 finally 再调一次也是 noop。
+    // Why: dogfood 期 OpenAI 中转 503 时,3 slot 被慢 fallback rewrite 长时间占着,
+    //      后排 job 撞 600s queue-timeout 集体红叉(server-2026-05-06.jsonl 5 条)。
+    releaseSlot()
+
     // Phase 11.6 graceful-degradation:rewriteSinglePage + readSlides + updateSlideRaw 三件 DI
     // 全提供 + job.fallbackSummary + job.templateId 都存在时,触发兜底重写。
     // 否则退化为 Phase 11.5 行为标 failed,保持向后兼容(现有测试不带 DI 时仍走老路径)。

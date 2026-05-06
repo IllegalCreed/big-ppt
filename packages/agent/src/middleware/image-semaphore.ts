@@ -12,12 +12,21 @@
  *
  * 默认值:
  * - IMAGE_USER_CONCURRENCY=3 (OpenAI tier 1 RPS 5,留余量)
- * - IMAGE_QUEUE_TIMEOUT_MS=600000 (10 分钟,22 张图 / 3 并发约 3.6 分钟,留 buffer)
+ * - IMAGE_QUEUE_TIMEOUT_MS=0 (不限时;排队不消耗外部资源,等待本身没风险)
+ *
+ * Queue timeout 历史:
+ * - 初版默认 600_000ms(10 分钟),设计意图是"防 zombie 排队"
+ * - 2026-05-06 dogfood 实战:OpenAI 中转 503 时排队尾部撞 timeout 集体红叉(详见 image-gen-job.ts 同期 fix)
+ * - 反思:排队期间没占任何外部配额,设 timeout 没保护意义。zombie 唯一可能是前面 slot
+ *   release 漏掉,那是 caller 的 bug(image-gen-job.ts finally 已兜底)。
+ *   改默认不限时,prod 操作员通过 cancel API / 重启进程兜底极端情况。
+ *   IMAGE_QUEUE_TIMEOUT_MS 仍保留(传 > 0 显式启用),便于将来需要时再开。
  */
 
 interface QueueEntry {
   resolve: () => void
-  timer: NodeJS.Timeout
+  /** 仅当 timeoutMs > 0 时设置;无超时排队时为 null */
+  timer: NodeJS.Timeout | null
 }
 
 interface UserSlot {
@@ -32,8 +41,11 @@ function defaultLimit(): number {
   return Number.isFinite(v) && v > 0 ? v : 3
 }
 function defaultTimeoutMs(): number {
-  const v = Number(process.env.IMAGE_QUEUE_TIMEOUT_MS)
-  return Number.isFinite(v) && v > 0 ? v : 600_000
+  // 不设 / 非数字 / ≤0 → 0 = 不超时;显式传正整数才启用 timeout
+  const raw = process.env.IMAGE_QUEUE_TIMEOUT_MS
+  if (raw === undefined) return 0
+  const v = Number(raw)
+  return Number.isFinite(v) && v > 0 ? v : 0
 }
 
 export class ImageConcurrencyTimeoutError extends Error {
@@ -48,7 +60,9 @@ export class ImageConcurrencyTimeoutError extends Error {
 /**
  * 获取一个 image-gen slot。返回 release 函数:**调用方必须在请求完成 / 失败 / 取消时调一次。**
  * - 当前 active < limit:立即 active++ 返回
- * - 否则进入 queue 等待;超过 timeoutMs 仍未拿到 → throw ImageConcurrencyTimeoutError
+ * - 否则进入 queue 等待
+ *   - timeoutMs > 0:超过 timeoutMs 仍未拿到 → throw ImageConcurrencyTimeoutError
+ *   - timeoutMs ≤ 0(默认):**不超时**,一直等到前面 slot release 唤醒
  * release 幂等(多次调用只生效一次)。
  */
 export async function acquireImageSlot(
@@ -73,15 +87,18 @@ export async function acquireImageSlot(
   return new Promise<() => void>((resolveOuter, reject) => {
     const entry: QueueEntry = {
       resolve: () => {
-        clearTimeout(entry.timer)
+        if (entry.timer) clearTimeout(entry.timer)
         s.active++
         resolveOuter(makeRelease(userId))
       },
-      timer: setTimeout(() => {
-        const idx = s.queue.indexOf(entry)
-        if (idx >= 0) s.queue.splice(idx, 1)
-        reject(new ImageConcurrencyTimeoutError(userId, timeoutMs))
-      }, timeoutMs),
+      timer:
+        timeoutMs > 0
+          ? setTimeout(() => {
+              const idx = s.queue.indexOf(entry)
+              if (idx >= 0) s.queue.splice(idx, 1)
+              reject(new ImageConcurrencyTimeoutError(userId, timeoutMs))
+            }, timeoutMs)
+          : null,
     }
     s.queue.push(entry)
   })
@@ -106,7 +123,9 @@ function makeRelease(userId: number): () => void {
 /** 仅测试用:清掉所有用户的排队 + active 计数 */
 export function __resetImageSemaphoreForTesting(): void {
   for (const slot of slots.values()) {
-    for (const entry of slot.queue) clearTimeout(entry.timer)
+    for (const entry of slot.queue) {
+      if (entry.timer) clearTimeout(entry.timer)
+    }
   }
   slots.clear()
 }

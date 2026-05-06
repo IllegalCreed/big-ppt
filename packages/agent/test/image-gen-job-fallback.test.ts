@@ -15,13 +15,19 @@ import {
   __resetImageJobsForTesting,
   type RunImageJobDeps,
 } from '../src/image-gen-job.js'
+import {
+  __getImageSemaphoreStateForTesting,
+  __resetImageSemaphoreForTesting,
+} from '../src/middleware/image-semaphore.js'
 
 beforeEach(() => {
   __resetImageJobsForTesting()
+  __resetImageSemaphoreForTesting()
 })
 
 afterEach(() => {
   __resetImageJobsForTesting()
+  __resetImageSemaphoreForTesting()
 })
 
 const FAKE_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAlAA=='
@@ -202,6 +208,73 @@ describe('image-gen-job graceful-degradation（Phase 11.6）', () => {
     await runImageJob(job.id, deps)
     expect(getImageJob(job.id)?.state).toBe('cancelled')
     expect(rewriteSinglePage).not.toHaveBeenCalled()
+  })
+
+  it('出图失败 → 进入 fallback rewrite 之前已释放 image slot(2026-05-06 dogfood 修复)', async () => {
+    // 假设场景:user=1 的 slot limit=3,3 个 job 同时跑,全部 503 fail。
+    // fallback rewrite 期间 image slot 必须已释放,否则后排 job 撞 queue-timeout。
+    const job = createImageJob({
+      deckId: 1,
+      userId: 1,
+      slideIndex: 4,
+      prompt: 'x',
+      size: '1536x720',
+      fallbackSummary: '某段摘要',
+      heading: 'h',
+      templateId: 'beitou-standard',
+    })
+
+    // rewriteSinglePage 用一个永远不 resolve 的 Promise 模拟"主 LLM 还在跑",
+    // 我们在它跑期间检查 image-semaphore active 计数:必须已经回 0(说明 slot 释放了)。
+    let releaseRewrite: (v: { frontmatter: Record<string, unknown>; body: string }) => void = () => {}
+    const rewritePromise = new Promise<{ frontmatter: Record<string, unknown>; body: string }>(
+      (resolve) => {
+        releaseRewrite = resolve
+      },
+    )
+    const updateSlideRaw = vi.fn(async () => undefined)
+    const readSlides = vi.fn(() => '---\n---\n')
+    const rewriteSinglePage = vi.fn(() => rewritePromise)
+
+    const deps = makeFailingDeps({ updateSlideRaw, readSlides, rewriteSinglePage })
+
+    // worker 跑起来,但还没 await 完(rewrite 卡住)
+    const workerPromise = runImageJob(job.id, deps)
+
+    // 让 worker 走完 acquire → 出图 fail → release slot → 进入 rewrite 等待
+    // 多个 microtask 让 worker 推进到 rewriteSinglePage 的 await 点
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setImmediate(r))
+    }
+
+    // 关键断言:此时 worker 卡在 rewriteSinglePage,但 image semaphore 应已释放
+    expect(rewriteSinglePage).toHaveBeenCalledOnce()
+    expect(__getImageSemaphoreStateForTesting(1)).toEqual({ active: 0, queueLen: 0 })
+
+    // 收尾:让 rewrite 完成,worker 走到 fallback-rewrote 状态
+    releaseRewrite({
+      frontmatter: { layout: 'beitou-content' },
+      body: 'done',
+    })
+    await workerPromise
+    expect(getImageJob(job.id)?.state).toBe('fallback-rewrote')
+  })
+
+  it('出图失败 + 无 fallback DI(老语义)→ 也立刻释放 slot 然后标 failed', async () => {
+    const job = createImageJob({
+      deckId: 1,
+      userId: 1,
+      slideIndex: 5,
+      prompt: 'x',
+      size: '1536x720',
+      heading: 'h',
+      templateId: 'beitou-standard',
+    })
+    const deps = makeFailingDeps()
+    await runImageJob(job.id, deps)
+    expect(getImageJob(job.id)?.state).toBe('failed')
+    // worker 已退出,slot 已释放(finally 兜底)
+    expect(__getImageSemaphoreStateForTesting(1)).toEqual({ active: 0, queueLen: 0 })
   })
 
   // 健全性确认:出图成功路径(FAKE_B64 → done)在新 ImageJob 字段下仍然 OK
