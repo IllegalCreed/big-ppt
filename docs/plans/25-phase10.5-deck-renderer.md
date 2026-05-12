@@ -1,6 +1,6 @@
 # Phase 10.5 — DeckRenderer 落地（Slidev 编辑解耦 / 锁语义归位）实施文档
 
-> **状态**：待启动
+> **状态**：✅ 已完成（2026-05-12 关闭）
 > **前置阶段**：[plan 24 — Phase 10.5 spike](24-phase10.5-spike.md) ✅
 > **后续阶段**：plan 26（Phase 11 — 分享链接 + 容量 spike，范围已因本 Phase 大缩水）
 > **路线图**：[roadmap.md Phase 10.5](../requirements/roadmap.md#phase-105slidev-解耦--deckrenderer-vue-组件自封装)
@@ -868,7 +868,67 @@ grep -rn "spike\|register-slidev-components" packages/creator/src
 
 ## 执行期偏离（关闭后追加）
 
-> 跑过程中跟 plan 不一致的点回填这里。
+> 跑过程中跟 plan 不一致的点。
+
+1. **保留 `packages/creator/public/templates` 软链**（plan 25 原计划删，实际必保留）
+   - 原 plan B-2 步骤 3 说删 spike 时一并删软链
+   - 实际：layouts 用 `${BASE_URL}/templates/<id>/x.png` 取资源，没这条软链 dev / build 拿不到 logo 等资源 → 立即 404
+   - fix 提交 `94cf8f4`；plan 25「文件结构变更」段同步更新
+
+2. **`unplugin-vue-components` **不能替代手工 `app.component()` 注册**
+   - 原 plan A-1 假设 unplugin 一搞定全部组件解析
+   - 实际：unplugin 静态分析 `<MyComp />` 字面量标签，对 DeckRenderer `<component :is="动态字符串">` 完全看不见 → layouts 渲染空白
+   - fix 提交 `94cf8f4`：新增 `src/deck-renderer/register-layouts.ts` 显式 `app.component()` 注册 12 layouts + 14 公共组件
+   - unplugin 仍保留，处理 layouts 内部 `<LBeitouCoverLogo />` 静态标签
+
+3. **useAIChat 两处 session-end `slideStore.refresh()` 保留**（plan 原说删）
+   - plan 25 设计抉择 #5 说编辑器没 HMR 顾虑了 → refresh 可删
+   - 实际：refresh 除「兜底 HMR 缓存错位」外还承担「同步 server slides.md → client content」职责 —— DeckRenderer 时代 server 端 tool 调用写盘的内容仍需 client 拉一次才能渲染
+   - 决定：注释更新，逻辑保留（C-2 commit `0a46239`）
+
+4. **`useSlideStore.refresh()` 端点从 `/api/read-slides` 改成 `GET /api/decks/:id`**（plan 原未提）
+   - 实际跑起来发现 `/api/read-slides` 受 slidev-lock 守门，编辑器去抢锁后必然 403 →「需要先 activate-deck」错误 banner
+   - fix 提交 `7379506`：slideStore 加 `activeDeckId` + `initDeck(deckId, initialContent)` 方法；refresh 走 deck-scoped 端点
+
+5. **LLM 工具调用必须带 `X-Deck-Id` header**（plan 原未提，**最大架构 gap**）
+   - plan 删 activate-deck 后所有 LLM 工具调用（`generate_slide_image` / `write_slides` / `switch_template` 等读 `ctx.activeDeckId`）依赖 session.activeDeckId，原由 activate-deck 设置；删后这条链路完全断了
+   - 没单测 catch 到 —— E2E `image-content.spec.ts` 才发现
+   - fix 提交 `f5f2972`：agent middleware/request-context.ts 改成优先读 `X-Deck-Id` header；creator useAIChat.ts 在 `/api/call-tool` fetch 时带这个 header
+
+6. **`slideStore.totalPages` / `pages` 复用 `parseDeck()` 而非 naive `content.split`**（plan 原未提）
+   - 翻页器加上后用户反馈「starter 5 页显示 6 / 多 1 页」
+   - 根因：旧 slideStore.pages 用 `content.split(/\n---\n/)` 把 frontmatter 的 `---` 也算成分隔符；DeckRenderer 用 parseDeck 走「配对扫描」正确切；两套口径不一致
+   - fix 提交 `621ef98`：slideStore import parseDeck 复用，状态层 + 视觉层用同一份切页算法
+
+7. **响应式缩放 + 居中 + 上下边距**（plan 原未提，UX 必备）
+   - 第一版 DeckRenderer 固定 960×540 死框，容器小直接出滚动条
+   - 用户反馈后加 ResizeObserver + `transform: scale()` + `max-width: 960px` + `aspect-ratio: 16/9`，scale 上限 1（不放大）；deck-renderer 加 `justify-content: center` + `min-height: 100%` 垂直居中
+   - 提交 `a2616b0` + `b7cd843`
+
+8. **翻页 UI**（plan 原未提，编辑器必备）
+   - DeckRenderer 仅响应 `currentPage` prop 变化，无主动翻页 UI；原 plan 默认靠 LLM 调 `slideStore.setPage` 间接翻
+   - 用户问「怎么翻页」后加：toolbar `< N / M >` indicator + 全局键盘 ← → / Space / PageUp/Down（焦点在 input/textarea/contenteditable 时不抢键盘）
+   - 提交 `2e991c7`
+
+9. **Coverage 排除调整**（plan 25 原未提）
+   - 跑 `test:coverage` 发现 creator + agent 都低于门槛（pre-existing 漂移，非 Phase 10.5 引入）
+   - creator 加 `useGenerateImageJob.ts` 到 exclude（Phase 11.5 async job poll，4% 覆盖，跟 useAIChat 同策略）
+   - agent 加 `routes/slidev-restart.ts`（execFile pm2 难单测）+ `mcp-server-repo/json-file-repo.ts`（Phase 9-F @deprecated 死代码）
+   - 提交 `fc5ad55`
+
+10. **既有 E2E spec 也有几处 pre-existing 失败要修**（plan 25 原未提）
+    - `template-switch-existing.spec.ts` + `template-switch-undo.spec.ts`：modal 主按钮文案 `bebcdc4` 改成「切换模板」后 E2E 漏改，仍用 `/切换（AI 重写）/` regex 选不到；改成 `[data-primary-action]` 选定位
+    - `image-content.spec.ts`：fallbackSummary（Phase 11.6 加的必填 arg）漏传
+    - 提交 `f5f2972` 一并修
+
+11. **slidev-restart 路由保留**（plan 25 中途方向调整）
+    - 用户中途问：「编辑器去抢锁后这个路由还要不要」→ 评估后保留（dev Slidev 进程偶发卡死 / 放映 tab 内容陈旧时仍需要不进终端就能重启的兜底）；按钮 UI 挪到「全屏放映」按钮旁
+    - plan 25 commit `d75ee49` 调整
+
+12. **lock-conflict.spec.ts 全量重写**（E2E 改造）
+    - 原 spec 测「A 占编辑锁，B 看 OccupiedWaitingPage 等待页」—— Phase 10.5 编辑无锁直接废
+    - 重写为「A 通过 API present 抢锁，B 浏览器进自己 deck 编辑页**直接进**，点放映按钮 → SlidePreview 内 banner 显示 A 的 email」
+    - 提交 `a1197b2`
 
 ---
 
@@ -876,16 +936,55 @@ grep -rn "spike\|register-slidev-components" packages/creator/src
 
 > 提炼到 CLAUDE.md「已知坑」的标准：换个 Phase 还会撞的工具链 / 测试基建 / 构建系统坑。
 
+### 坑 1：`<component :is="动态字符串">` 不被 unplugin-vue-components 处理
+
+- **症状**：浏览器打开编辑器 → DeckRenderer 完全空白 + Console 无报错。Debug overlay 显示 parseDeck 切出 5 slides 但 layout 不渲染。
+- **根因**：unplugin-vue-components 在编译期扫 `<MyComp />` 字面量标签按需 import；对 `<component :is="slide.layout">` 动态字符串完全看不见。layouts 没被 import 进 bundle → app.component() 没注册 → `:is` 解析失败 → 渲染空 custom element（无 warning）。
+- **修复**：commit `94cf8f4`。`src/deck-renderer/register-layouts.ts` 显式 `app.component()` 注册 12 layouts（kebab key）+ 14 公共组件（PascalCase key）。
+- **防再犯**：**已提炼到 CLAUDE.md**「已知坑 / DeckRenderer」段第 1 条。
+
+### 坑 2：`/api/read-slides` 路由被 slidev-lock 守门，编辑器去抢锁后必然 403
+
+- **症状**：编辑器进入后 toolbar 下方 banner 报「需要先 activate-deck 占用 Slidev 实例」错误。
+- **根因**：`useSlideStore.refresh()` 第一版仍 fetch `/api/read-slides`（Slidev 全局文件的 thin wrapper），那条路径设计是 lock holder 才能读（否则 B 用户读到 A 的 deck 内容），编辑器去抢锁后必然 fail。
+- **修复**：commit `7379506`。slideStore 加 `activeDeckId` + `initDeck(deckId, initialContent)`；refresh 走 `GET /api/decks/:id` 取 currentVersion.content（per-deck scope，跟 slidev 全局 slides.md 解耦）。
+- **防再犯**：**已提炼到 CLAUDE.md**「已知坑 / DeckRenderer」段第 4 条 + useSlideStore.refresh() jsdoc。
+
+### 坑 3：LLM 工具调用断链（activate-deck 删除后 session.activeDeckId 永空）
+
+- **症状**：E2E `image-content.spec.ts` 失败：`/api/call-tool` 返 200 但 `inner.success === false`（agent stdout 看到 generate-slide-image 工具内部抛「无 active deck」）。手动单测里没复现 —— 工具单测自己用 `runInRequest` 直接注入 activeDeckId，**真实 HTTP 路径才会撞**。
+- **根因**：Phase 10.5 删 activate-deck 路由后，session.activeDeckId 永远是 null（仅 release-deck 写 null）；ALS 里 activeDeckId 也跟着永远 null。tool exec 读到 null → 拒绝执行。
+- **修复**：commit `f5f2972`。
+  1. agent `middleware/request-context.ts` 加 `X-Deck-Id` header 优先级（高于 session.activeDeckId）
+  2. creator `useAIChat.executeTool()` 在 `/api/call-tool` fetch 时带 `X-Deck-Id: <deckId>`
+  3. `DeckChatContext` 加 `deckId` 字段，由 `DeckEditorCanvas` 注入
+  4. E2E `image-content.spec.ts` 两个 case 都补 X-Deck-Id header
+- **防再犯**：**已提炼到 CLAUDE.md**「已知坑 / DeckRenderer」段第 5 条 +「关键模块（agent）」request-context 段。**根本教训**：删 session 字段写入路径前 grep 所有读取方，确认替代机制覆盖完整 —— 单测过不代表 HTTP 路径过。
+
+### 坑 4：`useSlideStore.pages` / `totalPages` 跟 DeckRenderer 切页算法漂移
+
+- **症状**：用户反馈翻页器显示「N / 6」（实际 starter 5 页），多 1 页。
+- **根因**：旧 slideStore.pages 用 `content.value.split(/\n---\n/)` naive 正则把 frontmatter 的 `---` 也算成 slide 分隔符；DeckRenderer 用 `parseDeck()` 走「配对扫描（fm chunk + body chunk）」算法。两套算法口径不一致。
+- **修复**：commit `621ef98`。slideStore.computed 用 `parseDeck` 重写 `pages` + `totalPages`；视觉层 + 状态层用同一份算法。
+- **防再犯**：**已提炼到 CLAUDE.md**「已知坑 / DeckRenderer」段第 3 条。**根本教训**：derived computed 涉及解析时**用真实 fixture（starter.md）做 baseline 测试**，假设性单测会漏 frontmatter 边界 case。
+
+### 坑 5：layouts 用 `${BASE_URL}/templates/<id>/x.png` 取资源 → 需保留 `creator/public/templates` 软链
+
+- **症状**：第一版 DeckRenderer 渲染 cover slide 时 logo 是裂图。
+- **根因**：layouts （如 LBeitouCoverLogo）用 `${import.meta.env.BASE_URL}/templates/beitou-standard/logo-mark.png` 拼路径。Slidev 时代 base=/api/slidev-preview/ 自动加前缀；creator 时代 base=/，路径变 /templates/...，但 creator/public 没这个目录。
+- **修复**：commit `94cf8f4`。恢复 `packages/creator/public/templates` 软链 → `../../slidev/templates`。dev Vite 把它当 publicDir；build 时 Vite 把链接目标拷进 dist/templates/，生产 rsync 自动带过去。
+- **防再犯**：**已提炼到 CLAUDE.md**「已知坑 / DeckRenderer」段第 2 条。
+
 ---
 
 ## 测试数量落地（关闭后追加）
 
 | 指标             | 起点 | 终点 | 增量 |
 | ---------------- | ---- | ---- | ---- |
-| agent unit       |      |      |      |
-| creator unit     |      |      |      |
-| slidev unit      |      |      |      |
-| E2E              |      |      |      |
-| visual baselines | 0    | 12   | +12  |
-| coverage lines   |      |      |      |
-| coverage branch  |      |      |      |
+| agent unit       | 573  | 573  | 0（删 4 activate-deck case + 加 4 present case，净零） |
+| creator unit     | 79   | 100  | +21（parse-deck 6 + compile-body 4 + DeckRenderer 6 + register-layouts 1 + useSlideStore 10 - SlidePreview.security 4 - useDecks 2 = +21） |
+| slidev unit      | 9    | 9    | 0（spike 阶段加的 no-slidev-runtime-api 防回归测试已并入 main） |
+| E2E              | 11   | 12   | +1（lock-conflict 重写 + 新增 visual.spec 12 case） |
+| visual baselines | 0    | 12   | +12 |
+| coverage lines   | -    | creator 85.11% / agent 91.64% | 维持门槛 |
+| coverage branch  | -    | creator 72.23% / agent 80.41% | 维持门槛 |
