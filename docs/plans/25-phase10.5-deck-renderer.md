@@ -30,10 +30,10 @@
 
 > spike 已通过用户 L2/L3 双确认「完全一样」（[spike 报告](24-phase10.5-spike-report.md)），本 plan 是把 spike 成果工程化并把锁语义重新归位。
 
-1. **Slidev runtime + agent 反代 + pm2 + nginx + lock 全部保留**
+1. **Slidev runtime + agent 反代 + pm2 + nginx + lock + 重启路由全部保留**
    - **Why**：全屏放映（`window.open('/api/slidev-preview/...', '_blank')`）走的是真新 tab 加载 Slidev SPA。演讲模式 / progress / 黑屏 / 演讲者备注 / 录制等 Slidev 自带功能不重造。
-   - **不删**：`packages/agent/src/index.ts` 的 http-proxy 反代、WebSocket upgrade、`slidev-proxy-auth.ts`、`slidev-lock.ts`、lumideck-slidev pm2 app、nginx `/api/slidev-preview/` location。
-   - **删**：`routes/slidev-restart.ts` + SlidePreview 内「重启 Slidev 进程」按钮 — 编辑端不再用 Slidev iframe，long session HMR 错位触发面消失。
+   - **不删**：`packages/agent/src/index.ts` 的 http-proxy 反代、WebSocket upgrade、`slidev-proxy-auth.ts`、`slidev-lock.ts`、`routes/slidev-restart.ts`、lumideck-slidev pm2 app、nginx `/api/slidev-preview/` location。
+   - **「重启 Slidev」按钮保留但 UI 归位**：原本贴在编辑器 iframe 旁，触发场景是「long session HMR 错位 → 编辑器看到错的渲染」。Phase 10.5 后编辑器不依赖 Slidev，但 dev Slidev 进程仍会偶发卡死 / Vite module state 坏掉 / 放映 tab 内容陈旧 — 仍需要不进终端就能重启的兜底。按钮**挪到「全屏放映」按钮旁**（更贴合实际触发场景：用户放映发现 Slidev 不对 → 重启 → 重试），文案改「重启 Slidev 演讲进程」。disabled 条件从「aiBusy」联动改为「无条件可点」（重启不影响编辑器了）。
 
 2. **锁的语义从「编辑器进入」改成「全屏放映触发」**
    - **Why**：slides.md 是 Slidev 进程全局单文件，多用户同时改会撞 — 这是真实约束；但编辑器只有「访问 Slidev 才需要 slides.md 一致」时才有这约束。Phase 10.5 后编辑器不访问 Slidev，约束自动消失；只有 `window.open('/api/slidev-preview/...')` 时才需要。
@@ -99,7 +99,7 @@
 | `packages/creator/vite.config.ts` | 加 Components + AutoImport plugin；resolve.alias `vue` → `vue/dist/vue.esm-bundler.js` |
 | `packages/creator/package.json` | 加 `unplugin-vue-components` / `unplugin-auto-import` / `marked` |
 | `packages/creator/src/main.ts` | 删 `registerSlidevComponents` import |
-| `packages/creator/src/components/SlidePreview.vue` | iframe + 重启按钮删；改 `<DeckRenderer>`；保留「全屏放映」按钮但改流程：先 `await fetch('/api/present', POST)` 成功再 `window.open` |
+| `packages/creator/src/components/SlidePreview.vue` | iframe 删；改 `<DeckRenderer>`；保留「全屏放映」按钮但改流程：先 `await fetch('/api/present', POST)` 成功再 `window.open`；保留「重启 Slidev」按钮挪到放映按钮旁，文案改「重启 Slidev 演讲进程」，disabled 简化为无条件可点 |
 | `packages/creator/src/composables/useSlideStore.ts` | 删 `refreshToken`；`aiBusy` 保留（ChatPanel 仍用） |
 | `packages/creator/src/composables/useAIChat.ts` | session-end 主动 refresh iframe 的逻辑删（DeckRenderer 响应式自动更新）；tool-completion 后的 refresh 保留 |
 | `packages/creator/src/composables/useDeck.ts`（或类似） | 删 activate-deck 抢锁调用；改成纯 GET deck 元数据 + markdown |
@@ -119,8 +119,6 @@
 | ---- | ---- |
 | `packages/creator/src/spike/` 整个目录 | spike 工程化版已在 `src/deck-renderer/` |
 | `packages/creator/public/templates` 软链 | 公共组件走 `@big-ppt/slidev` workspace import |
-| `packages/agent/src/routes/slidev-restart.ts` | 编辑端不用 Slidev iframe，长 session HMR 错位触发面消失 |
-| `packages/agent/src/routes/__tests__/slidev-restart.test.ts`（如有） | 同上 |
 
 ### 保留不动（重点说明）
 
@@ -472,10 +470,10 @@ grep -rn "spike\|register-slidev-components" packages/creator/src
 **操作**：
 1. 改 `packages/creator/src/components/SlidePreview.vue`：
    - 删 iframe + iframeRef + iframeSrc + Phase 9-C sandbox 段
-   - 删「重启 Slidev 进程」按钮 + restartError / restarting 状态
    - 删 effectiveToken / refreshToken 同步
    - 新增 `<DeckRenderer :markdown="slideStore.content.value" :template-id="templateId" :current-page="slideStore.currentPage.value" />`
    - 保留「全屏放映」按钮 + presentSrc，但 `present()` 改流程（见步骤 3）
+   - 保留「重启 Slidev 演讲进程」按钮 — UI 挪到「全屏放映」按钮旁；文案 + tooltip 改成放映场景；`disabled` 条件简化（删跟 aiBusy 的联动 — 重启 Slidev 不影响编辑器，可一直可点）；保留 confirm 弹窗（避免误点）
    - 保留「刷新」按钮但语义改为「重新从 server 拉 slides.md」（DeckRenderer 自动重渲，不需要 token bump）
 
 2. 改 `packages/creator/src/composables/useSlideStore.ts` 删 `refreshToken`（编辑器无 iframe，不需要 src bump）；`aiBusy` 保留
@@ -645,9 +643,7 @@ grep -rn "spike\|register-slidev-components" packages/creator/src
    })
    ```
 
-3. 改 `packages/agent/src/app.ts`：`app.route('/api', presentRoute)`（或按现有路由组织风格挂载）；删 `slidevRestartRoute` import + 注册
-
-4. 删 `packages/agent/src/routes/slidev-restart.ts` + 对应单测文件
+3. 改 `packages/agent/src/app.ts`：`app.route('/api', presentRoute)`（或按现有路由组织风格挂载）。**保留 `slidevRestartRoute`**（前端按钮还在用）。
 
 **验证方法**：
 - `pnpm -F @big-ppt/agent test` 全绿（含 present 路由 3 case）
@@ -661,9 +657,9 @@ grep -rn "spike\|register-slidev-components" packages/creator/src
 
 ---
 
-### Task 25-D-2：删 activate-deck 路由 + agent / slidev-restart
+### Task 25-D-2：删 activate-deck 路由
 
-**目的**：编辑器进入不再抢锁；删 restart 路由（编辑端无 iframe）。
+**目的**：编辑器进入不再抢锁。slidev-restart 路由保留。
 
 **操作**：
 1. ```bash
@@ -674,9 +670,8 @@ grep -rn "spike\|register-slidev-components" packages/creator/src
    - 删 `app.ts` 内 activate-deck 注册
    - 删相关单测
 2. `packages/agent/src/middleware/request-context.ts`：删 `activeDeck` 字段（如有），保留其他 user/session
-3. 改 `packages/agent/src/app.ts`：确认 `slidevRestartRoute` 在 D-1 已删
-4. 改 `packages/agent/src/db/schema.ts` 注释：原说明「activate-deck 抢锁」改成「present 抢锁」
-5. 改 `packages/agent/.env.example`：无需变更（SLIDEV_ORIGIN 等保留）
+3. 改 `packages/agent/src/db/schema.ts` 注释：原说明「activate-deck 抢锁」改成「present 抢锁」
+4. 改 `packages/agent/.env.example`：无需变更（SLIDEV_ORIGIN 等保留）
 
 **验证方法**：
 - grep `activate-deck` 全仓 0 命中（packages/creator 应该在 C-1 已清干净；本 Task 是 agent 侧）
@@ -845,7 +840,7 @@ grep -rn "spike\|register-slidev-components" packages/creator/src
 - [ ] Phase 25-A：unplugin-vue-components + body markdown 编译能力（A1+A2）
 - [ ] Phase 25-B：DeckRenderer 正式归属 + spike 删 + 12 单测全绿（B1+B2）
 - [ ] Phase 25-C：SlidePreview 换 DeckRenderer + 编辑器去抢锁 + composable 清理（C1+C2）
-- [ ] Phase 25-D：POST /api/present 路由 + 删 activate-deck / slidev-restart（D1+D2）
+- [ ] Phase 25-D：POST /api/present 路由 + 删 activate-deck（D1+D2）；slidev-restart 路由保留
 - [ ] Phase 25-E：Playwright 12 visual baseline + E2E selector 改造（E1+E2）
 - [ ] Phase 25-F：CLAUDE.md / roadmap 收敛 + 真实部署（F1+F2）
 - [ ] **编辑路径多用户实测无 OccupiedWaitingPage**（用户 A、B 同时进同一 deck 都秒进）
