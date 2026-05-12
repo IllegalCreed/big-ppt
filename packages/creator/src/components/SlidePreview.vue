@@ -1,108 +1,69 @@
+<!--
+  Phase 10.5 落地：编辑器主视图预览。
+
+  iframe 时代 → DeckRenderer。结构：
+    - 顶部 toolbar：重启 Slidev 按钮（仅放映场景兜底）/ 导出 .md / 全屏放映
+    - 内容区：<DeckRenderer> 单页模式（currentPage 跟 slideStore 联动）
+
+  全屏放映流程（Phase 10.5 新）：
+    1. 点「放映」按钮 → POST /api/present/:deckId 抢锁 + 写 slides.md
+    2. 200 OK → window.open '/api/slidev-preview/#/<page>' 开新 tab 加载 Slidev SPA
+    3. 409 → 在 toolbar 下方 banner 显示「X 正在放映该 deck」
+
+  「重启 Slidev」按钮 Phase 10.5 后：编辑器不再依赖 Slidev runtime，触发场景
+  仅剩「放映 tab 内容陈旧 / Slidev dev 进程卡死」的兜底。从 aiBusy 联动改成
+  无条件可点；保留 confirm 弹窗避免误点。
+-->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import { Download, Play, RefreshCw } from 'lucide-vue-next'
 import { useSlideStore } from '../composables/useSlideStore'
 import { api, ApiError } from '../api/client'
+import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
+import type { LockHolderWire } from '../composables/useDecks'
+
+const props = defineProps<{
+  deckId: number
+  templateId: string
+}>()
 
 const slideStore = useSlideStore()
 const restarting = ref(false)
 const restartError = ref<string | null>(null)
+const presenting = ref(false)
+const presentError = ref<string | null>(null)
+const presentHolder = ref<LockHolderWire | null>(null)
 
-// 走 agent 反代（/api/slidev-preview/*），agent 校验 session cookie + 当前是锁持有者才放行。
-// 这样外网拿到 URL 没登录/没占用锁的用户看不到别人的 deck。
-//
-// Phase 7D fix（hash-mode）：iframe src 不再绑 currentPage，仅 refreshToken 触发 reload。
-// Slidev 已切到 routerMode: hash（mirror 写盘时 ensureRouterModeHash 强插），翻页通过
-// 修改 contentWindow.location.hash 实现 —— 不触发 iframe full reload，避免 LLM 工具
-// 链频繁 setPage 时画面闪烁 + 浏览器扩展 postMessage 在 contentWindow null 瞬间挂错。
-const iframeRef = ref<HTMLIFrameElement | null>(null)
-const initialPage = slideStore.currentPage.value // 仅用作 mount 时的初始 hash
-
-// effectiveToken 跟随 store.refreshToken 但延后到 Slidev 反代 ready 才同步——避免切模板
-// 这种"slides.md 大改"触发 Slidev vite full reload 的几百 ms 窗口里 iframe 撞 502。
-// 见 onWatch(refreshToken) 里的 probeSlidevReady 逻辑。
-const effectiveToken = ref(slideStore.refreshToken.value)
-const iframeSrc = computed(
-  () => `/api/slidev-preview/?t=${effectiveToken.value}#/${initialPage}`,
-)
-const presentSrc = computed(() => `/api/slidev-preview/#/${slideStore.currentPage.value}`)
-
-/** 探测 Slidev 反代是否就绪（最多 timeoutMs，每 300ms 重试） */
-async function probeSlidevReady(timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch('/api/slidev-preview/', { credentials: 'include' })
-      if (res.ok) return true
-    } catch {
-      /* 网络/反代错就 retry */
-    }
-    await new Promise((r) => setTimeout(r, 300))
-  }
-  return false
-}
-
-// refreshToken bump → 等 Slidev 重启稳态再切 iframe src（仅切模板/restore 这种大改场景重要；
-// 手动刷新按钮路径下 Slidev 没在 reload，probe 第一次就 ok，几乎无延迟）
-watch(
-  () => slideStore.refreshToken.value,
-  async (newToken) => {
-    await probeSlidevReady(5000)
-    effectiveToken.value = newToken // 即便超时也 sync，让 iframe 至少尝试加载
-  },
-)
-
-// currentPage 变化 → 写 iframe hash（不重新挂载 iframe）
-watch(
-  () => slideStore.currentPage.value,
-  (page) => {
-    const win = iframeRef.value?.contentWindow
-    if (!win) return
-    try {
-      // 同源 iframe（agent 反代到本机 Slidev）能直接读写 location；hash 改不触发 reload
-      const wantHash = `#/${page}`
-      if (win.location.hash !== wantHash) win.location.hash = wantHash
-    } catch {
-      /* 跨域或卸载中忽略；下次 refresh 自然对齐 */
-    }
-  },
-)
+// 进入编辑器时主动拉一次 slides.md，让 DeckRenderer 有内容渲染。
+// 后续 LLM tool 调用 / 切模板 / 时间线回滚等场景由各自 composable 调用
+// slideStore.refresh() 同步。
+onMounted(() => {
+  void slideStore.refresh()
+})
 
 /**
- * dogfood 后改造:这个按钮原来只是 slideStore.refresh() 让 iframe 重 load HTML,
- * 但 Slidev / Vite dev server 进程内的 vite module cache 在 long session 累积错位
- * 后,iframe reload 拿到的 HTML 还是错的(layout component 缓存对不上)。
+ * 重启 Slidev 演讲进程。
  *
- * 改成调 POST /api/slidev-restart 真重启 Slidev 进程清进程内存:
+ * Phase 10.5 后：编辑器用 DeckRenderer 不依赖 Slidev runtime；此按钮仅在
+ * 全屏放映 tab 内容陈旧 / Slidev dev 进程卡死时手工兜底。
+ *
  * - production: agent execFile pm2 restart lumideck-slidev
- * - development: agent 返 503 + 提示用户手动 cmd+C / pnpm dev
- *
- * 重启后 1.5s 等 Slidev ready,再 slideStore.refresh() 让 iframe reload 拿干净 HTML。
- *
- * 保护:LLM 工作中(slideStore.aiBusy)弹 confirm,允许用户在卡死场景强制重启,但默认警示。
+ * - development: agent 返 503 + 提示用户手动 pnpm dev
  */
-async function refresh() {
+async function restartSlidev() {
   if (restarting.value) return
-  // LLM 工作中重启会中断 tool_call(slides.md 写一半,Slidev 起来读到中间态)。
-  // 弹 confirm 而不是直接 disable,允许用户在卡死场景仍能强制重启。
-  if (slideStore.aiBusy.value) {
-    const ok = window.confirm(
-      'AI 正在生成或调用工具,重启 Slidev 会中断当前任务并可能让 slides.md 落到不完整中间态。\n\n仅在 SlidePreview 卡死或渲染严重错乱时才强制重启,否则建议等 AI 完成后再操作。\n\n确定要现在重启吗?',
-    )
-    if (!ok) return
-  }
+  const ok = window.confirm(
+    '即将重启 Slidev 演讲进程。这会让正在放映的页面短暂中断（约 1-2 秒）。\n\n仅在放映卡死 / 内容陈旧时使用。确定要继续吗？',
+  )
+  if (!ok) return
   restarting.value = true
   restartError.value = null
   try {
     await api.post<{ success: boolean; message?: string }>('/api/slidev-restart', {})
-    // 给 Slidev 进程 1.5s 起来再 reload iframe(probeSlidevReady 会进一步等)
-    await new Promise((r) => setTimeout(r, 1500))
-    slideStore.refresh()
   } catch (err) {
     if (err instanceof ApiError && err.status === 503) {
-      // dev 模式 fallback:仅 iframe reload(虽然不能根治,但优于啥都不做)
-      restartError.value = err.message || '当前是 dev 模式,仅 iframe reload(请手动重启 pnpm dev 根治)'
-      slideStore.refresh()
+      restartError.value =
+        err.message || '当前是 dev 模式，请手动 pnpm dev 重启 slidev 进程'
     } else {
       restartError.value = err instanceof ApiError ? err.message : (err as Error).message
     }
@@ -115,8 +76,35 @@ function exportFile() {
   slideStore.exportMarkdown()
 }
 
-function present() {
-  window.open(presentSrc.value, '_blank')
+/**
+ * 全屏放映：先抢 Slidev 锁 + 同步 slides.md，再 window.open 新 tab。
+ */
+async function present() {
+  if (presenting.value) return
+  presenting.value = true
+  presentError.value = null
+  presentHolder.value = null
+  try {
+    await api.post<{ ok: true; deckId: number }>(`/api/present/${props.deckId}`, {})
+    const url = `/api/slidev-preview/#/${slideStore.currentPage.value}`
+    window.open(url, '_blank')
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) {
+      const body = (err as { body?: unknown }).body as
+        | { error?: string; holder?: LockHolderWire }
+        | undefined
+      if (body?.holder) {
+        presentHolder.value = body.holder
+        presentError.value = `${body.holder.email} 正在放映该 deck，请稍后再试`
+      } else {
+        presentError.value = '该 deck 当前被他人放映，请稍后再试'
+      }
+    } else {
+      presentError.value = err instanceof ApiError ? err.message : (err as Error).message
+    }
+  } finally {
+    presenting.value = false
+  }
 }
 </script>
 
@@ -131,17 +119,15 @@ function present() {
         <button
           type="button"
           class="icon-btn"
-          :class="{ 'icon-btn--busy': slideStore.aiBusy.value, 'icon-btn--restarting': restarting }"
+          :class="{ 'icon-btn--restarting': restarting }"
           :title="
             restarting
               ? '正在重启 Slidev...'
-              : slideStore.aiBusy.value
-                ? '⚠️ AI 工作中,重启会中断当前任务(慎重)'
-                : '重启 Slidev 预览(清 vite HMR 缓存,1-2s 等待)'
+              : '重启 Slidev 演讲进程（仅放映卡死 / 内容陈旧时使用）'
           "
-          aria-label="重启 Slidev 预览"
+          aria-label="重启 Slidev 演讲进程"
           :disabled="restarting"
-          @click="refresh"
+          @click="restartSlidev"
         >
           <RefreshCw :size="16" :stroke-width="1.8" :class="{ spinning: restarting }" />
         </button>
@@ -154,27 +140,27 @@ function present() {
         >
           <Download :size="16" :stroke-width="1.8" />
         </button>
-        <button type="button" class="cta-btn" title="全屏放映" @click="present">
+        <button
+          type="button"
+          class="cta-btn"
+          :title="presenting ? '正在抢占 Slidev 演讲锁...' : '全屏放映（演讲模式）'"
+          :disabled="presenting"
+          @click="present"
+        >
           <Play :size="14" :stroke-width="2" fill="currentColor" />
           <span>放映</span>
         </button>
       </div>
     </div>
+    <div v-if="restartError || presentError" class="error-banner">
+      <span v-if="presentError">⚠️ {{ presentError }}</span>
+      <span v-else-if="restartError">⚠️ {{ restartError }}</span>
+    </div>
     <div class="preview-frame">
-      <!--
-        Phase 9-C（A03 防御）：iframe sandbox 限制 Slidev 内潜在 XSS 利用面。
-        - allow-same-origin：保留 contentWindow.location.hash 翻页能力（同源 iframe）
-        - allow-scripts：Slidev / Vite HMR / iframe 内 Vue 必需
-        - allow-forms：Slidev 内 form 元素（presenter 设置面板等）
-        - allow-popups：presenter 全屏放映 window.open 需要
-        - allow-popups-to-escape-sandbox：popup 窗口（present view）不继承 sandbox 限制
-      -->
-      <iframe
-        ref="iframeRef"
-        :src="iframeSrc"
-        class="slidev-iframe"
-        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
-        allow="clipboard-write; screen-wake-lock"
+      <DeckRenderer
+        :markdown="slideStore.content.value"
+        :template-id="templateId"
+        :current-page="slideStore.currentPage.value"
       />
     </div>
   </div>
@@ -252,22 +238,16 @@ function present() {
   opacity: 0.6;
 }
 
-/* AI 工作中:橙色警示色,鼠标悬停时不变绿(避免误以为可安全点) */
-.icon-btn--busy {
-  color: #d48806;
-}
-.icon-btn--busy:hover:not(:disabled) {
-  background: rgba(212, 136, 6, 0.08);
-  color: #d48806;
-}
-
-/* 正在重启:icon 旋转动画 */
 .icon-btn--restarting .spinning {
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .cta-btn {
@@ -288,22 +268,28 @@ function present() {
   transition: background var(--dur-fast) var(--ease-out);
 }
 
-.cta-btn:hover {
+.cta-btn:hover:not(:disabled) {
   background: var(--color-accent-hover);
+}
+
+.cta-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.error-banner {
+  padding: var(--space-2) var(--space-4);
+  background: rgba(212, 136, 6, 0.08);
+  color: #d48806;
+  font-size: var(--fs-sm);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .preview-frame {
   flex: 1;
   padding: var(--space-4);
   display: flex;
-}
-
-.slidev-iframe {
-  width: 100%;
-  height: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-elevated);
-  box-shadow: var(--shadow-sm);
+  justify-content: center;
+  overflow: auto;
 }
 </style>

@@ -320,7 +320,7 @@ onUnmounted(() => {
       </div>
       <div class="divider" :class="{ active: isDragging }" @mousedown="onMouseDown" />
       <div class="panel-right">
-        <SlidePreview />
+        <SlidePreview :deck-id="deck.id" :template-id="deck.templateId" />
       </div>
       <div v-if="isDragging" class="drag-overlay" />
     </main>
