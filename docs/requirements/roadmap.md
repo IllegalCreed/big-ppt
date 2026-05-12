@@ -552,10 +552,10 @@
 
 ---
 
-## Phase 10.5(候选,待 spike)：Slidev 解耦 — DeckRenderer Vue 组件自封装
+## Phase 10.5：Slidev 解耦 — DeckRenderer Vue 组件自封装
 
-> **状态**:候选 / **未启动 spike**
-> 触发条件:Phase 10 上线后实测编辑首屏体验(gzip 后 30-40s)无法接受,或开始规划 Phase 11 时一并评估,或 Phase 11.6 dogfood 暴露的 long session HMR 缓存错位频次升高(参见 [plan 23](../plans/23-phase11.6-dogfood-followup.md) 踩坑 13)
+> **状态**:spike ✅ 通过(2026-05-12,详见 [plan 24 spike](../plans/24-phase10.5-spike.md) + [spike 报告](../plans/24-phase10.5-spike-report.md)),待立 plan 25 正式落地
+> 触发条件已满足:Phase 11.6 dogfood 暴露的 long session HMR 缓存错位需根治;Phase 11 多用户并发依赖本 Phase 决定范围(spike 通过 → Phase 11 进程池方案废弃)
 
 **目标**:把 Slidev iframe 形态的预览器换成 creator SPA 内的 `<DeckRenderer markdown=".." templateId=".." />` Vue 组件,从根本上解决 dev mode 几百个 Vite module 累积加载慢的问题,顺便简化整套部署架构。
 

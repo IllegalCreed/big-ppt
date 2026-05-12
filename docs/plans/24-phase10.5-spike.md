@@ -1,6 +1,6 @@
 # Phase 10.5 Spike — DeckRenderer Vue 组件可行性验证
 
-> **状态**：待启动
+> **状态**：✅ 已通过（2026-05-12），spike 报告见 [24-phase10.5-spike-report.md](./24-phase10.5-spike-report.md)，待立 plan 25 正式落地
 > **前置阶段**：[plan 23 — Phase 11.6 dogfood followup](23-phase11.6-dogfood-followup.md)（HMR 缓存错位的短期兜底已完成；本 spike 为根治路径打基础）
 > **后续阶段**：本 spike 通过 → 正式立 plan 25 落地 Phase 10.5；spike 失败 → roadmap Phase 11 沿用进程池方案
 > **路线图**：[roadmap.md Phase 10.5](../requirements/roadmap.md#phase-105候选待-spikeslidev-解耦--deckrenderer-vue-组件自封装)
