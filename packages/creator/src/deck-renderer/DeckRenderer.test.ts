@@ -41,7 +41,7 @@ describe('DeckRenderer', () => {
       props: { markdown: loadStarter(), templateId: 'beitou-standard' },
       global: { stubs: beitouStubs },
     })
-    expect(w.findAll('.slide-canvas')).toHaveLength(5)
+    expect(w.findAll('.slide-frame')).toHaveLength(5)
     expect(w.find('.stub-cover').exists()).toBe(true)
     expect(w.find('.stub-back').exists()).toBe(true)
   })
@@ -51,7 +51,7 @@ describe('DeckRenderer', () => {
       props: { markdown: loadStarter(), templateId: 'beitou-standard', currentPage: 2 },
       global: { stubs: beitouStubs },
     })
-    expect(w.findAll('.slide-canvas')).toHaveLength(1)
+    expect(w.findAll('.slide-frame')).toHaveLength(1)
     expect(w.find('.stub-toc').exists()).toBe(true)
     expect(w.find('.stub-cover').exists()).toBe(false)
   })
@@ -67,12 +67,12 @@ describe('DeckRenderer', () => {
     expect(w.find('.stub-cover').text()).toBe('HelloT')
   })
 
-  it('currentPage 越界（>页数）：渲染 0 个 slide-canvas，不报错', () => {
+  it('currentPage 越界（>页数）：渲染 0 个 slide-frame，不报错', () => {
     const w = mount(DeckRenderer, {
       props: { markdown: loadStarter(), templateId: 'beitou-standard', currentPage: 99 },
       global: { stubs: beitouStubs },
     })
-    expect(w.findAll('.slide-canvas')).toHaveLength(0)
+    expect(w.findAll('.slide-frame')).toHaveLength(0)
   })
 
   it('templateId 切换：根 class 同步变 jingyeda-template', () => {
@@ -80,7 +80,7 @@ describe('DeckRenderer', () => {
       props: { markdown: loadStarter(), templateId: 'jingyeda-standard' },
       global: { stubs: beitouStubs },  // beitou-* layout 在 jingyeda 测试里没意义
     })
-    const canvases = w.findAll('.slide-canvas')
+    const canvases = w.findAll('.slide-frame')
     expect(canvases.length).toBe(5)
     expect(canvases[0]?.classes()).toContain('jingyeda-template')
   })

@@ -291,7 +291,9 @@ async function present() {
   flex: 1;
   padding: var(--space-4);
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
   overflow: auto;
+  min-height: 0;
 }
 </style>
