@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -73,6 +73,34 @@ describe('DeckRenderer', () => {
       global: { stubs: beitouStubs },
     })
     expect(w.findAll('.slide-frame')).toHaveLength(0)
+  })
+
+  it('ResizeObserver 存在时正确订阅 / 卸载（jsdom 缺这个 API，手工 mock）', () => {
+    const observers: { disconnect: ReturnType<typeof vi.fn>; observe: ReturnType<typeof vi.fn> }[] = []
+    class MockRO {
+      observe = vi.fn()
+      disconnect = vi.fn()
+      unobserve = vi.fn()
+      constructor(_cb: ResizeObserverCallback) {
+        observers.push(this)
+      }
+    }
+    const original = globalThis.ResizeObserver
+    // @ts-expect-error 全局赋值
+    globalThis.ResizeObserver = MockRO
+    try {
+      const w = mount(DeckRenderer, {
+        props: { markdown: loadStarter(), templateId: 'beitou-standard' },
+        global: { stubs: beitouStubs },
+      })
+      expect(observers.length).toBe(1)
+      expect(observers[0]?.observe).toHaveBeenCalledTimes(1)
+      w.unmount()
+      expect(observers[0]?.disconnect).toHaveBeenCalledTimes(1)
+    } finally {
+      // @ts-expect-error 清理
+      globalThis.ResizeObserver = original
+    }
   })
 
   it('templateId 切换：根 class 同步变 jingyeda-template', () => {
