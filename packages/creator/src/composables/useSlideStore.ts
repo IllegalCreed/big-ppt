@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import { api } from '../api/client'
+import { parseDeck } from '../deck-renderer/parse-deck'
 
 // Module-scope 单例：ChatPanel（useAIChat）触发的 setPage 需要让 SlidePreview 响应，
 // 两个消费者必须共享同一套 refs，故把状态提升到模块作用域。
@@ -14,15 +15,15 @@ const activeDeckId = ref<number | null>(null)
 const aiBusy = ref(false)
 
 export function useSlideStore() {
-  const pages = computed(() => {
-    if (!content.value) return []
-    return content.value
-      .split(/\n---\n/)
-      .map((p) => p.trim())
-      .filter(Boolean)
-  })
+  /**
+   * Phase 10.5：复用 DeckRenderer 同款 parseDeck，跟视觉层渲染口径完全一致。
+   * 旧 Slidev iframe 时代用过的「按 \n---\n split」naive 切法会把 frontmatter
+   * 的 `---` 也当 slide 分隔符 → totalPages 虚高。
+   */
+  const parsed = computed(() => parseDeck(content.value))
+  const pages = computed(() => parsed.value.slides.map((s) => s.body))
 
-  const totalPages = computed(() => pages.value.length)
+  const totalPages = computed(() => parsed.value.slides.length)
 
   function update(newContent: string) {
     content.value = newContent
