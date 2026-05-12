@@ -48,10 +48,10 @@ export function parseDeck(markdown: string): Slide[] {
 
   let i = 0
   // 跳过首块（文件以 --- 开头时为空字符串）
-  if (blocks.length && blocks[0].trim() === '') i++
+  if (blocks.length && (blocks[0] ?? '').trim() === '') i++
 
   while (i < blocks.length) {
-    const chunk = blocks[i]
+    const chunk = blocks[i] ?? ''
     if (looksLikeFrontmatter(chunk)) {
       let fm: Record<string, unknown> = {}
       try {
@@ -64,7 +64,7 @@ export function parseDeck(markdown: string): Slide[] {
         continue
       }
       // 紧随的下一块视为 body（可能是空白分隔，也可能是真 markdown）
-      const body = i + 1 < blocks.length ? blocks[i + 1].trim() : ''
+      const body = i + 1 < blocks.length ? (blocks[i + 1] ?? '').trim() : ''
       slides.push({
         layout: typeof fm.layout === 'string' ? fm.layout : 'default',
         frontmatter: fm,
