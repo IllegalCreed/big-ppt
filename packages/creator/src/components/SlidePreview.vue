@@ -25,6 +25,8 @@ import type { LockHolderWire } from '../composables/useDecks'
 const props = defineProps<{
   deckId: number
   templateId: string
+  /** 父组件已拉到的 currentVersion.content；首屏直接渲染不再多发一次请求 */
+  initialContent: string
 }>()
 
 const slideStore = useSlideStore()
@@ -34,11 +36,11 @@ const presenting = ref(false)
 const presentError = ref<string | null>(null)
 const presentHolder = ref<LockHolderWire | null>(null)
 
-// 进入编辑器时主动拉一次 slides.md，让 DeckRenderer 有内容渲染。
-// 后续 LLM tool 调用 / 切模板 / 时间线回滚等场景由各自 composable 调用
-// slideStore.refresh() 同步。
+// 绑定 deckId 到 slideStore + 写入初始内容；
+// 后续 LLM tool / 切模板 / 时间线回滚由各 composable 调 slideStore.refresh()
+// 走 deck-scoped 路径同步。
 onMounted(() => {
-  void slideStore.refresh()
+  slideStore.initDeck(props.deckId, props.initialContent)
 })
 
 /**
