@@ -426,6 +426,8 @@
 
 > 跑过程中跟 plan 不一致的点回填这里。
 
+- **Task B 跳过 UnoCSS 安装**（2026-05-12 Task B 实施期发现）：原 plan 假设 layouts/components 大量用 UnoCSS utility class，需 creator 接 UnoCSS。实际 grep `packages/slidev/{layouts,components}` 所有 `class="..."` 命中的全部是 **semantic class（如 `cover-root` / `bt-section-eyebrow`）+ scoped CSS + CSS 变量引用**，零 UnoCSS utility（`p-*` / `flex` / `grid` / `text-*` 等）。结论：creator 只需 import slidev 的 `global.css` + 两套 `tokens.css` 即可，**完全不需要 UnoCSS 依赖**。Task B 简化为「workspace 引 slidev + 在 main.ts import global.css」两步。**附带收益**：plan 25 落地时 creator 端 UnoCSS 配置也免了，构建链路更简单。
+
 ---
 
 ## 踩坑与解决（实施期 / 关闭后追加）
