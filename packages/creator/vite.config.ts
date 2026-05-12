@@ -3,13 +3,39 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
+import Components from 'unplugin-vue-components/vite'
+import AutoImport from 'unplugin-auto-import/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue(), vueDevTools()],
+  plugins: [
+    vue(),
+    vueDevTools(),
+    // Phase 10.5 落地：自动发现 @big-ppt/slidev 包内的 layouts + components，
+    // 编辑器内 DeckRenderer 走的就是这套自动 import；跟 Slidev 自身的
+    // unplugin-vue-components 行为对齐，新增组件无需改 register-slidev-components。
+    Components({
+      dirs: [
+        fileURLToPath(new URL('../slidev/components', import.meta.url)),
+        fileURLToPath(new URL('../slidev/layouts', import.meta.url)),
+        'src/components',
+      ],
+      dts: 'components.d.ts',
+      directoryAsNamespace: false,
+      deep: true,
+    }),
+    AutoImport({
+      imports: ['vue', 'vue-router'],
+      dts: 'auto-imports.d.ts',
+      dirs: [],
+    }),
+  ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Phase 10.5 落地：启用 runtime template compiler，让 body markdown
+      // 编译出的 template 在浏览器里 Vue.compile() 能跑。+~50KB gzip。
+      vue: 'vue/dist/vue.esm-bundler.js',
     },
   },
   server: {
