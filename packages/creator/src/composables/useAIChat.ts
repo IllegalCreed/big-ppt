@@ -378,8 +378,9 @@ export function useAIChat() {
   const status = ref<AgentStatus>('idle')
   const statusText = ref('')
 
-  // dogfood 后:LLM 工作时同步标记到 slideStore.aiBusy,SlidePreview 的「重启 Slidev」按钮
-  // 读它在 thinking / streaming / calling_tool 期间警示用户(重启会中断 tool_call)。
+  // LLM 工作时同步 slideStore.aiBusy。Phase 10.5 前 SlidePreview「重启 Slidev」
+  // 按钮联动它在 streaming / tool 期间警示用户；当前没有直接消费方但留作 UI
+  // 状态信号（其他 composable / 组件未来若要 disabled 按钮也方便用）。
   watch(
     status,
     (s) => {
@@ -734,10 +735,10 @@ export function useAIChat() {
         streamingContent.value = ''
         status.value = 'idle'
         statusText.value = ''
-        // dogfood 后:LLM session 结束(无新 tool_call)时主动触发 iframe full refresh,
-        // 强制跟最终 slides.md 对齐。Slidev HMR 在长 session 内逐次 patch 几十次 slides.md
-        // 时会出现 layout component 缓存错位(用户看到第 N 页渲染成另一模板等),仅靠 HMR 不能根
-        // 治。session 结束时一次性 refresh,跟 HMR race 风险也没了(此刻已无新改动)。
+        // session 结束时主动 refresh slides.md：LLM 通过 tool 调用 server 端
+        // 写了 N 次 slides.md，client 端 slideStore.content 需要同步一次拿最终态
+        // 喂给 DeckRenderer。Phase 10.5 前还兼有「兜底 Slidev HMR 缓存错位」职能；
+        // DeckRenderer 时代仅剩 content 同步这一个目的。
         slideStore.refresh()
         return
       }
@@ -754,7 +755,8 @@ export function useAIChat() {
       const timeoutMsg = '生成超时（工具调用轮次过多），请尝试简化需求或重新开始。'
       chatMessages.value.push({ role: 'assistant', content: timeoutMsg })
       status.value = 'idle'
-      // 即使 max_iterations 中断,也强同步一次 iframe(避免中间态卡住)
+      // max_iterations 中断时同步 server slides.md 到 client content，避免
+      // DeckRenderer 卡在中间态
       slideStore.refresh()
     } catch (err) {
       const e = err as Error

@@ -4,11 +4,9 @@ import { ref, computed } from 'vue'
 // 两个消费者必须共享同一套 refs，故把状态提升到模块作用域。
 const content = ref('')
 const currentPage = ref(1)
-/** iframe src 带此 token 作为 query；bump 后强制 iframe 重新加载（手动刷新按钮用） */
-const refreshToken = ref(0)
 /**
- * dogfood 后:LLM 工作中标记。useAIChat 在 status 变化时同步,SlidePreview 的「重启 Slidev」
- * 按钮读它判断是否警示用户(LLM 正在 stream / 调 tool 时重启会中断 tool_call)。
+ * LLM 工作中标记。useAIChat 在 status 变化时同步；下游目前只有一些 UI
+ * 灰显需要（不再用于 iframe-era 的「重启 Slidev」按钮）。
  */
 const aiBusy = ref(false)
 
@@ -32,7 +30,7 @@ export function useSlideStore() {
 
   /**
    * 跳到指定页。**不做 upper bound check** —— AI 刚 create_slide 时 content 可能还是旧的
-   * （refresh 还没跑），totalPages 滞后；Slidev 自己会把无效页 clamp 到最后一页。
+   * （refresh 还没跑），totalPages 滞后；DeckRenderer 内部对越界 page 自然渲染空，不崩。
    */
   function setPage(page: number) {
     if (Number.isInteger(page) && page >= 1) {
@@ -50,8 +48,17 @@ export function useSlideStore() {
     URL.revokeObjectURL(url)
   }
 
+  /**
+   * 从 server 拉最新 slides.md → 写 content。
+   *
+   * 触发点：
+   * - SlidePreview onMounted：进入编辑器拉初始内容
+   * - useAIChat session-end：LLM 跑完后同步 server 端写过的 slides.md
+   *   （DeckRenderer 时代不再有 HMR 缓存错位，但 server→client content 同步仍需）
+   * - useSwitchTemplateJob 完成：切模板后拉新内容
+   * - VersionTimeline restore：回滚版本后拉新内容
+   */
   async function refresh() {
-    refreshToken.value++
     try {
       const res = await fetch('/api/read-slides')
       const text = await res.text()
@@ -70,7 +77,6 @@ export function useSlideStore() {
     pages,
     currentPage,
     totalPages,
-    refreshToken,
     aiBusy,
     setPage,
     update,
