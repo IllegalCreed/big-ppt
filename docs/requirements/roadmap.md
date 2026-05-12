@@ -204,7 +204,7 @@
 - ❌ Slidev 进程池、多实例运行时隔离（**Phase 11**）
 - ❌ 导出（PDF/PPTX）— 延 Phase 14
 - ❌ 导入（Markdown / PPTX）— 延 Phase 15
-- ❌ Deck 分享链接、权限、协同编辑 — 延 Phase 11 / Phase 16+
+- ❌ Deck 分享链接、权限、协同编辑 — 延 Phase 11 / Phase 17+
 
 ---
 
@@ -311,7 +311,7 @@
 **不做什么**：
 
 - ❌ 新增第三套模板
-- ❌ 用户自定义模板（永久不做或留 Phase 16+，长期愿景见 [vision.md](./vision.md#远期愿景模板生态系统)）
+- ❌ 用户自定义模板（永久不做或留 Phase 17+，长期愿景见 [vision.md](./vision.md#远期愿景模板生态系统)）
 - ❌ 模板市场 / 分享
 - ❌ 为旧 id `company-standard` 保留兼容别名（硬切）
 
@@ -328,7 +328,7 @@
 - Phase 8 / Phase 9 都是工程性工作，让它们直接基于新干净架构扫一遍最划算
 - Phase 10 上线后，重构成本暴涨（已有用户数据 / 模板 token 不能随意改）
 
-**核心约束**：本 Phase 只做架构与重构，**不做**完整生态化（脚手架 / 市场 / npm 公开包），那些依赖足够多模板与第三方意愿，留 Phase 16+。
+**核心约束**：本 Phase 只做架构与重构，**不做**完整生态化（脚手架 / 市场 / npm 公开包），那些依赖足够多模板与第三方意愿，留 Phase 17+。
 
 **交付物**（7 子步，串行增量，每步独立 commit + 测试；具体类名 / 文件路径 / 决策细节见 [plan 16](../plans/16-phase75-template-layering.md)）：
 
@@ -357,8 +357,8 @@
 
 **不做什么**：
 
-- ❌ 模板创作脚手架 CLI / 模板市场 / 创作者经济（全部留 Phase 16+）
-- ❌ 公共组件提 npm 公开包发布 / 模板 override 机制（同上 Phase 16+）
+- ❌ 模板创作脚手架 CLI / 模板市场 / 创作者经济（全部留 Phase 17+）
+- ❌ 公共组件提 npm 公开包发布 / 模板 override 机制（同上 Phase 17+）
 - ❌ 新增第三套模板（验证两套切换无损就够）
 - ❌ 改 Phase 12 多 LLM provider 的实现节奏（独立工作）
 - ❌ 改两套模板既有的最终配色
@@ -547,7 +547,7 @@
 
 - ❌ 多实例并发（Phase 11)
 - ❌ CDN / 多地区部署
-- ❌ 自动化 CI/CD 流水线（Phase 16+)
+- ❌ 自动化 CI/CD 流水线（Phase 17+)
 - ❌ 监控告警 / Sentry / Datadog（MVP 用 pm2 logs + healthz 巡检足够)
 
 ---
@@ -734,7 +734,7 @@
 
 **不做什么**：
 
-- ❌ 多人实时协同编辑同一 deck（CRDT / OT）— 复杂度太高，留 Phase 16+ 或永不做
+- ❌ 多人实时协同编辑同一 deck（CRDT / OT）— 复杂度太高，留 Phase 17+ 或永不做
 - ❌ 跨服务器分布式部署 — 单机已够内部 50 用户场景
 - ❌ 编辑器进程池 / 多实例（Phase 10.5 解决了，不需要了）
 - ❌ 分享页评论 / 互动 — 只读托管
@@ -767,7 +767,7 @@
 
 **不做什么**：
 
-- ❌ Fine-tuning / 自托管模型（Ollama / vLLM）— 留 Phase 16+
+- ❌ Fine-tuning / 自托管模型（Ollama / vLLM）— 留 Phase 17+
 - ❌ Provider 价格估算 / 用量统计页（同上）
 - ❌ 自动按任务类型路由 provider（手动选）
 
@@ -803,7 +803,7 @@
 
 - ❌ 自建 MCP server 的孵化 / 商业化分发
 - ❌ OAuth 全自动化（部分需用户手动建 token）
-- ❌ MCP server 健康监控 / SLA 看板（留 Phase 16+）
+- ❌ MCP server 健康监控 / SLA 看板（留 Phase 17+）
 
 ---
 
@@ -831,7 +831,7 @@
 
 **不做什么**：
 
-- ❌ PPTX 导出如成本过高（>5 天工时）则延到 Phase 16+
+- ❌ PPTX 导出如成本过高（>5 天工时）则延到 Phase 17+
 
 ---
 
@@ -858,11 +858,88 @@
 
 **不做什么**：
 
-- ❌ PPTX 导入如效果差（>30% 页面需手动修）则延到 Phase 16+
+- ❌ PPTX 导入如效果差（>30% 页面需手动修）则延到 Phase 17+
 
 ---
 
-## Phase 16+：远期可能
+## Phase 16：自研 PresentationViewer — Slidev runtime 彻底替代
+
+> **状态**：候选（长期目标）
+> 触发条件：Phase 11 分享链接做完后用 Slidev `slidev build` 临时兜底，但 dev 进程 + 全局 slides.md + slidev-lock 一直是技术债；这条延后处理，等用户量起来或 Slidev 升级再次踩坑（slidev cli 重大不兼容 / vite module cache 错位重现）时启动。
+
+**问题**（Phase 10.5 落地后剩余的 Slidev runtime 部分）：
+
+- **编辑器 ✅ 已脱钩 Slidev**（DeckRenderer Vue 组件直接渲染）
+- **全屏放映 ❌ 仍依赖 Slidev runtime**：`window.open('/api/slidev-preview/#/page')` 走 agent 反代 → Slidev :3031 → 必须保留 lumideck-slidev pm2 进程 + nginx 反代 + slidev-lock 单实例约束
+- **分享链接（Phase 11 兜底）❌ 也走 Slidev build**：每个 deck build 一次产物归档，多 deck 多目录管理复杂
+- **共同遗留问题**：
+  - Slidev dev 进程偶发卡死（long session vite module cache 错位仍可能复现）
+  - 全屏放映受 slidev-lock 串行约束（A 在放映时 B 抢锁失败）
+  - 部署架构复杂（多一个 Node 进程 + nginx location + 进程监控）
+  - Slidev 版本绑定（升级 Slidev cli 时风险高，Phase 11.6 dogfood 踩坑 13 殷鉴）
+
+**目标**：自写一套 PresentationViewer Vue 组件 + 静态托管路由，彻底替代 Slidev runtime。编辑器 fullscreen + 公开分享链接都走它，Slidev cli **仅保留**作为可选 export 工具（PDF / PPTX 转换 fallback）或彻底删除。
+
+**核心思路**：
+
+- **统一渲染口径**：编辑器主视图（DeckRenderer 单页模式）+ 全屏放映模式 + 分享链接公开模式都用**同一份** Vue 组件库（layouts + 公共组件），通过 props / route 切换不同 wrapper（编辑 / 演讲 / 公开浏览）
+- **演讲者壳子组件 `<PresentationMode>`**：复刻 Slidev 核心 UI
+  - 键盘 / 鼠标 / 触屏翻页（← → Space 等）+ progress bar + slide counter
+  - 演讲者视图（split: 当前页 + 下一页缩略图 + 演讲者备注 + 计时器）
+  - 黑屏 / 白屏切换
+  - 画笔 / 高亮工具（drawing layer，覆盖在 slide 上的 SVG / canvas）
+  - 缩略图 overview 网格（Slidev `Esc` 键打开的那个）
+- **按 deckId 动态加载 + 鉴权**：路由 `/decks/:id/present` 或 `/share/:slug`：
+  - `:id` 路径：要求 session cookie + deck owner 校验（编辑者本人 fullscreen 用）
+  - `:slug` 路径：查 share_links 表，未过期 + 未撤销则 200 公开（公开分享用，无需登录）
+  - 后端 API `GET /api/decks/:id/presentation`（或 `/api/share/:slug/presentation`）返回 deck markdown + templateId
+- **编译产物部署**：本组件随 creator 一起 `vite build`，产物是普通 SPA chunk，nginx 静态托管即可
+- **slides.md 全局文件 + slidev-lock 彻底退役**：每个用户 / 分享访问独立 Vue 实例，互不干扰；多用户同时全屏放映各自的 deck **不再互斥**
+
+**交付物**：
+
+- `packages/creator/src/presentation/`：
+  - `PresentationViewer.vue`：主组件，接 deck markdown + templateId + 模式（present / share-view），渲染单页 + 翻页 + 键盘交互
+  - `PresenterMode.vue`：演讲者视图（split + 备注 + 计时器）
+  - `DrawingLayer.vue`：画笔 / 高亮覆盖层
+  - `OverviewGrid.vue`：缩略图网格（Esc 切换）
+- 后端 API：`GET /api/decks/:id/presentation` + `GET /api/share/:slug/presentation`（不抢锁，纯读）
+- DB schema：`share_links` 表（slug / deckId / 过期 / 撤销 / 访问统计）—— Phase 11 已建则直接复用
+- 路由：`/decks/:id/present`（owner 全屏放映）+ `/share/:slug`（公开分享）
+- 删除：lumideck-slidev pm2 app / agent `/api/slidev-preview/*` 反代 / `slidev-proxy-auth.ts` / `slidev-lock.ts` / `routes/slidev-restart.ts` / nginx `/api/slidev-preview/` location
+
+**验收条件**：
+
+- [ ] 全屏放映 UX 至少跟 Slidev 持平：翻页 + progress + 演讲者视图 + 缩略图 overview
+- [ ] 画笔 / 高亮 drawing 可用（简化版即可，覆盖核心场景）
+- [ ] 分享链接公开访问无需登录，404 / 撤销 / 过期场景文案准确
+- [ ] **多用户同时全屏放映各自的 deck 互不影响**（验证 slidev-lock 彻底删除后无新约束）
+- [ ] 部署架构：pm2 进程从 2 → 1（删 lumideck-slidev），nginx conf 减一段 location
+- [ ] 历史踩坑章节同步清理（CLAUDE.md「已知坑 / Slidev 反代 + HMR」整段删，long session HMR 错位 / Slidev restart 按钮 / proxy auth 等都不再相关）
+
+**预计工作量**：4-6 周（演讲者模式 + drawing + overview 都是从零自写，每个细项小工程量）
+
+**风险点**：
+
+- **drawing 画笔**：自写一套触屏 + 鼠标兼容的 SVG / canvas 画笔不简单（笔触 smooth / 撤销 / 颜色切换），可考虑用现成开源库（`tldraw` / `excalidraw` 简化版）
+- **演讲者视图的多窗口通信**：演讲者在 split 屏右半区操作要同步到观众投影的窗口，跨 tab 通信用 BroadcastChannel API
+- **PDF / PPTX 导出**：Slidev 自带 `slidev export`；自研后导出可能丢，Phase 14（导出）的 plan 需要把这条考虑进去
+
+**不做什么**：
+
+- ❌ Slidev 所有边角功能（录屏 / monaco code editor 在 slide 内 / canvas 物理模拟等）—— 只复刻日常用得到的核心 80%
+- ❌ 多人实时协作 drawing（Phase 17+ 远期）
+- ❌ 自定义 transition 动画（先用 Vue Transition 默认 fade，需要再扩）
+
+**对其他 Phase 的影响**：
+
+- Phase 11（分享链接）落地时可暂用 `slidev build` 兜底，本 Phase 落地后切换到 PresentationViewer，share_links 表 / 路由不变
+- Phase 14（导出）需评估 PDF / PPTX 路径：用 Puppeteer 截图拼装 OR 保留 Slidev cli 仅作导出工具
+- 删 Slidev 后 `packages/slidev/` 包整体可裁剪到只剩 templates + components（layouts 已经被 DeckRenderer 用上）
+
+---
+
+## Phase 17+：远期可能
 
 **可能方向**：
 
@@ -874,7 +951,7 @@
 - 自动化 CI/CD 流水线（GitHub Actions 自动部署）
 - LLM 微调 / 自托管模型（Ollama / vLLM）+ 多 provider 用量统计与成本看板
 - MCP server 健康监控 / SLA 看板
-- **日志系统体系化**(用户量上 50+ 后再做):当前 agent 业务日志走 jsonl 文件(`creator-YYYY-MM-DD.jsonl` 按天 rotate + payload 单文件分子目录),Phase 10 已加 ctx 派生的 userId / deckId 索引字段(`jq 'select(.userId == 5)'` 可过滤),pm2 进程日志走 pm2-logrotate。**当前不足**:跨用户/跨 deck 检索仍要 grep + jq 手撸,无 admin 查询页;`/root/server/lumideck/logs/` 文件无自动清理(creator-*.jsonl 按日期分但永不删);`logs/payloads/<session>/` 子目录会无限堆积。**Phase 16+ 候选改造**:(a) 新增 `agent_events` 表持久化索引行(deckId/userId/sessionId/kind/ts 索引)+ payload 仍落 fs,db 只存路径;(b) admin 查询页(按 user / deck / 时间 / kind 过滤);(c) 加 cron 清理 N 天前的 creator-*.jsonl + payloads/*;(d) 接 Loki / OpenSearch(过早,内部场景过度工程化)
+- **日志系统体系化**(用户量上 50+ 后再做):当前 agent 业务日志走 jsonl 文件(`creator-YYYY-MM-DD.jsonl` 按天 rotate + payload 单文件分子目录),Phase 10 已加 ctx 派生的 userId / deckId 索引字段(`jq 'select(.userId == 5)'` 可过滤),pm2 进程日志走 pm2-logrotate。**当前不足**:跨用户/跨 deck 检索仍要 grep + jq 手撸,无 admin 查询页;`/root/server/lumideck/logs/` 文件无自动清理(creator-*.jsonl 按日期分但永不删);`logs/payloads/<session>/` 子目录会无限堆积。**Phase 17+ 候选改造**:(a) 新增 `agent_events` 表持久化索引行(deckId/userId/sessionId/kind/ts 索引)+ payload 仍落 fs,db 只存路径;(b) admin 查询页(按 user / deck / 时间 / kind 过滤);(c) 加 cron 清理 N 天前的 creator-*.jsonl + payloads/*;(d) 接 Loki / OpenSearch(过早,内部场景过度工程化)
 - `slides.md.history` 环形缓冲升级（P2-2 已随 Phase 5 的 deck_versions 天然解决，可复盘是否还需要文件级 undo）
 
 ---
@@ -904,8 +981,8 @@
 | 2026-04-25 | **Phase 7A 关闭**（5 条 commit：284b90a tokens 命名空间 / cfbad77 模板目录+字面量+DB schema+资源 URL / 23ab769 layouts/components 加 beitou 前缀+子目录+manifest layout name / 7e9e699 删 public/templates 冗余副本 / e6918e1 chart fallback 改中性灰 + beitou-data 显式注入）。`templates/company-standard` → `beitou-standard` 全套硬切重命名，零 alias；DB schema DEFAULT 同步 + 新增 scripts/rename-template-id.ts 一次性数据迁移脚本（dev/prod 各跑一次，幂等）。实测 slidev cli vite server.fs.allow 默认放开 user root，`public/templates/` 副本冗余可删。测试 281 + 49 + 5 = 335 全绿，全仓零 `company-standard` 字面量残留（仅 rename 脚本保留 FROM_ID 常量）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | plan 13 拆 11 个 task，实际执行时把强耦合的 7A-2/5/6/7 合并为单一 commit cfbad77 避免中间红测试状态；plan 13 不变，作历史记录                                                                                                                                                                                                                    |
 | 2026-04-25 | **Phase 7C 关闭**（前端选择/切换 UI 全链路）。subagent-driven 模式跑 plan 14 共 8 个 task，14 条 commit：c3b440d tagline manifest 字段 / 444f76b 缩略图 playwright 自动截图脚本（含 a5612f7+89ba35c 修 JSDoc 里 \*​/​ 字面提前关闭注释 bug + scripts/tsconfig.json + tsx 显式 dep）/ 8529f7c useSwitchTemplateJob 5+1 单测（含修 plan 原 migrating progress 钳到 0.51 不动的 bug）/ 5bb2431 TemplatePickerModal 共用组件 4 测 + Teleport + disableTeleport prop（VTU 2 不跨 Teleport 边界 query）/ 340c8f7 switch 模式打通 + DeckEditorCanvas 顶栏 Layers 按钮 + X 按钮 progress 守卫 / b103164 progress/success/error 三视图 + emit 类型修语义错误（newVersionName→newTemplateName）/ 2eb4303 UndoToast + VersionTimeline highlight pulse + DeckEditorCanvas 联动 + onUnmounted 清 timer / 9c62e5c E2E 冒烟（顺手修了 7C-4 引入的 /list-templates 缺 /api 前缀 prod bug + 加 \_test/reset-lock 解 lock-conflict 后续测试 409 + happy-path 适配 picker modal 流程）。测试 335 → 281+72+3 = 356 unit + 6 e2e = 362（实超预期 +8）。完整 3 条切换流 E2E 留 Phase 7D / plan 15                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | subagent-driven-development 流程：每 task 派 implementer → spec reviewer → code reviewer 三段；多次踩到 plan 自身 bug（JSDoc closure / migrating 公式 / emit 字段语义）后用 fix commit 同步修 plan + 加 prevent-regression 测试，"plan 是活文档，发现错就改"；过程中暴露 7C-4 的 API 路径 prod bug + lock 跨测污染基础设施缺陷，归在 7C-8 一并修 |
 | 2026-04-25 | **Phase 7D 关闭**（plan 15，4 task / 4 commit + plan doc）。**7D-A** schema bug 修：`deckVersions` 加 nullable `template_id` 列（drizzle push dev + lumideck_test）+ `template-switch-job` snapshot 写 fromTemplateId/新 version 写 toTemplateId + `routes/decks` restore 端点 fallback 同步 `decks.template_id`（旧数据 NULL 不动向前兼容）；测试 +4 涵盖 3 种 restore case + db-schema 列存在；这是 7D-3 双向可逆的硬前置。**7D-B** `rewriteForTemplate` 加 `BIG_PPT_TEST_REWRITE_MODE=skeleton` 分支：env 命中时直接 `readStarter(toTemplateId)` 跳 LLM；测试 +2。**7D-C** P3-10 全清：`packages/agent/src/app.ts` 抽出 Hono app 单例（不带启动副作用，仅装配）+ creator `package.json` 加 workspace dep + 新建 `test/_setup/integration.ts`（loadDotenv .env.test.local + 替换 globalThis.fetch 为 app.fetch shim + cookie jar + 透传 useTestDb/factories）+ `vitest.config.ts` 加 `fileParallelism: false`（共享 lumideck_test 必须串行）；3 个契约 spec 改造：useAuth 6 测真链路、useDecks 5 测真 CRUD + 跨用户 403 ownership、useSwitchTemplateJob 4 测真状态机（fake RewriteFn DI 走完 pending→snapshotting→migrating→success）；5 个 UI spec 保留 msw 不动；测试 72 → 71（少 1 净）。**7D-D** E2E：`playwright.config.ts` agent webServer env 加 `BIG_PPT_TEST_REWRITE_MODE=skeleton`；helpers/db.ts 加 `getDeckByIdSql` / `getCurrentVersionContent` / `getTemplateLayoutNames` / `extractLayouts`；3 条新 spec：`template-switch-create.spec.ts`（picker UI + DB.templateId 落地 + content layout 全在 jingyeda 白名单）/ `template-switch-existing.spec.ts`（顶栏切换模板按钮 → picker → 选 jingyeda → 等切换完成 → UndoToast 出现 + DB 验证）/ `template-switch-undo.spec.ts`（点 UndoToast 的 /undo → VersionTimeline 高亮 → 点 .restore-btn → DB.templateId 回 beitou + 内容字符串字节级一致 + layout 全在 beitou 白名单）。测试数 294 agent + 71 creator + 3 shared = 368 unit + 9 e2e = 377 total。 | 用户主动确认"全清 P3-10"+ 选择 deckVersions.templateId 列 schema 修法（最干净 / 符合"version 是不可变快照"语义）；E2E 用 env 控制 skeleton mode 跳 LLM 是个低成本设计，让 webServer 启动时就配置好                                                                                                                                               |
-| 2026-04-26 | **路线图三处调整**：(1) **Phase 9 加仓库卫生清理**交付物——一次性迁移脚本（`backfill-template-id.ts` / `rename-template-id.ts`）评估删除，保留的脚本要求"通用化"，已结案 plan 评估归档；(2) **导出/导入前插入两个新 Phase**——Phase 12 多 LLM Provider 兼容（Anthropic Claude + Google Gemini 原生接口）/ Phase 13 预制 MCP 服务扩展（catalog 5-8 个）；原 Phase 12（导出）→ **Phase 14**，原 Phase 13（导入）→ **Phase 15**，原 Phase 14+（远期）→ **Phase 16+**；所有跨 Phase 引用同步更新；(3) **vision.md 加远期愿景章节"模板生态系统"**——明确模板分两层架构：**第一层** 5 个模板独有 layout（cover / end / toc / section-title / content 骨架）；**第二层** 所有模板共享的内容页部件（两栏 / 田字格 / 九宫格 / 各类 chart / KV 列表等）下沉到 `@lumideck/template-components` 公共组件库，**只读 `--ld-*` token 自动配色**，模板切换时内容页完全无损。配套：创作者脚手架 + 模板市场 + tokens.css 完整 schema（颜色 / 字体 / 形状 / 阴影 4 类 token）。原 P14+ 的"团队共享模板 / 主题系统与自定义主题编辑器"两条合并为指向 vision.md 的引用。**顺手修**：vision.md / requirements.md 里 Phase 5.5 / 6 / 7 / 8 等过时编号校对到当前 10/11/14/15                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 用户提出 P9 应该清理一次性迁移脚本（不通用就别留）；多 LLM provider 优先级高于导出（避免被 OpenAI 兼容代理丢能力）；用户进一步明确模板心智："内容页里的两栏 / 田字格 / 数据卡片不应该写死在模板里，所有模板都用得上，只读 token 配色就行；模板真正独有的就是封面 / 封底 / 目录 / 章节标题 / 内容页骨架这 5 个 layout"——这是分两层架构的核心抉择  |
-| 2026-04-26 | **新增 Phase 7.5 模板分层重构（公共组件库 POC）**：在 Phase 8 之前插入。5 个子步：7.5A token 规范定稿（`--ld-*` schema）/ 7.5B 两套模板的 tokens.css 按规范增补 / 7.5C 抽公共组件到 `packages/slidev/components/common/`（布局 + 图表 + 媒体三类）+ 删除私有 chart 组件 / 7.5D 每套模板 layouts 收敛到 5 个标准（cover / end / toc / section-title / content）+ AI prompt 重写 / 7.5E starter 改公共组件 + 切模板字节级 E2E。**核心验收**：切换模板时内容页 `deck_versions.content` 字节级一致（仅 layout 名字 / 私有 token 引用变化，公共组件用法不变）。后续 Phase 编号不顺延，仍是 Phase 8/9/10...                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | 用户明确"越早越好"——只有 2 套模板时重构成本最低（×N 边际成本未累积）；Phase 8/9 工程性工作正好基于新干净架构扫一遍；Phase 10 上线后重构成本暴涨。脚手架 / 市场 / npm 发布留 Phase 16+ 不做                                                                                                                                                       |
+| 2026-04-26 | **路线图三处调整**：(1) **Phase 9 加仓库卫生清理**交付物——一次性迁移脚本（`backfill-template-id.ts` / `rename-template-id.ts`）评估删除，保留的脚本要求"通用化"，已结案 plan 评估归档；(2) **导出/导入前插入两个新 Phase**——Phase 12 多 LLM Provider 兼容（Anthropic Claude + Google Gemini 原生接口）/ Phase 13 预制 MCP 服务扩展（catalog 5-8 个）；原 Phase 12（导出）→ **Phase 14**，原 Phase 13（导入）→ **Phase 15**，原 Phase 14+（远期）→ **Phase 17+**；所有跨 Phase 引用同步更新；(3) **vision.md 加远期愿景章节"模板生态系统"**——明确模板分两层架构：**第一层** 5 个模板独有 layout（cover / end / toc / section-title / content 骨架）；**第二层** 所有模板共享的内容页部件（两栏 / 田字格 / 九宫格 / 各类 chart / KV 列表等）下沉到 `@lumideck/template-components` 公共组件库，**只读 `--ld-*` token 自动配色**，模板切换时内容页完全无损。配套：创作者脚手架 + 模板市场 + tokens.css 完整 schema（颜色 / 字体 / 形状 / 阴影 4 类 token）。原 P14+ 的"团队共享模板 / 主题系统与自定义主题编辑器"两条合并为指向 vision.md 的引用。**顺手修**：vision.md / requirements.md 里 Phase 5.5 / 6 / 7 / 8 等过时编号校对到当前 10/11/14/15                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 用户提出 P9 应该清理一次性迁移脚本（不通用就别留）；多 LLM provider 优先级高于导出（避免被 OpenAI 兼容代理丢能力）；用户进一步明确模板心智："内容页里的两栏 / 田字格 / 数据卡片不应该写死在模板里，所有模板都用得上，只读 token 配色就行；模板真正独有的就是封面 / 封底 / 目录 / 章节标题 / 内容页骨架这 5 个 layout"——这是分两层架构的核心抉择  |
+| 2026-04-26 | **新增 Phase 7.5 模板分层重构（公共组件库 POC）**：在 Phase 8 之前插入。5 个子步：7.5A token 规范定稿（`--ld-*` schema）/ 7.5B 两套模板的 tokens.css 按规范增补 / 7.5C 抽公共组件到 `packages/slidev/components/common/`（布局 + 图表 + 媒体三类）+ 删除私有 chart 组件 / 7.5D 每套模板 layouts 收敛到 5 个标准（cover / end / toc / section-title / content）+ AI prompt 重写 / 7.5E starter 改公共组件 + 切模板字节级 E2E。**核心验收**：切换模板时内容页 `deck_versions.content` 字节级一致（仅 layout 名字 / 私有 token 引用变化，公共组件用法不变）。后续 Phase 编号不顺延，仍是 Phase 8/9/10...                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | 用户明确"越早越好"——只有 2 套模板时重构成本最低（×N 边际成本未累积）；Phase 8/9 工程性工作正好基于新干净架构扫一遍；Phase 10 上线后重构成本暴涨。脚手架 / 市场 / npm 发布留 Phase 17+ 不做                                                                                                                                                       |
 | 2026-04-26 | **文档分工五层定位明确 + 三大文档重构**：(1) **`CLAUDE.md` 新建**——工程指南（技术栈 / 命令 / 架构 / 约定 / 坑），每次对话自动加载；(2) **vision.md 重写**——只剩"产品形态 + 商业模式畅想"两维度，删所有技术细节（CSS / 类名 / SDK / 表名）；新增"商业模式畅想"章节（内部工具 → 行业 SaaS → 模板创作者市场三阶段路径）；模板分两层心智从技术描述改为产品价值描述；(3) **requirements.md 重写**——FR 表删除 Phase 编号承诺（避免编号 drift 同步），新增 FR-12/13/14/15（分享链接 / MCP catalog / 模板分层架构 / 模板生态远期）；(4) **roadmap.md 瘦身**——Phase 7.5/8/9/10/11/12/13/14/15 的交付物全部收敛到"做什么 / 验收什么"颗粒度，具体类名 / SDK / DB schema / 文件路径剥离到对应 plan。统一定位规则：vision = 产品/商业；requirements = 功能点；roadmap = 阶段排期；plans/NN = 技术实施；CLAUDE.md = 工程指南                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 用户提出文档定位模糊——之前的改动把技术细节误塞进 vision/roadmap，导致非技术读者 / 未来 Claude 都难以快速定位关键信息；统一文档分工后，每层只承担一个职责，长期维护成本下降                                                                                                                                                                       |
 | 2026-04-26 | **Phase 7.5 plan 落地**（[plan 16](../plans/16-phase75-template-layering.md)）：子步从原 5 个细化为 7 个（C 拆为 C-1 栅格 8 个 / C-2 装饰 2 个种子 / C-3 内容块 6 个）；公共组件分**栅格 / 装饰 / 内容块** 三类（首版 16 个），装饰类（PetalFour / ProcessFlow）几何全公共、配色读 token 自适应（**否定"花瓣 SVG 是模板私有装饰"**）；切模板加 **deterministic 字符串替换路径**——`analyzeDeckPurity` 判 5 档自由度（档 1-3 pure / 档 4-5 not-pure），pure 跳 LLM 直接换 frontmatter `layout:` 前缀，not-pure fallback LLM 重写；AI prompt 加"工作模式 5 档自由度"段，明示档 4-5（chart.js 现写 / `<script setup>` 原创组件）的代价；**字节级一致 E2E 改为人工双 deck 比对**（不写自动化）；prompt 投放走全塞 system prompt（首版 ~2500 token），未来组件库 25+ 切分层 lazy load 已登记进 [99-tech-debt.md](../plans/99-tech-debt.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 用户多轮抉择把 layout / component 边界、装饰几何归属、AI 自由度边界、切模板字节级保证机制全部澄清；plan 比 roadmap 原版更精确（roadmap 仅定方向，plan 落实施细节）                                                                                                                                                                               |
 | 2026-04-26 | **Phase 7.5 关闭**（按 [plan 16](../plans/16-phase75-template-layering.md) 7 子步执行）。7.5A `--ld-*` token 规范 22 项 + 校验脚本（agent +12）；7.5B 两套 tokens.css 增补；7.5C-1 栅格 8 个（slidev 包首次接 vitest，+18 测）；7.5C-2 装饰 PetalFour + ProcessFlow（+6 测）；7.5C-3 内容块 6 个 + chart `--ld-color-chart-primary-*` token rename（+14 测）；7.5D-1 layer-1 收敛 7→5 layouts（删 6 老 + 新增 2 section-title + 删 LBeitouMetricCard + manifest commonComponents 字段 + shared 校验）；7.5D-2 commonComponentsCatalog + buildSystemPrompt 加"## 可用 Components"（栅格/装饰/内容块三 sub-section）+ "## 工作模式（5 档自由度）" + "## 决策树"（agent A/B contract 21 测共 +6）；7.5D-3 `analyzeDeckPurity`（11 测）+ template-switch-job `tryDeterministicSwitch` 路径（5 测）—— pure deck 跳 LLM 仅替换 frontmatter `layout:` 前缀；7.5D-4 `migrate-deprecated-layouts` 一次性脚本 + 9 测；7.5E starter 改 5 页骨架（cover / toc / section-title / content + TwoCol + 4 MetricCard / back-cover）+ creator useSwitchTemplateJob fail path 测改用 not-pure deck 强制走 LLM。**测试数**：agent 332 → 361（+29）；slidev 0 → 38（+38 全新 vitest 工程）；creator 71 → 71（重写 1 测）；shared 3。**字节级一致**手验：用户在 dev 模式建 beitou deck → AI 生成含 `<MetricCard>` / `<TwoCol>` 的内容 → 切到 jingyeda → log 应有 deterministic 路径标记 + body 字面相同 + frontmatter 仅 `layout:` 前缀变（待手验）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | plan 16 设计抉择 13 条全部落地；命名抉择"栅格组件去 Layout 后缀"在实施期由用户提醒澄清                                                                                                                                                                                                                                                           |
