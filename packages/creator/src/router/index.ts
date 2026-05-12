@@ -37,6 +37,17 @@ const router = createRouter({
       name: 'register',
       component: () => import('../pages/RegisterPage.vue'),
     },
+    // Phase 10.5 Task 25-E-1：Playwright visual baseline 入口，仅 dev / test
+    // 模式挂载；prod build 此路由不存在。
+    ...(import.meta.env.DEV
+      ? [
+          {
+            path: '/_visual/:template/:layout',
+            name: 'visual-baseline',
+            component: () => import('../pages/VisualBaselinePage.vue'),
+          },
+        ]
+      : []),
     {
       path: '/:pathMatch(.*)*',
       redirect: '/',

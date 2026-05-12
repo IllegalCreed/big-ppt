@@ -72,7 +72,7 @@ test('generate_slide_image stub 模式:同步 jobId → DB asset + slides.md fro
   await expect(page).toHaveURL(/\/decks\/(\d+)$/, { timeout: 15_000 })
   const deckId = Number(page.url().match(/\/decks\/(\d+)/)![1])
 
-  // 等编辑器加载完(activate-deck 隐式发生在路由切换)
+  // 等编辑器加载完（Phase 10.5 后路由切换不再抢锁 — 纯 GET deck 元数据）
   await expect(page.locator('.deck-title, .deck-title-input').first()).toBeVisible({
     timeout: 15_000,
   })
