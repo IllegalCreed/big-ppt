@@ -99,6 +99,9 @@ importers:
       '@big-ppt/shared':
         specifier: workspace:*
         version: link:../shared
+      '@big-ppt/slidev':
+        specifier: workspace:*
+        version: link:../slidev
       antdv-next:
         specifier: ^1.2.1
         version: 1.2.1(vue@3.5.33(typescript@6.0.3))
