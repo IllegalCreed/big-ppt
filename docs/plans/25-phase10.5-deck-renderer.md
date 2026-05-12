@@ -1,65 +1,75 @@
-# Phase 10.5 — DeckRenderer 落地（Slidev 解耦）实施文档
+# Phase 10.5 — DeckRenderer 落地（Slidev 编辑解耦 / 锁语义归位）实施文档
 
 > **状态**：待启动
-> **前置阶段**：[plan 24 — Phase 10.5 spike](24-phase10.5-spike.md) ✅（spike 报告见 [24-phase10.5-spike-report.md](24-phase10.5-spike-report.md)）
-> **后续阶段**：plan 26（Phase 11 — 多用户并发 + 分享链接，范围已因本 Phase 缩水到「deck-level 锁 + 分享链接 + 容量 spike」）
+> **前置阶段**：[plan 24 — Phase 10.5 spike](24-phase10.5-spike.md) ✅
+> **后续阶段**：plan 26（Phase 11 — 分享链接 + 容量 spike，范围已因本 Phase 大缩水）
 > **路线图**：[roadmap.md Phase 10.5](../requirements/roadmap.md#phase-105slidev-解耦--deckrenderer-vue-组件自封装)
-> **执行子技能**：`superpowers:executing-plans`（中等体量，单 session 可推完 Task 25-A/B；Task C/D 涉及主链路与部署，每 Task 单独 commit 后用户验收）
-> **预估工作量**：8 个工作日（spike 报告重估 7.5d + 部署收敛真实开销略大）
+> **执行子技能**：`superpowers:executing-plans`
+> **预估工作量**：6 个工作日
 > **新分支**：`feat/phase10.5-deck-renderer`（off main）；spike 代码留在 `spike/phase10.5-deck-renderer` 分支 reference 用
 
-**Goal**：把 Slidev iframe 形态的预览器换成 creator SPA 内的 `<DeckRenderer markdown templateId>` Vue 组件，从根本上消除 long session HMR 缓存错位（plan 23 踩坑 13）、iframe 跨域复杂度、agent 内 http-proxy 反代、Slidev 进程独立部署等架构债。完成后 Phase 11 进程池方案自动作废，多用户并发简化为「deck-level 锁 + 分享链接」。
+**Goal**：把**编辑器**主视图的 Slidev iframe 换成 creator SPA 内的 `<DeckRenderer>` Vue 组件 — 根治 long session HMR 缓存错位（plan 23 踩坑 13）、消除 iframe 跨域复杂度、让编辑路径**多用户零排队**。Slidev 进程 + agent 反代 + 锁 + nginx 配置**全部保留**供「全屏放映」（`window.open('/api/slidev-preview/...', '_blank')` 新 tab 加载 Slidev SPA）使用，但**锁的归位点从「编辑器进入」挪到「全屏放映触发」** —— 编辑变成无锁多用户并发，放映仍然 slides.md 单文件串行。
+
+**关键架构图**：
+
+```
+旧（Phase 10.5 前）：
+  编辑器进入 → activate-deck → 抢 slidev-lock → 改写 slides.md → iframe 展示
+  全屏放映 → window.open Slidev SPA tab → 反代 → 已持锁用户继续看
+  → 编辑器互斥（只能 1 个用户编辑），其他用户卡在 OccupiedWaitingPage
+
+新（Phase 10.5 后）：
+  编辑器进入 → 直接 DeckRenderer 渲染（per-user Vue 内存）→ 零锁，多用户并发
+  全屏放映 → POST /api/present 抢 slidev-lock → 改写 slides.md → window.open SPA tab
+  → 编辑无排队；放映互斥（其他用户在放映时 OccupiedWaitingPage 才出现）
+```
 
 ---
 
 ## 关键设计抉择（2026-05-12 与用户对齐 + spike 复盘）
 
-> spike 已通过用户 L2/L3 双确认「完全一样」（[spike 报告](24-phase10.5-spike-report.md)），本 plan 是把 spike 成果工程化。
+> spike 已通过用户 L2/L3 双确认「完全一样」（[spike 报告](24-phase10.5-spike-report.md)），本 plan 是把 spike 成果工程化并把锁语义重新归位。
 
-1. **`packages/slidev` 包保留，但仅供 `slidev build` 静态托管使用**（Phase 11 分享链接场景）
-   - **Why**：编辑路径走 DeckRenderer 完全替代，**dev mode + Slidev 进程拆掉**；但分享链接需要静态产物托管，Slidev 的 `slidev build` 一条命令出 SPA 仍然好用，不重造。
-   - **影响**：`packages/slidev` 不删，但 `pnpm dev` 不再起 slidev 进程；package scripts 保留 `build` / `gen-thumbnails`，删 `dev` / `dev-open` / `preview`。
+1. **Slidev runtime + agent 反代 + pm2 + nginx + lock 全部保留**
+   - **Why**：全屏放映（`window.open('/api/slidev-preview/...', '_blank')`）走的是真新 tab 加载 Slidev SPA。演讲模式 / progress / 黑屏 / 演讲者备注 / 录制等 Slidev 自带功能不重造。
+   - **不删**：`packages/agent/src/index.ts` 的 http-proxy 反代、WebSocket upgrade、`slidev-proxy-auth.ts`、`slidev-lock.ts`、lumideck-slidev pm2 app、nginx `/api/slidev-preview/` location。
+   - **删**：`routes/slidev-restart.ts` + SlidePreview 内「重启 Slidev 进程」按钮 — 编辑端不再用 Slidev iframe，long session HMR 错位触发面消失。
 
-2. **接 unplugin-vue-components + unplugin-auto-import，跟 Slidev 内部栈对齐**
-   - **Why**：spike 阶段用 `register-slidev-components.ts` 硬编码 19 个组件名（spike 报告 Gap 4），加新组件改两处，跟 Slidev 自己的 `unplugin-vue-components` 自动发现机制不对齐。落地必须改。
-   - **monorepo 跨包**：`dirs: ['../slidev/components/**', '../slidev/layouts/**']` 显式跨包扫描；`dts: true` + 路径设到 creator 包内。
-   - **附带收益**：`defineProps / ref / computed` 等 Vue API 也走 auto-import，省掉显式 import。
+2. **锁的语义从「编辑器进入」改成「全屏放映触发」**
+   - **Why**：slides.md 是 Slidev 进程全局单文件，多用户同时改会撞 — 这是真实约束；但编辑器只有「访问 Slidev 才需要 slides.md 一致」时才有这约束。Phase 10.5 后编辑器不访问 Slidev，约束自动消失；只有 `window.open('/api/slidev-preview/...')` 时才需要。
+   - **新接口**：`POST /api/present`（acquire present-lock + rewrite slides.md to current user's deck，成功后返回 OK，前端再 `window.open`；失败返回当前持锁用户 → 前端展示 OccupiedWaitingPage 类提示）
+   - **删除**：`POST /api/activate-deck` 路由（编辑器进入流程不再抢锁；deck 元数据 GET 即可）
+   - **锁实现复用**：`slidev-lock.ts` 模块内逻辑不动（持锁 → 心跳 30s → 5min 自动释放），只是 acquire / release 调用点从 activate-deck 挪到 present
+   - **UX**：present-lock 失败时显示「XX 正在放映该 deck，是否等待 / 取消」；放映结束 tab close / 心跳失效自动释放（旧 5min 心跳逻辑保留）
 
-3. **body markdown + Vue 标签运行时编译用 `@vue/compiler-sfc` + `marked`**
-   - **Why**：spike Gap 1。`<TwoCol>` / `<MetricCard>` 等 Vue 组件标签出现在 markdown body 内，必须运行时编译成 render 函数才能正常渲染（不能用 `v-html`，那只走 DOM 解析，不触发 Vue runtime）。
-   - **链路**：`body string` → `marked` 转标准 markdown 为 HTML → 保留 Vue tag 原样穿透 → `Vue.compile(html)` 出 render → 动态组件渲染。
-   - **不用 Slidev 自己的 parser**（@slidev/parser）：那一套捆绑了一堆 deck-level 抽象，独立用 marked + Vue compile 链路更轻。
-   - **bundle 影响**：`vue/dist/vue.esm-bundler` 取代 `vue/dist/vue.runtime.esm-bundler`（启用 runtime compiler），打包大小 +~50KB gzip。可接受。
+3. **接 unplugin-vue-components + unplugin-auto-import**
+   - **Why**：spike 报告 Gap 4。spike 阶段 `register-slidev-components.ts` 硬编码 19 个组件，跟 Slidev 自己的 `unplugin-vue-components` 不对齐。`dirs: ['../slidev/components/**', '../slidev/layouts/**']` 跨包扫描；`dts: true` + 路径设到 creator 包内。
+   - **附带收益**：`defineProps / ref / computed` 也走 auto-import。
 
-4. **DeckRenderer 正式归属 `packages/creator/src/deck-renderer/`**（spike 在 `src/spike/`，落地挪正）
-   - **Why**：spike 时是临时位置 `src/spike/`，落地要进主链路必须挪到 `src/deck-renderer/` 与其他主链路目录平级。
+4. **body markdown + Vue 标签运行时编译用 `@vue/compile` + `marked`**
+   - **Why**：spike Gap 1。`<TwoCol>` 等 Vue 组件标签必须运行时编译成 render 函数才能渲染。
+   - **链路**：body string → `marked` → 含 Vue 标签的 HTML → `Vue.compile(html)` → render 函数 → 动态组件
+   - **vite alias**：`vue: 'vue/dist/vue.esm-bundler.js'` 启用 runtime compiler（+50KB gzip 可接受）
 
-5. **`useSlideStore` 不动其余字段，只改 `refresh` 语义**
-   - **Why**：当前 `refresh()` 读 `/api/read-slides` → `update(content)`。新架构下 LLM session 结束 / 切模板 job done 等场景**继续走这条**，差别仅在「不再期望 Slidev iframe 跟着重 load」—— DeckRenderer 是 `content` 的下游 computed 渲染，content 变了它自己就重渲。
-   - 删除 `refreshToken`（iframe src bump 用的）+ `aiBusy` 跟「重启 Slidev 按钮」相关的逻辑。
+5. **DeckRenderer 归属 `packages/creator/src/deck-renderer/`**（spike 在 `src/spike/`，落地挪正）
 
-6. **HMR 缓存错位的根治路径**
-   - **Why**：spike 报告已确认。DeckRenderer 是 Vue 响应式 prop 驱动，markdown 内容变了 → parseDeck computed 重算 → 对应 slide 重渲，毫秒级，**无 vite module graph 累积**。Phase 11.6 dogfood 踩坑 13 的 long session 问题彻底消失，`SlidePreview` 的「重启 Slidev」按钮整条链路废弃。
+6. **`useSlideStore` 删 refreshToken / restart 相关字段；保留 aiBusy**
 
-7. **不重写 spike 已经写出来的 parse-deck.ts**
-   - **Why**：spike 5 个 vitest case 含两套真实 starter.md，已经验证够用。落地把它从 `src/spike/parse-deck.ts` 挪到 `src/deck-renderer/parse-deck.ts` 即可，**功能不动**；新增的功能（deck-level frontmatter 抽出）当增量加。
+7. **不重写 spike parse-deck**：5 个 vitest case 含两套真实 starter.md 已验证够用，挪位置 + 增量加 deck-level frontmatter 抽出能力
 
-8. **L4 visual regression 用 Playwright `toHaveScreenshot`，**只在 CI Linux Chromium 跑**
-   - **Why**：跨机器字体 antialiasing 差异；本地 macOS 跑会假阳性。playwright config 加 `expect.toHaveScreenshot.maxDiffPixelRatio: 0.01`，threshold 留余量。
-   - **基线归属**：`packages/e2e/visual-baselines/` 进 git（PNG 二进制，预估 12 张 × ~100KB = 1.2MB，不上 LFS）。
+8. **L4 visual regression 用 Playwright `toHaveScreenshot`**，CI Linux Chromium 跑；baseline 入 git（12 张 × ~100KB）
 
-9. **E2E 改造范围**
-   - 原 E2E 通过 `iframe[src*="slidev-preview"]` 定位 → 改成 `.deck-renderer .slide-canvas:nth-child(n)`
-   - `BIG_PPT_TEST_REWRITE_MODE=skeleton` 仍保留（switch_template 工具走 starter 不烧 LLM）
-   - `/_test/reset-lock` 路由删除（Slidev 进程废弃，无锁可解）
+9. **OccupiedWaitingPage 触发路径调整**：只在 `present()` 撞锁时展示；编辑器进入不再展示
+
+10. **不删 slidev_lock DB schema 字段**：保留供向后兼容；本 Phase 只动代码，schema migration 是单独工作
 
 ---
 
 ## ⚠️ Secrets 安全红线（HARD）
 
-- 本 Phase **删除** `SLIDEV_ORIGIN` env 变量（agent 反代不再使用）；旧 `.env.example` / `.env.production.local` 模板需同步移除该行
-- nginx 模板内 `/api/slidev-preview/` location block 整段删除
-- 不引入任何新 secret；每次 `git commit` 前 `git status` 确认，**禁用 `git add -A`**
+- 本 Phase **不引入新 env**；`SLIDEV_ORIGIN` 等保留不动
+- nginx 配置不动
+- 每次 `git commit` 前 `git status` 确认，**禁用 `git add -A`**
 
 ---
 
@@ -69,71 +79,75 @@
 
 | 文件 | 职责 |
 | ---- | ---- |
-| `packages/creator/src/deck-renderer/DeckRenderer.vue` | 主组件（spike 版的工程化版本）：响应 markdown + templateId prop，渲染整个 deck |
-| `packages/creator/src/deck-renderer/parse-deck.ts` | markdown → Slide[]（spike 拷过来 + 增量扩 deck-level fm 抽出） |
-| `packages/creator/src/deck-renderer/parse-deck.test.ts` | parse-deck 单测（spike 5 case + 新增的 deck-level fm case） |
-| `packages/creator/src/deck-renderer/compile-body.ts` | body markdown → Vue render 函数（marked + Vue.compile） |
-| `packages/creator/src/deck-renderer/compile-body.test.ts` | body 编译单测（纯 markdown / 含 Vue 标签 / 嵌套 slot 各场景） |
-| `packages/creator/src/deck-renderer/DeckRenderer.test.ts` | mount DeckRenderer + 断言 layout 路由 + frontmatter v-bind + body slot 渲染 |
-| `packages/creator/components.d.ts` | unplugin-vue-components 自动生成的 dts（首次跑后入 git，避免每次 dev 启动重新生成） |
-| `packages/creator/auto-imports.d.ts` | unplugin-auto-import 自动生成的 dts |
-| `packages/e2e/visual-baselines/` 目录 | 12 张 layout 截图基线 PNG（两套模板 × 6 layout） |
+| `packages/creator/src/deck-renderer/DeckRenderer.vue` | 主组件（spike 版工程化）：响应 markdown + templateId + currentPage prop |
+| `packages/creator/src/deck-renderer/parse-deck.ts` | spike 拷过来 + 扩 deck-level frontmatter 抽出 |
+| `packages/creator/src/deck-renderer/parse-deck.test.ts` | 单测（spike 5 + 新 deck-level fm case） |
+| `packages/creator/src/deck-renderer/compile-body.ts` | body markdown → Vue render（marked + Vue.compile + cache） |
+| `packages/creator/src/deck-renderer/compile-body.test.ts` | body 编译单测 |
+| `packages/creator/src/deck-renderer/DeckRenderer.test.ts` | mount + 断言 layout 路由 + frontmatter v-bind + body slot |
+| `packages/agent/src/routes/present.ts` | `POST /api/present`：acquire slidev-lock + rewrite slides.md，前端拿到 OK 后再 `window.open` |
+| `packages/agent/src/routes/__tests__/present.test.ts` | present 路由单测：成功获取锁 / 已被占用返回 409 + 持锁用户 / 锁超时自动释放 |
+| `packages/creator/components.d.ts` | unplugin-vue-components 生成的 dts（入 git） |
+| `packages/creator/auto-imports.d.ts` | unplugin-auto-import 生成的 dts（入 git） |
+| `packages/e2e/visual-baselines/` 目录 | 12 张 baseline PNG |
 | `packages/e2e/tests/visual.spec.ts` | Playwright `toHaveScreenshot` 守门 |
 
 ### 修改
 
 | 文件 | 改动摘要 |
 | ---- | -------- |
-| `packages/creator/vite.config.ts` | 加 `Components()` + `AutoImport()` 插件；resolve.alias 把 `vue` 指向 `vue/dist/vue.esm-bundler.js` 启用 runtime compiler |
-| `packages/creator/package.json` | 加 `unplugin-vue-components` / `unplugin-auto-import` / `marked` 依赖；删 spike 的 `register-slidev-components.ts` 已不需要的依赖（保留 js-yaml） |
-| `packages/creator/src/main.ts` | 删 `import { registerSlidevComponents }`；保留 `@big-ppt/slidev/global.css` 引入 |
-| `packages/creator/src/components/SlidePreview.vue` | 删 iframe + restart button 整段；改为 `<DeckRenderer :markdown="content" :template-id="templateId" :current-page="currentPage" />` |
-| `packages/creator/src/composables/useSlideStore.ts` | 删 `refreshToken` / `aiBusy`-with-restart 相关字段 |
-| `packages/creator/src/composables/useAIChat.ts` | 删 session-end 主动 refresh iframe 的逻辑（DeckRenderer 自己响应 content 变化） |
-| `packages/creator/src/router/index.ts` | 删 `/_spike/deck-renderer` 路由（spike 入口废弃） |
-| `packages/agent/src/app.ts` | 删 `slidevRestartRoute` import + use；保留其余 |
-| `packages/agent/src/index.ts` | 删 http-proxy 整段 + SLIDEV_ORIGIN env + WebSocket upgrade handler |
-| `packages/agent/src/middleware/csp.ts` | 删 iframe-related CSP（不再有 Slidev iframe） |
-| `packages/agent/src/db/schema.ts` | 注释 `slidev_lock` 字段说明改为「Phase 10.5 起 DeckRenderer 无 lock 概念，字段保留供版本兼容」 |
-| `packages/slidev/package.json` | scripts 删 `dev` / `dev-open` / `preview`；保留 `build` / `gen-thumbnails` / `test` |
-| `package.json`（根） | `pnpm dev` 改成只起 creator + agent（删 slidev 并发项） |
-| `deploy/ecosystem.config.cjs` | 删 `lumideck-slidev` pm2 app |
-| `deploy/nginx/lumideck.conf.template` | 删 `/api/slidev-preview/` location block；删 SLIDEV_ORIGIN 变量 |
-| `deploy/scripts/install-server.sh` | 删 slidev 相关安装步骤 |
-| `scripts/deploy.sh` | 删 backend deploy 时同步 slidev 包的步骤（保留：分享链接需要时再做 build） |
-| `packages/e2e/playwright.config.ts` | 删 BIG_PPT_TEST_REWRITE_MODE 与 slidev iframe 相关 webServer env |
-| `packages/e2e/tests/**.spec.ts` | iframe selector → `.deck-renderer .slide-canvas` selector |
-| `CLAUDE.md` | 删 Slidev 反代 / HMR / 锁相关已知坑（Phase 10.5 完结这些都不存在了）；新增 DeckRenderer 架构章节 + 部署架构图同步 |
-| `docs/requirements/roadmap.md` | Phase 10.5 状态翻 ✅；Phase 11 范围缩水更新 |
+| `packages/creator/vite.config.ts` | 加 Components + AutoImport plugin；resolve.alias `vue` → `vue/dist/vue.esm-bundler.js` |
+| `packages/creator/package.json` | 加 `unplugin-vue-components` / `unplugin-auto-import` / `marked` |
+| `packages/creator/src/main.ts` | 删 `registerSlidevComponents` import |
+| `packages/creator/src/components/SlidePreview.vue` | iframe + 重启按钮删；改 `<DeckRenderer>`；保留「全屏放映」按钮但改流程：先 `await fetch('/api/present', POST)` 成功再 `window.open` |
+| `packages/creator/src/composables/useSlideStore.ts` | 删 `refreshToken`；`aiBusy` 保留（ChatPanel 仍用） |
+| `packages/creator/src/composables/useAIChat.ts` | session-end 主动 refresh iframe 的逻辑删（DeckRenderer 响应式自动更新）；tool-completion 后的 refresh 保留 |
+| `packages/creator/src/composables/useDeck.ts`（或类似） | 删 activate-deck 抢锁调用；改成纯 GET deck 元数据 + markdown |
+| `packages/creator/src/components/OccupiedWaitingPage.vue` | 显示场景从「进入 deck 撞锁」改成「全屏放映撞锁」；文案调整 |
+| `packages/creator/src/router/index.ts` | 删 `/_spike/deck-renderer` 临时路由；deck-editor 路由的 lock-check beforeEnter（如有）删 |
+| `packages/agent/src/app.ts` | 注册 `present.ts` 路由；删 `slidevRestartRoute` |
+| `packages/agent/src/routes/activate-deck.ts` | 整文件删，或保留路由但去掉抢锁逻辑（仅返回 deck 元数据） |
+| `packages/agent/src/slidev-lock.ts` | **不动逻辑**；只是调用方从 activate-deck 改成 present.ts |
+| `packages/agent/src/slidev-proxy-auth.ts` | **不动**（全屏放映 SPA 还要走这层鉴权）|
+| `packages/e2e/tests/**.spec.ts` | iframe selector → `.deck-renderer .slide-canvas`；锁相关测试改成 present 路径 |
+| `CLAUDE.md` | 关键模块章节更新：slidev-lock 描述改为「present-lock 只在全屏放映触发」；架构图改；删「重启 Slidev 进程」按钮相关说明 |
+| `docs/requirements/roadmap.md` | Phase 10.5 状态翻 ✅；Phase 11 范围进一步缩水（编辑路径已无并发问题，只剩分享链接） |
 
 ### 删除
 
 | 文件 | 原因 |
 | ---- | ---- |
-| `packages/creator/src/spike/` 整个目录 | spike 代码工程化版已在 `src/deck-renderer/`；spike 临时路由已无意义 |
-| `packages/creator/public/templates` 软链 | 公共组件 import 走 `@big-ppt/slidev` workspace，资源路径走 unplugin-vue-components 解析 |
-| `packages/agent/src/slidev-lock.ts` | DeckRenderer 无锁 |
-| `packages/agent/src/slidev-proxy-auth.ts` | 无反代无鉴权 |
-| `packages/agent/src/routes/slidev-restart.ts` | 无进程可重启 |
-| `packages/agent/src/middleware/request-context.ts` 内 slidev-lock 相关字段 | 同上 |
-| `packages/agent/src/__tests__/slidev-lock.test.ts` | 测试目标已删 |
-| `deploy/scripts/start-slidev.sh`（如存在） | 进程已删 |
+| `packages/creator/src/spike/` 整个目录 | spike 工程化版已在 `src/deck-renderer/` |
+| `packages/creator/public/templates` 软链 | 公共组件走 `@big-ppt/slidev` workspace import |
+| `packages/agent/src/routes/slidev-restart.ts` | 编辑端不用 Slidev iframe，长 session HMR 错位触发面消失 |
+| `packages/agent/src/routes/__tests__/slidev-restart.test.ts`（如有） | 同上 |
+
+### 保留不动（重点说明）
+
+| 文件 | 为什么保留 |
+| ---- | ---------- |
+| `packages/agent/src/index.ts` http-proxy 整段 | 全屏放映新 tab 走这条反代 |
+| `packages/agent/src/middleware/csp.ts` | 全屏放映 tab 仍需 CSP（虽然不是 iframe） |
+| `packages/slidev` 整包 + dev 进程 | 全屏放映 SPA 由 Slidev 提供 |
+| `deploy/ecosystem.config.cjs` lumideck-slidev app | 生产部署仍需 Slidev 进程 |
+| `deploy/nginx/lumideck.conf.template` `/api/slidev-preview/` location | 同上 |
+| `packages/agent/src/db/schema.ts` slidev_lock 字段 | 锁逻辑没废，字段仍有用（虽然该字段在内存而非 DB，schema 注释里保留） |
 
 ---
 
 ## 数据模型变更
 
-无（DB schema 不动；agent 内存里的 slidev-lock 不是 DB 表，删代码即可）。
+无（slidev-lock 是 agent 进程内存对象，不是 DB 表）。
 
 ---
 
 ## 阶段拆分
 
-每个 Task 一个 commit。Phase 25-A/B 是基础设施，Phase 25-C 改主链路，Phase 25-D 拆 Slidev 进程，Phase 25-E 防线，Phase 25-F 收尾。
+每个 Task 一个 commit。**注意 Task D 顺序**：present 路由先建好（D1），前端 SlidePreview 才能切换调用方（D2 在 C1 里顺手）；activate-deck 抢锁删除（D3）放在最后，避免中间状态破坏现有用户路径。
 
 ### Task 25-A-1：接 unplugin-vue-components + unplugin-auto-import
 
-**目的**：用 plugin 自动发现替代 spike 的 `register-slidev-components.ts` 手工注册。
+**目的**：用 plugin 自动发现替代 spike 的手工注册。
 
 **操作**：
 1. `pnpm -F @big-ppt/creator add -D unplugin-vue-components unplugin-auto-import`
@@ -147,9 +161,9 @@
      vueDevTools(),
      Components({
        dirs: [
-         '../slidev/components',
-         '../slidev/layouts',
-         'src/components',  // creator 自己的组件保持原有显式 import 习惯
+         fileURLToPath(new URL('../slidev/components', import.meta.url)),
+         fileURLToPath(new URL('../slidev/layouts', import.meta.url)),
+         'src/components',
        ],
        dts: 'components.d.ts',
        directoryAsNamespace: false,
@@ -162,29 +176,25 @@
      }),
    ]
    ```
-3. 改 `packages/creator/vite.config.ts` resolve.alias：
+3. 同文件 resolve.alias 加：
    ```ts
-   resolve: {
-     alias: {
-       '@': fileURLToPath(new URL('./src', import.meta.url)),
-       // 启用 runtime template compiler，让 body markdown 编译出来的 template
-       // 能在浏览器里 Vue.compile()。
-       vue: 'vue/dist/vue.esm-bundler.js',
-     },
+   alias: {
+     '@': fileURLToPath(new URL('./src', import.meta.url)),
+     // 启用 runtime template compiler（body markdown 编译需要）
+     vue: 'vue/dist/vue.esm-bundler.js',
    }
    ```
-4. 跑一次 `pnpm -F @big-ppt/creator dev` 让 plugin 生成 `components.d.ts` + `auto-imports.d.ts`，然后**把这两份 dts 入 git**（避免 CI 每次重新生成）。
-5. 删 `packages/creator/src/spike/register-slidev-components.ts`（**等 25-B 整体迁移完再删**，本 Task 只确认 plugin 工作）。
-6. 验证 plugin 工作：访问 `/_spike/deck-renderer`（spike 入口还在），确认 layout 仍然渲染（auto-import 接管 `<LBeitouCoverLogo />` 等）。
+4. 跑 `pnpm -F @big-ppt/creator dev` 让 plugin 生成 dts，**两份 dts 入 git**
+5. 访问 spike 入口 `/_spike/deck-renderer` 确认渲染仍正常（plugin 接管 LBeitouCoverLogo 等）
+6. 删 `packages/creator/src/spike/register-slidev-components.ts`（Task 25-B-2 把 spike 整体删时会一并清，本步骤可暂留）
 
 **验证方法**：
-- `pnpm -F @big-ppt/creator type-check` 绿
-- `pnpm -F @big-ppt/creator build-only` 绿
-- 浏览器 `/_spike/deck-renderer` 渲染跟 spike 完成时一致
+- `pnpm -F @big-ppt/creator type-check` + `pnpm -F @big-ppt/creator build-only` 全绿
+- 浏览器访问 `/_spike/deck-renderer` 渲染跟 spike 一致
 
-**风险**：unplugin-vue-components 跨 monorepo 包扫描的 dirs 路径 + dts 路径生成跨包时的相对路径。**缓解**：先在 `dirs` 用绝对路径 `path.resolve(__dirname, '../slidev/components')` 试，确认 plugin 能找到再优化。
+**风险**：unplugin 跨 monorepo 包扫描路径错。**缓解**：用绝对路径 `fileURLToPath(new URL(...))` 试。
 
-**Commit**：`feat(phase10.5-A1): 接 unplugin-vue-components + auto-import，替代 spike 手工注册`
+**Commit**：`feat(phase10.5-A1): 接 unplugin-vue-components + auto-import 替代 spike 手工注册`
 
 ---
 
@@ -196,17 +206,6 @@
 1. `pnpm -F @big-ppt/creator add marked`
 2. 新建 `packages/creator/src/deck-renderer/compile-body.ts`：
    ```ts
-   /**
-    * body markdown + Vue 标签 → render 函数。
-    *
-    * 链路：
-    *   marked 把标准 markdown 转 HTML（标题/列表/段落/inline 代码等）
-    *   → 保留嵌入的 Vue 自定义标签（marked 默认不处理大写开头的标签，原样穿透）
-    *   → Vue.compile(html) 出 render 函数
-    *   → 用 defineComponent({ render }) 包成动态组件
-    *
-    * 缓存：相同 body 文本 → 同一个组件实例，避免每次重渲都重编译（O(n²) 性能坑）
-    */
    import { compile, defineComponent, type Component } from 'vue'
    import { marked } from 'marked'
 
@@ -215,7 +214,6 @@
    export function compileBody(body: string): Component {
      const cached = cache.get(body)
      if (cached) return cached
-     // marked 配置：禁 sanitize（默认就是禁）；breaks 跟随 Slidev 默认（false）
      const html = marked.parse(body, { async: false, breaks: false }) as string
      const render = compile(html)
      const comp = defineComponent({ render })
@@ -223,7 +221,6 @@
      return comp
    }
 
-   /** 测试场景重置缓存 */
    export function _resetBodyCache(): void {
      cache.clear()
    }
@@ -237,69 +234,53 @@
    beforeEach(() => _resetBodyCache())
 
    describe('compileBody', () => {
-     it('纯 markdown：heading + list 编译成对应 HTML', () => {
+     it('纯 markdown：heading + list 编译成 HTML', () => {
        const comp = compileBody('## 标题\n\n- a\n- b')
-       const wrapper = mount(comp)
-       expect(wrapper.find('h2').text()).toBe('标题')
-       expect(wrapper.findAll('li')).toHaveLength(2)
+       const w = mount(comp)
+       expect(w.find('h2').text()).toBe('标题')
+       expect(w.findAll('li')).toHaveLength(2)
      })
 
-     it('内嵌 Vue 标签：<Quote text="hi" /> 运行时解析为组件实例', () => {
+     it('内嵌 Vue 标签运行时解析', () => {
        const comp = compileBody('<Quote text="hi" />')
-       // 注：测试时 Quote 未注册到 app；mount 给一个 stub
-       const wrapper = mount(comp, {
+       const w = mount(comp, {
          global: {
-           stubs: { Quote: { template: '<div class="quote-stub">{{ text }}</div>', props: ['text'] } },
+           stubs: { Quote: { template: '<div class="q">{{ text }}</div>', props: ['text'] } },
          },
        })
-       expect(wrapper.find('.quote-stub').text()).toBe('hi')
+       expect(w.find('.q').text()).toBe('hi')
      })
 
-     it('同 body 字符串复用缓存（identity equality）', () => {
-       const a = compileBody('# same')
-       const b = compileBody('# same')
-       expect(a).toBe(b)
+     it('同 body 字符串复用缓存', () => {
+       expect(compileBody('# x')).toBe(compileBody('# x'))
      })
    })
    ```
-4. 跑 `pnpm -F @big-ppt/creator exec vitest run src/deck-renderer/compile-body.test.ts`，红 → 绿。
+4. `pnpm -F @big-ppt/creator exec vitest run src/deck-renderer/compile-body.test.ts` 全绿
 
-**验证方法**：
-- 3 个 vitest case 全绿
-- `pnpm -F @big-ppt/creator type-check` 绿
+**验证方法**：3 个 vitest case 全绿 + type-check 绿
 
-**风险**：
-- Vue runtime compiler 包大小膨胀（+50KB gzip）；可接受。
-- marked 对 `<TwoCol>` 等大写自定义标签的处理：marked 5+ 默认 inline-html 走 raw 模式不破坏。**验证手段**：用真实 starter.md slide 4 的 body 跑一遍，肉眼看 `<TwoCol>` 标签仍在 HTML 字符串里。
+**风险**：marked 5+ 对大写自定义标签的处理 — 验证手段：用真实 starter.md slide 4 的 `<TwoCol>` body 跑一遍，肉眼看标签仍在 HTML。
 
 **Commit**：`feat(phase10.5-A2): body markdown + Vue 标签运行时编译（marked + Vue.compile）`
 
 ---
 
-### Task 25-B-1：parse-deck 从 spike 挪到正式位置 + 加 deck-level fm 抽出
+### Task 25-B-1：parse-deck 落正式位置 + deck-level fm 抽出
 
-**目的**：把 spike 的 `parse-deck.ts` 落到正式目录，并增量加 deck-level frontmatter 单独抽出能力（spike 时把 deck-level fm 混在 slide-1 fm 里）。
+**目的**：spike 的 parse-deck 工程化 + 增量加 deck-level frontmatter 单独抽出能力。
 
 **操作**：
 1. `mkdir -p packages/creator/src/deck-renderer`
-2. 把 `packages/creator/src/spike/parse-deck.ts` 拷到 `packages/creator/src/deck-renderer/parse-deck.ts`
-3. 把 `packages/creator/src/spike/parse-deck.test.ts` 拷到 `packages/creator/src/deck-renderer/parse-deck.test.ts`，修改 fixture 路径：
-   ```ts
-   const p = fileURLToPath(new URL(rel, import.meta.url))
-   // rel 从 '../../../slidev/templates/...' 改为 '../../../slidev/templates/...'
-   // (深度相同，文件路径不变)
-   ```
-   （路径深度相同，可能无需改；测试报路径错时再调）
-4. 扩展 `parseDeck` 返回 `ParsedDeck` 而非 `Slide[]`：
+2. `cp packages/creator/src/spike/parse-deck.ts packages/creator/src/deck-renderer/parse-deck.ts`
+3. `cp packages/creator/src/spike/parse-deck.test.ts packages/creator/src/deck-renderer/parse-deck.test.ts`
+4. 改 parse-deck.ts 签名：返回 `ParsedDeck` 而非 `Slide[]`
    ```ts
    export interface ParsedDeck {
-     /** Slidev 的 deck-level frontmatter，theme/title/transition/routerMode 等。
-      *  注意：跟 slide-1 frontmatter 是「同一个 ---...--- 块」拆出来的，按 key 黑名单划分。 */
      deckFrontmatter: Record<string, unknown>
      slides: Slide[]
    }
 
-   // deck-level 字段白名单（其余字段视作 slide-1 frontmatter）
    const DECK_LEVEL_KEYS = new Set([
      'theme', 'title', 'transition', 'routerMode',
      'highlighter', 'lineNumbers', 'colorSchema', 'fonts',
@@ -308,9 +289,7 @@
    ])
 
    export function parseDeck(markdown: string): ParsedDeck {
-     // ...原逻辑产出 slides...
-     // 取 slides[0].frontmatter 按 DECK_LEVEL_KEYS 拆分
-     const slides = ...  // 原算法
+     // ...原 slides 解析算法不动...
      const deckFrontmatter: Record<string, unknown> = {}
      if (slides[0]) {
        const fm = slides[0].frontmatter
@@ -324,41 +303,33 @@
      return { deckFrontmatter, slides }
    }
    ```
-5. 加新 vitest case：
+5. 旧 5 个 test 改成访问 `parseDeck(md).slides`
+6. 加新 test：
    ```ts
-   it('deck-level frontmatter 抽出：theme/title 不污染 slide-1 frontmatter', () => {
+   it('deck-level frontmatter 抽出', () => {
      const md = fixture('../../../slidev/templates/beitou-standard/starter.md')
      const { deckFrontmatter, slides } = parseDeck(md)
      expect(deckFrontmatter.theme).toBe('seriph')
      expect(deckFrontmatter.title).toBe('新建幻灯片')
-     expect(slides[0].frontmatter).not.toHaveProperty('theme')
-     expect(slides[0].frontmatter).not.toHaveProperty('title')
-     expect(slides[0].frontmatter.mainTitle).toBe('请填写标题')  // 真正的 slide fm 留下
+     expect(slides[0]?.frontmatter).not.toHaveProperty('theme')
+     expect(slides[0]?.frontmatter.mainTitle).toBe('请填写标题')
    })
    ```
-6. 更新原 5 个 case 的 `parseDeck()` 返回类型断言（`slides` 字段）。
 
-**验证方法**：
-- `pnpm -F @big-ppt/creator exec vitest run src/deck-renderer/parse-deck.test.ts` 6 cases 全绿
+**验证方法**：6 个 case（旧 5 + 新 1）全绿
 
-**风险**：DECK_LEVEL_KEYS 漏写某个真实在用的字段，导致它泄漏进 slide-1 frontmatter 触发 layout v-bind 报 Vue warning。**缓解**：浏览器实测时 Vue devtools 看 slide-1 props 是否多余字段。
+**风险**：DECK_LEVEL_KEYS 漏写真实在用的字段。**缓解**：浏览器实测时 Vue devtools 看 slide-1 props 异常。
 
-**Commit**：`feat(phase10.5-B1): parse-deck 正式归属 src/deck-renderer/ + deck-level fm 抽出`
+**Commit**：`feat(phase10.5-B1): parse-deck 正式归属 + deck-level fm 抽出`
 
 ---
 
 ### Task 25-B-2：DeckRenderer 工程化 + 单测
 
-**目的**：把 spike 版 DeckRenderer.vue 工程化，加完整单测。
+**目的**：把 spike 版工程化，加完整单测，删 spike 残留。
 
 **操作**：
-1. 把 `packages/creator/src/spike/DeckRenderer.vue` 拷到 `packages/creator/src/deck-renderer/DeckRenderer.vue`，改造：
-   - 删除 `layoutMap` 静态映射（unplugin-vue-components 接管）→ 改用 `<component :is="slide.layout">`
-   - 加 `currentPage` prop，单页模式只渲染当前页（替代旧 SlidePreview 的「显示当前页」语义）
-   - body slot 接 `compileBody(slide.body)` 出的动态组件
-   - 整理 props / emits / 暴露 ref（让父组件能调用 `scrollToPage(n)`）
-
-   完整代码：
+1. 新建 `packages/creator/src/deck-renderer/DeckRenderer.vue`：
    ```vue
    <script setup lang="ts">
    import { computed } from 'vue'
@@ -369,7 +340,7 @@
      defineProps<{
        markdown: string
        templateId: string
-       /** 单页预览模式当前页（1-indexed）；不传则展示全部页（横向编辑/检视场景） */
+       /** 1-indexed；undefined = 渲染全部页（多页平铺） */
        currentPage?: number
      }>(),
      { currentPage: undefined },
@@ -380,8 +351,8 @@
    const visibleSlides = computed(() => {
      if (props.currentPage === undefined) return parsed.value.slides
      const idx = props.currentPage - 1
-     const slide = parsed.value.slides[idx]
-     return slide ? [{ ...slide, _originalIndex: idx }] : []
+     const s = parsed.value.slides[idx]
+     return s ? [s] : []
    })
    </script>
 
@@ -389,7 +360,7 @@
      <div class="deck-renderer" :class="`template-${templateId}`">
        <div
          v-for="(slide, idx) in visibleSlides"
-         :key="(slide as any)._originalIndex ?? idx"
+         :key="idx"
          class="slide-canvas"
          :class="
            templateId === 'beitou-standard' ? 'beitou-template' : 'jingyeda-template'
@@ -403,11 +374,7 @@
    </template>
 
    <style scoped>
-   .deck-renderer {
-     display: flex;
-     flex-direction: column;
-     gap: 24px;
-   }
+   .deck-renderer { display: flex; flex-direction: column; gap: 24px; }
    .slide-canvas {
      position: relative;
      width: 960px;
@@ -417,10 +384,7 @@
      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
    }
    .slide-canvas :deep(.slidev-layout) {
-     width: 100%;
-     height: 100%;
-     position: relative;
-     overflow: hidden;
+     width: 100%; height: 100%; position: relative; overflow: hidden;
    }
    </style>
    ```
@@ -428,11 +392,19 @@
    ```ts
    import { describe, it, expect } from 'vitest'
    import { mount } from '@vue/test-utils'
-   import DeckRenderer from './DeckRenderer.vue'
    import { readFileSync } from 'node:fs'
    import { fileURLToPath } from 'node:url'
+   import DeckRenderer from './DeckRenderer.vue'
 
-   function loadStarter(): string {
+   const stubs = {
+     'beitou-cover': { template: '<div class="stub-cover"><slot /></div>', props: ['mainTitle'] },
+     'beitou-toc': { template: '<div class="stub-toc"><slot /></div>' },
+     'beitou-section-title': { template: '<div class="stub-section"><slot /></div>' },
+     'beitou-content': { template: '<div class="stub-content"><slot /></div>' },
+     'beitou-back-cover': { template: '<div class="stub-back"><slot /></div>' },
+   }
+
+   function loadStarter() {
      return readFileSync(
        fileURLToPath(new URL('../../../slidev/templates/beitou-standard/starter.md', import.meta.url)),
        'utf8',
@@ -440,344 +412,429 @@
    }
 
    describe('DeckRenderer', () => {
-     it('renders all 5 slides from beitou starter (no currentPage prop)', () => {
-       const wrapper = mount(DeckRenderer, {
+     it('渲染北投 starter 全部 5 页', () => {
+       const w = mount(DeckRenderer, {
          props: { markdown: loadStarter(), templateId: 'beitou-standard' },
-         global: {
-           stubs: {
-             'beitou-cover': { template: '<div class="stub-cover"><slot /></div>' },
-             'beitou-toc': { template: '<div class="stub-toc"><slot /></div>' },
-             'beitou-section-title': { template: '<div class="stub-section"><slot /></div>' },
-             'beitou-content': { template: '<div class="stub-content"><slot /></div>' },
-             'beitou-back-cover': { template: '<div class="stub-back"><slot /></div>' },
-           },
-         },
+         global: { stubs },
        })
-       expect(wrapper.findAll('.slide-canvas')).toHaveLength(5)
-       expect(wrapper.find('.stub-cover').exists()).toBe(true)
-       expect(wrapper.find('.stub-back').exists()).toBe(true)
+       expect(w.findAll('.slide-canvas')).toHaveLength(5)
+       expect(w.find('.stub-cover').exists()).toBe(true)
+       expect(w.find('.stub-back').exists()).toBe(true)
      })
 
      it('currentPage=2 只渲染第二页', () => {
-       const wrapper = mount(DeckRenderer, {
+       const w = mount(DeckRenderer, {
          props: { markdown: loadStarter(), templateId: 'beitou-standard', currentPage: 2 },
-         global: {
-           stubs: {
-             'beitou-cover': { template: '<div class="stub-cover" />' },
-             'beitou-toc': { template: '<div class="stub-toc" />' },
-             'beitou-section-title': { template: '<div class="stub-section" />' },
-             'beitou-content': { template: '<div class="stub-content" />' },
-             'beitou-back-cover': { template: '<div class="stub-back" />' },
-           },
-         },
+         global: { stubs },
        })
-       expect(wrapper.findAll('.slide-canvas')).toHaveLength(1)
-       expect(wrapper.find('.stub-toc').exists()).toBe(true)
+       expect(w.findAll('.slide-canvas')).toHaveLength(1)
+       expect(w.find('.stub-toc').exists()).toBe(true)
      })
 
-     it('frontmatter 字段通过 v-bind 透传到 layout props', () => {
-       const stub = { template: '<div class="captured">{{ mainTitle }}</div>', props: ['mainTitle'] }
-       const wrapper = mount(DeckRenderer, {
+     it('frontmatter 字段通过 v-bind 透传到 layout', () => {
+       const w = mount(DeckRenderer, {
          props: {
            markdown: '---\nlayout: beitou-cover\nmainTitle: HelloT\n---',
            templateId: 'beitou-standard',
          },
-         global: { stubs: { 'beitou-cover': stub } },
+         global: {
+           stubs: {
+             'beitou-cover': { template: '<div class="cap">{{ mainTitle }}</div>', props: ['mainTitle'] },
+           },
+         },
        })
-       expect(wrapper.find('.captured').text()).toBe('HelloT')
+       expect(w.find('.cap').text()).toBe('HelloT')
      })
    })
    ```
-3. 跑测试，迭代到全绿。
+3. **最后**删 `packages/creator/src/spike/` 整个目录 + `packages/creator/public/templates` 软链 + `packages/creator/src/router/index.ts` 的 `/_spike/deck-renderer` 路由 + `main.ts` 的 `registerSlidevComponents` import
+4. 跑测试 + type-check + build-only 全绿
 
 **验证方法**：
-- 3 个新 vitest case + Task 25-B-1 的 6 个 parse-deck case 全绿（合计 9 个）
-- 浏览器 `/_spike/deck-renderer` 仍可访问（spike 入口暂未删，作为肉眼回归）
+- 9 个 vitest case（parse-deck 6 + DeckRenderer 3）+ compile-body 3 = 12 case 全绿
+- spike 目录消失，main.ts / router / vite.config 内无 spike 引用
+- type-check + build-only 全绿
 
-**风险**：unplugin-vue-components 在 vitest 环境下不工作（默认只在 vite build/dev pipeline 生效）。**缓解**：单测用 `stubs` 显式 stub 掉 layout 组件，绕开 plugin 解析。这是行业标准做法。
+**风险**：删 spike 时漏改某处依赖。**缓解**：
+```bash
+grep -rn "spike\|register-slidev-components" packages/creator/src
+```
+确认 0 命中。
 
-**Commit**：`feat(phase10.5-B2): DeckRenderer 正式落地 + 单测覆盖`
+**Commit**：`feat(phase10.5-B2): DeckRenderer 工程化 + 单测 + 删 spike 残留`
 
 ---
 
-### Task 25-C-1：改造 SlidePreview.vue 用 DeckRenderer 替代 iframe
+### Task 25-C-1：SlidePreview 换 DeckRenderer + 编辑器进入流程去抢锁
 
-**目的**：把主链路的 iframe 换掉。这是本 Phase 的"破坏性"变更，必须配合 25-D 一起切换才能完整工作；单独 25-C-1 完成后 dev 跑起来 SlidePreview 会显示 DeckRenderer，但 Slidev 进程还在跑（浪费资源但不影响功能）。
+**目的**：本 Phase 的主链路切换。完成后编辑器多用户并发零排队。
 
 **操作**：
 1. 改 `packages/creator/src/components/SlidePreview.vue`：
    - 删 iframe + iframeRef + iframeSrc + Phase 9-C sandbox 段
    - 删「重启 Slidev 进程」按钮 + restartError / restarting 状态
-   - 删 `effectiveToken` / `refreshToken` 同步逻辑
-   - 新增 `<DeckRenderer :markdown="content" :template-id="templateId" :current-page="currentPage" />`
-   - 「刷新」按钮改成 `slideStore.refresh()` 唯一作用：重新读 `/api/read-slides`（HMR 不再相关，但用户手动同步 server-side 改动时仍有用）
-   - 模板 currentPage 切换通过 prop 即可，删 contentWindow.location.hash 写入
-2. 改 `packages/creator/src/composables/useSlideStore.ts`：
+   - 删 effectiveToken / refreshToken 同步
+   - 新增 `<DeckRenderer :markdown="slideStore.content.value" :template-id="templateId" :current-page="slideStore.currentPage.value" />`
+   - 保留「全屏放映」按钮 + presentSrc，但 `present()` 改流程（见步骤 3）
+   - 保留「刷新」按钮但语义改为「重新从 server 拉 slides.md」（DeckRenderer 自动重渲，不需要 token bump）
+
+2. 改 `packages/creator/src/composables/useSlideStore.ts` 删 `refreshToken`（编辑器无 iframe，不需要 src bump）；`aiBusy` 保留
+
+3. 改 SlidePreview.vue 的 `present()`：
    ```ts
-   // 删 refreshToken 字段 + 相关 export
-   // aiBusy 保留（其他地方仍用）
+   const presenting = ref(false)
+   const presentError = ref<string | null>(null)
+
+   async function present() {
+     presenting.value = true
+     presentError.value = null
+     try {
+       const res = await fetch('/api/present', {
+         method: 'POST',
+         credentials: 'include',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ deckId: deckId.value }),
+       })
+       if (res.status === 409) {
+         const { holderName } = await res.json()
+         presentError.value = `${holderName} 正在放映该 deck，请稍后再试`
+         return
+       }
+       if (!res.ok) {
+         presentError.value = `获取放映锁失败：${res.status}`
+         return
+       }
+       // 锁拿到 + slides.md 已 rewrite，开新 tab 加载 Slidev SPA
+       window.open(`/api/slidev-preview/#/${slideStore.currentPage.value}`, '_blank')
+     } finally {
+       presenting.value = false
+     }
+   }
    ```
-3. 改 `packages/creator/src/composables/useAIChat.ts` —— 删 session-end 主动 `slideStore.refresh()` 的代码段：DeckRenderer 已经 reactive，content 改了自动重渲，主动 refresh 反而触发额外 HTTP。**例外**：tool 调用后 server-side `slides.md` 改动需要 client 重新拉，这种 refresh 保留。
-4. 改 `packages/creator/src/router/index.ts` 删 `/_spike/deck-renderer` 临时路由。
-5. 删 `packages/creator/src/spike/` 整个目录 + `packages/creator/public/templates` 软链。
-6. `pnpm dev` 起来，编辑器主视图应该看到 DeckRenderer 渲染 deck（lumideck-slidev 进程仍然在跑没影响）。
+   错误展示在 toolbar 下方一条 banner。
+
+4. 改 `packages/creator/src/composables/useAIChat.ts`：删 session-end 主动调 `slideStore.refresh()` 的代码段；保留 tool-completion 后的 explicit refresh（server-side slides.md 实际改了需要 pull）
+
+5. 找到编辑器进入流程的抢锁调用（grep `activate-deck`），删调用 + 路由 beforeEnter 的 lock check。**保留** GET deck 元数据 + GET deck markdown 的逻辑。
+   ```bash
+   grep -rn "activate-deck\|activateDeck" packages/creator/src
+   ```
+   每处命中：
+   - composable / page enter 钩子的 `await activateDeck(id)` 改成 `await fetchDeck(id)`（纯 GET）
+   - router beforeEach 的 lock-check 删
+
+6. `packages/creator/src/components/OccupiedWaitingPage.vue` 文案改：
+   - 旧：「{user} 正在编辑该 deck，请等待解锁」
+   - 新：「{user} 正在放映该 deck，请稍后再试」
+   - 触发路径从 router enter 改成 SlidePreview `present()` 失败时
 
 **验证方法**：
-- `pnpm -F @big-ppt/creator type-check` + `pnpm -F @big-ppt/creator build-only` 全绿
-- `pnpm -F @big-ppt/creator test` 既有单测不挂（SlidePreview 没专项单测，覆盖在 E2E 里）
-- 浏览器手验：登录 → 进 deck 编辑页 → 看到 DeckRenderer 渲染对应模板的 deck → ChatPanel 发指令 → DeckRenderer 反应式更新
+- `pnpm -F @big-ppt/creator type-check` + `build-only` 全绿
+- 浏览器手验：
+  1. 用户 A 登录 → 进 deck X 编辑（**应该秒进，无 OccupiedWaitingPage**）
+  2. 用户 B 同时登录 → 进同一个 deck X（**也应该秒进**）
+  3. 用户 A 点「全屏放映」→ 新 tab 打开 Slidev SPA
+  4. 用户 B 点「全屏放映」→ 应该看到「A 正在放映」的 banner，不开新 tab
+  5. 用户 A 关闭放映 tab → 5min 后 B 再试 OK（或 A 主动通过某机制释放，本 Phase 不实现主动释放，靠心跳超时）
 
 **风险**：
-- iframe 删了之后某些 layout 内部用了 `position: absolute` + `transform: scale()` 之类的 Slidev viewport 适配，可能在 DeckRenderer 的 960×540 frame 里展示溢出。**缓解**：Task 25-B-2 测试时已用真实 starter.md 跑过，spike 用户已确认「完全一样」。
-- `useAIChat` 删 refresh 后某些场景 LLM 改 `slides.md` 但 client `content` 不同步。**缓解**：保留 tool-completion 后 explicit `slideStore.refresh()` 调用（看实际 useAIChat 代码确定切点）。
+- DeckRenderer 渲染依赖的 `slideStore.content.value` 在 deck 切换时可能慢一拍。**缓解**：DeckEditorPage onMounted 先 await fetchMarkdown(deckId) 再 mount SlidePreview。
+- present-lock acquire 比之前的 activate-deck 多一次 RTT。**缓解**：放映触发频率低，多 200ms 可接受。
 
-**Commit**：`feat(phase10.5-C1): SlidePreview 换 DeckRenderer，删 iframe + 重启按钮 + refreshToken`
+**Commit**：`feat(phase10.5-C1): SlidePreview 换 DeckRenderer + 编辑器进入流程去抢锁`
 
 ---
 
-### Task 25-C-2：useAIChat / useSwitchTemplateJob 等下游 composable 收尾
+### Task 25-C-2：下游 composable 清理 iframe / refreshToken 残留
 
-**目的**：把 25-C-1 在主组件层的改动扫尾到 composable 层。
+**目的**：扫尾 C1 主组件层改动到 composable 层。
 
 **操作**：
-1. 扫描 grep：
-   ```bash
+1. ```bash
    grep -rn "refreshToken\|iframeRef\|slidev-restart\|slidev-iframe\|probeSlidevReady" packages/creator/src
    ```
-   每个命中都修干净。
-2. `useSwitchTemplateJob.ts`：切模板成功后原来调 `slideStore.refresh()` + 等 iframe reload，改成只 `slideStore.refresh()` 拉新 markdown（DeckRenderer 自己重渲，无 iframe race）。删 probeSlidevReady 类等待。
+   每个命中都修。
+2. `useSwitchTemplateJob.ts`：切模板成功后原来 `slideStore.refresh()` + 等 iframe reload，改成只 `slideStore.refresh()`（DeckRenderer 自己重渲）。删 probeSlidevReady。
 3. `useGenerateImageJob.ts`：完成后 `slideStore.refresh()` 保留（拉新 markdown，DeckRenderer 看到 imageSrc 自动加载新图）。
+4. 既有 composable 单测同步更新（删 `refreshToken` 相关 assertion）
 
 **验证方法**：
 - grep 命中 0
-- `pnpm -F @big-ppt/creator test` 既有 composable 单测全绿
-- 浏览器手验：切模板 + 生图全流程跑通
-
-**风险**：composable 单测里如果 mock 了 `refreshToken` 字段会编译失败。**缓解**：测试同步更新。
+- `pnpm -F @big-ppt/creator test` 全绿
+- 浏览器手验：切模板 + 生图全链路跑通
 
 **Commit**：`refactor(phase10.5-C2): 下游 composable 清理 iframe / refreshToken 残留`
 
 ---
 
-### Task 25-D-1：删 agent 侧 Slidev 反代 + 锁 + 重启 route
+### Task 25-D-1：新建 `POST /api/present` 路由 + 单测
 
-**目的**：拆 agent 内的 Slidev 相关代码。这是部署相关的"破坏性"变更前置 —— 这步完成后 dev 跑起来 lumideck-slidev 进程没人会去访问，但进程本身还在跑（25-D-2 删）。
+**目的**：把 slidev-lock 的 acquire 点从 activate-deck 挪过来。
 
 **操作**：
-1. 改 `packages/agent/src/index.ts`：
-   - 删 `import httpProxy from 'http-proxy'`
-   - 删 SLIDEV_ORIGIN / SLIDEV_PROXY_PREFIX / SLIDEV_EXTRA_PREFIXES 常量
-   - 删 createProxyServer 创建块 + onProxyReq / onProxyRes / onError 监听
-   - 删 server.on('upgrade', ...) 的 WebSocket 转发
-   - 删 server.on('request', ...) 的 if-path-match-slidev-prefix 分支
-2. 改 `packages/agent/src/app.ts`：删 `slidevRestartRoute` import + use
-3. 删文件：
-   - `packages/agent/src/slidev-lock.ts`
-   - `packages/agent/src/slidev-proxy-auth.ts`
-   - `packages/agent/src/routes/slidev-restart.ts`
-   - `packages/agent/src/__tests__/slidev-lock.test.ts`（如有）
-   - `packages/agent/src/routes/__tests__/slidev-restart.test.ts`（如有）
-4. 改 `packages/agent/src/middleware/request-context.ts`：删 activeDeck / slidevLockHolder 等 lock 相关字段
-5. 改 `packages/agent/src/middleware/csp.ts`：iframe 相关 CSP 整段删除（不再有 iframe）
-6. 改 `packages/agent/src/db/schema.ts`：删/改 `slidev_lock` 字段说明的注释（schema 字段本身保留以免破坏 prod 数据库；但代码不再用）
-7. 改 `packages/agent/src/routes/healthz.ts`：删 slidev 探活
-8. 改 `packages/agent/.env.example` / `.env.production.example` / `.env.test.example`：删 SLIDEV_ORIGIN 行
+1. 新建 `packages/agent/src/routes/present.ts`：
+   ```ts
+   import { Hono } from 'hono'
+   import { requireAuth } from '../middleware/auth.js'
+   import { tryAcquireLock, getLockHolder, type LockHolder } from '../slidev-lock.js'
+   import { getDeckById } from '../db/decks.js'
+   import { rewriteSlidesMd } from '../slides-store.js'
+   import { logServerEvent } from '../logger/server-log.js'
+
+   export const presentRoute = new Hono()
+
+   presentRoute.use('/present', requireAuth)
+   presentRoute.post('/present', async (c) => {
+     const { user } = c.var
+     const { deckId } = await c.req.json<{ deckId: number }>()
+     const deck = await getDeckById(deckId)
+     if (!deck || deck.userId !== user.id) {
+       return c.json({ error: 'not found' }, 404)
+     }
+     const acquired = tryAcquireLock(user.id, user.username, deckId)
+     if (!acquired) {
+       const holder = getLockHolder()
+       logServerEvent({ category: 'present', event: 'lock-conflict', userId: user.id, deckId, holderId: holder?.userId })
+       return c.json({ error: 'lock_held', holderName: holder?.username ?? 'unknown' }, 409)
+     }
+     await rewriteSlidesMd(deck.markdown ?? '')
+     logServerEvent({ category: 'present', event: 'lock-acquired', userId: user.id, deckId })
+     return c.json({ ok: true })
+   })
+   ```
+   > 注：`tryAcquireLock` / `getLockHolder` / `rewriteSlidesMd` 等具体签名按当前 slidev-lock.ts / slides-store.ts 真实接口对齐；本 plan 给思路，实施时按真实接口微调。
+
+2. 新建 `packages/agent/src/routes/__tests__/present.test.ts`：
+   ```ts
+   import { describe, it, expect, beforeEach } from 'vitest'
+   import { app } from '../../app.js'
+   import { resetLock } from '../../slidev-lock.js'
+   // ...truncate DB + create users A/B + create deck X owned by A...
+
+   beforeEach(() => resetLock())
+
+   describe('POST /api/present', () => {
+     it('owner 抢锁成功，slides.md 被改写', async () => {
+       const res = await app.fetch(new Request('http://t/api/present', {
+         method: 'POST',
+         headers: { cookie: cookieA, 'content-type': 'application/json' },
+         body: JSON.stringify({ deckId: deckX.id }),
+       }))
+       expect(res.status).toBe(200)
+       // 断言 slides.md 内容已 sync
+     })
+
+     it('B 抢已被 A 持有的锁返回 409 + holderName', async () => {
+       // A 先抢
+       await app.fetch(...)
+       // B 再抢
+       const res = await app.fetch(...)
+       expect(res.status).toBe(409)
+       const body = await res.json()
+       expect(body.holderName).toBe('userA')
+     })
+
+     it('非 owner 返回 404', async () => {
+       const res = await app.fetch(new Request('http://t/api/present', {
+         method: 'POST',
+         headers: { cookie: cookieB, 'content-type': 'application/json' },
+         body: JSON.stringify({ deckId: deckX.id }),
+       }))
+       expect(res.status).toBe(404)
+     })
+   })
+   ```
+
+3. 改 `packages/agent/src/app.ts`：`app.route('/api', presentRoute)`（或按现有路由组织风格挂载）；删 `slidevRestartRoute` import + 注册
+
+4. 删 `packages/agent/src/routes/slidev-restart.ts` + 对应单测文件
 
 **验证方法**：
-- `pnpm -F @big-ppt/agent type-check` + `pnpm -F @big-ppt/agent test` 全绿（test 库 lumideck_test 必须先 db:push:test 没动）
-- `pnpm dev` 起来，agent 启动日志无 "slidev proxy →" 行；creator 工作正常（DeckRenderer 不依赖 agent 反代）
+- `pnpm -F @big-ppt/agent test` 全绿（含 present 路由 3 case）
+- `pnpm -F @big-ppt/agent test:coverage` 不降覆盖率门槛
 
 **风险**：
-- 某些 agent 集成测可能依赖 slidev 相关的 setup（比如锁状态）。**缓解**：删测试相关字段时一并改对应 spec。
-- 误删 `slidev_lock` 字段本身导致生产部署时 drizzle-kit push 试图 DROP COLUMN。**缓解**：本 Task **只动代码不动 schema**；schema 字段保留供向后兼容（删字段是单独的 db migration，不在本 Phase 范围）。
+- present 路由跟 slides-store 写文件配合 — 写完时机晚于响应可能 race。**缓解**：`await rewriteSlidesMd` 在 return 200 之前，确保前端看到 200 时文件已就位。
+- 既有锁实现的 acquire 调用方还有 activate-deck，本 Task 不删 activate-deck，两条路径并存到 D-2。**缓解**：T-2 删 activate-deck 完成才算 D 阶段闭环。
 
-**Commit**：`refactor(phase10.5-D1): 删 agent 侧 slidev 反代 + 锁 + 重启 route`
-
----
-
-### Task 25-D-2：删 Slidev dev 进程（package scripts + turbo）
-
-**目的**：本地 `pnpm dev` 不再起 slidev:3031 进程。
-
-**操作**：
-1. 改 `packages/slidev/package.json`：
-   ```json
-   "scripts": {
-     "ensure-slides": "...",  // 保留供 build 用
-     "build:catalog": "...",
-     "build": "pnpm ensure-slides && slidev build",
-     "test": "vitest run",
-     "gen-thumbnails": "..."  // 保留
-     // 删: dev / dev-open / export / preview
-   }
-   ```
-2. 改 `package.json`（根）：
-   ```json
-   "scripts": {
-     "dev": "turbo run dev --parallel --filter @big-ppt/creator --filter @big-ppt/agent"
-     // 原本含 slidev 的 filter 拿掉
-   }
-   ```
-3. 改 `turbo.json`：删 slidev 的 dev pipeline 入口（如有）
-
-**验证方法**：
-- `pnpm dev` 只起 2 个进程，无 :3031
-- `curl localhost:3031` 拒绝连接（确认 Slidev 真不起了）
-- creator 编辑流程仍正常工作
-
-**风险**：`pnpm -F @big-ppt/slidev build`（分享链接路径预留）仍然能跑。**缓解**：本 Task 末尾跑一次 `pnpm -F @big-ppt/slidev build` 确认不破。
-
-**Commit**：`refactor(phase10.5-D2): 删 slidev dev 进程，pnpm dev 只起 creator + agent`
+**Commit**：`feat(phase10.5-D1): 新增 POST /api/present 路由 — 锁 acquire 点归位`
 
 ---
 
-### Task 25-D-3：部署架构收敛 — pm2 / nginx / deploy script
+### Task 25-D-2：删 activate-deck 路由 + agent / slidev-restart
 
-**目的**：生产部署不再有 lumideck-slidev 进程。
+**目的**：编辑器进入不再抢锁；删 restart 路由（编辑端无 iframe）。
 
 **操作**：
-1. 改 `deploy/ecosystem.config.cjs`：删 `lumideck-slidev` app 定义；保留 `lumideck-agent`
-2. 改 `deploy/nginx/lumideck.conf.template`：
-   - 删 `location /api/slidev-preview/` block
-   - 删 `proxy_set_header X-Slidev-*` 相关
-   - 删 SLIDEV_ORIGIN 变量
-3. 改 `deploy/scripts/start-agent.sh`（如有 SLIDEV_ORIGIN 注入）：删该行
-4. 删 `deploy/scripts/start-slidev.sh`（如存在）
-5. 改 `scripts/deploy.sh`：
-   - `deploy:backend` 中 rsync 同步 `packages/slidev` 的步骤可保留（分享链接 build 需要），但删 `pm2 reload lumideck-slidev`
-6. 改 `docs/runbooks/deploy.md`：架构图同步，删 slidev 进程相关条目
+1. ```bash
+   grep -rn "activate-deck\|activateDeck\|/api/activate" packages/agent
+   ```
+   每处命中：
+   - 删 `packages/agent/src/routes/activate-deck.ts`（如果整文件只为这个）
+   - 删 `app.ts` 内 activate-deck 注册
+   - 删相关单测
+2. `packages/agent/src/middleware/request-context.ts`：删 `activeDeck` 字段（如有），保留其他 user/session
+3. 改 `packages/agent/src/app.ts`：确认 `slidevRestartRoute` 在 D-1 已删
+4. 改 `packages/agent/src/db/schema.ts` 注释：原说明「activate-deck 抢锁」改成「present 抢锁」
+5. 改 `packages/agent/.env.example`：无需变更（SLIDEV_ORIGIN 等保留）
 
 **验证方法**：
-- `pnpm deploy:ecosystem` dry-run（手工 ssh 看 ecosystem.config.cjs 已无 lumideck-slidev）
-- 生产部署在 25-F 末尾真做一次 `pnpm deploy:all`
+- grep `activate-deck` 全仓 0 命中（packages/creator 应该在 C-1 已清干净；本 Task 是 agent 侧）
+- `pnpm -F @big-ppt/agent test` 全绿
 
-**风险**：误删 nginx 模板的其他 location block。**缓解**：本 Task 改完用 `git diff deploy/nginx/lumideck.conf.template` 仔细 review。
+**风险**：误删共享辅助函数。**缓解**：grep 仔细看每个命中是真删还是要保留。
 
-**Commit**：`refactor(phase10.5-D3): 部署架构收敛 — 删 pm2 lumideck-slidev + nginx slidev 反代`
+**Commit**：`refactor(phase10.5-D2): 删 activate-deck 路由 + agent slidev-restart`
 
 ---
 
 ### Task 25-E-1：Playwright visual regression baseline
 
-**目的**：补 spike 报告里说的 L4 截图自动对比。
+**目的**：spike 报告承诺的 L4 视觉守门。
 
 **操作**：
-1. `pnpm -F @big-ppt/e2e add -D @playwright/test`（如未装；通常已经在）
-2. 改 `packages/e2e/playwright.config.ts`：
+1. 改 `packages/e2e/playwright.config.ts`：
    ```ts
    expect: {
      toHaveScreenshot: {
-       maxDiffPixelRatio: 0.01,  // 1% 像素容差（字体 AA 差异余量）
-       threshold: 0.2,           // 单像素颜色容差
+       maxDiffPixelRatio: 0.01,
+       threshold: 0.2,
        animations: 'disabled',
        caret: 'hide',
      },
    },
    ```
-3. 新建 `packages/e2e/tests/visual.spec.ts`：
+2. 在 creator 加临时路由 `/_visual/:template/:layout`：
+   ```ts
+   // src/router/index.ts，加在 catch-all 之前
+   ...(import.meta.env.MODE === 'test' ? [{
+     path: '/_visual/:template/:layout',
+     name: 'visual-baseline',
+     component: () => import('../pages/VisualBaselinePage.vue'),
+   }] : []),
+   ```
+3. 新建 `packages/creator/src/pages/VisualBaselinePage.vue`：
+   ```vue
+   <script setup lang="ts">
+   import { useRoute } from 'vue-router'
+   import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
+   import { computed } from 'vue'
+
+   const route = useRoute()
+   const template = computed(() => String(route.params.template))
+   const layout = computed(() => String(route.params.layout))
+
+   // 每个 layout 的最小可渲染 markdown，按 manifest required 字段填
+   const fixtures: Record<string, string> = {
+     cover: 'layout: ${tpl}-cover\nmainTitle: 测试标题\nsubtitle: 副标题',
+     toc: 'layout: ${tpl}-toc\nitems: ["A", "B", "C"]',
+     'section-title': 'layout: ${tpl}-section-title\nchapterNumber: 1\nchapterTitle: 数据',
+     content: 'layout: ${tpl}-content\nheading: 标题\n---\n\n正文内容',
+     'image-content': 'layout: ${tpl}-image-content\nheading: 图标题\nimageSrc: /templates/${tpl}/thumbnail.png',
+     'back-cover': 'layout: ${tpl}-back-cover\nmessage: 谢谢观看',
+   }
+
+   const markdown = computed(() => {
+     const tpl = template.value.replace('-standard', '')
+     const raw = fixtures[layout.value] ?? ''
+     return `---\n${raw.replace(/\$\{tpl\}/g, tpl)}\n---`
+   })
+   </script>
+
+   <template>
+     <DeckRenderer :markdown="markdown" :template-id="template" />
+   </template>
+   ```
+4. 新建 `packages/e2e/tests/visual.spec.ts`：
    ```ts
    import { test, expect } from '@playwright/test'
 
-   // 12 个 layout：两套模板 × 6 layout
-   // 每个 spec 准备一份 minimal markdown，渲染到 DeckRenderer，截屏比对
    const TEMPLATES = ['beitou-standard', 'jingyeda-standard'] as const
    const LAYOUTS = ['cover', 'toc', 'section-title', 'content', 'image-content', 'back-cover'] as const
 
-   for (const template of TEMPLATES) {
-     for (const layout of LAYOUTS) {
-       test(`${template} - ${layout}`, async ({ page }) => {
-         // /_visual/<template>/<layout> 临时路由由 25-E-1 顺手在 creator 加
-         await page.goto(`/_visual/${template}/${layout}`)
+   for (const t of TEMPLATES) {
+     for (const l of LAYOUTS) {
+       test(`${t} - ${l}`, async ({ page }) => {
+         await page.goto(`/_visual/${t}/${l}`)
          await page.waitForSelector('.slide-canvas')
-         const canvas = page.locator('.slide-canvas')
-         await expect(canvas).toHaveScreenshot(`${template}-${layout}.png`)
+         await expect(page.locator('.slide-canvas')).toHaveScreenshot(`${t}-${l}.png`)
        })
      }
    }
    ```
-4. 在 creator 加临时路由 `/_visual/:template/:layout`，渲染对应 layout 的一份固定 markdown（用各 manifest.json 的 required 字段最小值填）。
-5. 首次跑：`pnpm -F @big-ppt/e2e test visual.spec.ts --update-snapshots` 生成 baseline
-6. baselines 入 git：`git add packages/e2e/visual-baselines/`
-7. CI 跑：`pnpm -F @big-ppt/e2e test visual.spec.ts`（不带 `--update-snapshots`）应该全绿
-8. 故意改一个 layout 的 CSS（比如 cover 字号 +2px），再跑 → 应该红，diff 图存到 `test-results/`
+5. 首次跑生成基线：`pnpm -F @big-ppt/e2e test visual.spec.ts --update-snapshots`
+6. baseline 入 git：`git add packages/e2e/visual-baselines/`
+7. 故意改一个 layout 的 CSS（如 cover 字号 +4px），跑 → 红，diff PNG 在 `test-results/`，回滚 CSS
 
 **验证方法**：
-- 12 个 visual spec 全绿
-- 故意改 CSS 后红测试可重现
-- baseline PNG 入 git（12 个文件，总大小 < 2MB）
+- 12 个 visual spec 全绿（首次）+ 故意改 CSS 后红可重现
+- baseline PNG 入 git（< 2MB 总）
 
-**风险**：
-- macOS dev 跟 Linux CI 字体 AA 差异即使 1% 容差也红。**缓解**：baseline 只在 CI 生成入 git，本地跑 `--ignore-snapshots`（也可一律 docker 化跑，但本 Phase 不做）。
-- `/_visual/*` 临时路由不该上 production。**缓解**：路由组件用 `if (import.meta.env.PROD) return` 或 `if (import.meta.env.MODE !== 'test')` 跳过挂载。
+**风险**：本地 macOS / CI Linux Chromium AA 差异。**缓解**：本地用 `--ignore-snapshots`，CI 用真 baseline。
 
-**Commit**：`test(phase10.5-E1): Playwright visual regression — 两套模板 × 6 layout baseline`
+**Commit**：`test(phase10.5-E1): Playwright visual regression 12 baseline`
 
 ---
 
-### Task 25-E-2：E2E spec selector 改造（iframe → DeckRenderer DOM）
+### Task 25-E-2：E2E spec selector iframe → DeckRenderer DOM
 
-**目的**：现有 E2E 通过 `iframe[src*="slidev-preview"]` 定位预览内容，要全部改成 DeckRenderer 内部 selector。
+**目的**：现有 E2E 通过 `iframe[src*="slidev-preview"]` 定位编辑器预览内容，全部改成 DeckRenderer DOM。
 
 **操作**：
-1. grep：
-   ```bash
+1. ```bash
    grep -rn "slidev-preview\|slidev-iframe\|iframe\[" packages/e2e/tests
    ```
-2. 逐个 spec 改：原来 `frame.locator('.cover-root')` 改成 `page.locator('.deck-renderer .slide-canvas .cover-root')`（无需 frame 切换）
-3. 删 `BIG_PPT_TEST_REWRITE_MODE=skeleton` 之外的 slidev 相关 webServer env
-4. playwright.config 内 webServer 命令改：原本起 creator+agent+slidev，改成只起 creator+agent
-5. 删 `/_test/reset-lock` 路由相关测试 setup（lock 不存在了）
+2. 每个 spec 改：
+   - `frame.locator('.cover-root')` → `page.locator('.deck-renderer .slide-canvas .cover-root')`
+   - 无需 frame switch
+3. 锁相关 E2E（如有）改：原「访问 deck 触发锁竞争」→「点全屏放映触发锁竞争」
+4. playwright.config 内 webServer env 不动（保留 slidev 进程，全屏 / visual spec 都可能用到）
+5. **不删** `BIG_PPT_TEST_REWRITE_MODE=skeleton`（switch_template 工具仍可能在 E2E 跑到）
+6. **不删** `/_test/reset-lock` 路由（slidev-lock 还在，测试间清锁仍需要）
 
 **验证方法**：
 - `pnpm -F @big-ppt/e2e test`（全量）全绿
-- E2E 跑完不留任何 slidev:3031 引用
 
-**风险**：某些 E2E 依赖 iframe full-reload 等待时间，删 iframe 后变成同步 reactive 更新；test 里的 `waitForTimeout(2000)` 等可能多余但不影响绿测。**缓解**：保留 waits 不动，后续优化时再砍。
+**风险**：E2E 里 `waitForTimeout(2000)` 等延迟可能多余。**缓解**：本 Task 不优化等待时间，留 unchanged 避免引入新失败。
 
-**Commit**：`test(phase10.5-E2): E2E selector iframe → DeckRenderer DOM`
+**Commit**：`test(phase10.5-E2): E2E selector iframe → DeckRenderer DOM + 锁 case 改 present`
 
 ---
 
 ### Task 25-F-1：CLAUDE.md / roadmap 收尾
 
-**目的**：把 CLAUDE.md「已知坑」内 Slidev 相关条目清理；roadmap 状态翻 ✅。
+**目的**：把 CLAUDE.md 已知坑 / 架构图 / roadmap 状态同步。
 
 **操作**：
 1. 改 `CLAUDE.md`：
-   - 删「已知坑 / Slidev 反代 + HMR」整段（5 条，本 Phase 全消化）
-   - 删「单实例占用锁是 agent 进程内存对象」段（无锁了）
-   - 删 `slidev-proxy-auth` / `slidev-lock` / Slidev `slides.md` 锁相关描述
-   - 新增「架构 / DeckRenderer」一段：解释 DeckRenderer 取代 Slidev iframe 的工作原理，body markdown 编译链路简述
-   - 更新「架构全景」请求流向图：删 `/api/slidev-preview/*` 反代路径
-   - 「常用命令」段：`pnpm dev` 备注从「三进程」改成「两进程」
+   - 「关键模块」段 `slidev-lock` 描述更新：「Phase 10.5 起锁的 acquire 点是 `POST /api/present`，编辑器进入不抢锁；持锁含义改为『当前全屏放映用户』」
+   - 「请求流向」架构图更新：编辑器路径不走 `/api/slidev-preview/`；全屏放映新 tab 仍走
+   - 「已知坑 / Slidev 反代 + HMR」段评估：long session HMR 错位（plan 23 踩坑 13）触发面已消失 → 提示该坑现实意义降低，但条目保留供历史参考
+   - 加新章节「架构 / DeckRenderer」简述工作原理（parseDeck + 动态 layout + body 编译 + cache）
 2. 改 `docs/requirements/roadmap.md`：
    - Phase 10.5 状态从「spike ✅ 通过 / 待 plan 25」改为「✅ 已完成 (yyyy-mm-dd 关闭)」
-   - Phase 11 章节范围更新：删进程池相关，剩 deck-level 锁 + 分享链接 + 容量 spike
-3. 改 `docs/runbooks/deploy.md`：架构图同步（已在 25-D-3 做了一半，本 Task 收尾）
+   - Phase 11 章节范围进一步收紧：删进程池 / LRU；编辑路径已解决；剩「分享链接 + 容量 spike」
 
 **验证方法**：
-- 用户 review CLAUDE.md diff，确认描述无错
+- CLAUDE.md diff 用户 review 确认无错
 - roadmap 状态行准确
 
-**Commit**：`docs(phase10.5-F1): CLAUDE.md 收敛 slidev 反代/锁/HMR 已知坑 + roadmap 状态 ✅`
+**Commit**：`docs(phase10.5-F1): CLAUDE.md 锁语义归位 + 架构图 + roadmap 状态 ✅`
 
 ---
 
 ### Task 25-F-2：plan 25 关闭报告 + 真实部署
 
-**目的**：写关闭报告 + 真生产部署一次验证全链路。
+**目的**：写关闭报告 + 真生产部署验证。
 
 **操作**：
-1. 在本 plan 末尾「执行期偏离」+「踩坑与解决」+「测试数量落地」三段回填
-2. （仅在用户批准后）`FORCE=1 pnpm deploy:all` 跑生产部署
+1. 本 plan 末尾「执行期偏离」+「踩坑与解决」+「测试数量落地」三段回填
+2. 用户批准后 `FORCE=1 pnpm deploy:all` 跑生产部署
 3. `pnpm deploy:healthz` 确认线上 OK
-4. 浏览器实测 lumideck.illegalscreed.cn：登录 → 进 deck → DeckRenderer 渲染 + 编辑全流程
-5. 监控 1 周：dogfood 期看有无 long session 卡顿 / 资源问题
+4. 浏览器实测 lumideck.illegalscreed.cn：登录 → 进 deck → DeckRenderer 渲染 → 编辑 → 全屏放映新 tab 跑通 Slidev SPA
+5. 监控 1 周 dogfood
 
-**验证方法**：
-- 关闭报告完整
-- 生产部署 healthz 200
-- 1 周 dogfood 无回退
+**验证方法**：关闭报告完整 + 生产 healthz 200 + 1 周无回退
 
 **Commit**：`chore(phase10.5-F2): plan 25 关闭报告 + 生产部署验证`
 
@@ -785,27 +842,30 @@
 
 ## 验收条件
 
-- [ ] Phase 25-A：unplugin-vue-components 接入 + body markdown 编译能力（A1+A2）
-- [ ] Phase 25-B：DeckRenderer 正式归属 + parse-deck 扩 deck-level fm + 9 单测全绿（B1+B2）
-- [ ] Phase 25-C：SlidePreview 切换到 DeckRenderer + 下游 composable 清理（C1+C2）
-- [ ] Phase 25-D：agent slidev 反代 / 锁 / 重启 route 删除 + dev 进程废弃 + 部署收敛（D1+D2+D3）
-- [ ] Phase 25-E：Playwright visual regression 12 baseline + E2E selector 改造（E1+E2）
-- [ ] Phase 25-F：CLAUDE.md / roadmap 收敛 + 真实部署验证（F1+F2）
+- [ ] Phase 25-A：unplugin-vue-components + body markdown 编译能力（A1+A2）
+- [ ] Phase 25-B：DeckRenderer 正式归属 + spike 删 + 12 单测全绿（B1+B2）
+- [ ] Phase 25-C：SlidePreview 换 DeckRenderer + 编辑器去抢锁 + composable 清理（C1+C2）
+- [ ] Phase 25-D：POST /api/present 路由 + 删 activate-deck / slidev-restart（D1+D2）
+- [ ] Phase 25-E：Playwright 12 visual baseline + E2E selector 改造（E1+E2）
+- [ ] Phase 25-F：CLAUDE.md / roadmap 收敛 + 真实部署（F1+F2）
+- [ ] **编辑路径多用户实测无 OccupiedWaitingPage**（用户 A、B 同时进同一 deck 都秒进）
+- [ ] **全屏放映互斥正常**（A 在放映时 B 触发 present 返回 409 + holderName）
 - [ ] 全量回归：`pnpm test` + `pnpm -F @big-ppt/e2e test` 全绿
 - [ ] coverage 门槛维持（agent 90/85，creator 75/65）
-- [ ] 生产部署 healthz 200，1 周 dogfood 无回退
+- [ ] 生产 healthz 200，1 周 dogfood 无回退
 
 ---
 
 ## 不做什么（范围围栏）
 
-- ❌ 实现 Slidev 演讲者模式 / 录制 / 黑板 / 全屏（roadmap 已写明不做）
-- ❌ `<v-clicks>` / `<v-click>` 渐进点击动画（Gap 3 可放弃；遇到需求时再花 30 行自写）
-- ❌ 全部 deck 自动迁移（旧 deck markdown 不需要改动，DeckRenderer 直接渲染当前格式）
-- ❌ 删 `slidev_lock` DB schema 字段（保留供向后兼容；单独 migration 才能动）
-- ❌ Phase 11 多用户并发的进程池 / LRU / 崩溃重拉（本 Phase 完成后这些自动作废，Phase 11 范围缩水重写）
-- ❌ 实时协同编辑（CRDT / OT）—— roadmap Phase 16+ 范围
-- ❌ 把 `packages/slidev` 包整个删掉（保留 `pnpm build` 路径供 Phase 11 分享链接静态托管）
+- ❌ 删 Slidev runtime / agent 反代 / pm2 / nginx / slidev-lock（全屏放映仍需）
+- ❌ 自写 `<PresentationMode>` Vue 组件（演讲模式继续走 Slidev SPA）
+- ❌ `<v-clicks>` / 演讲者备注 / 录制（用户在 Slidev SPA tab 里玩这些）
+- ❌ 实时协同编辑（CRDT / OT）— roadmap Phase 16+
+- ❌ 删 slidev_lock DB schema 字段 — 单独 migration
+- ❌ Phase 11 多用户并发整套方案（编辑已解决，剩分享链接 + 容量 spike）
+- ❌ present 锁的主动释放接口（靠心跳 5min 超时；后续 Phase 11 可加 `DELETE /api/present`）
+- ❌ 优化 E2E 内 `waitForTimeout` 延迟（保持现有 wait，避免引入失败）
 
 ---
 
