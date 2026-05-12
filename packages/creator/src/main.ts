@@ -11,12 +11,16 @@ import '@big-ppt/slidev/global.css'
 import App from './components/App.vue'
 import router from './router'
 import { installErrorHandlers } from './composables/logger'
+import { registerDeckRendererComponents } from './deck-renderer/register-layouts'
 
 const app = createApp(App)
 installErrorHandlers(app)
 app.use(Antd)
 app.use(XProvider)
 app.use(router)
-// Phase 10.5：layouts + 公共组件由 unplugin-vue-components 跨包扫描自动注册
-// （见 vite.config.ts 的 Components plugin dirs），无需手工 app.component()
+// Phase 10.5：unplugin-vue-components 只能解析 .vue 模板里的字面量标签
+// （如 layouts 内部的 <LBeitouCoverLogo />），对 DeckRenderer 的
+// `<component :is="动态字符串">` + body markdown 运行时编译出的 `<TwoCol>`
+// 完全看不见。layouts + 公共组件必须额外手工 app.component() 全局注册。
+registerDeckRendererComponents(app)
 app.mount('#app')

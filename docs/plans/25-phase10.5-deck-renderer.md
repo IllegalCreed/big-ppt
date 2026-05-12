@@ -118,7 +118,9 @@
 | 文件 | 原因 |
 | ---- | ---- |
 | `packages/creator/src/spike/` 整个目录 | spike 工程化版已在 `src/deck-renderer/` |
-| `packages/creator/public/templates` 软链 | 公共组件走 `@big-ppt/slidev` workspace import |
+<!-- 软链不删（执行期偏离 #1）：layouts 通过 `${BASE_URL}/templates/<id>/logo.png` 取资源
+     还需要这个 path 可访问。dev 走 Vite public dir 软链，build 时 Vite 把符号链接目标
+     拷进 dist/templates/ 落到生产 rsync 范围。 -->
 
 ### 保留不动（重点说明）
 
@@ -445,7 +447,7 @@
      })
    })
    ```
-3. **最后**删 `packages/creator/src/spike/` 整个目录 + `packages/creator/public/templates` 软链 + `packages/creator/src/router/index.ts` 的 `/_spike/deck-renderer` 路由 + `main.ts` 的 `registerSlidevComponents` import
+3. **最后**删 `packages/creator/src/spike/` 整个目录 + `packages/creator/src/router/index.ts` 的 `/_spike/deck-renderer` 路由 + `main.ts` 的 `registerSlidevComponents` import。**保留** `packages/creator/public/templates` 软链（layouts 通过 `${BASE_URL}/templates/<id>/logo.png` 仍然需要资源 path）
 4. 跑测试 + type-check + build-only 全绿
 
 **验证方法**：
