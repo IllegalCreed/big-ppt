@@ -51,9 +51,9 @@ test('beitou deck 切到 jingyeda：state 走完 → DB.templateId=jingyeda + co
   const cards2 = page.locator('[data-template-card]')
   await expect(cards2).toHaveCount(2, { timeout: 10_000 })
 
-  // 选 jingyeda → 主按钮变"切换（AI 重写）"
+  // 选 jingyeda → modal 主按钮文案变可点（用 data-primary-action 选定位避免跟顶栏「切换模板」按钮命名冲突）
   await cards2.filter({ hasText: '竞业达汇报模板' }).click()
-  await page.getByRole('button', { name: /切换（AI 重写）/ }).click()
+  await page.locator('[data-primary-action]').click()
 
   // 等切换完成（skeleton mode 几乎瞬间走完）→ success view
   await expect(page.getByText(/切换完成/)).toBeVisible({ timeout: 30_000 })

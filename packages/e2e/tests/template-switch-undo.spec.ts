@@ -56,7 +56,7 @@ test('切完 jingyeda → /undo → 回滚 snapshot → DB.templateId 回 beitou
   const switchCards = page.locator('[data-template-card]')
   await expect(switchCards).toHaveCount(2, { timeout: 10_000 })
   await switchCards.filter({ hasText: '竞业达汇报模板' }).click()
-  await page.getByRole('button', { name: /切换（AI 重写）/ }).click()
+  await page.locator('[data-primary-action]').click()
   await expect(page.getByText(/切换完成/)).toBeVisible({ timeout: 30_000 })
   await page.locator('[data-success-view]').click()
 

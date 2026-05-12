@@ -29,7 +29,9 @@ export default defineConfig({
         'src/routes/llm.ts',
         'src/routes/log.ts',
         'src/routes/slides.ts',
+        'src/routes/slidev-restart.ts', // execFile pm2 系统命令，单测难模拟；保留以待 E2E
         'src/routes/templates.ts',
+        'src/mcp-server-repo/json-file-repo.ts', // Phase 9-F @deprecated（每用户 DB 入库已替代）
         'src/deck/mirror.ts', // 纯 fs 写入；已被 routes/lock.ts 测试 vi.mock 覆盖路径
         'src/prompts/**', // system prompt 组装，是数据构造不是逻辑
         'src/tools/local/**', // thin wrapper → slides-store；核心逻辑已在 slides-store 覆盖

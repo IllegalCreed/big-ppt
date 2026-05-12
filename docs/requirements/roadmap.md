@@ -15,7 +15,7 @@
 > - Phase 8 依赖全量升级：[docs/plans/17-phase8-deps-upgrade.md](../plans/17-phase8-deps-upgrade.md)
 > - Phase 9 安全 Audit L3：[docs/plans/18-phase9-security-audit.md](../plans/18-phase9-security-audit.md) + [audit-report](../security/2026-04-audit-report.md)
 > - Phase 10 首次部署：[docs/plans/19-phase10-production-deploy.md](../plans/19-phase10-production-deploy.md) + [runbook](../runbooks/deploy.md)
-> - Phase 10.5 候选：Slidev 解耦 spike（_未启动_,触发条件见 Phase 10.5 章节）
+> - Phase 10.5：Slidev 解耦 — spike [plan 24](../plans/24-phase10.5-spike.md) + 落地 [plan 25](../plans/25-phase10.5-deck-renderer.md) ✅
 > - 技术债：[docs/plans/99-tech-debt.md](../plans/99-tech-debt.md)
 
 ---
@@ -552,10 +552,11 @@
 
 ---
 
-## Phase 10.5：Slidev 解耦 — DeckRenderer Vue 组件自封装
+## Phase 10.5：Slidev 解耦 — DeckRenderer Vue 组件 + 锁语义归位 ✅ (2026-05-12 落地)
 
-> **状态**:spike ✅ 通过(2026-05-12,详见 [plan 24 spike](../plans/24-phase10.5-spike.md) + [spike 报告](../plans/24-phase10.5-spike-report.md)),待立 plan 25 正式落地
-> 触发条件已满足:Phase 11.6 dogfood 暴露的 long session HMR 缓存错位需根治;Phase 11 多用户并发依赖本 Phase 决定范围(spike 通过 → Phase 11 进程池方案废弃)
+> **状态**:✅ 已完成(spike → plan 24,落地 → plan 25,2026-05-12 全链路 E2E + visual baseline 跑通)
+> 详细:[plan 24 spike](../plans/24-phase10.5-spike.md) + [spike 报告](../plans/24-phase10.5-spike-report.md) + [plan 25 落地](../plans/25-phase10.5-deck-renderer.md)
+> 实际工作量:**6 天**（plan 25 估计；spike 报告里估的 7.5 天因执行期 fix 几个意外 bug 略超但范围内）
 
 **目标**:把 Slidev iframe 形态的预览器换成 creator SPA 内的 `<DeckRenderer markdown=".." templateId=".." />` Vue 组件,从根本上解决 dev mode 几百个 Vite module 累积加载慢的问题,顺便简化整套部署架构。
 
@@ -701,47 +702,42 @@
 
 ---
 
-## Phase 11：多用户并发 + 分享链接 + 多实例部署切换
+## Phase 11：分享链接 + 容量 spike（范围已缩水）
 
-> **依赖 Phase 10.5 spike 结果调整范围**:若 P10.5 落地,本 Phase 的"进程池 + LRU + 崩溃重拉 + 双路径切换"全部废弃(Vue 组件天然支持多用户),退化为"细化 deck-level 锁 + 分享链接 + 容量 spike"。
+> **Phase 10.5 落地后 Phase 11 范围大幅缩水**：编辑路径已是 creator SPA 内的 Vue 组件（per-user reactive state），**多用户并发零排队**直接实现；进程池 / LRU / 崩溃重拉 / 双路径切换全部废弃。剩下的只是「分享链接」+「跑一次容量 spike 拿真实数字」。
 
+**目标**：上「公开分享」场景——只读链接不占编辑实例；顺手做一次服务器容量 spike 拿真实承载数据指导未来扩容。
 
-**目标**：解决单实例天花板，让多用户真正并行编辑自己的 deck。同时上"公开分享"场景——只读链接不占编辑实例。多实例版本的部署切换并入本 Phase 尾段。
+**核心思路**：
 
-**核心思路**（详细架构 + spike 设计 + DB schema 见对应 plan）：
-
-- **编辑路径**：每位活跃用户分到独立编辑实例（进程池 LRU，上限由容量 spike 实测决定），HMR 体验保留
-- **分享路径**：保存即触发构建，产物静态托管；只读访问不占实例，水平可扩展
-- **前置 spike**：本 Phase 开头先实测服务器承载能力（编辑实例稳态内存/CPU + 可并发数），结果决定进程池上限与排队策略
+- **分享路径**：保存即触发 `pnpm -F @big-ppt/slidev build` → 产物归档（per-deck slug 目录） → 通过分享链接静态访问；分享链接表管理过期与撤销
+- **容量 spike**：本 Phase 开头先实测服务器承载（agent + slidev 进程稳态内存 / CPU + 可并发用户数），形成可量化的扩容决策依据
 
 **交付物**：
 
-- 服务器容量 spike 报告（实测数据 + 可并发实例数结论）
-- 编辑实例进程池管理：on-demand spawn / 空闲回收 / LRU 淘汰 / 崩溃自动重拉 / 健康检查端点
-- 拆除 Phase 5 的单实例占用约束（按实例粒度的 lease 取代）
-- 编辑实时保存（debounce）→ 实例 HMR 自然生效 + 入版本历史
-- **发布 / 分享**：触发 build → 产物归档 → 通过分享链接静态访问；分享链接表管理过期与撤销
-- 并发控制：同一用户多 deck 编辑上限；同一 deck 同时刻只允许一个 tab 编辑
-- **多实例部署切换**（本 Phase 尾段）：反代按 session 路由 + 灰度切换 + 不中断现有用户
+- 服务器容量 spike 报告（实测数据 + 可并发用户数结论）
+- **发布 / 分享**：触发 build → 产物归档 → 分享链接静态访问；分享链接 DB 表（slug / deckId / 过期时间 / 撤销标记 / 访问统计）
+- 编辑器 toolbar 加「分享」按钮 + 分享模态框（创建 / 撤销 / 复制链接）
+- 分享页路由 + 静态 HTML 托管（agent 或 nginx 直接 serve）
 
 **验收条件**：
 
 - [ ] 容量 spike 报告完成，上限数字有实测依据
-- [ ] 多个不同用户同时登录、各自进入自己的 deck 编辑页，预览各自独立，互不干扰
-- [ ] 超过上限时最老实例自动回收，用户重新进入再 spawn 时长可接受
-- [ ] 分享页不占用进程池
-- [ ] 压测：上限数量 deck 同时活跃 + 高并发打分享页，资源占用在预算内
-- [ ] 进程崩溃 / OOM 自动重拉，不丢用户已保存的 content（源在 DB）
-- [ ] 生产环境从单实例版本切到多实例版本，用户无感知中断
+- [ ] 多用户同时登录、各自进入自己的 deck 编辑页（Phase 10.5 已实现，本 Phase 验证）
+- [ ] 分享页不占用 agent / Slidev 进程（静态托管）
+- [ ] 分享链接撤销 / 过期后访问 404
+- [ ] 压测：50 并发用户编辑 + 100 并发打分享页，资源占用在预算内
 
 **状态**：待开始
 
-**依赖**：Phase 10 完成（生产单实例版本必须先稳跑一段时间）
+**依赖**：Phase 10.5 完成 ✅
 
 **不做什么**：
 
 - ❌ 多人实时协同编辑同一 deck（CRDT / OT）— 复杂度太高，留 Phase 16+ 或永不做
-- ❌ 跨服务器分布式进程池 — 单机上限实例已够内部 50 用户场景
+- ❌ 跨服务器分布式部署 — 单机已够内部 50 用户场景
+- ❌ 编辑器进程池 / 多实例（Phase 10.5 解决了，不需要了）
+- ❌ 分享页评论 / 互动 — 只读托管
 
 ---
 

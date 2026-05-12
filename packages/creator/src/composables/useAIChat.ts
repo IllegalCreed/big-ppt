@@ -23,6 +23,9 @@ import { useGenerateImageJob } from './useGenerateImageJob'
  * - `persistChat`: 每次用户发言 / assistant 最终回复 / 工具结果，都写回 deck_chats
  */
 export type DeckChatContext = {
+  /** Phase 10.5：deckId 必须传给 agent，每个 fetch 加 X-Deck-Id header → 中间件
+   *  覆写 ALS activeDeckId 让 tools / persist 知道改哪个 deck。 */
+  deckId: number
   templateId: string
   initialHistory: ChatBubble[]
   persistChat: (role: 'user' | 'assistant' | 'tool', content: string, toolCallId?: string) => Promise<void>
@@ -201,7 +204,7 @@ export const __trimMessagesForTesting = trimMessages
 
 // --- 工具执行 ---
 
-async function executeTool(call: ToolCall, turnId: string): Promise<string> {
+async function executeTool(call: ToolCall, turnId: string, deckId: number): Promise<string> {
   let args: Record<string, unknown>
   try {
     args = JSON.parse(call.function.arguments || '{}')
@@ -213,7 +216,13 @@ async function executeTool(call: ToolCall, turnId: string): Promise<string> {
   }
   const res = await fetch('/api/call-tool', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // Phase 10.5：编辑器去抢锁后,session.activeDeckId 不再设；让 agent
+      // 通过 header 知道这次工具调用作用在哪个 deck（write_slides /
+      // generate_slide_image 等都依赖 ctx.activeDeckId）
+      'X-Deck-Id': String(deckId),
+    },
     body: JSON.stringify({ name: call.function.name, args, turnId } satisfies CallToolRequest),
   })
   const json = (await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }))) as CallToolResponse
@@ -378,8 +387,9 @@ export function useAIChat() {
   const status = ref<AgentStatus>('idle')
   const statusText = ref('')
 
-  // dogfood 后:LLM 工作时同步标记到 slideStore.aiBusy,SlidePreview 的「重启 Slidev」按钮
-  // 读它在 thinking / streaming / calling_tool 期间警示用户(重启会中断 tool_call)。
+  // LLM 工作时同步 slideStore.aiBusy。Phase 10.5 前 SlidePreview「重启 Slidev」
+  // 按钮联动它在 streaming / tool 期间警示用户；当前没有直接消费方但留作 UI
+  // 状态信号（其他 composable / 组件未来若要 disabled 按钮也方便用）。
   watch(
     status,
     (s) => {
@@ -632,7 +642,7 @@ export function useAIChat() {
 
             let result: string
             try {
-              result = await executeTool(tc, turnId)
+              result = await executeTool(tc, turnId, deckCtx?.deckId ?? 0)
               const idx = toolSteps.value.findIndex((s) => s.key === step.key)
               if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'success' }
               // 工具执行成功后，尝试定位被改/新增的页到预览
@@ -734,10 +744,10 @@ export function useAIChat() {
         streamingContent.value = ''
         status.value = 'idle'
         statusText.value = ''
-        // dogfood 后:LLM session 结束(无新 tool_call)时主动触发 iframe full refresh,
-        // 强制跟最终 slides.md 对齐。Slidev HMR 在长 session 内逐次 patch 几十次 slides.md
-        // 时会出现 layout component 缓存错位(用户看到第 N 页渲染成另一模板等),仅靠 HMR 不能根
-        // 治。session 结束时一次性 refresh,跟 HMR race 风险也没了(此刻已无新改动)。
+        // session 结束时主动 refresh slides.md：LLM 通过 tool 调用 server 端
+        // 写了 N 次 slides.md，client 端 slideStore.content 需要同步一次拿最终态
+        // 喂给 DeckRenderer。Phase 10.5 前还兼有「兜底 Slidev HMR 缓存错位」职能；
+        // DeckRenderer 时代仅剩 content 同步这一个目的。
         slideStore.refresh()
         return
       }
@@ -754,7 +764,8 @@ export function useAIChat() {
       const timeoutMsg = '生成超时（工具调用轮次过多），请尝试简化需求或重新开始。'
       chatMessages.value.push({ role: 'assistant', content: timeoutMsg })
       status.value = 'idle'
-      // 即使 max_iterations 中断,也强同步一次 iframe(避免中间态卡住)
+      // max_iterations 中断时同步 server slides.md 到 client content，避免
+      // DeckRenderer 卡在中间态
       slideStore.refresh()
     } catch (err) {
       const e = err as Error

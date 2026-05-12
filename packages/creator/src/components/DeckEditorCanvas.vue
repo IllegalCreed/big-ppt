@@ -102,6 +102,7 @@ function cancelEditTitle() {
 // ── Chat 上下文：provide 时先给空数组，等 listChats 返回后就地 mutate。
 //    ChatPanel 由 v-if="historyLoaded" 延迟挂载，inject 时一定能看到填好的数组。
 const chatCtx: DeckChatContext = {
+  deckId: props.deck.id,
   templateId: props.deck.templateId,
   initialHistory: [],
   persistChat: async (role, content, toolCallId) => {
@@ -320,7 +321,11 @@ onUnmounted(() => {
       </div>
       <div class="divider" :class="{ active: isDragging }" @mousedown="onMouseDown" />
       <div class="panel-right">
-        <SlidePreview />
+        <SlidePreview
+          :deck-id="deck.id"
+          :template-id="deck.templateId"
+          :initial-content="currentVersion?.content ?? ''"
+        />
       </div>
       <div v-if="isDragging" class="drag-overlay" />
     </main>

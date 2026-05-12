@@ -9,16 +9,17 @@ test.afterAll(async () => {
 })
 
 /**
- * 锁冲突场景：
- * - User A：用 Playwright 的 APIRequestContext 注册 + 登录 + 创建 deck +
- *   activate-deck 抢锁
- * - User B：浏览器打开同一 deck 的编辑页 → 应看到等待页（"使用中"+holder.email）
- * - User A：调 release-deck
- * - User B：等待页轮询 5s 内自动跳转到编辑器
+ * Phase 10.5 lock-conflict 场景（rewrite from Task 25-D-2）：
+ *
+ * 编辑路径已不抢锁 → 用户 A、B 同时进同一 deck 都秒进。锁仅在「全屏放映」
+ * （POST /api/present/:id）取，故冲突场景变成：
+ *
+ *   1. A 通过 API 直接 present 抢锁
+ *   2. B 浏览器进自己的 deck 编辑页 → 直接进，**不** 看到 OccupiedWaitingPage
+ *   3. B 点「放映」按钮 → SlidePreview 内 banner 显示「{A.email} 正在放映该 deck」
+ *   4. A 调 release → B 再点放映成功
  */
-test('A 占锁，B 看等待页；A 释放后 B 5s 内自动进入', async ({ page, baseURL }) => {
-  // Phase 9-D：originCheck 中间件要求 state-changing 请求带 Origin。
-  // pwRequest 不像 browser 自动带 Origin，要 extraHTTPHeaders 显式设。
+test('A present 抢锁；B 编辑零等待但放映显示 banner', async ({ page, baseURL }) => {
   const aReq = await pwRequest.newContext({
     baseURL: AGENT_BASE,
     extraHTTPHeaders: { Origin: AGENT_BASE },
@@ -28,53 +29,56 @@ test('A 占锁，B 看等待页；A 释放后 B 5s 内自动进入', async ({ pa
     extraHTTPHeaders: { Origin: AGENT_BASE },
   })
 
-  // A 注册 + 登录 + 创建 deck
+  // A 注册 + 创建 deck + present 抢锁
   const aEmail = `a-${Date.now()}@a.com`
-  await aReq.post('/api/auth/register', {
-    data: { email: aEmail, password: 'pw123456' },
-  })
-  const deckRes = await aReq.post('/api/decks', { data: { title: 'Shared Deck' } })
-  expect(deckRes.status()).toBe(201)
-  const { deck } = await deckRes.json()
-  const deckId = deck.id
+  await aReq.post('/api/auth/register', { data: { email: aEmail, password: 'pw123456' } })
+  const aDeckRes = await aReq.post('/api/decks', { data: { title: 'A Deck' } })
+  expect(aDeckRes.status()).toBe(201)
+  const { deck: aDeck } = await aDeckRes.json()
 
-  // A 抢锁
-  const lockRes = await aReq.post(`/api/activate-deck/${deckId}`)
-  expect(lockRes.status()).toBe(200)
+  const presentRes = await aReq.post(`/api/present/${aDeck.id}`)
+  expect(presentRes.status()).toBe(200)
 
-  // B 注册 + 登录（共享 cookie 通过 storageState 传到 page）
+  // B 注册 + 自己创建 deck
   const bEmail = `b-${Date.now()}@a.com`
-  await bReq.post('/api/auth/register', {
-    data: { email: bEmail, password: 'pw123456' },
-  })
-  // B 也建一个自己的 deck（用于测在自己 deck 上 activate 时看到 A 占着的等待页）
-  const bDeckRes = await bReq.post('/api/decks', { data: { title: 'B Own Deck' } })
-  const bDeckId = (await bDeckRes.json()).deck.id
+  await bReq.post('/api/auth/register', { data: { email: bEmail, password: 'pw123456' } })
+  const bDeckRes = await bReq.post('/api/decks', { data: { title: 'B Deck' } })
+  const { deck: bDeck } = await bDeckRes.json()
 
-  // 把 B 的 cookie 注入浏览器（必须指定 url 让 Playwright 推断 domain/path）
+  // 把 B 的 cookie 注入浏览器
   const bState = await bReq.storageState()
   const bSessionCookie = bState.cookies.find((c) => c.name === 'lumideck_session')
   expect(bSessionCookie).toBeTruthy()
   await page.context().addCookies([
-    {
-      name: 'lumideck_session',
-      value: bSessionCookie!.value,
-      url: baseURL!,
-    },
+    { name: 'lumideck_session', value: bSessionCookie!.value, url: baseURL! },
   ])
 
-  // B 打开自己 deck 的编辑页 → 因为 A 占着锁，应进等待页
-  await page.goto(`/decks/${bDeckId}`)
-  // 等待页唯一的 h1 文案：「当前有人在编辑」
-  await expect(page.getByRole('heading', { name: '当前有人在编辑' })).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByText(aEmail)).toBeVisible()
+  // B 打开自己的 deck → **直接进编辑器**，编辑路径无锁
+  await page.goto(`/decks/${bDeck.id}`)
+  // 编辑器关键 UI：标题 + 放映按钮可见，且 **没有** OccupiedWaitingPage
+  await expect(page.locator('.deck-title, .deck-title-input').first()).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(page.getByRole('button', { name: /放映/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '当前有人在编辑' })).toHaveCount(0)
+
+  // B 点放映按钮 → 后端返 409 → toolbar 下 banner 显示 A 的 email
+  await page.getByRole('button', { name: /放映/ }).click()
+  await expect(page.getByText(aEmail)).toBeVisible({ timeout: 5_000 })
+  // banner 文案精确匹配（避免「放映」按钮文字也命中）
+  await expect(page.getByText(/正在放映该 deck/)).toBeVisible()
 
   // A 释放
   const releaseRes = await aReq.post('/api/release-deck')
   expect(releaseRes.status()).toBe(200)
 
-  // B 等待页 5s 内轮询发现已释放 → 自动进入编辑器（标题或 iframe 出现）
-  await expect(page.locator('.deck-title, .deck-title-input').first()).toBeVisible({ timeout: 15_000 })
+  // B 再点放映 → 应该 200；不实际验 window.open（Playwright 默认拦新 tab）
+  // 关键断言：banner 消失（之前的 a@email 不再可见）
+  // 重新点放映按钮触发新一轮 fetch
+  await page.getByRole('button', { name: /放映/ }).click()
+  // banner 不应再含 aEmail（present 这次成功了）
+  // 注：Playwright 对 window.open 默认弹新 page，捕获不易；我们只断 banner 状态
+  await expect(page.getByText(aEmail)).toHaveCount(0, { timeout: 5_000 })
 
   await aReq.dispose()
   await bReq.dispose()

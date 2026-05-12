@@ -19,14 +19,18 @@
   "dependencies": {
     "@antdv-next/x": "^1.0.1",
     "@big-ppt/shared": "workspace:*",
+    "@big-ppt/slidev": "workspace:*",
     "antdv-next": "^1.2.1",
+    "js-yaml": "^4.1.1",
     "lucide-vue-next": "^1.0.0",
+    "marked": "^18.0.3",
     "vue": "^3.5.33",
     "vue-router": "^5.0.6"
   },
   "devDependencies": {
     "@big-ppt/agent": "workspace:*",
     "@tsconfig/node24": "^24.0.4",
+    "@types/js-yaml": "^4.0.9",
     "@types/jsdom": "^28.0.1",
     "@types/node": "^24.12.2",
     "@vitejs/plugin-vue": "^6.0.6",
@@ -44,6 +48,8 @@
     "npm-run-all2": "^8.0.4",
     "prettier": "3.8.3",
     "typescript": "~6.0.0",
+    "unplugin-auto-import": "^21.0.0",
+    "unplugin-vue-components": "^32.0.0",
     "vite": "^8.0.10",
     "vite-plugin-vue-devtools": "^8.1.1",
     "vitest": "^4.1.5",

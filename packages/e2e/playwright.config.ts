@@ -6,7 +6,17 @@ const CREATOR_PORT = Number(process.env.CREATOR_PORT ?? 3130)
 export default defineConfig({
   testDir: './tests',
   timeout: 30_000,
-  expect: { timeout: 10_000 },
+  expect: {
+    timeout: 10_000,
+    // Phase 10.5 Task 25-E-1：visual regression 容差。本地 macOS 跑出 baseline
+    // 后续比对；跨机器（不同字体 AA）必假阳性，本项目当前无 CI，本地基线即可。
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.02,
+      threshold: 0.2,
+      animations: 'disabled',
+      caret: 'hide',
+    },
+  },
   fullyParallel: false, // 共享 lumideck_test，必须串行
   workers: 1,
   forbidOnly: !!process.env.CI,

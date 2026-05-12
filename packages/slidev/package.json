@@ -7,7 +7,11 @@
     "./components-catalog": {
       "types": "./components/_catalog/index.ts",
       "import": "./components/_catalog/index.js"
-    }
+    },
+    "./global.css": "./global.css",
+    "./templates/*": "./templates/*",
+    "./layouts/*": "./layouts/*",
+    "./components/*": "./components/*"
   },
   "scripts": {
     "ensure-slides": "node -e \"const fs=require('fs');if(!fs.existsSync('slides.md'))fs.copyFileSync('slides.example.md','slides.md')\"",

@@ -68,7 +68,7 @@ describe('routes/slides 持锁守卫', () => {
     const res = await makeApp().request('/api/read-slides', { headers: { Cookie: cookie } })
     expect(res.status).toBe(403)
     const json = await res.json()
-    expect(json.error).toMatch(/activate-deck/)
+    expect(json.error).toMatch(/全屏放映/)
   })
 
   it('登录但持锁是别人的 → 403', async () => {

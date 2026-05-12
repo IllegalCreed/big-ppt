@@ -113,26 +113,36 @@ FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confir
 ```
 浏览器 (localhost:3030)
    │
-   ├─ /api/*            ──Vite proxy──▶  agent :4000  ──▶ MySQL (lumideck_dev)
-   │                                          │
-   │                                          ├─ HttpOnly session cookie
-   │                                          ├─ slides-store 写 packages/slidev/slides.md
-   │                                          └─ tool registry（本地工具 + MCP 远端工具）
+   ├─ /api/*           ──Vite proxy──▶  agent :4000  ──▶ MySQL (lumideck_dev)
+   │ (含 X-Deck-Id              │
+   │  by 编辑器 fetch)           ├─ HttpOnly session cookie
+   │                            ├─ slides-store 写 packages/slidev/slides.md（仅放映路径用到）
+   │                            ├─ activeDeckId 来源：X-Deck-Id header 优先（Phase 10.5）
+   │                            └─ tool registry（本地工具 + MCP 远端工具）
+   │
+   │  ── 编辑器主视图（Phase 10.5 起）：
+   │     creator SPA 内 <DeckRenderer> 直接渲染 markdown，**不走 Slidev 反代**
    │
    └─ /api/slidev-preview/*  ──proxy──▶  agent :4000  ──reverse-proxy──▶  slidev :3031
-                                              │
-                                              └─ slidev-proxy-auth：仅锁持有者放行（403）
+       (window.open 新 tab                  │
+        全屏放映场景)                       └─ slidev-proxy-auth：仅锁持有者放行（403）
 ```
 
 ### 关键模块（agent）
 
 - `src/app.ts`：Hono app 装配，**只做路由 + middleware**，不带启动副作用。生产入口 `src/index.ts` 引用 app，再接 `http.createServer` 提供 Slidev 反代 + WebSocket upgrade。集成测靠 `app.fetch(req)` in-process 调用，无需走端口
 - `src/middleware/auth.ts`：`authOptional` 解 session cookie → `ctx.var.user`；`requireAuth` 闸门
-- `src/middleware/request-context.ts`：把 user/session/activeDeck 包进 `AsyncLocalStorage`，下游 `slides-store` 读
-- `src/slidev-lock.ts`：**单实例占用锁是 agent 进程内存对象**（不是 DB 表），心跳 30s，超时 5min 释放（Phase 5 实施期偏离原设计）
-- `src/slidev-proxy-auth.ts`：Slidev 反代鉴权，仅锁持有者能访问 `/api/slidev-preview/*`
+- `src/middleware/request-context.ts`：把 user/session/activeDeckId 包进 `AsyncLocalStorage`，下游 `slides-store` / 工具读。**Phase 10.5 起 activeDeckId 来源**：优先 `X-Deck-Id` header（编辑器每次 fetch 显式带），fallback `session.activeDeckId`（向后兼容，Phase 10.5 起此字段实际永远 null）
+- `src/slidev-lock.ts`：**单实例占用锁是 agent 进程内存对象**（不是 DB 表），心跳 30s，超时 5min 释放。**Phase 10.5 起锁的 acquire 点改为 `POST /api/present/:id`**（全屏放映按钮触发），原 `POST /api/activate-deck` 路由已删；编辑器进入不抢锁，多用户并发零排队
+- `src/slidev-proxy-auth.ts`：Slidev 反代鉴权，仅锁持有者能访问 `/api/slidev-preview/*`（全屏放映 SPA tab 走这条）
 - `src/tools/`：本地工具注册表；命名规范 `mcp__<serverId>__<toolName>`；`switch_template` 可注入 `RewriteFn` DI 便于测试
 - `src/db/`：Drizzle schema；开发期用 `drizzle-kit push` 不写 migration
+
+### 关键模块（creator / 编辑器）
+
+- `src/deck-renderer/`：Phase 10.5 起编辑器主视图。`DeckRenderer.vue` 接 markdown + templateId + currentPage prop → `parseDeck()` 切页 → `<component :is="layout">` 动态查找 layout（**手工 `app.component()` 注册**，见 `register-layouts.ts`，因为 unplugin-vue-components 看不到 `:is` 动态字符串）；body markdown 走 `compile-body.ts` 的 `marked + Vue.compile` 运行时编译让 `<TwoCol>` 等 Vue 标签解析
+- 响应式缩放：`DeckRenderer` 用 ResizeObserver 算 scale，slide-frame `aspect-ratio: 16/9` + `max-width: 960px`，slide-canvas `transform: scale()` 等比缩放到容器宽度（永远 ≤ 1，无放大）
+- `src/composables/useSlideStore.ts`：单例 store。`activeDeckId` + `content` 模块作用域；`refresh()` 走 `GET /api/decks/:id` 取 currentVersion.content（**不**读 `/api/read-slides`，那条路径属于 Slidev 放映场景，仍受 slidev-lock 守）；`pages` / `totalPages` 复用 `parseDeck` 跟 DeckRenderer 口径一致
 
 ### 关键约定（前端）
 
@@ -237,13 +247,21 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 
 ### Slidev 反代 + HMR
 
+> **Phase 10.5 后语境**（plan 25 落地）：编辑器主视图换成 creator SPA 内的 `<DeckRenderer>` Vue 组件，**不**走 Slidev 反代。下列条目仅作用于「全屏放映」`window.open('/api/slidev-preview/...')` 新 tab 加载 Slidev SPA 的场景。**long session HMR 缓存错位的触发面已消失**（编辑期间 Slidev iframe 不存在），但 dev Slidev 进程偶发卡死仍可能影响放映 tab，「重启 Slidev 演讲进程」按钮保留在 SlidePreview toolbar 内兜底。
+
 - **Slidev 仅 agent 反代访问**：原生端口 `:3031` 必须绑 loopback,不能直接对外（详见 [plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 1-2）
 - **agent 跨进程 fetch slidev 用 `localhost` 不要用 `127.0.0.1`**：slidev v52 + Vite 5+ 默认只 bind `[::1]`(IPv6 loopback),`SLIDEV_ORIGIN=http://127.0.0.1:3031` 会 ECONNREFUSED;`localhost` 走 OS resolver 自动选可达协议族（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 6）
 - **Slidev dev 启动必须带 `--base /api/slidev-preview/`**：否则 HTML 内绝对路径 `/@vite/client` 等全 404（[plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 2）
-- **切换 deck / 切模板时让 Slidev HMR 自己处理**，前端**不要**调 `slideStore.refresh()`，否则会与 HMR race 触发 502（[plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 踩坑 3）
-- **Slidev reload 窗口（200-500ms）期间 dev server 不响应**，前端 fetch iframe URL 要先 probe-then-refresh（[plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 踩坑 4）
-- **Slidev `slides.md` 锁**：dev agent 重启自动复位，免手动 `activate`（[plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 4）
-- **long session 大量 frontmatter 改动 vite module cache 错位 → 重启 Slidev 进程才能根治,iframe full reload 不够**：LLM 跑几十轮 update_slide / create_slide 后 Slidev dev server 进程内 vite components registry 缓存对不上(layout 字面量明明是 beitou-* 但渲染成 jingyeda),`slideStore.refresh()` 只清前端 iframe 缓存清不了 vite module graph。前端 SlidePreview「刷新」按钮已改造为调 `POST /api/slidev-restart`(prod execFile pm2 restart / dev 503 引导手动重启)。LLM busy 时按钮变橙色警示 + confirm 弹窗。长期根治走 Phase 10.5 自研 DeckRenderer Vue 组件取代 Slidev iframe（[plan 23](docs/plans/23-phase11.6-dogfood-followup.md) 踩坑 13）
+- **`slides.md` 锁的 acquire 点 = `POST /api/present/:id`**（Phase 10.5 起；编辑器进入不抢锁）：放映按钮触发；dev agent 重启自动复位（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) Task D-1）
+
+### DeckRenderer / 编辑器（Phase 10.5）
+
+- **`<component :is="动态字符串">` unplugin-vue-components 看不见**：必须手工 `app.component()` 注册到全局（`src/deck-renderer/register-layouts.ts`）。新加 layout / 公共组件时**两处都要改**：slidev 包加 .vue + .meta.ts + 同步 _catalog/index.ts，creator 加 register-layouts.ts 一行 import + 一行注册（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) Task B-2 → fix 提交 `94cf8f4`）
+- **layouts 用 `${BASE_URL}/templates/<id>/x.png` 取资源**：creator 必须保留 `public/templates` 软链 → `../../slidev/templates`，vite build 时符号链接目标会被拷进 dist，rsync 一并部署（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) 执行期偏离 #1）
+- **`slideStore.totalPages` / `pages` 必须复用 `parseDeck()`**：不能用 naive `content.split(/\n---\n/)` —— 那会把 frontmatter 的 `---` 也算成 slide 分隔符（实测北投 starter 切出 6 页而非 5 页）。视觉层 + 状态层用同一份切页算法（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) 执行期偏离 fix `621ef98`）
+- **`useSlideStore.refresh()` 走 deck-scoped 路径**：fetch `GET /api/decks/:id` 取 currentVersion.content；**不**读 `/api/read-slides`（那条受 slidev-lock 守门，编辑器去抢锁后必然 403）。编辑器进入由 SlidePreview onMounted 调 `slideStore.initDeck(deckId, initialContent)` 绑定 deckId + 写初始内容（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) 执行期偏离 fix `7379506`）
+- **LLM 工具调用必须在 fetch 时带 `X-Deck-Id` header**：Phase 10.5 删 activate-deck 后 `session.activeDeckId` 永远是 null；middleware 改成优先读 `X-Deck-Id` header 覆写 ALS activeDeckId（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) 执行期偏离 fix `f5f2972`）。前端 `useAIChat.executeTool()` + 其他将来需要 deck context 的 fetch 都得带这个 header
+- **body markdown 编译用 `vue/dist/vue.esm-bundler.js`**：vite alias 切到带 runtime compiler 的 Vue 构建版本（+50KB gzip），让 `marked → HTML → Vue.compile(html)` 链路能在浏览器跑（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) Task A-2）
 
 ### 测试基建
 
@@ -292,4 +310,4 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 
 ## 阶段进展
 
-详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–10 ✅(2026-04-27 lumideck.illegalscreed.cn 上线),Phase 11.5(AI 图片内容页 / `generate_slide_image` 工具) ✅(2026-04-30),Phase 10.5(Slidev 解耦 spike)候选未启动,Phase 11(多用户并发 + 分享)依赖 Phase 10.5 spike 结果调整范围。
+详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–10 ✅(2026-04-27 lumideck.illegalscreed.cn 上线),Phase 11.5(AI 图片内容页 / `generate_slide_image` 工具) ✅(2026-04-30),Phase 11.6 + 11.7 ✅,**Phase 10.5(Slidev 解耦 / DeckRenderer / 锁语义归位) ✅(2026-05-12 落地,plan 25)** —— 编辑路径换成 creator SPA 内 `<DeckRenderer>` Vue 组件,锁 acquire 点从 activate-deck 挪到 present(全屏放映),编辑器多用户并发零排队。下一步:Phase 11(范围已缩水到分享链接 + 容量 spike)。

@@ -72,18 +72,28 @@ test('generate_slide_image stub 模式:同步 jobId → DB asset + slides.md fro
   await expect(page).toHaveURL(/\/decks\/(\d+)$/, { timeout: 15_000 })
   const deckId = Number(page.url().match(/\/decks\/(\d+)/)![1])
 
-  // 等编辑器加载完(activate-deck 隐式发生在路由切换)
+  // 等编辑器加载完（Phase 10.5 后路由切换不再抢锁 — 纯 GET deck 元数据）
   await expect(page.locator('.deck-title, .deck-title-input').first()).toBeVisible({
     timeout: 15_000,
   })
 
   // 直接调 /api/call-tool 触发 generate_slide_image(模拟 LLM tool_call)
   // 第 2 页是 starter.md 的内容页,目标转图
+  // Phase 10.5：编辑器去抢锁后,activeDeckId 由 X-Deck-Id header 传递（中间件覆写 ALS）
   const callRes = await page.request.post(`${AGENT_BASE}/api/call-tool`, {
-    headers: { 'content-type': 'application/json', Origin: AGENT_BASE },
+    headers: {
+      'content-type': 'application/json',
+      Origin: AGENT_BASE,
+      'X-Deck-Id': String(deckId),
+    },
     data: {
       name: 'generate_slide_image',
-      args: { slideIndex: 2, prompt: 'a futuristic city skyline' },
+      args: {
+        slideIndex: 2,
+        prompt: 'a futuristic city skyline',
+        // Phase 11.6 起 fallbackSummary 为必填（worker 失败时 graceful-degradation 输入）
+        fallbackSummary: 'E2E stub 模式测试用占位摘要',
+      },
       turnId: `e2e-${Date.now()}`,
     },
   })
@@ -204,15 +214,24 @@ test('跨用户访问 asset → 403,响应不含字节', async ({ browser }) => 
   await pageA.getByLabel('标题').fill('iso A')
   await pageA.getByRole('button', { name: /^创建$/ }).click()
   await expect(pageA).toHaveURL(/\/decks\/(\d+)$/, { timeout: 15_000 })
+  const isoDeckId = Number(pageA.url().match(/\/decks\/(\d+)/)![1])
   await expect(pageA.locator('.deck-title, .deck-title-input').first()).toBeVisible({
     timeout: 15_000,
   })
 
   const callRes = await pageA.request.post(`${AGENT_BASE}/api/call-tool`, {
-    headers: { 'content-type': 'application/json', Origin: AGENT_BASE },
+    headers: {
+      'content-type': 'application/json',
+      Origin: AGENT_BASE,
+      'X-Deck-Id': String(isoDeckId),
+    },
     data: {
       name: 'generate_slide_image',
-      args: { slideIndex: 2, prompt: 'p' },
+      args: {
+        slideIndex: 2,
+        prompt: 'p',
+        fallbackSummary: 'iso 测试用占位摘要',
+      },
       turnId: `e2e-iso-${Date.now()}`,
     },
   })

@@ -1,27 +1,27 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useDecks, useDeckLock, type Deck, type DeckVersion, type LockHolderWire } from '../composables/useDecks'
+import { useDecks, type Deck, type DeckVersion } from '../composables/useDecks'
 import DeckEditorCanvas from '../components/DeckEditorCanvas.vue'
-import OccupiedWaitingPage from '../components/OccupiedWaitingPage.vue'
 import { ApiError } from '../api/client'
+
+// Phase 10.5：编辑器进入流程完全去抢锁。
+// 旧版：activate-deck → 占锁 → heartbeat 30s → onBeforeUnmount release
+// 新版：纯 GET deck 元数据 + currentVersion，多用户并发零排队
+// 锁仅在「全屏放映」（SlidePreview.present()）触发；
+// OccupiedWaitingPage 不再在路由层展示，挪到 present 失败时 SlidePreview 内 banner。
 
 const route = useRoute()
 const router = useRouter()
 const decksApi = useDecks()
-const lockApi = useDeckLock()
 
 type State =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
-  | { kind: 'occupied'; holder: LockHolderWire }
   | { kind: 'ready'; deck: Deck; currentVersion: DeckVersion | null }
 
 const deckId = computed(() => Number(route.params.id))
 const state = ref<State>({ kind: 'loading' })
-
-const HEARTBEAT_INTERVAL_MS = 30 * 1000
-let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 
 async function enterDeck() {
   state.value = { kind: 'loading' }
@@ -31,13 +31,9 @@ async function enterDeck() {
     return
   }
 
-  // 1. 尝试抢占锁
   try {
-    const result = await lockApi.activate(id)
-    if (!result.ok) {
-      state.value = { kind: 'occupied', holder: result.holder }
-      return
-    }
+    const { deck, currentVersion } = await decksApi.getDeck(id)
+    state.value = { kind: 'ready', deck, currentVersion }
   } catch (err) {
     const msg =
       err instanceof ApiError && err.status === 404
@@ -46,80 +42,24 @@ async function enterDeck() {
           ? err.message
           : String((err as Error).message || err)
     state.value = { kind: 'error', message: msg }
-    return
   }
-
-  // 2. 拉 deck 详情 + currentVersion
-  try {
-    const { deck, currentVersion } = await decksApi.getDeck(id)
-    state.value = { kind: 'ready', deck, currentVersion }
-    startHeartbeat()
-  } catch (err) {
-    state.value = {
-      kind: 'error',
-      message: err instanceof ApiError ? err.message : String((err as Error).message || err),
-    }
-  }
-}
-
-function startHeartbeat() {
-  stopHeartbeat()
-  heartbeatTimer = setInterval(() => {
-    void lockApi.heartbeat().catch(() => {
-      /* 暂时失败下次继续，不打断编辑 */
-    })
-  }, HEARTBEAT_INTERVAL_MS)
-}
-
-function stopHeartbeat() {
-  if (heartbeatTimer) {
-    clearInterval(heartbeatTimer)
-    heartbeatTimer = null
-  }
-}
-
-async function releaseLock() {
-  stopHeartbeat()
-  try {
-    await lockApi.release()
-  } catch {
-    /* ignore */
-  }
-}
-
-function onBeforeUnload() {
-  // navigator.sendBeacon 保证页面关闭也能送到
-  navigator.sendBeacon?.('/api/release-deck')
 }
 
 onMounted(() => {
-  window.addEventListener('beforeunload', onBeforeUnload)
   void enterDeck()
 })
 
-onBeforeUnmount(async () => {
-  window.removeEventListener('beforeunload', onBeforeUnload)
-  await releaseLock()
-})
-
-// 等待页通知已释放时重新抢占
-function onLockReleased() {
-  void enterDeck()
-}
-
-// 切 deck（通过 URL 变化）时重新走生命周期
+// 切 deck（通过 URL 变化）时重新拉
 watch(
   () => deckId.value,
   async (newId, oldId) => {
     if (newId === oldId) return
-    await releaseLock()
     await enterDeck()
   },
 )
 
-async function handleExit() {
-  await releaseLock()
-  await router.push('/decks')
+function handleExit() {
+  void router.push('/decks')
 }
 
 /** 模板切换完成后，重新拉取 deck + currentVersion 刷新编辑页数据 */
@@ -134,7 +74,7 @@ async function handleTemplateSwitched() {
   }
 }
 
-/** 子组件 inline 改完标题后,父组件同步自己的 state.deck.title */
+/** 子组件 inline 改完标题后，父组件同步自己的 state.deck.title */
 function handleTitleUpdated(payload: { title: string }) {
   if (state.value.kind === 'ready') {
     state.value.deck.title = payload.title
@@ -151,13 +91,6 @@ function handleTitleUpdated(payload: { title: string }) {
     <p>{{ state.message }}</p>
     <button type="button" class="btn-secondary" @click="router.push('/decks')">返回列表</button>
   </div>
-
-  <OccupiedWaitingPage
-    v-else-if="state.kind === 'occupied'"
-    :initial-holder="state.holder"
-    :deck-id="deckId"
-    @lock-released="onLockReleased"
-  />
 
   <DeckEditorCanvas
     v-else

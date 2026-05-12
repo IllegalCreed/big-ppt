@@ -46,7 +46,8 @@ export function setTurnId(turnId: string | null): void {
   if (current) current.turnId = turnId
 }
 
-/** 动态覆写当前上下文的 activeDeckId（POST /api/activate-deck 调用后同步更新） */
+/** 动态覆写当前上下文的 activeDeckId。
+ *  Phase 10.5 起编辑器无 activeDeck 概念，仅 release-deck 路径写 null 兜底。 */
 export function setActiveDeckId(deckId: number | null): void {
   const current = store.getStore()
   if (current) current.activeDeckId = deckId

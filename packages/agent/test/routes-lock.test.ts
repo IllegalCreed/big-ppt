@@ -32,71 +32,21 @@ async function post(app: Hono, path: string, cookie?: string) {
 }
 
 describe('routes/lock', () => {
-  it('activate-deck: 成功返回 ok，session.activeDeckId 被更新', async () => {
-    const app = makeApp()
-    const { user, cookie, sid } = await createLoggedInUser()
-    const { deck } = await createDeckDirect(user.id)
+  // Phase 10.5 Task 25-D-2 起 activate-deck 路由已删；release / heartbeat /
+  // lock-status 通过 present 路由 setup 锁后测试。
 
-    const res = await post(app, `/api/activate-deck/${deck.id}`, cookie)
-    expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ ok: true, deckId: deck.id })
-
-    const db = getDb()
-    const [s] = await db.select().from(sessions).where(eq(sessions.id, sid)).limit(1)
-    expect(s?.activeDeckId).toBe(deck.id)
-  })
-
-  it('activate-deck: 跨用户访问 → 403', async () => {
-    const app = makeApp()
-    const a = await createLoggedInUser('a@a.com')
-    const b = await createLoggedInUser('b@a.com')
-    const { deck } = await createDeckDirect(a.user.id)
-    const res = await post(app, `/api/activate-deck/${deck.id}`, b.cookie)
-    expect(res.status).toBe(403)
-  })
-
-  it('activate-deck: 已软删 deck → 404', async () => {
+  it('release-deck: 持有者释放（present 抢锁版）', async () => {
     const app = makeApp()
     const { user, cookie } = await createLoggedInUser()
     const { deck } = await createDeckDirect(user.id)
-    const db = getDb()
-    await db.update(decks).set({ status: 'deleted' }).where(eq(decks.id, deck.id))
-
-    const res = await post(app, `/api/activate-deck/${deck.id}`, cookie)
-    expect(res.status).toBe(404)
-  })
-
-  it('activate-deck: 已被他人占用 → 409 + holder 邮箱', async () => {
-    const app = makeApp()
-    const a = await createLoggedInUser('holder@a.com')
-    const b = await createLoggedInUser('waiter@a.com')
-    const { deck: aDeck } = await createDeckDirect(a.user.id, 'A deck')
-    const { deck: bDeck } = await createDeckDirect(b.user.id, 'B deck')
-
-    // A 占用
-    const ok = await post(app, `/api/activate-deck/${aDeck.id}`, a.cookie)
-    expect(ok.status).toBe(200)
-
-    // B 尝试占自己的 deck（全局单锁，应 409）
-    const conflict = await post(app, `/api/activate-deck/${bDeck.id}`, b.cookie)
-    expect(conflict.status).toBe(409)
-    const body = await conflict.json()
-    expect(body.holder.email).toBe('holder@a.com')
-    expect(body.holder.deckId).toBe(aDeck.id)
-  })
-
-  it('release-deck: 持有者释放 → session.activeDeckId 置 null', async () => {
-    const app = makeApp()
-    const { user, cookie, sid } = await createLoggedInUser()
-    const { deck } = await createDeckDirect(user.id)
-    await post(app, `/api/activate-deck/${deck.id}`, cookie)
+    await post(app, `/api/present/${deck.id}`, cookie)
 
     const res = await post(app, '/api/release-deck', cookie)
     expect(res.status).toBe(200)
 
-    const db = getDb()
-    const [s] = await db.select().from(sessions).where(eq(sessions.id, sid)).limit(1)
-    expect(s?.activeDeckId).toBeNull()
+    // 释放后 lock-status 该是 unlocked
+    const status = await app.request('/api/lock-status', { headers: { Cookie: cookie } })
+    expect((await status.json()).locked).toBe(false)
   })
 
   it('release-deck: 非持有者调用 → 幂等 200，不动他人锁', async () => {
@@ -104,12 +54,11 @@ describe('routes/lock', () => {
     const a = await createLoggedInUser('x@a.com')
     const b = await createLoggedInUser('y@a.com')
     const { deck: aDeck } = await createDeckDirect(a.user.id)
-    await post(app, `/api/activate-deck/${aDeck.id}`, a.cookie)
+    await post(app, `/api/present/${aDeck.id}`, a.cookie)
 
     const res = await post(app, '/api/release-deck', b.cookie)
     expect(res.status).toBe(200)
 
-    // A 的锁还在
     const status = await app.request('/api/lock-status', { headers: { Cookie: a.cookie } })
     const body = await status.json()
     expect(body.locked).toBe(true)
@@ -121,7 +70,7 @@ describe('routes/lock', () => {
     const a = await createLoggedInUser()
     const b = await createLoggedInUser('other@a.com')
     const { deck } = await createDeckDirect(a.user.id)
-    await post(app, `/api/activate-deck/${deck.id}`, a.cookie)
+    await post(app, `/api/present/${deck.id}`, a.cookie)
 
     const hA = await post(app, '/api/heartbeat', a.cookie)
     expect((await hA.json()).heldByMe).toBe(true)
@@ -136,6 +85,55 @@ describe('routes/lock', () => {
     expect(res.status).toBe(401)
   })
 
+  // ── Phase 10.5：present 路由 — 演讲放映抢锁 ──────────────────────
+  it('present: owner 抢锁成功，但 session.activeDeckId 保持 null（不再写）', async () => {
+    const app = makeApp()
+    const { user, cookie, sid } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id)
+
+    const res = await post(app, `/api/present/${deck.id}`, cookie)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, deckId: deck.id })
+
+    const db2 = getDb()
+    const [s] = await db2.select().from(sessions).where(eq(sessions.id, sid)).limit(1)
+    // 跟 activate-deck 不同：present 不写 activeDeckId
+    expect(s?.activeDeckId).toBeNull()
+  })
+
+  it('present: 已被他人占用 → 409 + holder', async () => {
+    const app = makeApp()
+    const a = await createLoggedInUser('p-a@a.com')
+    const b = await createLoggedInUser('p-b@a.com')
+    const { deck: aDeck } = await createDeckDirect(a.user.id, 'A deck')
+    const { deck: bDeck } = await createDeckDirect(b.user.id, 'B deck')
+
+    const ok = await post(app, `/api/present/${aDeck.id}`, a.cookie)
+    expect(ok.status).toBe(200)
+
+    const conflict = await post(app, `/api/present/${bDeck.id}`, b.cookie)
+    expect(conflict.status).toBe(409)
+    const body = await conflict.json()
+    expect(body.holder.email).toBe('p-a@a.com')
+    expect(body.holder.deckId).toBe(aDeck.id)
+  })
+
+  it('present: 跨用户访问别人的 deck → 403', async () => {
+    const app = makeApp()
+    const a = await createLoggedInUser('owner@a.com')
+    const b = await createLoggedInUser('intruder@a.com')
+    const { deck } = await createDeckDirect(a.user.id)
+
+    const res = await post(app, `/api/present/${deck.id}`, b.cookie)
+    expect(res.status).toBe(403)
+  })
+
+  it('present: 未登录 → 401', async () => {
+    const app = makeApp()
+    const res = await post(app, '/api/present/1')
+    expect(res.status).toBe(401)
+  })
+
   it('lock-status: 空锁 / 他人持有 / 自己持有 三态', async () => {
     const app = makeApp()
     const a = await createLoggedInUser('la@a.com')
@@ -147,7 +145,7 @@ describe('routes/lock', () => {
 
     // 2. A 持有，B 看
     const { deck } = await createDeckDirect(a.user.id)
-    await post(app, `/api/activate-deck/${deck.id}`, a.cookie)
+    await post(app, `/api/present/${deck.id}`, a.cookie)
     const viewedByB = await app.request('/api/lock-status', { headers: { Cookie: b.cookie } })
     const bodyB = await viewedByB.json()
     expect(bodyB).toMatchObject({ locked: true, isMe: false })

@@ -169,7 +169,10 @@ vite.config.ts.timestamp-*
 *.local
 .vite-inspect
 .remote-assets
-components.d.ts
+# Phase 10.5：creator 的 components.d.ts / auto-imports.d.ts 由 unplugin-*
+# 生成，入 git 保证 IDE 在 fresh checkout 时 TypeScript 不报红。其他包内若
+# 出现 components.d.ts（如 slidev 自动生成）继续忽略。
+packages/slidev/components.d.ts
 
 # /undo 功能自动生成的备份
 slides.md.bak

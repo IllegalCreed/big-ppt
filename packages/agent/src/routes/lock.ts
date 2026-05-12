@@ -26,10 +26,17 @@ function toWireHolder(h: LockHolder) {
 }
 
 /**
- * 激活 deck：内存级原子抢占，成功则把 deck 当前版本内容写回 slides.md。
- * 冲突返回 409 + holder 信息，前端据此渲染等待页。
+ * Phase 10.5：演讲放映抢锁。
+ *
+ * 锁的唯一 acquire 点 —— 编辑器走 DeckRenderer 后不再抢锁；仅本接口持锁。
+ *
+ *   - 不写 session.activeDeckId（编辑器无 activeDeck 概念了）
+ *   - 触发点是前端「全屏放映」按钮的 POST 调用；成功后前端 window.open Slidev SPA tab
+ *   - 锁的真正意义是「slides.md 单文件被本用户的内容占用着」—— 给 Slidev SPA 看
+ *
+ * 历史 POST /api/activate-deck 路由已于 Phase 10.5 Task 25-D-2 删除。
  */
-lockRoute.post('/activate-deck/:id{[0-9]+}', async (c) => {
+lockRoute.post('/present/:id{[0-9]+}', async (c) => {
   const user = c.get('user')
   const session = c.get('session')
   if (!user || !session) return c.json({ error: 'unauthorized' }, 401)
@@ -53,11 +60,7 @@ lockRoute.post('/activate-deck/:id{[0-9]+}', async (c) => {
     return c.json({ error: 'occupied', holder: toWireHolder(result.holder) }, 409)
   }
 
-  // 更新 session.active_deck_id + ALS
-  await db.update(sessions).set({ activeDeckId: deckId }).where(eq(sessions.id, session.id))
-  setActiveDeckId(deckId)
-
-  // 把当前版本内容 mirror 到 slides.md
+  // 把当前版本内容 mirror 到 slides.md，让随后开启的 Slidev SPA tab 渲染对的内容
   if (deck.currentVersionId) {
     const [version] = await db
       .select({ content: deckVersions.content })
@@ -72,7 +75,11 @@ lockRoute.post('/activate-deck/:id{[0-9]+}', async (c) => {
   return c.json({ ok: true, deckId })
 })
 
-/** 主动释放自己占用的锁（幂等）。 */
+/**
+ * 主动释放自己占用的锁（幂等）。Phase 10.5 起仅放映 tab 关闭 / 用户主动「停止放映」
+ * 时调用；session.activeDeckId Phase 10.5 起永远是 null，但保留写 null 做向后
+ * 兼容（旧 client 可能还在跑、旧 session 数据可能有残留）。
+ */
 lockRoute.post('/release-deck', async (c) => {
   const session = c.get('session')
   if (!session) return c.json({ error: 'unauthorized' }, 401)

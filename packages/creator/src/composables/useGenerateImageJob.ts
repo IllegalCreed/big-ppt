@@ -12,6 +12,7 @@
  */
 import { ref, shallowRef } from 'vue'
 import { useDecks, type ImageJobInfo, type ImageJobState } from './useDecks'
+import { useSlideStore } from './useSlideStore'
 
 const FAST_INTERVAL_MS = 1_500
 const SLOW_INTERVAL_MS = 3_000
@@ -146,8 +147,12 @@ export function useGenerateImageJob() {
         }
         if (isSuccess(job.state)) {
           // done(出图成功) 或 fallback-rewrote(出图失败但兜底重写成功),
-          // 都让 SlidePreview HMR 自动刷新该页。fallback-rewrote 时 errorMsg 含原因,
-          // 调用方可读 result.value.state 区分给 toast 文案。
+          // server slides.md 已写入新 imageSrc / 重写后的组件版页;主动调
+          // slideStore.refresh() 把新内容同步给 DeckRenderer(Phase 10.5 后
+          // 没有 Slidev HMR 自动刷新这条路径了)。
+          // fallback-rewrote 时 errorMsg 含原因,调用方可读 result.value.state
+          // 区分给 toast 文案。
+          await useSlideStore().refresh()
           result.value = job
           running.value = false
           controller = null

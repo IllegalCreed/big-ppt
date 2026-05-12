@@ -204,20 +204,14 @@ export function useDecks() {
   }
 }
 
+/**
+ * Phase 10.5 起编辑器不再抢 Slidev 锁，本 composable 仅给「全屏放映」流程兜底。
+ * activate-deck 路由已删（D-2），仅保留 release / heartbeat / lock-status：
+ *   - release：放映 tab 关闭 / 用户主动停止放映时调
+ *   - heartbeat：放映期保持心跳延长 5min 超时（当前未接入，留待优化）
+ *   - status：查锁状态（OccupiedWaitingPage 等待页轮询用）
+ */
 export function useDeckLock() {
-  async function activate(id: number) {
-    try {
-      const res = await api.post<{ ok: true; deckId: number }>(`/api/activate-deck/${id}`)
-      return { ok: true as const, deckId: res.deckId }
-    } catch (err) {
-      const body = (err as { body?: unknown }).body as { error?: string; holder?: LockHolderWire } | undefined
-      if (body?.error === 'occupied' && body.holder) {
-        return { ok: false as const, reason: 'occupied' as const, holder: body.holder }
-      }
-      throw err
-    }
-  }
-
   async function release() {
     await api.post('/api/release-deck')
   }
@@ -230,5 +224,5 @@ export function useDeckLock() {
     return api.get<LockStatus>('/api/lock-status')
   }
 
-  return { activate, release, heartbeat, status }
+  return { release, heartbeat, status }
 }

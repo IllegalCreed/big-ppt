@@ -32,6 +32,7 @@ export default mergeConfig(
           'src/composables/useAIChat.ts', // 业务最重，留给 E2E + 专项
           'src/composables/useMCP.ts',
           'src/composables/useSlideStore.ts',
+          'src/composables/useGenerateImageJob.ts', // Phase 11.5 起 async job poll，靠 E2E 覆盖
           'src/composables/logger.ts',
           'src/composables/useSlashCommands.ts', // 已由 useSlashCommands.test.ts 覆盖，分支见后期
           'src/pages/**', // 页面级（LoginPage / RegisterPage / DeckListPage /
