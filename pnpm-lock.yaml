@@ -111,6 +111,9 @@ importers:
       lucide-vue-next:
         specifier: ^1.0.0
         version: 1.0.0(vue@3.5.33(typescript@6.0.3))
+      marked:
+        specifier: ^18.0.3
+        version: 18.0.3
       vue:
         specifier: ^3.5.33
         version: 3.5.33(typescript@6.0.3)
@@ -4184,6 +4187,11 @@ packages:
 
   marked@16.4.2:
     resolution: {integrity: sha512-TI3V8YYWvkVf3KJe1dRkpnjs68JUPyEa5vjKrp1XEEJUAOaQc+Qj+L1qWbPd0SJuAdQkFU0h73sXXqwDYxsiDA==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
+  marked@18.0.3:
+    resolution: {integrity: sha512-7VT90JOkDeaRWpfjOReRGPEKn0ecdARBkDGL+tT1wZY0efPPqkUxLUSmzy/C7TIylQYJC9STISEsCHrqb/7VIA==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -10195,6 +10203,8 @@ snapshots:
   marked@14.0.0: {}
 
   marked@16.4.2: {}
+
+  marked@18.0.3: {}
 
   math-intrinsics@1.1.0: {}
 
