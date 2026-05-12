@@ -702,42 +702,16 @@
 
 ---
 
-## Phase 11：分享链接 + 容量 spike（范围已缩水）
+## Phase 11：~~分享链接 + 容量 spike~~ ❌ 已废弃（2026-05-12 合并进 Phase 16）
 
-> **Phase 10.5 落地后 Phase 11 范围大幅缩水**：编辑路径已是 creator SPA 内的 Vue 组件（per-user reactive state），**多用户并发零排队**直接实现；进程池 / LRU / 崩溃重拉 / 双路径切换全部废弃。剩下的只是「分享链接」+「跑一次容量 spike 拿真实数字」。
+> **决策**（2026-05-12）：本 Phase 整段废弃，全部范围合并进 Phase 16。
+>
+> **理由**：
+> - **分享链接**：原方案靠 `pnpm -F @big-ppt/slidev build` per-deck 归档兜底，Phase 16 自研 PresentationViewer 落地后会切到 `/share/:slug` 静态 SPA 路由 + share_links 表。先做等于写一遍扔一遍——build 产物管理 / nginx location / 过期清理逻辑全部要在 Phase 16 重写。合并进 Phase 16 反而少一次 schema 变更。
+> - **容量 spike**：测的是 Slidev runtime（dev 进程 + slidev-lock + 反代）这套即将退役的架构，数字指导不了 Phase 16 后的承载模型（PresentationViewer 是普通 SPA chunk + 静态托管，资源 profile 完全不同）。挪到 Phase 16 之后做才有意义。
+>
+> **后续**：Phase 16 交付物已显式包含 share_links 表 + 分享 UI；容量 spike 作为 Phase 16 收尾的可选验证项跑一次拿基线。
 
-**目标**：上「公开分享」场景——只读链接不占编辑实例；顺手做一次服务器容量 spike 拿真实承载数据指导未来扩容。
-
-**核心思路**：
-
-- **分享路径**：保存即触发 `pnpm -F @big-ppt/slidev build` → 产物归档（per-deck slug 目录） → 通过分享链接静态访问；分享链接表管理过期与撤销
-- **容量 spike**：本 Phase 开头先实测服务器承载（agent + slidev 进程稳态内存 / CPU + 可并发用户数），形成可量化的扩容决策依据
-
-**交付物**：
-
-- 服务器容量 spike 报告（实测数据 + 可并发用户数结论）
-- **发布 / 分享**：触发 build → 产物归档 → 分享链接静态访问；分享链接 DB 表（slug / deckId / 过期时间 / 撤销标记 / 访问统计）
-- 编辑器 toolbar 加「分享」按钮 + 分享模态框（创建 / 撤销 / 复制链接）
-- 分享页路由 + 静态 HTML 托管（agent 或 nginx 直接 serve）
-
-**验收条件**：
-
-- [ ] 容量 spike 报告完成，上限数字有实测依据
-- [ ] 多用户同时登录、各自进入自己的 deck 编辑页（Phase 10.5 已实现，本 Phase 验证）
-- [ ] 分享页不占用 agent / Slidev 进程（静态托管）
-- [ ] 分享链接撤销 / 过期后访问 404
-- [ ] 压测：50 并发用户编辑 + 100 并发打分享页，资源占用在预算内
-
-**状态**：待开始
-
-**依赖**：Phase 10.5 完成 ✅
-
-**不做什么**：
-
-- ❌ 多人实时协同编辑同一 deck（CRDT / OT）— 复杂度太高，留 Phase 17+ 或永不做
-- ❌ 跨服务器分布式部署 — 单机已够内部 50 用户场景
-- ❌ 编辑器进程池 / 多实例（Phase 10.5 解决了，不需要了）
-- ❌ 分享页评论 / 互动 — 只读托管
 
 ---
 
@@ -763,11 +737,12 @@
 
 **状态**：待开始
 
-**依赖**：Phase 11 完成
+**依赖**：Phase 10.5 完成 ✅（Phase 11 已废弃，本 Phase 与 viewer 架构正交）
 
 **不做什么**：
 
 - ❌ Fine-tuning / 自托管模型（Ollama / vLLM）— 留 Phase 17+
+- ❌ 同时启用多个主 LLM（无意义；用户单 active provider，可自由切换但单实例运行）
 - ❌ Provider 价格估算 / 用量统计页（同上）
 - ❌ 自动按任务类型路由 provider（手动选）
 
@@ -904,7 +879,8 @@
   - `DrawingLayer.vue`：画笔 / 高亮覆盖层
   - `OverviewGrid.vue`：缩略图网格（Esc 切换）
 - 后端 API：`GET /api/decks/:id/presentation` + `GET /api/share/:slug/presentation`（不抢锁，纯读）
-- DB schema：`share_links` 表（slug / deckId / 过期 / 撤销 / 访问统计）—— Phase 11 已建则直接复用
+- DB schema：`share_links` 表（slug / deckId / 过期 / 撤销 / 访问统计）—— Phase 11 已废弃，本 Phase 首次落地
+- 编辑器 toolbar「分享」按钮 + 分享模态框（创建 / 撤销 / 复制链接 / 过期设置）—— 原 Phase 11 范围合并
 - 路由：`/decks/:id/present`（owner 全屏放映）+ `/share/:slug`（公开分享）
 - 删除：lumideck-slidev pm2 app / agent `/api/slidev-preview/*` 反代 / `slidev-proxy-auth.ts` / `slidev-lock.ts` / `routes/slidev-restart.ts` / nginx `/api/slidev-preview/` location
 
