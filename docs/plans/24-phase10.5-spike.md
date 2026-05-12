@@ -14,7 +14,7 @@
 
 > spike 前的硬数据 + 设计预判，落地中如发现假设错就直接改本文件。
 
-1. **Slidev runtime API 依赖已 grep 验证为 0**：全仓 `rg '\$slidev|\$nav|@slidev/client|useNav|useSlideContext' -g '*.vue' -g '*.ts'` 零命中。
+1. **Slidev runtime API 依赖已 grep 验证为 0**：全仓 `rg '\$slidev|\$nav|@slidev/client|useNav|useSlideContext|useDarkMode|useFixedClicks|\$clicks' -g '*.vue' -g '*.ts' --stats` → **0 matches / 0 files / 278 files searched**（2026-05-12 Task A baseline，由 `packages/slidev/test/no-slidev-runtime-api.test.ts` 守门）。
    - **Why**：这是 roadmap Phase 10.5 标识的「真正硬骨头」，spike 前先量化。结果为 0 → DeckRenderer 不需要 mock 任何 Slidev runtime 注入，layouts 拿过来直接 import 即可用。**这条单独证据已足以判定 spike 极大概率会通过**。
 2. **markdown 解析用 `unified` + `remark-parse` + `gray-matter`**：成熟、不重复造轮子。
    - **Why**：候选还有 `mdast-util-from-markdown` 直拼，但 unified 生态有现成 frontmatter 插件 + `---` thematic break 切页好处理。VitePress / Nuxt Content 同款栈，未来扩展余地大。
