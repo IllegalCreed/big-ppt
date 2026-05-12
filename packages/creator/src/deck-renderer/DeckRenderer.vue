@@ -56,10 +56,12 @@ const scale = ref(1)
 function recompute(): void {
   const el = rendererRef.value
   if (!el) return
-  // wrapper 宽度（已减去 padding）即可用宽度；高度由 aspect-ratio 自动跟随
   const available = el.clientWidth
   if (available <= 0) return
-  scale.value = Math.min(available / DESIGN_WIDTH, 1.5) // 上限 1.5x 防超大屏字糊掉
+  // slide-frame 已经被 max-width: DESIGN_WIDTH 锁住，实际渲染宽度是
+  // min(available, DESIGN_WIDTH)；scale 跟着这个真实宽度，永远 ≤ 1（不放大字）
+  const frameWidth = Math.min(available, DESIGN_WIDTH)
+  scale.value = frameWidth / DESIGN_WIDTH
 }
 
 let ro: ResizeObserver | null = null
@@ -108,9 +110,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 24px;
   width: 100%;
+  min-height: 100%;
   padding: 16px 0;
+  box-sizing: border-box;
 }
 /**
  * slide-frame：实际占位的盒子，宽度跟随容器（封顶 design-width），高度按 16:9 自动。
