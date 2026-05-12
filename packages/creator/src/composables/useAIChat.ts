@@ -23,6 +23,9 @@ import { useGenerateImageJob } from './useGenerateImageJob'
  * - `persistChat`: 每次用户发言 / assistant 最终回复 / 工具结果，都写回 deck_chats
  */
 export type DeckChatContext = {
+  /** Phase 10.5：deckId 必须传给 agent，每个 fetch 加 X-Deck-Id header → 中间件
+   *  覆写 ALS activeDeckId 让 tools / persist 知道改哪个 deck。 */
+  deckId: number
   templateId: string
   initialHistory: ChatBubble[]
   persistChat: (role: 'user' | 'assistant' | 'tool', content: string, toolCallId?: string) => Promise<void>
@@ -201,7 +204,7 @@ export const __trimMessagesForTesting = trimMessages
 
 // --- 工具执行 ---
 
-async function executeTool(call: ToolCall, turnId: string): Promise<string> {
+async function executeTool(call: ToolCall, turnId: string, deckId: number): Promise<string> {
   let args: Record<string, unknown>
   try {
     args = JSON.parse(call.function.arguments || '{}')
@@ -213,7 +216,13 @@ async function executeTool(call: ToolCall, turnId: string): Promise<string> {
   }
   const res = await fetch('/api/call-tool', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      // Phase 10.5：编辑器去抢锁后,session.activeDeckId 不再设；让 agent
+      // 通过 header 知道这次工具调用作用在哪个 deck（write_slides /
+      // generate_slide_image 等都依赖 ctx.activeDeckId）
+      'X-Deck-Id': String(deckId),
+    },
     body: JSON.stringify({ name: call.function.name, args, turnId } satisfies CallToolRequest),
   })
   const json = (await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }))) as CallToolResponse
@@ -633,7 +642,7 @@ export function useAIChat() {
 
             let result: string
             try {
-              result = await executeTool(tc, turnId)
+              result = await executeTool(tc, turnId, deckCtx?.deckId ?? 0)
               const idx = toolSteps.value.findIndex((s) => s.key === step.key)
               if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'success' }
               // 工具执行成功后，尝试定位被改/新增的页到预览

@@ -65,7 +65,8 @@ test('A present 抢锁；B 编辑零等待但放映显示 banner', async ({ page
   // B 点放映按钮 → 后端返 409 → toolbar 下 banner 显示 A 的 email
   await page.getByRole('button', { name: /放映/ }).click()
   await expect(page.getByText(aEmail)).toBeVisible({ timeout: 5_000 })
-  await expect(page.getByText(/正在放映|放映/)).toBeVisible()
+  // banner 文案精确匹配（避免「放映」按钮文字也命中）
+  await expect(page.getByText(/正在放映该 deck/)).toBeVisible()
 
   // A 释放
   const releaseRes = await aReq.post('/api/release-deck')
