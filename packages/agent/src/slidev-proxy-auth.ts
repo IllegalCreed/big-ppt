@@ -49,5 +49,9 @@ export async function authorizeSlidevAccess(cookieHeader: string | undefined): P
     }
   }
 
-  return { ok: false, status: 403, message: 'slidev 实例当前未被你占用；请先 activate-deck' }
+  return {
+    ok: false,
+    status: 403,
+    message: 'slidev 实例当前未被你占用；请先在编辑器点「全屏放映」按钮抢锁',
+  }
 }

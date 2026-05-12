@@ -5,7 +5,7 @@ import { useAuth } from '../composables/useAuth'
  * Phase 5C 路由：
  * - /login, /register 不需要登录
  * - /decks 是登录后的首页（deck 列表）
- * - /decks/:id 进入编辑页，内部会走 activate-deck 抢锁流程
+ * - /decks/:id 直接进入编辑页（Phase 10.5 起编辑无抢锁；锁仅在「全屏放映」触发）
  * - 未登录访问需要登录的页时跳 /login?next=...
  */
 const router = createRouter({

@@ -21,7 +21,7 @@ const requireLockHolder: import('hono').MiddlewareHandler<{ Variables: AuthVars 
   const session = c.get('session')
   if (!session) return c.json({ success: false, error: 'unauthorized' }, 401)
   if (!isHeldBy(session.id)) {
-    return c.json({ success: false, error: '需要先 activate-deck 占用 Slidev 实例' }, 403)
+    return c.json({ success: false, error: '需要先 present（全屏放映）占用 Slidev 实例' }, 403)
   }
   await next()
 }
