@@ -15,8 +15,8 @@
   无条件可点；保留 confirm 弹窗避免误点。
 -->
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { Download, Play, RefreshCw } from 'lucide-vue-next'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { ChevronLeft, ChevronRight, Download, Play, RefreshCw } from 'lucide-vue-next'
 import { useSlideStore } from '../composables/useSlideStore'
 import { api, ApiError } from '../api/client'
 import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
@@ -41,7 +41,44 @@ const presentHolder = ref<LockHolderWire | null>(null)
 // 走 deck-scoped 路径同步。
 onMounted(() => {
   slideStore.initDeck(props.deckId, props.initialContent)
+  window.addEventListener('keydown', onKey)
 })
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+})
+
+// 翻页器：toolbar 显示「< N / M >」+ 全局键盘 ← → 翻页
+const currentPage = computed(() => slideStore.currentPage.value)
+const totalPages = computed(() => slideStore.totalPages.value)
+const canPrev = computed(() => currentPage.value > 1)
+const canNext = computed(() => currentPage.value < totalPages.value)
+
+function prevPage() {
+  if (canPrev.value) slideStore.setPage(currentPage.value - 1)
+}
+function nextPage() {
+  if (canNext.value) slideStore.setPage(currentPage.value + 1)
+}
+
+function onKey(e: KeyboardEvent) {
+  // 焦点在 input / textarea / contenteditable 时不抢键盘 —— ChatPanel 输入框不能被
+  // 翻页键劫持。其他场景（点了 preview 区域 / 全局未输入态）才生效。
+  const t = e.target as HTMLElement | null
+  if (
+    t?.tagName === 'INPUT' ||
+    t?.tagName === 'TEXTAREA' ||
+    t?.isContentEditable
+  ) {
+    return
+  }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+    prevPage()
+    e.preventDefault()
+  } else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+    nextPage()
+    e.preventDefault()
+  }
+}
 
 /**
  * 重启 Slidev 演讲进程。
@@ -118,6 +155,29 @@ async function present() {
         <span class="preview-title">幻灯片预览</span>
       </div>
       <div class="preview-actions">
+        <div class="page-nav" v-if="totalPages > 0">
+          <button
+            type="button"
+            class="icon-btn"
+            :disabled="!canPrev"
+            title="上一页（← / PageUp）"
+            aria-label="上一页"
+            @click="prevPage"
+          >
+            <ChevronLeft :size="16" :stroke-width="1.8" />
+          </button>
+          <span class="page-indicator">{{ currentPage }} / {{ totalPages }}</span>
+          <button
+            type="button"
+            class="icon-btn"
+            :disabled="!canNext"
+            title="下一页（→ / Space / PageDown）"
+            aria-label="下一页"
+            @click="nextPage"
+          >
+            <ChevronRight :size="16" :stroke-width="1.8" />
+          </button>
+        </div>
         <button
           type="button"
           class="icon-btn"
@@ -212,6 +272,24 @@ async function present() {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+.page-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: var(--space-2);
+  padding-right: var(--space-2);
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.page-indicator {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-sm);
+  color: var(--color-fg-secondary);
+  min-width: 48px;
+  text-align: center;
+  user-select: none;
 }
 
 .icon-btn {
