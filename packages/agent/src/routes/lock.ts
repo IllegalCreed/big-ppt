@@ -72,6 +72,56 @@ lockRoute.post('/activate-deck/:id{[0-9]+}', async (c) => {
   return c.json({ ok: true, deckId })
 })
 
+/**
+ * Phase 10.5：演讲放映抢锁。
+ *
+ * 跟 activate-deck 的区别：
+ *   - 不写 session.activeDeckId（Phase 10.5 起编辑器无 activeDeck 概念）
+ *   - 触发点是前端「全屏放映」按钮的 POST 调用；成功后前端 window.open Slidev SPA tab
+ *   - 锁的真正意义是「slides.md 单文件被本用户的内容占用着」—— 给 Slidev SPA 看
+ *
+ * Phase 10.5 落地后 activate-deck 路由会删（Task 25-D-2），编辑路径不再抢锁；
+ * 仅本接口持有锁。
+ */
+lockRoute.post('/present/:id{[0-9]+}', async (c) => {
+  const user = c.get('user')
+  const session = c.get('session')
+  if (!user || !session) return c.json({ error: 'unauthorized' }, 401)
+
+  const deckId = Number(c.req.param('id'))
+  const db = getDb()
+
+  const [deck] = await db.select().from(decks).where(eq(decks.id, deckId)).limit(1)
+  if (!deck) return c.json({ error: 'deck 不存在' }, 404)
+  if (deck.userId !== user.id) return c.json({ error: '无权访问该 deck' }, 403)
+  if (deck.status === 'deleted') return c.json({ error: 'deck 已删除' }, 404)
+
+  const result = tryAcquire({
+    sessionId: session.id,
+    userId: user.id,
+    userEmail: user.email,
+    deckId,
+    deckTitle: deck.title,
+  })
+  if (!result.ok) {
+    return c.json({ error: 'occupied', holder: toWireHolder(result.holder) }, 409)
+  }
+
+  // 把当前版本内容 mirror 到 slides.md，让随后开启的 Slidev SPA tab 渲染对的内容
+  if (deck.currentVersionId) {
+    const [version] = await db
+      .select({ content: deckVersions.content })
+      .from(deckVersions)
+      .where(eq(deckVersions.id, deck.currentVersionId))
+      .limit(1)
+    if (version) {
+      mirrorSlidesContent(version.content)
+    }
+  }
+
+  return c.json({ ok: true, deckId })
+})
+
 /** 主动释放自己占用的锁（幂等）。 */
 lockRoute.post('/release-deck', async (c) => {
   const session = c.get('session')

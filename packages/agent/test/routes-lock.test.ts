@@ -136,6 +136,55 @@ describe('routes/lock', () => {
     expect(res.status).toBe(401)
   })
 
+  // ── Phase 10.5：present 路由 — 演讲放映抢锁 ──────────────────────
+  it('present: owner 抢锁成功，但 session.activeDeckId 保持 null（不再写）', async () => {
+    const app = makeApp()
+    const { user, cookie, sid } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id)
+
+    const res = await post(app, `/api/present/${deck.id}`, cookie)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, deckId: deck.id })
+
+    const db2 = getDb()
+    const [s] = await db2.select().from(sessions).where(eq(sessions.id, sid)).limit(1)
+    // 跟 activate-deck 不同：present 不写 activeDeckId
+    expect(s?.activeDeckId).toBeNull()
+  })
+
+  it('present: 已被他人占用 → 409 + holder', async () => {
+    const app = makeApp()
+    const a = await createLoggedInUser('p-a@a.com')
+    const b = await createLoggedInUser('p-b@a.com')
+    const { deck: aDeck } = await createDeckDirect(a.user.id, 'A deck')
+    const { deck: bDeck } = await createDeckDirect(b.user.id, 'B deck')
+
+    const ok = await post(app, `/api/present/${aDeck.id}`, a.cookie)
+    expect(ok.status).toBe(200)
+
+    const conflict = await post(app, `/api/present/${bDeck.id}`, b.cookie)
+    expect(conflict.status).toBe(409)
+    const body = await conflict.json()
+    expect(body.holder.email).toBe('p-a@a.com')
+    expect(body.holder.deckId).toBe(aDeck.id)
+  })
+
+  it('present: 跨用户访问别人的 deck → 403', async () => {
+    const app = makeApp()
+    const a = await createLoggedInUser('owner@a.com')
+    const b = await createLoggedInUser('intruder@a.com')
+    const { deck } = await createDeckDirect(a.user.id)
+
+    const res = await post(app, `/api/present/${deck.id}`, b.cookie)
+    expect(res.status).toBe(403)
+  })
+
+  it('present: 未登录 → 401', async () => {
+    const app = makeApp()
+    const res = await post(app, '/api/present/1')
+    expect(res.status).toBe(401)
+  })
+
   it('lock-status: 空锁 / 他人持有 / 自己持有 三态', async () => {
     const app = makeApp()
     const a = await createLoggedInUser('la@a.com')
