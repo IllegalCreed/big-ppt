@@ -105,6 +105,9 @@ importers:
       antdv-next:
         specifier: ^1.2.1
         version: 1.2.1(vue@3.5.33(typescript@6.0.3))
+      js-yaml:
+        specifier: ^4.1.1
+        version: 4.1.1
       lucide-vue-next:
         specifier: ^1.0.0
         version: 1.0.0(vue@3.5.33(typescript@6.0.3))
@@ -121,6 +124,9 @@ importers:
       '@tsconfig/node24':
         specifier: ^24.0.4
         version: 24.0.4
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
       '@types/jsdom':
         specifier: ^28.0.1
         version: 28.0.1
@@ -1892,6 +1898,9 @@ packages:
 
   '@types/http-proxy@1.17.17':
     resolution: {integrity: sha512-ED6LB+Z1AVylNTu7hdzuBqOgMnvG/ld6wGCG8wFnAzKX5uyW2K3WD52v0gnLCTK/VLpXtKckgWuyScYK6cSPaw==}
+
+  '@types/js-yaml@4.0.9':
+    resolution: {integrity: sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg==}
 
   '@types/jsdom@28.0.1':
     resolution: {integrity: sha512-GJq2QE4TAZ5ajSoCasn5DOFm8u1mI3tIFvM5tIq3W5U/RTB6gsHwc6Yhpl91X9VSDOUVblgXmG+2+sSvFQrdlw==}
@@ -7268,6 +7277,8 @@ snapshots:
   '@types/http-proxy@1.17.17':
     dependencies:
       '@types/node': 24.12.2
+
+  '@types/js-yaml@4.0.9': {}
 
   '@types/jsdom@28.0.1':
     dependencies:
