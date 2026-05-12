@@ -84,7 +84,17 @@ spike 之所以小、快、稳，本质是吃了 Phase 7.5 当年的架构红利
 
 **Phase 10.5 落地策略**：roadmap 已写明可放弃或自写 ~30 行；内部汇报场景几乎不用。落地优先级 P3。
 
-### Gap 4：演讲者模式 / 录制 / 黑板 / 浏览全屏
+### Gap 4：手工 `app.component()` 注册 → 换 unplugin-vue-components + auto-import
+
+**现状**：`packages/creator/src/spike/register-slidev-components.ts` 硬编码 19 个组件名。
+
+**为什么 spike 这么写**：unplugin-vue-components 在 monorepo 跨包扫描配置（`dirs: ['../slidev/components/**']` + dts 路径 + resolvers）需要调试；spike 2 小时跑通比配 plugin 半小时更划算。Hand-list 显式可读，spike 报告里能直接 grep 看到所有依赖。
+
+**代价**：加新组件改两处（slidev 加 + creator spike 加一行）；跟 Slidev 内部栈不对齐（Slidev 自己用 unplugin-vue-components）。
+
+**Phase 10.5 落地方案**：creator 接 `unplugin-vue-components` + `unplugin-auto-import`，对齐 Slidev 内部栈，新组件自动发现。同时 `defineProps / ref / computed` 等 Vue API 走 auto-import 省掉显式 import。预计工作量 0.5 天，含 dts 路径 + monorepo 跨包 dirs glob 调试。
+
+### Gap 5：演讲者模式 / 录制 / 黑板 / 浏览全屏
 
 **现状**：spike 不实现。
 
@@ -99,6 +109,7 @@ roadmap 原估「5-8 天」。基于 spike 的实际进展，重估如下：
 | Task | 估时 | 备注 |
 | ---- | ---- | ---- |
 | Gap 1 修复（body markdown + Vue 标签运行时编译） | 1.5 天 | 关键路径 |
+| Gap 4 修复（unplugin-vue-components + auto-import 替手工注册） | 0.5 天 | 对齐 Slidev 内部栈 |
 | 接 DeckEditorPage / SlidePreview 替换 iframe | 2 天 | 涉及 useSlideStore / 反应式 prop 更新代替 HMR |
 | ChatPanel busy 状态与 DeckRenderer 交互 / 异常态 UI | 0.5 天 | |
 | 删除 agent slidev-lock / slidev-proxy-auth / slidev-restart 路由 | 0.5 天 | 简化部署架构 |
@@ -106,7 +117,7 @@ roadmap 原估「5-8 天」。基于 spike 的实际进展，重估如下：
 | L4 截图自动对比基线（Playwright × 12 layout） | 1 天 | 落地必须，spike 跳过 |
 | 全量回归 + E2E 改造（不再依赖 Slidev iframe selector） | 1 天 | |
 | 文档更新（CLAUDE.md 已知坑收敛 / plan 25 关闭报告） | 0.5 天 | |
-| **总计** | **7 天** | 跟 roadmap 估计的上限对齐 |
+| **总计** | **7.5 天** | 略超 roadmap 估计上限（多 Gap 4 的 0.5 天） |
 
 **额外收益**：
 - 部署架构大幅简化（Slidev 进程 + agent 反代 + WebSocket upgrade 全删，nginx 配置缩一半）
