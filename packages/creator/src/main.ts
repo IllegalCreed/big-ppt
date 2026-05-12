@@ -11,10 +11,14 @@ import '@big-ppt/slidev/global.css'
 import App from './components/App.vue'
 import router from './router'
 import { installErrorHandlers } from './composables/logger'
+import { registerSlidevComponents } from './spike/register-slidev-components'
 
 const app = createApp(App)
 installErrorHandlers(app)
 app.use(Antd)
 app.use(XProvider)
 app.use(router)
+// Phase 10.5 spike：把 slidev 包公共组件注册成全局，让 layout 内
+// <LBeitouCoverLogo /> / <TwoCol /> 等 unimported global 能解析。
+registerSlidevComponents(app)
 app.mount('#app')
