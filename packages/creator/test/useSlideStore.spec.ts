@@ -12,6 +12,15 @@
  * 测试间需手动 reset。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+function loadStarter(template: 'beitou-standard' | 'jingyeda-standard'): string {
+  return readFileSync(
+    resolve(process.cwd(), `../slidev/templates/${template}/starter.md`),
+    'utf8',
+  )
+}
 
 // vi.mock 必须在 import useSlideStore 之前生效；factory 内部不能引用模块外部
 // 闭包变量（hoisted 时不可用），故 mock 状态挂到 globalThis 上转中介。
@@ -89,5 +98,45 @@ describe('useSlideStore', () => {
     store.initDeck(8, '现有内容')
     await store.refresh()
     expect(store.content.value).toBe('现有内容')
+  })
+
+  // ── pages / totalPages 算法（防 frontmatter 分隔符误算成页，2026-05-12 真实
+  //   bug 反向回归 case）────────────────────────────────────────────────────
+  it('totalPages 跟 DeckRenderer 同款 parseDeck，不被 frontmatter --- 误算', () => {
+    const store = useSlideStore()
+    store.initDeck(1, loadStarter('beitou-standard'))
+    // 北投 starter 是 5 页：cover / toc / section-title / content / back-cover
+    expect(store.totalPages.value).toBe(5)
+    expect(store.pages.value).toHaveLength(5)
+  })
+
+  it('竞业达 starter 也是 5 页（两套模板同样切法稳定）', () => {
+    const store = useSlideStore()
+    store.initDeck(2, loadStarter('jingyeda-standard'))
+    expect(store.totalPages.value).toBe(5)
+  })
+
+  it('单页无 frontmatter → totalPages = 1', () => {
+    const store = useSlideStore()
+    store.initDeck(3, '# Hello\n\nworld')
+    expect(store.totalPages.value).toBe(1)
+  })
+
+  it('空 content → totalPages = 0', () => {
+    const store = useSlideStore()
+    store.initDeck(4, '')
+    expect(store.totalPages.value).toBe(0)
+    expect(store.pages.value).toEqual([])
+  })
+
+  it('update 后 currentPage 越界自动 clamp 到最后页', () => {
+    const store = useSlideStore()
+    store.initDeck(5, loadStarter('beitou-standard'))
+    store.setPage(5) // 第 5 页（最后）
+    expect(store.currentPage.value).toBe(5)
+    // 把 content 改成只剩 2 页的内容
+    store.update('---\nlayout: cover\n---\n\n---\nlayout: back\n---')
+    // 自动 clamp 到 2（pages 数量）
+    expect(store.currentPage.value).toBe(2)
   })
 })
