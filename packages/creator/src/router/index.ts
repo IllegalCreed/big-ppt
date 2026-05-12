@@ -38,13 +38,6 @@ const router = createRouter({
       component: () => import('../pages/RegisterPage.vue'),
     },
     {
-      // Phase 10.5 spike：临时验证页，hardcode markdown 喂给 DeckRenderer
-      // 跟正常路由完全隔离，不需登录、不进主菜单。spike 通过/废弃后整体删掉。
-      path: '/_spike/deck-renderer',
-      name: 'spike-deck-renderer',
-      component: () => import('../spike/DeckRendererPlayground.vue'),
-    },
-    {
       path: '/:pathMatch(.*)*',
       redirect: '/',
     },
