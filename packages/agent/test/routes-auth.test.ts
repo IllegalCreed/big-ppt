@@ -4,7 +4,7 @@ import { auth } from '../src/routes/auth.js'
 import { authOptional, SESSION_COOKIE, type AuthVars } from '../src/middleware/auth.js'
 import { useTestDb } from './_setup/test-db.js'
 import { createLoggedInUser } from './_setup/factories.js'
-import { __setMasterKeyGetterForTesting, decryptApiKey } from '../src/crypto/apikey.js'
+import { __setMasterKeyGetterForTesting, decryptApiKey, encryptApiKey } from '../src/crypto/apikey.js'
 import { getDb, users } from '../src/db/index.js'
 import { eq } from 'drizzle-orm'
 
@@ -153,12 +153,16 @@ describe('routes/auth', () => {
     })
     expect(res.status).toBe(200)
 
-    // 直接从 DB 读密文并 decrypt 回原值
+    // 直接从 DB 读密文并 decrypt:Phase 12 Task F 起入库是新 shape
+    // {activeProvider, providers: { [id]: { apiKey, model?, baseUrl? } }}
     const db = getDb()
     const [u] = await db.select().from(users).where(eq(users.id, user.id)).limit(1)
     expect(u?.llmSettings).toBeTruthy()
     const decrypted = JSON.parse(decryptApiKey(u!.llmSettings!))
-    expect(decrypted).toMatchObject({ provider: 'zhipu', apiKey: 'sk-real-key', model: 'GLM-5.1' })
+    expect(decrypted).toEqual({
+      activeProvider: 'zhipu',
+      providers: { zhipu: { apiKey: 'sk-real-key', model: 'GLM-5.1' } },
+    })
   })
 
   it('llm-settings PUT: 空 apiKey + 无旧值 → 400', async () => {
@@ -193,7 +197,11 @@ describe('routes/auth', () => {
     const db = getDb()
     const [u] = await db.select().from(users).where(eq(users.id, user.id)).limit(1)
     const decrypted = JSON.parse(decryptApiKey(u!.llmSettings!))
-    expect(decrypted).toMatchObject({ provider: 'openai', apiKey: 'key-original', model: 'gpt-4o' })
+    // Task F 起入库新 shape;复用旧 apiKey + 新 provider/model 后只有 openai entry
+    expect(decrypted).toEqual({
+      activeProvider: 'openai',
+      providers: { openai: { apiKey: 'key-original', model: 'gpt-4o' } },
+    })
   })
 
   it('llm-settings PUT: 旧 llm_settings 是畸形密文 → 500', async () => {
@@ -233,14 +241,16 @@ describe('routes/auth', () => {
     })
   })
 
-  it('llm-settings GET: 有设置 → 返回 provider/model/baseUrl/apiType + hasApiKey=true，不泄漏 apiKey', async () => {
+  it('llm-settings GET: 有设置 → 返回 provider/model/baseUrl/apiType + hasApiKey=true,不泄漏 apiKey', async () => {
     const app = makeApp()
     const { cookie } = await createLoggedInUser('llm-get@a.com')
+    // Task F+:provider 必须是白名单 7 个之一;之前 'custom' 已废。
+    // GET 形态兼容(老 shape 字段名 + apiType 常量 'openai-compatible'),Task J 改 UI 后再升级
     await app.request('/api/auth/llm-settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json', Cookie: cookie },
       body: JSON.stringify({
-        provider: 'custom',
+        provider: 'openai',
         apiKey: 'sk-TOP-SECRET',
         model: 'gpt-5.5',
         baseUrl: 'https://example.com/v1',
@@ -250,7 +260,7 @@ describe('routes/auth', () => {
     const res = await app.request('/api/auth/llm-settings', { headers: { Cookie: cookie } })
     const body = await res.json()
     expect(body).toEqual({
-      provider: 'custom',
+      provider: 'openai',
       model: 'gpt-5.5',
       baseUrl: 'https://example.com/v1',
       apiType: 'openai-compatible',
@@ -259,7 +269,7 @@ describe('routes/auth', () => {
     expect(JSON.stringify(body)).not.toContain('sk-TOP-SECRET')
   })
 
-  it('llm-settings PUT: 不传 apiType → 默认 openai-compatible 写入', async () => {
+  it('llm-settings PUT: 不传 apiType → 入库不带 apiType 字段(新 shape 已废弃 apiType)', async () => {
     const app = makeApp()
     const { cookie, user } = await createLoggedInUser('llm-default-apitype@a.com')
     await app.request('/api/auth/llm-settings', {
@@ -270,7 +280,12 @@ describe('routes/auth', () => {
     const db = getDb()
     const [u] = await db.select().from(users).where(eq(users.id, user.id)).limit(1)
     const decrypted = JSON.parse(decryptApiKey(u!.llmSettings!))
-    expect(decrypted.apiType).toBe('openai-compatible')
+    // Task F+:新 shape 不入库 apiType。GET 路由始终返常量 'openai-compatible'。
+    expect(decrypted).not.toHaveProperty('apiType')
+    expect(decrypted).toMatchObject({
+      activeProvider: 'zhipu',
+      providers: { zhipu: { apiKey: 'sk-x', model: 'GLM-5.1' } },
+    })
   })
 
   it('llm-settings PUT: 不支持的 apiType → 400', async () => {
@@ -280,7 +295,7 @@ describe('routes/auth', () => {
       method: 'PUT',
       headers: { 'content-type': 'application/json', Cookie: cookie },
       body: JSON.stringify({
-        provider: 'custom',
+        provider: 'openai',
         apiKey: 'sk-x',
         baseUrl: 'https://example.com/v1',
         apiType: 'anthropic-native',
@@ -288,6 +303,73 @@ describe('routes/auth', () => {
     })
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: expect.stringContaining('不支持的 apiType') })
+  })
+
+  it('llm-settings PUT: 不支持的 provider(白名单外)→ 400', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser('llm-bad-provider@a.com')
+    const res = await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ provider: 'custom', apiKey: 'sk-x' }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('不支持的 provider') })
+  })
+
+  it('llm-settings PUT: 接受老 shape body → 入库新 shape;同次 GET 返回老 shape JSON 给 UI', async () => {
+    const app = makeApp()
+    const { cookie, user } = await createLoggedInUser('llm-shape-bridge@a.com')
+    await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ provider: 'anthropic', apiKey: 'sk-ant-1', model: 'claude-4' }),
+    })
+
+    // DB:新 shape
+    const db = getDb()
+    const [u] = await db.select().from(users).where(eq(users.id, user.id)).limit(1)
+    const decrypted = JSON.parse(decryptApiKey(u!.llmSettings!))
+    expect(decrypted).toEqual({
+      activeProvider: 'anthropic',
+      providers: { anthropic: { apiKey: 'sk-ant-1', model: 'claude-4' } },
+    })
+
+    // GET 返回老 shape JSON 给 UI(兼容期)
+    const res = await app.request('/api/auth/llm-settings', { headers: { Cookie: cookie } })
+    const body = await res.json()
+    expect(body).toEqual({
+      provider: 'anthropic',
+      model: 'claude-4',
+      baseUrl: null,
+      apiType: 'openai-compatible',
+      hasApiKey: true,
+    })
+  })
+
+  it('llm-settings GET: DB 已是新 shape → 兼容期仍返老 shape JSON', async () => {
+    const app = makeApp()
+    const { cookie, user } = await createLoggedInUser('llm-new-shape-db@a.com')
+    // 直接绕过 PUT,DB 写入新 shape(模拟 migration 跑过后的状态)
+    const db = getDb()
+    const newShape = JSON.stringify({
+      activeProvider: 'gemini',
+      providers: { gemini: { apiKey: 'gem-1', model: 'gemini-2.5', baseUrl: 'https://x.com/v1' } },
+    })
+    await db
+      .update(users)
+      .set({ llmSettings: encryptApiKey(newShape) })
+      .where(eq(users.id, user.id))
+
+    const res = await app.request('/api/auth/llm-settings', { headers: { Cookie: cookie } })
+    const body = await res.json()
+    expect(body).toEqual({
+      provider: 'gemini',
+      model: 'gemini-2.5',
+      baseUrl: 'https://x.com/v1',
+      apiType: 'openai-compatible',
+      hasApiKey: true,
+    })
   })
 
   it('llm-settings GET: 密文损坏 → 500', async () => {

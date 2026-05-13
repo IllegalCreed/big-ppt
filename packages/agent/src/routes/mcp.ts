@@ -13,7 +13,7 @@ import { UNSUPPORTED_SERVER_IDS } from '../mcp-server-repo/presets.js'
 import { getRegistry } from '../mcp-registry/index.js'
 import { requireAuth, type AuthVars } from '../middleware/auth.js'
 import { getDb, users } from '../db/index.js'
-import { decryptApiKey } from '../crypto/apikey.js'
+import { getActiveProviderConfig } from '../llm/settings.js'
 
 export const mcp = new Hono<{ Variables: AuthVars }>()
 
@@ -49,12 +49,10 @@ async function userHasLlmKey(userId: number): Promise<boolean> {
     .where(eq(users.id, userId))
     .limit(1)
   if (!u || !u.llmSettings) return false
-  try {
-    const parsed = JSON.parse(decryptApiKey(u.llmSettings)) as { apiKey?: string }
-    return !!parsed.apiKey?.trim()
-  } catch {
-    return false
-  }
+  // Phase 12 Task F:走 getActiveProviderConfig 同时兼容老/新 shape(无 try/catch
+  // 必要,helper 内部解密 + parse 均吞错返 null)
+  const cfg = getActiveProviderConfig(u.llmSettings)
+  return !!cfg?.apiKey?.trim()
 }
 
 function headersContainSentinel(headers: Record<string, string>): boolean {

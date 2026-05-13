@@ -465,4 +465,80 @@ describe('routes/decks', () => {
     const forbid = await app.request(`/api/decks/${deck.id}/chats`, { headers: { Cookie: other.cookie } })
     expect(forbid.status).toBe(403)
   })
+
+  it('Chats: POST 写入 canonical_content 列(双写)+ GET response 含 canonical Block[] 字段', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id)
+
+    // POST 老入参 shape(content + toolCallId)
+    await postJson(app, `/api/decks/${deck.id}/chats`, { role: 'user', content: 'hi' }, cookie)
+    await postJson(
+      app,
+      `/api/decks/${deck.id}/chats`,
+      { role: 'tool', content: '{"ok":true}', toolCallId: 'tc-1' },
+      cookie,
+    )
+
+    // DB 校验:canonical_content 列已填(非 NULL)
+    const db = getDb()
+    const rows = await db
+      .select()
+      .from(deckChats)
+      .where(eq(deckChats.deckId, deck.id))
+      .orderBy(deckChats.id)
+    expect(rows).toHaveLength(2)
+    for (const r of rows) {
+      expect(r.canonicalContent).not.toBeNull()
+    }
+    // user row 是 text block
+    expect(JSON.parse(rows[0]!.canonicalContent!)).toEqual([{ type: 'text', text: 'hi' }])
+    // tool row 是 tool_result block
+    expect(JSON.parse(rows[1]!.canonicalContent!)).toEqual([
+      { type: 'tool_result', toolUseId: 'tc-1', content: '{"ok":true}' },
+    ])
+
+    // GET response 含 canonical 字段
+    const res = await app.request(`/api/decks/${deck.id}/chats`, { headers: { Cookie: cookie } })
+    const { chats } = await res.json()
+    expect(chats[0].canonical).toEqual([{ type: 'text', text: 'hi' }])
+    expect(chats[1].canonical).toEqual([
+      { type: 'tool_result', toolUseId: 'tc-1', content: '{"ok":true}' },
+    ])
+    // 老字段同时保留(向后兼容期)
+    expect(chats[0].content).toBe('hi')
+    expect(chats[1].toolCallId).toBe('tc-1')
+  })
+
+  it('Chats: POST 带 canonical Block[] 入参 → canonicalContent 字段保真,老字段拍平', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id)
+
+    const canonical = [
+      { type: 'text', text: '我准备调工具' },
+      { type: 'tool_use', id: 'tc-9', name: 'edit_slide', input: { index: 0 } },
+    ]
+    const post = await postJson(
+      app,
+      `/api/decks/${deck.id}/chats`,
+      { role: 'assistant', canonical },
+      cookie,
+    )
+    expect(post.status).toBe(201)
+
+    const db = getDb()
+    const [row] = await db
+      .select()
+      .from(deckChats)
+      .where(eq(deckChats.deckId, deck.id))
+      .limit(1)
+    expect(row).toBeDefined()
+    // canonicalContent 保真
+    expect(JSON.parse(row!.canonicalContent!)).toEqual(canonical)
+    // 老 content 字段是 text blocks 拍平后串(只有 text + tool_result 进 content)
+    expect(row!.content).toBe('我准备调工具')
+    // toolCallId 取首个 tool_use.id
+    expect(row!.toolCallId).toBe('tc-9')
+  })
 })

@@ -10,7 +10,7 @@
  */
 import { eq } from 'drizzle-orm'
 import { getDb, users } from '../db/index.js'
-import { decryptApiKey } from '../crypto/apikey.js'
+import { getActiveProviderConfig } from '../llm/settings.js'
 import { buildSystemPrompt } from './buildSystemPrompt.js'
 import { readStarter } from '../templates/registry.js'
 import { acquireLlmSlot } from '../middleware/llm-semaphore.js'
@@ -46,7 +46,13 @@ export function resolveUpstream(settings: LlmSettings): { url: string; model: st
   return { url: `${base}/chat/completions`, model }
 }
 
-/** 读取用户 llm_settings 并解密 */
+/**
+ * 读取用户 llm_settings,返归一化的 `{provider, apiKey, baseUrl?, model?}` view。
+ *
+ * Phase 12 Task F 之后通过 `getActiveProviderConfig` shape-agnostic 解析,
+ * 同时兼容老 `{provider, apiKey, ...}` shape(migration 跑之前)+ 新
+ * `{activeProvider, providers: {...}}` shape(migration 跑之后)。
+ */
 export async function loadUserLlmSettings(userId: number): Promise<LlmSettings> {
   const db = getDb()
   const [u] = await db
@@ -57,10 +63,11 @@ export async function loadUserLlmSettings(userId: number): Promise<LlmSettings> 
   if (!u || !u.llmSettings) {
     throw new Error('用户未配置 LLM API Key')
   }
-  const raw = decryptApiKey(u.llmSettings)
-  const settings = JSON.parse(raw) as LlmSettings
-  if (!settings.apiKey) throw new Error('LLM 配置缺失 apiKey')
-  return settings
+  const cfg = getActiveProviderConfig(u.llmSettings)
+  if (!cfg) {
+    throw new Error('LLM 配置解析失败或缺失 apiKey')
+  }
+  return { provider: cfg.provider, apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model }
 }
 
 /** 从 LLM 回复中提取 slides.md 正文（去掉 ```markdown 代码块包裹） */

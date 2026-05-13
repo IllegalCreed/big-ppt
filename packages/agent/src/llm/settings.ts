@@ -13,9 +13,12 @@
  * 2. `parseLlmSettings(raw)` —— 解密后的 JSON → 类型安全 LlmSettings;失败抛错(route 转 500)。
  * 3. `migrateLegacySettings(legacy)` —— 老 shape `{provider, apiKey, ...}` → 新 shape;
  *    用在 migration script `scripts/migrate-llm-settings.mjs` 和兼容期"老用户首次访问触发"路径。
+ * 4. `getActiveProviderConfig(encrypted)` —— shape-agnostic 读取:同时兼容新/老两种 shape,
+ *    所有非 canonical-route 的 llm_settings 消费者(rewriteForTemplate / MCP $LLM_KEY /
+ *    Settings UI 兼容期 GET)走它,这样 migration 跑前后都能工作。
  *
- * 注意:本文件保持纯函数,**不**访问 DB / 不解密。DB / crypto 由 caller 负责
- * (route handler 或 migration script);本层只做 shape 转换 + 校验。
+ * 注意:除 `getActiveProviderConfig` 外本文件保持纯函数(不访问 DB / 不解密)。
+ * `getActiveProviderConfig` 自己内部解密,接受**密文**串简化 caller。
  *
  * Task E 的 minimal stub 由本 Task 替换。type shape 完全 backwards-compatible
  * (`activeProvider` / `providers` / `advanced` 字段名相同,只是从手写 type
@@ -23,6 +26,7 @@
  */
 
 import { z } from 'zod'
+import { decryptApiKey } from '../crypto/apikey.js'
 
 export const ProviderConfigSchema = z.object({
   apiKey: z.string().min(1),
@@ -132,4 +136,68 @@ export function migrateLegacySettings(legacy: {
       },
     } as LlmSettings['providers'],
   }
+}
+
+/**
+ * 当前 active provider 的归一化 config view。
+ *
+ * Why 单独抽:Task F migration 之后 users.llm_settings 是新 shape,但仍有 6 个消费者
+ * 直接读老 `{apiKey, provider, baseUrl, model}` 字段(rewriteForTemplate /
+ * rewriteSinglePageToComponents / routes/mcp.ts:userHasLlmKey / mcp-registry/
+ * registry.ts:fetchLlmKey / routes/auth.ts GET+PUT)。这些消费者都不是 canonical-route
+ * 受众,改成 canonical 路径成本高(Phase 12 Task I 后续才处理 frontend)。
+ * 本 helper 给它们一个 shape-agnostic 读法:同时支持新/老 shape,migration 跑前后
+ * 都能拿到正确值。
+ *
+ * @param encryptedSettings - 加密的 `user.llmSettings` 串(原样从 DB 取出来)
+ * @returns active 的 provider 配置(apiKey + baseUrl? + model? + provider id);
+ *          解密 / parse / 校验失败均返 null(caller 处理 fallback)。
+ *
+ * 兼容判断:
+ * - 含 `activeProvider` 字段 → 新 shape,走 zod 校验取 providers[activeProvider]
+ * - 含 `apiKey` + `provider` 字段 → 老 shape,直接返字段
+ * - 其它 → null(损坏或 shape 不识别)
+ */
+export function getActiveProviderConfig(encryptedSettings: string): {
+  apiKey: string
+  baseUrl?: string
+  model?: string
+  provider: string
+} | null {
+  let raw: unknown
+  try {
+    raw = JSON.parse(decryptApiKey(encryptedSettings))
+  } catch {
+    return null
+  }
+  if (!raw || typeof raw !== 'object') return null
+  const obj = raw as Record<string, unknown>
+
+  // 新 shape:有 activeProvider 字段
+  if (typeof obj.activeProvider === 'string') {
+    const result = LlmSettingsSchema.safeParse(raw)
+    if (!result.success) return null
+    const cfg = result.data.providers[result.data.activeProvider]
+    if (!cfg?.apiKey) return null
+    return {
+      apiKey: cfg.apiKey,
+      baseUrl: cfg.baseUrl,
+      model: cfg.model,
+      provider: result.data.activeProvider,
+    }
+  }
+
+  // 老 shape:{provider, apiKey, baseUrl?, model?}
+  if (typeof obj.apiKey === 'string' && typeof obj.provider === 'string') {
+    const apiKey = obj.apiKey.trim()
+    if (!apiKey) return null
+    return {
+      apiKey,
+      provider: obj.provider,
+      baseUrl: typeof obj.baseUrl === 'string' ? obj.baseUrl : undefined,
+      model: typeof obj.model === 'string' ? obj.model : undefined,
+    }
+  }
+
+  return null
 }

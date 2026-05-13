@@ -8,9 +8,15 @@ import { randomBytes } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { getDb, users, sessions } from '../db/index.js'
 import { SESSION_COOKIE, SESSION_TTL_MS, type AuthVars } from '../middleware/auth.js'
-import { encryptApiKey, decryptApiKey } from '../crypto/apikey.js'
+import { encryptApiKey } from '../crypto/apikey.js'
 import { createRateLimit } from '../middleware/rate-limit.js'
 import { errorResponse } from '../utils/error-response.js'
+import {
+  ActiveProviderIdSchema,
+  getActiveProviderConfig,
+  migrateLegacySettings,
+  type ActiveProviderId,
+} from '../llm/settings.js'
 
 const BCRYPT_ROUNDS = 10
 
@@ -139,63 +145,93 @@ auth.get('/me', async (c) => {
   return c.json({ user: sanitizeUser(user) })
 })
 
+/**
+ * GET /api/auth/llm-settings:Settings UI 兼容期返回老 shape 给前端。
+ *
+ * Phase 12 Task F:DB 端 user.llmSettings 可能是老或新 shape(migration 跑前后)。
+ * 通过 `getActiveProviderConfig` 归一化拿到 active provider 配置,再以**老 shape**
+ * `{provider, model, baseUrl, apiType, hasApiKey}` 返回 —— Settings UI 在 Task J 才会
+ * 改成读 activeProvider + providers 多家结构;现在保持兼容形态让 UI 零修改工作。
+ *
+ * apiType 字段在新 shape 中已废弃(只支持 'openai-compatible'),始终返常量。
+ */
 auth.get('/llm-settings', async (c) => {
   const user = c.get('user')
   if (!user) return c.json({ error: 'unauthorized' }, 401)
   if (!user.llmSettings) {
     return c.json({ provider: null, model: null, baseUrl: null, apiType: null, hasApiKey: false })
   }
-  try {
-    const parsed = JSON.parse(decryptApiKey(user.llmSettings)) as LlmSettingsBody
-    return c.json({
-      provider: parsed.provider ?? null,
-      model: parsed.model ?? null,
-      baseUrl: parsed.baseUrl ?? null,
-      apiType: parsed.apiType ?? null,
-      hasApiKey: !!parsed.apiKey,
+  const cfg = getActiveProviderConfig(user.llmSettings)
+  if (!cfg) {
+    // 解密 / parse 失败:跟之前一样走 errorResponse(prod 仅 generic + errorId)。
+    // 自行构造 Error 让 errorResponse 走完日志 + 脱敏路径(message 不外泄到 frontend)。
+    return errorResponse(c, new Error('llm_settings 解密或 parse 失败'), {
+      publicMessage: 'LLM 配置读取失败',
     })
-  } catch (err) {
-    // Phase 9-E：生产模式仅返 generic + errorId（解密细节可能泄漏 master key 状态）
-    return errorResponse(c, err, { publicMessage: 'LLM 配置读取失败' })
   }
+  return c.json({
+    provider: cfg.provider,
+    model: cfg.model ?? null,
+    baseUrl: cfg.baseUrl ?? null,
+    apiType: 'openai-compatible',
+    hasApiKey: true,
+  })
 })
 
+/**
+ * PUT /api/auth/llm-settings:Settings UI 兼容期接受老 shape body。
+ *
+ * Phase 12 Task F:内部把老 shape 通过 `migrateLegacySettings` 转成新 shape 再加密入库
+ * —— 这样 migration script 跑过后 UI 仍能保存(下游 LLM 路由 + MCP 都读新 shape)。
+ * Task J 改 UI 后,本路由可同时接受 newShape body(后向兼容)。
+ *
+ * provider 白名单:必须是 ActiveProviderIdSchema 的 7 个 id;Settings UI 后续应改成
+ * 下拉而非 free-form 输入,但当前还允许用户输入任意串,这里加 400 校验防垃圾数据。
+ */
 auth.put('/llm-settings', async (c) => {
   const user = c.get('user')
   if (!user) return c.json({ error: 'unauthorized' }, 401)
 
   const body = await c.req.json<LlmSettingsBody>().catch((): LlmSettingsBody => ({}))
 
-  // 若未给 apiKey：要求已存在旧值，保留旧 apiKey 只更新其他字段
+  // 若未给 apiKey:要求已存在旧值,保留旧 apiKey 只更新其他字段
   let apiKey = body.apiKey?.trim() ?? ''
   if (!apiKey) {
     if (!user.llmSettings) return c.json({ error: 'apiKey 为空' }, 400)
-    try {
-      const prev = JSON.parse(decryptApiKey(user.llmSettings)) as LlmSettingsBody
-      apiKey = prev.apiKey ?? ''
-    } catch (err) {
-      // Phase 9-E：同上，加密细节生产不外泄
-      return errorResponse(c, err, { publicMessage: '旧 LLM 配置读取失败' })
+    const prev = getActiveProviderConfig(user.llmSettings)
+    if (!prev) {
+      // 加密 / parse 失败(旧密文损坏),沿用 errorResponse generic 脱敏路径
+      return errorResponse(c, new Error('旧 llm_settings 解密或 parse 失败'), {
+        publicMessage: '旧 LLM 配置读取失败',
+      })
     }
+    apiKey = prev.apiKey
     if (!apiKey) return c.json({ error: 'apiKey 为空' }, 400)
   }
 
-  const provider = body.provider?.trim() || 'zhipu'
+  // apiType 目前仅支持 'openai-compatible';留空时默认它,显式传不在白名单的值 → 400
+  // (Phase 12 起 apiType 字段在新 shape 已不入库,但 PUT body 仍接受以保持向后兼容校验)
+  // 顺序:apiType 校验先于 provider,跟 Phase 5 历史顺序保持一致(避免破老测试断言)。
+  const rawApiType = body.apiType?.trim()
+  if (rawApiType && !SUPPORTED_API_TYPES.includes(rawApiType as LlmApiType)) {
+    return c.json({ error: `不支持的 apiType:${rawApiType}` }, 400)
+  }
+
+  const providerRaw = body.provider?.trim() || 'zhipu'
+  const providerCheck = ActiveProviderIdSchema.safeParse(providerRaw)
+  if (!providerCheck.success) {
+    return c.json({ error: `不支持的 provider:${providerRaw}` }, 400)
+  }
+  const provider: ActiveProviderId = providerCheck.data
+
   const model = body.model?.trim() || undefined
   const baseUrl = body.baseUrl?.trim() || undefined
 
-  // apiType 目前仅支持 'openai-compatible';留空时默认它,显式传不在白名单的值 → 400
-  const rawApiType = body.apiType?.trim()
-  let apiType: LlmApiType = 'openai-compatible'
-  if (rawApiType) {
-    if (!SUPPORTED_API_TYPES.includes(rawApiType as LlmApiType)) {
-      return c.json({ error: `不支持的 apiType:${rawApiType}` }, 400)
-    }
-    apiType = rawApiType as LlmApiType
-  }
-
-  const payload = JSON.stringify({ provider, apiKey, baseUrl, model, apiType })
-  const encrypted = encryptApiKey(payload)
+  // Phase 12 Task F:把入参的老 shape 经 migrateLegacySettings 转成新 shape 入库,
+  // 这样 DB 永远是新 shape,下游 LLM 路由 + MCP 跑 getActiveProviderConfig 直接命中
+  // 新 shape 分支。
+  const nextSettings = migrateLegacySettings({ provider, apiKey, baseUrl, model })
+  const encrypted = encryptApiKey(JSON.stringify(nextSettings))
 
   const db = getDb()
   await db.update(users).set({ llmSettings: encrypted }).where(eq(users.id, user.id))

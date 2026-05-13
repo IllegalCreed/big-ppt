@@ -341,6 +341,34 @@ describe('PATCH /api/mcp/servers/:id', () => {
     expect(transportSpy.lastHeaders?.Authorization).not.toContain('$LLM_KEY')
   })
 
+  it('Phase 12 Task F:DB 已是新 shape → activate 仍能拿到 $LLM_KEY 真值(getActiveProviderConfig 兼容)', async () => {
+    const { encryptApiKey } = await import('../src/crypto/apikey.js')
+    const { users } = await import('../src/db/index.js')
+    // 直接绕过 PUT /llm-settings,写新 shape JSON 到 DB(模拟 migration 跑过后的状态)
+    const newShape = JSON.stringify({
+      activeProvider: 'zhipu',
+      providers: { zhipu: { apiKey: 'new-shape-key', model: 'GLM-5.1' } },
+    })
+    await getDb()
+      .update(users)
+      .set({ llmSettings: encryptApiKey(newShape) })
+      .where(eq(users.id, userIdA))
+
+    transportSpy.lastHeaders = undefined
+    const res = await buildApp().request(
+      '/api/mcp/servers/zhipu-web-search',
+      authed(cookieA, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true, headers: { Authorization: 'Bearer $LLM_KEY' } }),
+      }),
+    )
+    expect(res.status).toBe(200)
+    // 新 shape DB → fetchLlmKey 走 getActiveProviderConfig → 拿到 providers.zhipu.apiKey
+    expect(transportSpy.lastHeaders?.Authorization).toBe('Bearer new-shape-key')
+    expect(transportSpy.lastHeaders?.Authorization).not.toContain('$LLM_KEY')
+  })
+
   it('PATCH 取消复用(发空 headers) → sentinel 被清空,GET 返回 reuseLlmKey=false', async () => {
     const { encryptApiKey } = await import('../src/crypto/apikey.js')
     const { users } = await import('../src/db/index.js')

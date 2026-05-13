@@ -5,7 +5,7 @@ import type { McpServerRepo } from '../mcp-server-repo/types.js'
 import { registerForUser, unregisterForUser } from '../tools/registry.js'
 import { McpSession } from './session.js'
 import { getDb, users } from '../db/index.js'
-import { decryptApiKey } from '../crypto/apikey.js'
+import { getActiveProviderConfig } from '../llm/settings.js'
 import { UNSUPPORTED_SERVER_IDS } from '../mcp-server-repo/presets.js'
 
 /**
@@ -131,12 +131,9 @@ export class McpRegistry {
       .where(eq(users.id, this.userId))
       .limit(1)
     if (!u || !u.llmSettings) return null
-    try {
-      const parsed = JSON.parse(decryptApiKey(u.llmSettings)) as { apiKey?: string }
-      return parsed.apiKey?.trim() || null
-    } catch {
-      return null
-    }
+    // Phase 12 Task F:同时兼容老/新 shape;helper 内部解密 + parse 失败均返 null
+    const cfg = getActiveProviderConfig(u.llmSettings)
+    return cfg?.apiKey?.trim() || null
   }
 
   private unregisterSessionTools(session: McpSession): void {

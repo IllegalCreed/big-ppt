@@ -178,7 +178,7 @@ describe('POST /api/llm/chat/completions(canonical 路由)', () => {
     expect(body.error.message).toBe('请先在设置中配置 LLM API Key')
   })
 
-  it('llmSettings 解密失败(密文格式损坏) → 500', async () => {
+  it('llmSettings 解密失败(密文格式损坏) → 500 + 友好 message + invalid_settings code', async () => {
     const { user, cookie } = await createLoggedInUser('bad-cipher@a.com')
     // 直接写一段非法密文(不经 encryptApiKey)
     await getDb()
@@ -194,13 +194,17 @@ describe('POST /api/llm/chat/completions(canonical 路由)', () => {
       }),
     )
     expect(res.status).toBe(500)
-    const body = (await res.json()) as { error: { message: string } }
-    expect(body.error.message).toMatch(/LLM 配置解密 \/ 解析失败/)
+    const body = (await res.json()) as { error: { message: string; code?: string } }
+    // Task F+:不外泄 zod issues / 密文细节,只返用户友好 message
+    expect(body.error.message).toBe('LLM 配置已损坏,请重新保存')
+    expect(body.error.code).toBe('invalid_settings')
   })
 
-  it('llmSettings 缺 activeProvider(parseLlmSettings 抛错) → 500', async () => {
+  it('llmSettings 缺 activeProvider(zod safeParse fail) → 500 + 友好 message', async () => {
     const { user, cookie } = await createLoggedInUser('no-active@a.com')
-    // 老 shape:Phase 5 时代用户存的 {provider, apiKey, ...},缺 activeProvider
+    // 老 shape:Phase 5 时代用户存的 {provider, apiKey, ...},缺 activeProvider。
+    // Task F+:safeParse 失败 → 500 + 用户友好 message。zod issues 不外泄到前端,
+    // 详细信息写到 server-log 给运营查。
     await setLlmSettings(user.id, JSON.stringify({ provider: 'zhipu', apiKey: 'x' }))
 
     const res = await buildApp().fetch(
@@ -211,11 +215,12 @@ describe('POST /api/llm/chat/completions(canonical 路由)', () => {
       }),
     )
     expect(res.status).toBe(500)
-    const body = (await res.json()) as { error: { message: string } }
-    // Task F 起 parseLlmSettings 走 zod schema;失败抛 ZodError(message 是 issue 数组的 JSON
-    // 序列化串)。zod 错误一定提到 'activeProvider' 字段名(path)+ 缺失原因。
-    expect(body.error.message).toContain('LLM 配置解密 / 解析失败')
-    expect(body.error.message).toContain('activeProvider')
+    const body = (await res.json()) as { error: { message: string; code?: string } }
+    expect(body.error.message).toBe('LLM 配置已损坏,请重新保存')
+    expect(body.error.code).toBe('invalid_settings')
+    // 不能含 zod 内部字段名(防外泄)
+    expect(body.error.message).not.toContain('activeProvider')
+    expect(body.error.message).not.toContain('zod')
   })
 
   it('llmSettings 配的 provider 未注册(如 anthropic Task G 前) → 400', async () => {

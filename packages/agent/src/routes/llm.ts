@@ -32,7 +32,7 @@ import { ProviderRegistry } from '../llm/provider.js'
 import { createOpenAICompatibleProvider } from '../llm/adapters/openai-compatible.js'
 import { eventsToSSEStream } from '../llm/canonical-sse.js'
 import { LLMError } from '../llm/errors.js'
-import { parseLlmSettings } from '../llm/settings.js'
+import { LlmSettingsSchema } from '../llm/settings.js'
 import { logServerEvent } from '../logger/server-log.js'
 import type { CanonicalChatRequest } from '../llm/types.js'
 
@@ -83,15 +83,37 @@ llm.post('/chat/completions', async (c) => {
     return c.json({ error: { message: '请先在设置中配置 LLM API Key' } }, 400)
   }
 
-  let settings
+  // 解密 + safeParse 分两步,decrypt 失败和 parse 失败走同一个用户友好 message
+  // (不外泄 zod issues / 密文细节)。详细错误落 logServerEvent 给运营排查。
+  let raw: unknown
   try {
-    settings = parseLlmSettings(JSON.parse(decryptApiKey(user.llmSettings)))
+    raw = JSON.parse(decryptApiKey(user.llmSettings))
   } catch (e) {
+    logServerEvent({
+      category: 'llm',
+      event: 'settings-decrypt-failed',
+      userId: user.id,
+      errorMsg: (e as Error).message,
+    })
     return c.json(
-      { error: { message: `LLM 配置解密 / 解析失败:${(e as Error).message}` } },
+      { error: { message: 'LLM 配置已损坏,请重新保存', code: 'invalid_settings' } },
       500,
     )
   }
+  const result = LlmSettingsSchema.safeParse(raw)
+  if (!result.success) {
+    logServerEvent({
+      category: 'llm',
+      event: 'settings-parse-failed',
+      userId: user.id,
+      issues: result.error.issues,
+    })
+    return c.json(
+      { error: { message: 'LLM 配置已损坏,请重新保存', code: 'invalid_settings' } },
+      500,
+    )
+  }
+  const settings = result.data
 
   let provider
   try {
