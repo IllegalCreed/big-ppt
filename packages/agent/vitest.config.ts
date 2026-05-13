@@ -28,8 +28,9 @@ export default defineConfig({
         'src/index.ts', // bootstrap：server.listen 等副作用代码，业务逻辑已由 slidev-proxy-auth 覆盖
         'src/mcp-registry/**', // MCP SDK 动态 import 不易测；已有 mcp-registry.test.ts 覆盖核心逻辑
         'src/workspace.ts', // 启动期 path 解析，测试里已用 env 覆盖
-        // 以下 routes 是 Phase 2~4 留的，不在本轮 Phase 5 补测范围；留给后续专项补测
-        'src/routes/llm.ts',
+        // 以下 routes 是 Phase 2~4 留的，不在本轮 Phase 5 补测范围；留给后续专项补测。
+        // Phase 12 Task E:routes/llm.ts 已被 test/integration/llm-route.test.ts 9 测覆盖,
+        // 不再从 coverage 排除。
         'src/routes/log.ts',
         'src/routes/slides.ts',
         'src/routes/slidev-restart.ts', // execFile pm2 系统命令，单测难模拟；保留以待 E2E

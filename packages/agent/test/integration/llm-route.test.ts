@@ -53,7 +53,10 @@ beforeEach(() => {
 function buildApp() {
   const app = new Hono<{ Variables: AuthVars }>()
   app.use('*', authOptional)
-  app.route('/api', llm)
+  // mount path 必须与 prod app.ts 一致(`app.route('/api/llm', llm)`);
+  // 否则测试用 /api/chat/completions 与生产真实路径 /api/llm/chat/completions 不一致,
+  // 「单测过不代表 HTTP 路径过」(用户 memory feedback_remove-session-field-grep-readers)。
+  app.route('/api/llm', llm)
   return app
 }
 
@@ -147,10 +150,10 @@ async function collectSSE(res: Response): Promise<CanonicalEvent[]> {
 
 // --- tests ---------------------------------------------------------------
 
-describe('POST /api/chat/completions(canonical 路由)', () => {
+describe('POST /api/llm/chat/completions(canonical 路由)', () => {
   it('未登录 → 401', async () => {
     const res = await buildApp().fetch(
-      new Request('http://x/api/chat/completions', {
+      new Request('http://x/api/llm/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: [] }),
@@ -164,7 +167,7 @@ describe('POST /api/chat/completions(canonical 路由)', () => {
   it('已登录但未配 llmSettings → 400("请先在设置中配置 LLM API Key")', async () => {
     const { cookie } = await createLoggedInUser('no-settings@a.com')
     const res = await buildApp().fetch(
-      new Request('http://x/api/chat/completions', {
+      new Request('http://x/api/llm/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
         body: JSON.stringify({ messages: [] }),
@@ -184,7 +187,7 @@ describe('POST /api/chat/completions(canonical 路由)', () => {
       .where(eq(users.id, user.id))
 
     const res = await buildApp().fetch(
-      new Request('http://x/api/chat/completions', {
+      new Request('http://x/api/llm/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
         body: JSON.stringify({ messages: [] }),
@@ -201,7 +204,7 @@ describe('POST /api/chat/completions(canonical 路由)', () => {
     await setLlmSettings(user.id, JSON.stringify({ provider: 'zhipu', apiKey: 'x' }))
 
     const res = await buildApp().fetch(
-      new Request('http://x/api/chat/completions', {
+      new Request('http://x/api/llm/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
         body: JSON.stringify({ messages: [] }),
@@ -218,7 +221,7 @@ describe('POST /api/chat/completions(canonical 路由)', () => {
     await setLlmSettings(user.id, newShapeSettings('anthropic', 'sk-anthropic'))
 
     const res = await buildApp().fetch(
-      new Request('http://x/api/chat/completions', {
+      new Request('http://x/api/llm/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
         body: JSON.stringify({ messages: [] }),
@@ -246,7 +249,7 @@ describe('POST /api/chat/completions(canonical 路由)', () => {
       temperature: 0.7,
     }
     const res = await buildApp().fetch(
-      new Request('http://x/api/chat/completions', {
+      new Request('http://x/api/llm/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
         body: JSON.stringify(reqBody),
@@ -294,7 +297,7 @@ describe('POST /api/chat/completions(canonical 路由)', () => {
       __setRegistryForTesting(registry)
 
       const res = await buildApp().fetch(
-        new Request('http://x/api/chat/completions', {
+        new Request('http://x/api/llm/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Cookie: cookie },
           body: JSON.stringify({ messages: [] }),
@@ -320,7 +323,7 @@ describe('POST /api/chat/completions(canonical 路由)', () => {
     __setRegistryForTesting(registry)
 
     const res = await buildApp().fetch(
-      new Request('http://x/api/chat/completions', {
+      new Request('http://x/api/llm/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
         body: JSON.stringify({ messages: [] }),
@@ -347,7 +350,7 @@ describe('POST /api/chat/completions(canonical 路由)', () => {
     __setRegistryForTesting(registry)
 
     const res = await buildApp().fetch(
-      new Request('http://x/api/chat/completions', {
+      new Request('http://x/api/llm/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
         body: JSON.stringify({ messages: [] }),
