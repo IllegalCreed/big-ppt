@@ -4,6 +4,7 @@
  * 状态故意不做全局单例——每个页面自己 ref 数据，避免隐式共享的惊讶。
  * 要跨组件共享时通过 props / provide-inject，不共享 module-level state。
  */
+import type { Block } from '@big-ppt/shared'
 import { api } from '../api/client'
 
 export type DeckStatus = 'active' | 'archived' | 'deleted'
@@ -154,7 +155,13 @@ export function useDecks() {
 
   async function appendChat(
     id: number,
-    payload: { role: DeckChat['role']; content: string; toolCallId?: string },
+    payload: {
+      role: DeckChat['role']
+      content: string
+      toolCallId?: string
+      /** Phase 12 Task I：canonical Block[]，后端 routes/decks.ts 优先使用；老字段 content / toolCallId 作 fallback */
+      canonical?: Block[]
+    },
   ) {
     await api.post(`/api/decks/${id}/chats`, payload)
   }

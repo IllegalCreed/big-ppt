@@ -5,10 +5,13 @@ import type { SenderRef } from '@antdv-next/x'
 import type { ToolStep } from '../composables/useAIChat'
 import { useAIChat } from '../composables/useAIChat'
 import { useSlashCommands } from '../composables/useSlashCommands'
+import ThinkingBlock from './ThinkingBlock.vue'
+import CacheStatsHint from './CacheStatsHint.vue'
 
 const {
   chatMessages,
   streamingContent,
+  thinkingContent,
   toolSteps,
   status,
   statusText,
@@ -55,7 +58,7 @@ function renderToolChain(steps: ToolStep[]) {
 
 interface BubbleItem {
   key: string
-  role: 'user' | 'ai' | 'ai-chain'
+  role: 'user' | 'ai' | 'ai-chain' | 'ai-thinking' | 'ai-cache'
   content: unknown
   loading?: boolean
 }
@@ -68,6 +71,15 @@ const bubbleItems = computed(() => {
       items.push({ key: `u-${i}`, role: 'user', content: msg.content })
       continue
     }
+    // Phase 12 Task I：thinking 折叠区放在 assistant bubble 上方（先思考后输出，
+    // 符合 LLM 时序），用 ThinkingBlock 组件统一渲染。空字符串不渲染。
+    if (msg.thinking && msg.thinking.length > 0) {
+      items.push({
+        key: `a-${i}-thinking`,
+        role: 'ai-thinking',
+        content: h(ThinkingBlock, { text: msg.thinking }),
+      })
+    }
     if (msg.toolSteps?.length) {
       items.push({
         key: `a-${i}-chain`,
@@ -78,6 +90,26 @@ const bubbleItems = computed(() => {
     if (msg.content) {
       items.push({ key: `a-${i}`, role: 'ai', content: msg.content })
     }
+    // Phase 12 Task I：cache 提示放在 assistant bubble 下方（看到答案后再注意提示）
+    if (msg.cacheStats) {
+      items.push({
+        key: `a-${i}-cache`,
+        role: 'ai-cache',
+        content: h(CacheStatsHint, {
+          cached: msg.cacheStats.cached,
+          cost: msg.cacheStats.cost,
+        }),
+      })
+    }
+  }
+
+  // live thinking 也实时渲染（在 live-chain / live-text 之前）
+  if (thinkingContent.value) {
+    items.push({
+      key: 'live-thinking',
+      role: 'ai-thinking',
+      content: h(ThinkingBlock, { text: thinkingContent.value }),
+    })
   }
 
   if (toolSteps.value.length > 0) {
@@ -109,6 +141,14 @@ const roles = computed(() => ({
     shape: 'round' as const,
   },
   'ai-chain': {
+    placement: 'start' as const,
+    variant: 'borderless' as const,
+  },
+  'ai-thinking': {
+    placement: 'start' as const,
+    variant: 'borderless' as const,
+  },
+  'ai-cache': {
     placement: 'start' as const,
     variant: 'borderless' as const,
   },

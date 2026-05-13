@@ -45,4 +45,14 @@ export interface ChatBubble {
   role: 'user' | 'assistant'
   content: string
   toolSteps?: ToolStep[]
+  /**
+   * Phase 12 Task I：本轮 LLM thinking 缓冲（Anthropic extended thinking 等）。
+   * 仅在 assistant bubble 上有值，UI 默认折叠展示。空字符串视为无 thinking。
+   */
+  thinking?: string
+  /**
+   * Phase 12 Task I：本轮 prompt cache 命中数据（Anthropic prompt caching 触发）。
+   * 仅在 assistant bubble 上有值；UI 在 bubble 下方一行小字提示节省 token。
+   */
+  cacheStats?: { cached: number; cost: number }
 }

@@ -1,17 +1,22 @@
-import { inject, ref, computed, watch, type InjectionKey } from 'vue'
-import type {
-  AgentStatus,
-  CallToolRequest,
-  CallToolResponse,
-  ChatBubble,
-  ChatMessage,
-  GetToolsResponse,
-  LLMSettings,
-  LLMTool,
-  ToolCall,
-  ToolStep,
+import { inject, ref, computed, watch, type InjectionKey, type Ref } from 'vue'
+import {
+  decodeSSEStream,
+  type AgentStatus,
+  type Block,
+  type CallToolRequest,
+  type CallToolResponse,
+  type CanonicalChatRequest,
+  type CanonicalMessage,
+  type ChatBubble,
+  type FinishReason,
+  type GetToolsResponse,
+  type LLMSettings,
+  type ToolDef,
+  type ToolStep,
+  type TokenUsage,
 } from '@big-ppt/shared'
 import { buildSystemPrompt } from '../prompts/buildSystemPrompt'
+import { chatStream } from '../api/llm'
 import { logEvent, setCurrentSession, truncate } from './logger'
 import { useSlideStore } from './useSlideStore'
 import { useGenerateImageJob } from './useGenerateImageJob'
@@ -28,7 +33,16 @@ export type DeckChatContext = {
   deckId: number
   templateId: string
   initialHistory: ChatBubble[]
-  persistChat: (role: 'user' | 'assistant' | 'tool', content: string, toolCallId?: string) => Promise<void>
+  /**
+   * Phase 12 Task I：写 deck_chats 的同时把 canonical Block[] 一并发给后端
+   * （`/api/decks/:id/chats` POST 已支持 canonical 字段，见 routes/decks.ts）。
+   * `content` 兼容用作 plain text fallback；tool result 走 toolCallId 旁路。
+   */
+  persistChat: (
+    role: 'user' | 'assistant' | 'tool',
+    content: string,
+    extras?: { toolCallId?: string; canonical?: Block[] },
+  ) => Promise<void>
 }
 
 export const DECK_CHAT_CONTEXT: InjectionKey<DeckChatContext> = Symbol('DECK_CHAT_CONTEXT')
@@ -92,10 +106,14 @@ const TOOL_STATUS_MAP: Record<string, string> = {
 const MAX_ITERATIONS = 200
 const MAX_CONTEXT_MESSAGES = 20
 
-let cachedTools: LLMTool[] | null = null
-let toolsLoadPromise: Promise<LLMTool[]> | null = null
+let cachedTools: ToolDef[] | null = null
+let toolsLoadPromise: Promise<ToolDef[]> | null = null
 
-async function ensureTools(): Promise<LLMTool[]> {
+/**
+ * `/api/tools` 仍返 OpenAI shape（`{type:'function', function:{name, description, parameters}}`），
+ * 直接转成 canonical `ToolDef[]`：`name` / `description` 透传，`parameters` → `inputSchema`。
+ */
+async function ensureTools(): Promise<ToolDef[]> {
   if (cachedTools) return cachedTools
   if (!toolsLoadPromise) {
     toolsLoadPromise = (async () => {
@@ -105,7 +123,11 @@ async function ensureTools(): Promise<LLMTool[]> {
         toolsLoadPromise = null
         throw new Error(json.error || `GET /api/tools failed: ${res.status}`)
       }
-      cachedTools = json.tools
+      cachedTools = json.tools.map((t) => ({
+        name: t.function.name,
+        description: t.function.description ?? '',
+        inputSchema: (t.function.parameters ?? {}) as unknown as Record<string, unknown>,
+      }))
       return cachedTools
     })()
   }
@@ -165,11 +187,6 @@ export function invalidateLlmSettingsCache() {
   settingsLoadPromise = null
 }
 
-function getHeaders(): Record<string, string> {
-  // API Key 在服务端，前端不再带 Authorization；session cookie 通过 credentials:'include' 自动带
-  return { 'Content-Type': 'application/json' }
-}
-
 function getModel(): string {
   return cachedSettings.model || 'GLM-5.1'
 }
@@ -179,22 +196,33 @@ function getSettings(): LLMSettings {
   return { provider: cachedSettings.provider as LLMSettings['provider'], apiKey: '', model: cachedSettings.model }
 }
 
-// --- Messages 管理 ---
+// --- canonical message 历史管理 ---
 
-function trimMessages(messages: ChatMessage[]): ChatMessage[] {
+/**
+ * canonical 形态下的历史裁剪。保留 Phase 11.6 学到的"孤儿 tool 守护"语义：
+ * - canonical 协议下 `role:'tool'` message **必须**紧跟在含匹配 `tool_use` block
+ *   的 `assistant` message 之后；若裁剪切口落在配对中间，向前丢掉 orphan tool。
+ * - 系统提示词永远保留在 messages[0]（由 ensureSystemPrompt 保证）；裁剪触发时
+ *   插入一条 summary system 占位告诉 LLM"早期历史已截断"。
+ */
+function trimMessages(messages: CanonicalMessage[]): CanonicalMessage[] {
   const system = messages[0]
   if (!system || system.role !== 'system') return messages
 
   if (messages.length <= MAX_CONTEXT_MESSAGES + 1) return messages
 
-  const summary: ChatMessage = {
+  const summary: CanonicalMessage = {
     role: 'system',
-    content:
-      '[ Earlier conversation history has been trimmed. The current slides.md is available via read_slides tool. ]',
+    content: [
+      {
+        type: 'text',
+        text: '[ Earlier conversation history has been trimmed. The current slides.md is available via read_slides tool. ]',
+      },
+    ],
   }
   const recent = messages.slice(-MAX_CONTEXT_MESSAGES)
-  // 守护：tool 消息必须紧跟在带匹配 tool_call_id 的 assistant 之后（OpenAI/GLM spec），
-  // slice 切口若落在 assistant.tool_calls ↔ tool 配对中间，会留下孤儿 tool —— 丢掉。
+  // 守护：role:'tool' message 必须紧跟带匹配 tool_use block 的 assistant；
+  // slice 切口落在 assistant.tool_use ↔ tool 配对中间 → orphan tool，丢弃。
   let start = 0
   while (start < recent.length && recent[start]!.role === 'tool') start++
   return [system, summary, ...recent.slice(start)]
@@ -204,10 +232,21 @@ export const __trimMessagesForTesting = trimMessages
 
 // --- 工具执行 ---
 
-async function executeTool(call: ToolCall, turnId: string, deckId: number): Promise<string> {
+type FinalizedToolCall = {
+  id: string
+  name: string
+  /** raw args string，缓冲完成后 JSON.parse */
+  argsRaw: string
+}
+
+async function executeTool(
+  call: FinalizedToolCall,
+  turnId: string,
+  deckId: number,
+): Promise<string> {
   let args: Record<string, unknown>
   try {
-    args = JSON.parse(call.function.arguments || '{}')
+    args = JSON.parse(call.argsRaw || '{}')
   } catch (err) {
     return JSON.stringify({
       success: false,
@@ -223,7 +262,7 @@ async function executeTool(call: ToolCall, turnId: string, deckId: number): Prom
       // generate_slide_image 等都依赖 ctx.activeDeckId）
       'X-Deck-Id': String(deckId),
     },
-    body: JSON.stringify({ name: call.function.name, args, turnId } satisfies CallToolRequest),
+    body: JSON.stringify({ name: call.name, args, turnId } satisfies CallToolRequest),
   })
   const json = (await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }))) as CallToolResponse
   if (!res.ok || !json.success) {
@@ -232,125 +271,161 @@ async function executeTool(call: ToolCall, turnId: string, deckId: number): Prom
   return json.result ?? ''
 }
 
-// --- SSE 流式解析 ---
+// --- canonical event consumer ---
 
-async function callLLMStream(
-  messages: ChatMessage[],
-  signal: AbortSignal,
-  toolsList: LLMTool[],
+interface ToolCallAccumulator {
+  id: string
+  name: string
+  argsBuffer: string
+}
+
+export interface LLMStreamResult {
+  finalizedToolCalls: FinalizedToolCall[]
+  content: string
+  thinking: string
+  usage: TokenUsage | null
+  finishReason: FinishReason | null
+  cacheStats: { cached: number; cost: number } | null
+}
+
+/**
+ * canonical event consumer 状态机。
+ *
+ * 接收 `decodeSSEStream` 产出的事件流，累积:
+ * - `text.delta` → fullContent 缓冲 + 立即 onChunk 推 UI
+ * - `tool_call.start | delta | end` → 拼装最终 `FinalizedToolCall[]`
+ * - `thinking.delta` → thinking 缓冲 + onThinking 推 UI
+ * - `cache.hit` → 保留最近一次 cache 数据
+ * - `finish` → 记录 reason + usage
+ * - `error` → 抛出（中断状态机，上层 try/catch 处理）
+ */
+export async function consumeCanonicalEventStream(
+  stream: ReadableStream<Uint8Array>,
   onTextChunk: (chunk: string) => void,
-): Promise<{ toolCalls: ToolCall[]; content: string }> {
-  const response = await fetch('/api/llm/chat/completions', {
-    method: 'POST',
-    credentials: 'include',
-    headers: getHeaders(),
-    body: JSON.stringify({
-      model: getModel(),
-      messages,
-      tools: toolsList,
-      stream: true,
-    }),
-    signal,
+  onThinkingChunk: (chunk: string) => void,
+): Promise<LLMStreamResult> {
+  const tools: Record<string, ToolCallAccumulator> = {}
+  const order: string[] = [] // 保留 LLM 输出顺序
+  let content = ''
+  let thinking = ''
+  let usage: TokenUsage | null = null
+  let finishReason: FinishReason | null = null
+  let cacheStats: { cached: number; cost: number } | null = null
+
+  for await (const evt of decodeSSEStream(stream)) {
+    switch (evt.type) {
+      case 'text.delta':
+        content += evt.text
+        onTextChunk(evt.text)
+        break
+      case 'tool_call.start':
+        tools[evt.id] = { id: evt.id, name: evt.name, argsBuffer: '' }
+        order.push(evt.id)
+        break
+      case 'tool_call.delta': {
+        const acc = tools[evt.id]
+        if (acc) acc.argsBuffer += evt.argsChunk
+        break
+      }
+      case 'tool_call.end':
+        // tool_call.end 仅作分隔信号，最终汇总在循环结束后做（保证 args 完整缓冲）
+        break
+      case 'thinking.delta':
+        thinking += evt.text
+        onThinkingChunk(evt.text)
+        break
+      case 'cache.hit':
+        cacheStats = { cached: evt.cachedTokens, cost: evt.costTokens }
+        break
+      case 'finish':
+        finishReason = evt.reason
+        usage = evt.usage
+        break
+      case 'error':
+        throw new Error(`LLM error [${evt.code}]: ${evt.message}`)
+      default: {
+        // exhaustiveness：未知 event 类型时静默跳过（向前兼容 backend 加新事件）
+        const _exhaustive: never = evt
+        void _exhaustive
+        break
+      }
+    }
+  }
+
+  const finalizedToolCalls: FinalizedToolCall[] = order.map((id) => {
+    const acc = tools[id]!
+    return { id: acc.id, name: acc.name, argsRaw: acc.argsBuffer }
   })
 
-  if (!response.ok) {
-    const errText = await response.text()
-    let errMsg = `请求失败：${response.status}`
-    try {
-      const errJson = JSON.parse(errText)
-      errMsg = errJson.error?.message || errMsg
-    } catch {}
-    // 上游 429 / 文案命中"速率限制 / 频率 / rate limit / quota" → 加前缀让用户分辨
-    // 不是 Lumideck 在限流（agent LLM 代理刻意没挂 rate limit，详见 routes/llm.ts 注释）
-    if (response.status === 429 || /速率限制|频率|rate.?limit|quota/i.test(errMsg)) {
-      errMsg = `[LLM 服务商上游限制，稍候重试或在设置里更换 provider / 升级套餐] ${errMsg}`
-    }
-    throw new Error(errMsg)
-  }
-
-  // 累积 tool_calls（按 index 分组）
-  const toolCallMap = new Map<number, { id: string; name: string; args: string }>()
-  let content = ''
-
-  const reader = response.body!.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
-
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed || !trimmed.startsWith('data: ')) continue
-      const data = trimmed.slice(6)
-      if (data === '[DONE]') break
-
-      try {
-        const parsed = JSON.parse(data)
-        const delta = parsed.choices?.[0]?.delta
-        if (!delta) continue
-
-        // 流式文本
-        if (delta.content) {
-          content += delta.content
-          onTextChunk(delta.content)
-        }
-
-        // 累积 tool_calls
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const idx = tc.index ?? 0
-            if (!toolCallMap.has(idx)) {
-              toolCallMap.set(idx, { id: tc.id || '', name: '', args: '' })
-            }
-            const entry = toolCallMap.get(idx)!
-            if (tc.id) entry.id = tc.id
-            if (tc.function?.name) entry.name = tc.function.name
-            if (tc.function?.arguments) entry.args += tc.function.arguments
-          }
-        }
-      } catch {}
-    }
-  }
-
-  // 组装 tool_calls 结果
-  const toolCalls: ToolCall[] = []
-  for (const [_, entry] of toolCallMap) {
-    toolCalls.push({
-      id: entry.id,
-      type: 'function',
-      function: { name: entry.name, arguments: entry.args },
-    })
-  }
-
-  return { toolCalls, content }
+  return { finalizedToolCalls, content, thinking, usage, finishReason, cacheStats }
 }
 
 // --- 带重试的调用 ---
 
-async function callLLMWithRetry(
-  messages: ChatMessage[],
+async function callLLMStream(
+  messages: CanonicalMessage[],
   signal: AbortSignal,
-  toolsList: LLMTool[],
+  toolsList: ToolDef[],
+  deckId: number,
   onTextChunk: (chunk: string) => void,
+  onThinkingChunk: (chunk: string) => void,
+): Promise<LLMStreamResult> {
+  const request: CanonicalChatRequest = {
+    messages,
+    tools: toolsList,
+  }
+  const stream = await chatStream(request, { deckId, signal })
+  return consumeCanonicalEventStream(stream, onTextChunk, onThinkingChunk)
+}
+
+async function callLLMWithRetry(
+  messages: CanonicalMessage[],
+  signal: AbortSignal,
+  toolsList: ToolDef[],
+  deckId: number,
+  onTextChunk: (chunk: string) => void,
+  onThinkingChunk: (chunk: string) => void,
   retries = 2,
-): Promise<{ toolCalls: ToolCall[]; content: string }> {
+): Promise<LLMStreamResult> {
   try {
-    return await callLLMStream(messages, signal, toolsList, onTextChunk)
+    return await callLLMStream(messages, signal, toolsList, deckId, onTextChunk, onThinkingChunk)
   } catch (err) {
     const e = err as { name?: string; message?: string }
     if (e.name === 'AbortError') throw err
     if (e.message?.includes('API Key')) throw err
     if (retries > 0) {
       await new Promise((r) => setTimeout(r, 2000))
-      return callLLMWithRetry(messages, signal, toolsList, onTextChunk, retries - 1)
+      return callLLMWithRetry(messages, signal, toolsList, deckId, onTextChunk, onThinkingChunk, retries - 1)
     }
     throw err
+  }
+}
+
+// --- helpers：把消息塞回 canonical history ---
+
+function buildUserMessage(text: string): CanonicalMessage {
+  return { role: 'user', content: [{ type: 'text', text }] }
+}
+
+function buildAssistantMessage(content: string, toolCalls: FinalizedToolCall[]): CanonicalMessage {
+  const blocks: Block[] = []
+  if (content.length > 0) blocks.push({ type: 'text', text: content })
+  for (const tc of toolCalls) {
+    let input: unknown
+    try {
+      input = JSON.parse(tc.argsRaw || '{}')
+    } catch {
+      input = tc.argsRaw
+    }
+    blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input })
+  }
+  return { role: 'assistant', content: blocks }
+}
+
+function buildToolResultMessage(toolUseId: string, result: string, isError = false): CanonicalMessage {
+  return {
+    role: 'tool',
+    content: [{ type: 'tool_result', toolUseId, content: result, ...(isError ? { isError: true } : {}) }],
   }
 }
 
@@ -360,24 +435,25 @@ export function useAIChat() {
   const slideStore = useSlideStore()
   const deckCtx = inject(DECK_CHAT_CONTEXT, null)
 
-  // 发送给 LLM 的完整消息（含 system、tool、tool_result）
-  // 注意：恢复 deck 时只 prefill UI 气泡不注入 LLM 上下文 —— 旧 tool_call 会跟
-  // tool_call_id 不匹配，LLM 可能幻觉。新对话从空上下文开始，AI 遇到不确定的
-  // 通过 read_slides 等工具重新探测当前状态。
+  // 发送给 LLM 的完整 canonical 消息（含 system + tool_result block）
+  // 注意：恢复 deck 时只 prefill UI 气泡不注入 LLM 上下文 —— 旧 tool_use / tool_result
+  // 可能不配对，LLM 容易幻觉。新对话从空上下文开始，AI 遇到不确定通过 read_slides
+  // 等工具重新探测当前状态。
   //
   // Phase 6C：system prompt 构造迁到 agent（manifest 驱动）。这里先留空，
   // 首次 sendMessage / 恢复后的下一次 sendMessage 都会 lazy 拉一次填入 index 0。
-  const messages = ref<ChatMessage[]>([])
+  const messages = ref<CanonicalMessage[]>([])
   const templateId = deckCtx?.templateId ?? 'beitou-standard'
 
   async function ensureSystemPrompt(): Promise<void> {
     const first = messages.value[0]
-    if (first && first.role === 'system' && first.content) return
+    if (first && first.role === 'system' && first.content.length > 0) return
     const prompt = await buildSystemPrompt(templateId)
+    const sysMsg: CanonicalMessage = { role: 'system', content: [{ type: 'text', text: prompt }] }
     if (messages.value[0]?.role === 'system') {
-      messages.value[0] = { role: 'system', content: prompt }
+      messages.value[0] = sysMsg
     } else {
-      messages.value.unshift({ role: 'system', content: prompt })
+      messages.value.unshift(sysMsg)
     }
   }
 
@@ -413,6 +489,22 @@ export function useAIChat() {
 
   // 当前流式输出的缓冲（用于实时显示 LLM 回复）
   const streamingContent = ref('')
+
+  // Phase 12 Task I：thinking block 实时缓冲（Anthropic extended thinking / 其他 provider
+  // 通过 canonical thinking.delta event 推过来）。ChatPanel 渲染折叠区，默认折叠。
+  const thinkingContent = ref('')
+
+  // Phase 12 Task I：最近一轮的 cache 命中（Anthropic prompt caching 触发 cache.hit event）。
+  // 非 null 时在 assistant bubble 下方渲染小字提示。每轮覆盖。
+  const lastCacheStats: Ref<{ cached: number; cost: number } | null> = ref(null)
+
+  // Phase 12 Task I：最近一轮 LLM finish 时的 token usage（input / output / cached）。
+  // 暂留作 debug 字段（未来 Settings 可展示），不绑定具体 UI。
+  const lastUsage: Ref<TokenUsage | null> = ref(null)
+
+  // Phase 12 Task I：最近一轮 finish reason（stop / length / tool_use / content_filter）。
+  // 调试时可看；UI 暂不直接展示。
+  const finishReason: Ref<FinishReason | null> = ref(null)
 
   // 当前轮的工具调用步骤（思维链可视化数据源）
   const toolSteps = ref<ToolStep[]>([])
@@ -513,7 +605,7 @@ export function useAIChat() {
       return
     }
 
-    let liveTools: LLMTool[]
+    let liveTools: ToolDef[]
     try {
       liveTools = await ensureTools()
     } catch (err) {
@@ -543,18 +635,24 @@ export function useAIChat() {
       payload: { text: userText },
     })
 
-    // 添加用户消息
-    messages.value.push({ role: 'user', content: userText })
+    // 添加用户消息（canonical 形态）+ UI 气泡
+    const userMsg = buildUserMessage(userText)
+    messages.value.push(userMsg)
     chatMessages.value.push({ role: 'user', content: userText })
     // 异步持久化到 deck_chats；失败只打日志不阻塞对话
     if (deckCtx) {
-      void deckCtx.persistChat('user', userText).catch((err) => {
-        console.error('[useAIChat] persist user chat failed:', (err as Error).message)
-      })
+      void deckCtx
+        .persistChat('user', userText, { canonical: userMsg.content })
+        .catch((err) => {
+          console.error('[useAIChat] persist user chat failed:', (err as Error).message)
+        })
     }
 
     abortController = new AbortController()
     streamingContent.value = ''
+    thinkingContent.value = ''
+
+    const deckId = deckCtx?.deckId ?? 0
 
     try {
       for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -562,7 +660,9 @@ export function useAIChat() {
 
         // 每轮新建流式缓冲
         let fullContent = ''
+        let fullThinking = ''
         streamingContent.value = ''
+        thinkingContent.value = ''
 
         status.value = 'thinking'
         statusText.value = '正在思考...'
@@ -578,10 +678,11 @@ export function useAIChat() {
           payload: { messages: trimmed, tools: liveTools, model: getModel() },
         })
 
-        const { toolCalls, content } = await callLLMWithRetry(
+        const streamResult = await callLLMWithRetry(
           trimmed,
           abortController.signal,
           liveTools,
+          deckId,
           (chunk) => {
             if (status.value !== 'streaming') {
               status.value = 'streaming'
@@ -590,7 +691,23 @@ export function useAIChat() {
             fullContent += chunk
             streamingContent.value = fullContent
           },
+          (chunk) => {
+            fullThinking += chunk
+            thinkingContent.value = fullThinking
+          },
         )
+
+        // 把 canonical event 末态展开给后续逻辑用
+        lastUsage.value = streamResult.usage
+        finishReason.value = streamResult.finishReason
+        // 仅当本轮有 cache.hit 才覆盖；否则保留上一轮值（每个 deck session 不归零，
+        // 让用户切换不同消息时仍能看到最近一次 hit 数据；但 clearHistory 会重置）
+        if (streamResult.cacheStats) {
+          lastCacheStats.value = streamResult.cacheStats
+        }
+
+        const toolCalls = streamResult.finalizedToolCalls
+        const content = streamResult.content
 
         logEvent({
           session,
@@ -599,27 +716,32 @@ export function useAIChat() {
           content_length: (content || '').length,
           content_preview: truncate(content, 300),
           tool_calls_count: toolCalls.length,
-          tool_call_names: toolCalls.map((t) => t.function.name),
+          tool_call_names: toolCalls.map((t) => t.name),
           duration_ms: Date.now() - turnT0,
           payload: { content, tool_calls: toolCalls },
         })
 
         if (toolCalls.length > 0) {
-          // 把 assistant 的 tool_calls 消息加入历史
-          messages.value.push({
-            role: 'assistant',
-            content: null,
-            tool_calls: toolCalls,
-          })
+          // 把 assistant 的 tool_use + 可选 text 消息加入 canonical 历史
+          const assistantMsg = buildAssistantMessage(content, toolCalls)
+          messages.value.push(assistantMsg)
+          // assistant 含 tool_use 的轮次也走 persist（让后端 deck_chats 能完整重组历史）
+          if (deckCtx) {
+            void deckCtx
+              .persistChat('assistant', content, { canonical: assistantMsg.content })
+              .catch((err) => {
+                console.error('[useAIChat] persist assistant tool turn failed:', (err as Error).message)
+              })
+          }
 
           // 逐个执行工具
           for (const tc of toolCalls) {
             const step: ToolStep = {
-              key: tc.id || `${tc.function.name}-${Date.now()}-${Math.random()}`,
-              name: tc.function.name,
-              label: TOOL_STATUS_MAP[tc.function.name] || `调用工具：${tc.function.name}`,
+              key: tc.id || `${tc.name}-${Date.now()}-${Math.random()}`,
+              name: tc.name,
+              label: TOOL_STATUS_MAP[tc.name] || `调用工具：${tc.name}`,
               status: 'loading',
-              argsPreview: (tc.function.arguments || '').slice(0, 80),
+              argsPreview: (tc.argsRaw || '').slice(0, 80),
             }
             toolSteps.value.push(step)
 
@@ -631,24 +753,25 @@ export function useAIChat() {
               session,
               turn: i + 1,
               kind: 'tool_call',
-              tool: tc.function.name,
-              args: truncate(tc.function.arguments, 500),
+              tool: tc.name,
+              args: truncate(tc.argsRaw, 500),
               payload: {
                 tool_call_id: tc.id,
-                name: tc.function.name,
-                arguments: tc.function.arguments,
+                name: tc.name,
+                arguments: tc.argsRaw,
               },
             })
 
             let result: string
+            let toolErrored = false
             try {
-              result = await executeTool(tc, turnId, deckCtx?.deckId ?? 0)
+              result = await executeTool(tc, turnId, deckId)
               const idx = toolSteps.value.findIndex((s) => s.key === step.key)
               if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'success' }
               // 工具执行成功后，尝试定位被改/新增的页到预览
               try {
-                const parsedArgs = JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>
-                const focus = extractFocusPage(tc.function.name, parsedArgs, result)
+                const parsedArgs = JSON.parse(tc.argsRaw || '{}') as Record<string, unknown>
+                const focus = extractFocusPage(tc.name, parsedArgs, result)
                 if (focus !== null) slideStore.setPage(focus)
               } catch { /* args 不是合法 JSON 就跳过 */ }
 
@@ -660,7 +783,7 @@ export function useAIChat() {
               // LLM 回复完成时 toolSteps.value = [] 会替换 ref.value,但 chatMessages
               // 历史 bubble 仍持有这个旧 array,trackImageJob 直接 mutate 旧 array
               // 才能让历史消息里的 ToolStep 实时更新到 done/error 状态。
-              if (tc.function.name === 'generate_slide_image') {
+              if (tc.name === 'generate_slide_image') {
                 try {
                   const parsed = JSON.parse(result) as { success?: boolean; jobId?: string }
                   console.log('[generate_slide_image] tool result:', parsed)
@@ -679,7 +802,7 @@ export function useAIChat() {
                 session,
                 turn: i + 1,
                 kind: 'tool_result',
-                tool: tc.function.name,
+                tool: tc.name,
                 success: true,
                 bytes: result.length,
                 preview: truncate(result, 300),
@@ -689,13 +812,14 @@ export function useAIChat() {
             } catch (err) {
               const e = err as Error
               result = JSON.stringify({ success: false, error: e.message })
+              toolErrored = true
               const idx = toolSteps.value.findIndex((s) => s.key === step.key)
               if (idx >= 0) toolSteps.value[idx] = { ...step, status: 'error', error: e.message }
               logEvent({
                 session,
                 turn: i + 1,
                 kind: 'tool_result',
-                tool: tc.function.name,
+                tool: tc.name,
                 success: false,
                 error: e.message,
                 duration_ms: Date.now() - toolT0,
@@ -703,35 +827,43 @@ export function useAIChat() {
               })
             }
 
-            messages.value.push({
-              role: 'tool',
-              tool_call_id: tc.id,
-              content: result,
-            })
+            const toolMsg = buildToolResultMessage(tc.id, result, toolErrored)
+            messages.value.push(toolMsg)
             if (deckCtx) {
-              void deckCtx.persistChat('tool', result, tc.id).catch((err) => {
-                console.error('[useAIChat] persist tool chat failed:', (err as Error).message)
-              })
+              void deckCtx
+                .persistChat('tool', result, { toolCallId: tc.id, canonical: toolMsg.content })
+                .catch((err) => {
+                  console.error('[useAIChat] persist tool chat failed:', (err as Error).message)
+                })
             }
           }
           continue
         }
 
         // LLM 最终自然语言回复
-        if (fullContent) {
-          messages.value.push({ role: 'assistant', content: fullContent })
+        if (content) {
+          messages.value.push({
+            role: 'assistant',
+            content: [{ type: 'text', text: content }],
+          })
         }
-        if (fullContent || toolSteps.value.length > 0) {
+        if (content || toolSteps.value.length > 0) {
           chatMessages.value.push({
             role: 'assistant',
-            content: fullContent,
+            content: content,
             toolSteps: toolSteps.value.length > 0 ? toolSteps.value : undefined,
+            thinking: fullThinking || undefined,
+            cacheStats: streamResult.cacheStats ?? undefined,
           })
         }
-        if (deckCtx && fullContent) {
-          void deckCtx.persistChat('assistant', fullContent).catch((err) => {
-            console.error('[useAIChat] persist assistant chat failed:', (err as Error).message)
-          })
+        if (deckCtx && content) {
+          void deckCtx
+            .persistChat('assistant', content, {
+              canonical: [{ type: 'text', text: content }],
+            })
+            .catch((err) => {
+              console.error('[useAIChat] persist assistant chat failed:', (err as Error).message)
+            })
         }
         logEvent({
           session,
@@ -742,6 +874,7 @@ export function useAIChat() {
         })
         toolSteps.value = []
         streamingContent.value = ''
+        thinkingContent.value = ''
         status.value = 'idle'
         statusText.value = ''
         // session 结束时主动 refresh slides.md：LLM 通过 tool 调用 server 端
@@ -816,6 +949,7 @@ export function useAIChat() {
         })
       }
       streamingContent.value = ''
+      thinkingContent.value = ''
     } finally {
       abortController = null
       setCurrentSession(null)
@@ -833,7 +967,11 @@ export function useAIChat() {
     status.value = 'idle'
     statusText.value = ''
     streamingContent.value = ''
+    thinkingContent.value = ''
     toolSteps.value = []
+    lastCacheStats.value = null
+    lastUsage.value = null
+    finishReason.value = null
   }
 
   /** 在 chat 面板插入一条本地系统提示（不发给 LLM） */
@@ -855,6 +993,10 @@ export function useAIChat() {
   return {
     chatMessages,
     streamingContent,
+    thinkingContent,
+    lastCacheStats,
+    lastUsage,
+    finishReason,
     toolSteps,
     status,
     statusText,

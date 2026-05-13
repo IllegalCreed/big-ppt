@@ -105,8 +105,13 @@ const chatCtx: DeckChatContext = {
   deckId: props.deck.id,
   templateId: props.deck.templateId,
   initialHistory: [],
-  persistChat: async (role, content, toolCallId) => {
-    await appendChat(props.deck.id, { role, content, toolCallId })
+  persistChat: async (role, content, extras) => {
+    await appendChat(props.deck.id, {
+      role,
+      content,
+      toolCallId: extras?.toolCallId,
+      canonical: extras?.canonical,
+    })
   },
 }
 provide(DECK_CHAT_CONTEXT, chatCtx)
