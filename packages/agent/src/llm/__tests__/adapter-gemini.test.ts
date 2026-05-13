@@ -271,6 +271,50 @@ describe('createGeminiProvider — streamChat 走通', () => {
     expect(capturedParams.params?.config?.responseSchema).toEqual(schema)
   })
 
+  it('structuredOutput schema 含 additionalProperties / $ref / oneOf → 走 sanitizeForGemini drop', async () => {
+    installMockFactory()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const provider = createGeminiProvider({ id: 'gemini', apiKey: 'k' })
+    // 用户给的 JSON Schema 含 Gemini 不支持字段:adapter 必须先 sanitize 再送 SDK,
+    // 否则 Gemini API 直接 400(code reviewer 指出的 bug)
+    const dirtySchema = {
+      type: 'object',
+      additionalProperties: false,
+      $ref: '#/definitions/Foo',
+      oneOf: [{ type: 'string' }],
+      properties: {
+        name: { type: 'string' },
+        nested: {
+          type: 'object',
+          additionalProperties: true,
+          properties: { x: { type: 'number' } },
+        },
+      },
+    }
+    await collect(
+      provider.streamChat(
+        {
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'extract' }] }],
+          structuredOutput: { schema: dirtySchema },
+        },
+        new AbortController().signal,
+      ),
+    )
+    expect(capturedParams.params?.config?.responseSchema).toEqual({
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        nested: {
+          type: 'object',
+          properties: { x: { type: 'number' } },
+        },
+      },
+    })
+    // 至少 4 次 warn(顶层 additionalProperties / $ref / oneOf + nested additionalProperties)
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
   it('tools + structuredOutput 同时 → tools 优先 + structuredOutput silent drop + warn', async () => {
     installMockFactory()
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})

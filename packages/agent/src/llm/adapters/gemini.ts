@@ -41,7 +41,7 @@ import { LLMError, type LLMErrorCode } from '../errors.js'
 import type { LLMProvider, ProviderConfig } from '../provider.js'
 import type { CanonicalChatRequest, CanonicalEvent } from '../types.js'
 import { fromGeminiStream } from '../translate/from-gemini-stream.js'
-import { toGeminiInput, toGeminiTools } from '../translate/to-gemini.js'
+import { toGeminiInput, toGeminiTools, sanitizeForGemini } from '../translate/to-gemini.js'
 
 const DEFAULT_MODEL = 'gemini-2.5-flash'
 
@@ -97,11 +97,15 @@ export function createGeminiProvider(cfg: ProviderConfig): LLMProvider {
         ...(req.stopSequences && req.stopSequences.length > 0
           ? { stopSequences: req.stopSequences }
           : {}),
-        // structuredOutput 仅在 no-tools 路径生效
+        // structuredOutput 仅在 no-tools 路径生效;schema 跟 toGeminiTools 走同款
+        // sanitize(drop additionalProperties / $ref / oneOf)避免用户给的 JSON Schema
+        // 含 Gemini 不支持的字段直接被服务端 400(code reviewer 指出的遗漏)
         ...(!hasTools && hasStructuredOutput && req.structuredOutput
           ? {
               responseMimeType: 'application/json',
-              responseSchema: req.structuredOutput.schema as GenerateContentParameters['config'] extends infer C
+              responseSchema: sanitizeForGemini(
+                req.structuredOutput.schema,
+              ) as GenerateContentParameters['config'] extends infer C
                 ? C extends { responseSchema?: infer S }
                   ? S
                   : never

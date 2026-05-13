@@ -50,6 +50,7 @@
  * 只关心 delta 流,LLM 端如何切片不影响 canonical 表达)。
  */
 
+import { randomBytes } from 'node:crypto'
 import { FinishReason as GeminiFinishReason } from '@google/genai'
 import type { GenerateContentResponse, Part } from '@google/genai'
 import type { CanonicalEvent, FinishReason, TokenUsage } from '../types.js'
@@ -137,28 +138,20 @@ function generateFunctionCallId(name: string): string {
 /**
  * @internal id 来源函数,测试可覆盖让 id 确定性。
  * 默认走 crypto.randomBytes(4).toString('hex'),8 字符 hex。
+ *
+ * 跟项目其他模块(crypto/apikey.ts / template-switch-job.ts / image-gen-job.ts 等)
+ * 一致用静态 import,避免重复内联 dynamic require 跟 eslint-disable 噪音。
  */
-let _idSource: () => string = () => {
-  // 动态 require 在模块顶层 import 节点 crypto;避免 ESM 顶层耦合(测试覆盖时改 _idSource)
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { randomBytes } = require('node:crypto') as typeof import('node:crypto')
-  return randomBytes(4).toString('hex')
-}
+const defaultIdSource = (): string => randomBytes(4).toString('hex')
+
+let _idSource: () => string = defaultIdSource
 
 /**
  * @internal 仅测试用:注入确定性 id 来源(每次返同串)。
  * 传 null 恢复默认 crypto.randomBytes。
  */
 export function __setIdSourceForTesting(fn: (() => string) | null): void {
-  if (fn === null) {
-    _idSource = () => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { randomBytes } = require('node:crypto') as typeof import('node:crypto')
-      return randomBytes(4).toString('hex')
-    }
-  } else {
-    _idSource = fn
-  }
+  _idSource = fn ?? defaultIdSource
 }
 
 /**
