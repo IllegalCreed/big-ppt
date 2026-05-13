@@ -34,16 +34,30 @@ export function encodeSSEFrame(evt: CanonicalEvent): string {
  * 供 Hono response。
  *
  * 中途异常 → 强制 emit 一个 `error` event 再 close,frontend 永远拿到收尾信号。
+ *
+ * **cancel() 反向传播**(Task D code review 修):消费方主动 cancel(Hono client
+ * disconnect / AbortSignal / 网络断)时,必须通过 `iterator.return?.()` 通知源
+ * AsyncIterable 停止——否则 provider SDK stream(OpenAI/Anthropic/Gemini)会继续
+ * 消费 token 烧用户预算。所以放弃简洁的 `for await`,改手工 iterator + 暴露
+ * `cancel()` hook。Task E 起 HTTP 路由层会依赖这条语义。
+ *
+ * 错误兜底里的 enqueue/close 包 try/catch:若 controller 已被 cancel() 关掉,
+ * 再 enqueue 会抛 "Controller is already closed",此时静默吞掉(消费方主动退出,
+ * 不需要 error event 收尾)。
  */
 export function eventsToSSEStream(
   events: AsyncIterable<CanonicalEvent>,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
+  let iterator: AsyncIterator<CanonicalEvent> | null = null
   return new ReadableStream({
     async start(controller) {
+      iterator = events[Symbol.asyncIterator]()
       try {
-        for await (const evt of events) {
-          controller.enqueue(encoder.encode(encodeSSEFrame(evt)))
+        while (true) {
+          const { done, value } = await iterator.next()
+          if (done) break
+          controller.enqueue(encoder.encode(encodeSSEFrame(value)))
         }
         controller.close()
       } catch (e) {
@@ -52,9 +66,18 @@ export function eventsToSSEStream(
           code: 'unknown',
           message: e instanceof Error ? e.message : String(e),
         }
-        controller.enqueue(encoder.encode(encodeSSEFrame(errEvt)))
-        controller.close()
+        try {
+          controller.enqueue(encoder.encode(encodeSSEFrame(errEvt)))
+          controller.close()
+        } catch {
+          // controller 已被 cancel()/close 关掉 —— 静默吞,避免 unhandled rejection
+        }
       }
+    },
+    async cancel() {
+      // 反向传播 cancel:`iterator.return()` 会让源 generator 跑 try/finally 块,
+      // 关闭底层 SDK stream(OpenAI/Anthropic/Gemini 的 fetch reader),停止烧 token
+      await iterator?.return?.()
     },
   })
 }

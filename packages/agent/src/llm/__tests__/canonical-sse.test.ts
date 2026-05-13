@@ -220,6 +220,38 @@ describe('eventsToSSEStream 异常路径', () => {
     const output = await collectDecoded(stream)
     expect(output).toEqual([{ type: 'error', code: 'unknown', message: 'immediate boom' }])
   })
+
+  it('cancel() hook 调用 source iterator.return() —— 避免源 generator 继续推进烧 token', async () => {
+    // 模拟 provider SDK stream:无限 yield + try/finally 标记 cancel 已传播
+    let counter = 0
+    let cancelledByConsumer = false
+    async function* source(): AsyncIterable<CanonicalEvent> {
+      try {
+        while (true) {
+          counter++
+          yield { type: 'text.delta' as const, text: `chunk ${counter}` }
+          // 模拟 SDK 拉下一个 chunk 的 IO 延迟,让 cancel 有机会插进 next() 之间
+          await new Promise((r) => setTimeout(r, 5))
+        }
+      } finally {
+        cancelledByConsumer = true
+      }
+    }
+
+    const stream = eventsToSSEStream(source())
+    const reader = stream.getReader()
+    // 消费 1-2 个 chunk(确保 source 进了 while loop)
+    await reader.read()
+    const counterAtCancel = counter
+    await reader.cancel()
+    // 给 generator 一个 microtick 跑完 try/finally
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(cancelledByConsumer).toBe(true)
+    // counter 在 cancel 后最多再 +1(已 in-flight 的 yield 可能 settle),
+    // 但绝不能持续递增——若 cancel 不传播,counter 会一直涨
+    expect(counter - counterAtCancel).toBeLessThanOrEqual(1)
+  })
 })
 
 // --- chunk boundary edge cases --------------------------------------------
