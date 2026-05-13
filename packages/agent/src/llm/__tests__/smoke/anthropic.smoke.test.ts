@@ -42,7 +42,9 @@ describe.skipIf(!ANTHROPIC_KEY)('anthropic smoke', () => {
             messages: [
               { role: 'user', content: [{ type: 'text', text: 'say hi in 3 words' }] },
             ],
-            maxTokens: 50,
+            // 三家统一 200(安全 margin,成本差忽略);claude-sonnet-4-6 不带 thinking 时
+            // 50 也够,统一是为可读性
+            maxTokens: 200,
           },
           controller.signal,
         )) {
@@ -56,6 +58,12 @@ describe.skipIf(!ANTHROPIC_KEY)('anthropic smoke', () => {
         throw e
       }
 
+      // 缺 text.delta 时打出所有 event type,便于排查 translator 漏 emit / 协议错位等故障模式
+      if (!events.some((e) => e.type === 'text.delta')) {
+        console.warn(
+          `⚠️ ${PROVIDER_ID} chat: no text.delta. Events seen: ${events.map((e) => e.type).join(', ')}`,
+        )
+      }
       expect(events.some((e) => e.type === 'text.delta')).toBe(true)
       expect(events.at(-1)?.type).toBe('finish')
     },

@@ -39,7 +39,10 @@ describe.skipIf(!GEMINI_KEY)('gemini smoke', () => {
             messages: [
               { role: 'user', content: [{ type: 'text', text: 'say hi in 3 words' }] },
             ],
-            maxTokens: 50,
+            // gemini-2.5-flash 是 thinking 模型,maxOutputTokens 共享 thinking + output budget;
+            // 50 会被 thoughtsTokenCount 吃光导致 finishReason=MAX_TOKENS、可见 output 为空;
+            // 200 留足 margin
+            maxTokens: 200,
           },
           controller.signal,
         )) {
@@ -53,6 +56,11 @@ describe.skipIf(!GEMINI_KEY)('gemini smoke', () => {
         throw e
       }
 
+      if (!events.some((e) => e.type === 'text.delta')) {
+        console.warn(
+          `⚠️ ${PROVIDER_ID} chat: no text.delta. Events seen: ${events.map((e) => e.type).join(', ')}`,
+        )
+      }
       expect(events.some((e) => e.type === 'text.delta')).toBe(true)
       expect(events.at(-1)?.type).toBe('finish')
     },
