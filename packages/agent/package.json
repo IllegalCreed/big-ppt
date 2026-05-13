@@ -16,11 +16,15 @@
     "db:push:test": "dotenv -e .env.test.local -- drizzle-kit push",
     "db:push:prod": "dotenv -e .env.production.local -- drizzle-kit push",
     "init-db": "node scripts/init-db.mjs",
-    "init-test-db": "node scripts/init-test-db.mjs"
+    "init-test-db": "node scripts/init-test-db.mjs",
+    "probe:duckcoding": "dotenv -e .env.test.local -- node scripts/probe-duckcoding.mjs",
+    "test:smoke": "dotenv -e .env.test.local -- vitest run --testNamePattern='smoke' src/llm/__tests__/smoke"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.2",
     "@big-ppt/shared": "workspace:*",
     "@big-ppt/slidev": "workspace:*",
+    "@google/genai": "^2.2.0",
     "@hono/node-server": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "bcrypt": "^6.0.0",
