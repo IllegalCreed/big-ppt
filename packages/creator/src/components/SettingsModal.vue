@@ -1,12 +1,32 @@
 <script setup lang="ts">
+/**
+ * Phase 12 Task J:Settings UI 多 provider 重构。
+ *
+ * 此前 UI 是「单 active provider 平铺表单」(provider 下拉 + apiKey + model + baseUrl)。
+ * Phase 12 起 backend `users.llm_settings` 改成新 shape(activeProvider + providers map +
+ * advanced),前端 UI 同步:
+ *
+ * - **顶部 active provider 下拉**:7 选 1,只能选已配 apiKey 的 provider。
+ * - **7 个 provider 卡片**:每张卡渲染一个 provider(无论是否配置),含 family 徽章 +
+ *   apiKey(password)+ model + baseUrl(openai-compatible 默认必填,anthropic/gemini 可选)。
+ *   未配 apiKey 的卡片显示"未配置"灰色徽章;active 卡高亮(border + bg)。
+ * - **Advanced 折叠区**:default 折叠,展开后:
+ *   - common 子区:temperature slider / maxTokens input / topP slider
+ *   - 当 active 是 anthropic:promptCaching toggle / thinkingEnabled toggle / thinkingBudgetTokens
+ *   - 当 active 是 gemini:jsonMode toggle / longContextStrategy(truncate / segment)
+ *
+ * 协议:GET / PUT 都用新 shape(backend Task J 同步改);apiKey 空串=保留旧值。
+ */
 import { computed, onMounted, ref, watch } from 'vue'
 import type {
   ImageLlmSettings,
   LLMSettings,
   McpServerWithStatus,
   UpdateMcpServerRequest,
+  ProviderId,
 } from '@big-ppt/shared'
-import { Check, Copy, Eye, EyeOff, X } from 'lucide-vue-next'
+import { PROVIDER_CATALOG, getProviderEntry } from '@big-ppt/shared'
+import { Check, ChevronDown, Eye, EyeOff, X } from 'lucide-vue-next'
 import { useMCP } from '../composables/useMCP'
 import { useAuth } from '../composables/useAuth'
 import { invalidateLlmSettingsCache } from '../composables/useAIChat'
@@ -17,48 +37,65 @@ import MCPCustomServer from './MCPCustomServer.vue'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
-interface ProviderMeta {
-  key: LLMSettings['provider']
-  name: string
-  avatar: string
-  defaultModel: string
+// === 表单状态 ===
+
+/**
+ * 每个 provider 一份本地配置 ref。`apiKey` 始终初始化为空串(意味着"保留旧值");
+ * `hasApiKey` 反映 backend GET 返的 hasApiKey 标志(用户已配过 key)。
+ */
+interface ProviderFormEntry {
+  apiKey: string
+  model: string
+  baseUrl: string
+  hasApiKey: boolean
+  showApiKey: boolean
 }
 
-const PROVIDERS: ProviderMeta[] = [
-  { key: 'zhipu', name: '智谱 GLM', avatar: '智', defaultModel: 'GLM-5.1' },
-  { key: 'deepseek', name: 'DeepSeek', avatar: 'D', defaultModel: 'deepseek-chat' },
-  { key: 'openai', name: 'OpenAI', avatar: 'O', defaultModel: 'gpt-4o' },
-  { key: 'moonshot', name: 'Kimi', avatar: 'K', defaultModel: 'moonshot-v1-8k' },
-  { key: 'qwen', name: '千问 Qwen', avatar: '千', defaultModel: 'qwen-plus' },
-  { key: 'custom', name: '自定义', avatar: '+', defaultModel: '' },
-]
+function emptyEntry(): ProviderFormEntry {
+  return { apiKey: '', model: '', baseUrl: '', hasApiKey: false, showApiKey: false }
+}
 
-// 接口协议下拉选项。目前仅 OpenAI 兼容(走 /chat/completions),后续加 Anthropic / Gemini 时在此追加。
-const API_TYPES: { value: 'openai-compatible'; label: string; hint: string }[] = [
-  {
-    value: 'openai-compatible',
-    label: 'OpenAI 兼容',
-    hint: '走 /chat/completions,绝大多数中转 / 自部署网关都走此协议',
-  },
-]
+interface AdvancedForm {
+  temperature: number | null
+  maxTokens: number | null
+  topP: number | null
+  promptCaching: boolean
+  thinkingEnabled: boolean
+  thinkingBudgetTokens: number | null
+  jsonMode: boolean
+  longContextStrategy: 'truncate' | 'segment'
+}
 
-const DEFAULT_SETTINGS: LLMSettings = {
-  provider: 'zhipu',
-  apiKey: '',
-  model: 'GLM-5.1',
-  baseUrl: '',
-  apiType: 'openai-compatible',
+function emptyAdvanced(): AdvancedForm {
+  return {
+    temperature: null,
+    maxTokens: null,
+    topP: null,
+    promptCaching: false,
+    thinkingEnabled: false,
+    thinkingBudgetTokens: 5000,
+    jsonMode: false,
+    longContextStrategy: 'truncate',
+  }
 }
 
 const activeTab = ref<'llm' | 'mcp' | 'image'>('llm')
-const settings = ref<LLMSettings>({ ...DEFAULT_SETTINGS })
-const hasStoredApiKey = ref(false)
-const showApiKey = ref(false)
-const copiedKey = ref(false)
+const activeProvider = ref<ProviderId>('zhipu')
+const providerForms = ref<Record<ProviderId, ProviderFormEntry>>({
+  openai: emptyEntry(),
+  anthropic: emptyEntry(),
+  gemini: emptyEntry(),
+  zhipu: emptyEntry(),
+  deepseek: emptyEntry(),
+  moonshot: emptyEntry(),
+  qwen: emptyEntry(),
+})
+const advanced = ref<AdvancedForm>(emptyAdvanced())
+const advancedExpanded = ref(false)
 const saving = ref(false)
 const saveError = ref('')
 
-// Phase 11.5：生图模型(独立于主 LLM)
+// === image LLM (独立于主 LLM,Phase 11.5 保留不动)===
 const DEFAULT_IMAGE_SETTINGS: ImageLlmSettings = {
   provider: 'openai',
   apiKey: '',
@@ -79,44 +116,97 @@ const IMAGE_MODEL_OPTIONS: { value: string; label: string; hint: string }[] = [
 ]
 
 const { servers, refresh, create, update, remove } = useMCP()
-const { saveLlmSettings, saveImageLlmSettings } = useAuth()
+const { saveImageLlmSettings } = useAuth()
 
 const presetServers = computed<McpServerWithStatus[]>(() => servers.value.filter((s) => s.preset))
 const customServers = computed<McpServerWithStatus[]>(() => servers.value.filter((s) => !s.preset))
 const enabledMcpCount = computed(() => servers.value.filter((s) => s.enabled).length)
-const currentProviderHint = computed(() => {
-  const p = PROVIDERS.find((x) => x.key === settings.value.provider)
-  return p?.defaultModel ? `默认：${p.defaultModel}` : ''
+
+/** 已配 apiKey 的 provider id 列表(active 下拉允许的选项)。 */
+const configuredProviderIds = computed<ProviderId[]>(() => {
+  const ids: ProviderId[] = []
+  for (const meta of PROVIDER_CATALOG) {
+    const entry = providerForms.value[meta.id]
+    if (entry.hasApiKey || entry.apiKey.trim()) ids.push(meta.id)
+  }
+  return ids
 })
-const isCustomProvider = computed(() => settings.value.provider === 'custom')
-const currentApiTypeHint = computed(
-  () => API_TYPES.find((t) => t.value === settings.value.apiType)?.hint ?? '',
-)
+
+/** 当前 active provider 的元信息(从 catalog 查)。 */
+const activeMeta = computed(() => getProviderEntry(activeProvider.value))
+
+/** 给 MCPCatalogItem 用的兼容 LLMSettings shape:active provider 的配置摊平。 */
+const activeProviderLegacyShape = computed<LLMSettings>(() => {
+  const entry = providerForms.value[activeProvider.value]
+  return {
+    provider: activeProvider.value,
+    apiKey: '', // MCPCatalogItem 只关心 hasLlmKey 布尔,不用真 apiKey
+    model: entry.model || activeMeta.value?.defaultModel || '',
+    baseUrl: entry.baseUrl || undefined,
+  }
+})
+
+const activeProviderHasLlmKey = computed(() => {
+  const entry = providerForms.value[activeProvider.value]
+  return entry.hasApiKey || !!entry.apiKey.trim()
+})
+
+// === backend 协议层 ===
+
+interface GetLlmSettingsResponse {
+  activeProvider: ProviderId | null
+  providers: Record<string, { hasApiKey: boolean; model?: string; baseUrl?: string }>
+  advanced?: {
+    common?: { temperature?: number; maxTokens?: number; topP?: number; stopSequences?: string[] }
+    anthropic?: { promptCaching?: boolean; thinkingEnabled?: boolean; thinkingBudgetTokens?: number }
+    gemini?: { jsonMode?: boolean; longContextStrategy?: 'truncate' | 'segment' }
+  }
+}
 
 async function loadSettings() {
   try {
-    const data = await api.get<{
-      provider: string | null
-      model: string | null
-      baseUrl: string | null
-      apiType: string | null
-      hasApiKey: boolean
-    }>('/api/auth/llm-settings')
-    settings.value = {
-      provider: (data.provider as LLMSettings['provider']) ?? DEFAULT_SETTINGS.provider,
-      apiKey: '', // 从不回传,留空让用户选择是否覆盖
-      model: data.model ?? DEFAULT_SETTINGS.model,
-      baseUrl: data.baseUrl ?? '',
-      apiType: (data.apiType as LLMSettings['apiType']) ?? 'openai-compatible',
+    const data = await api.get<GetLlmSettingsResponse>('/api/auth/llm-settings')
+    // 重置表单
+    for (const meta of PROVIDER_CATALOG) {
+      providerForms.value[meta.id] = emptyEntry()
     }
-    hasStoredApiKey.value = !!data.hasApiKey
+    advanced.value = emptyAdvanced()
+    // 注入 provider entries
+    for (const [pid, view] of Object.entries(data.providers ?? {})) {
+      const id = pid as ProviderId
+      if (!providerForms.value[id]) continue
+      providerForms.value[id] = {
+        apiKey: '',
+        model: view.model ?? '',
+        baseUrl: view.baseUrl ?? '',
+        hasApiKey: !!view.hasApiKey,
+        showApiKey: false,
+      }
+    }
+    // 注入 advanced
+    if (data.advanced) {
+      const cmn = data.advanced.common ?? {}
+      const ant = data.advanced.anthropic ?? {}
+      const gem = data.advanced.gemini ?? {}
+      advanced.value = {
+        temperature: cmn.temperature ?? null,
+        maxTokens: cmn.maxTokens ?? null,
+        topP: cmn.topP ?? null,
+        promptCaching: !!ant.promptCaching,
+        thinkingEnabled: !!ant.thinkingEnabled,
+        thinkingBudgetTokens: ant.thinkingBudgetTokens ?? 5000,
+        jsonMode: !!gem.jsonMode,
+        longContextStrategy: gem.longContextStrategy ?? 'truncate',
+      }
+    }
+    // 设置 active provider:用 backend 给的,否则保留默认 zhipu
+    if (data.activeProvider && providerForms.value[data.activeProvider]) {
+      activeProvider.value = data.activeProvider
+    }
   } catch (err) {
-    // 未登录或网络错误:用默认值,不弹错
     if (!(err instanceof ApiError && err.status === 401)) {
       saveError.value = `加载设置失败:${(err as Error).message}`
     }
-    settings.value = { ...DEFAULT_SETTINGS }
-    hasStoredApiKey.value = false
   }
 }
 
@@ -144,41 +234,89 @@ async function loadImageSettings() {
   }
 }
 
-function selectProvider(p: ProviderMeta) {
-  settings.value.provider = p.key
-  if (p.defaultModel) settings.value.model = p.defaultModel
-  // 切换内置 provider 时清空自定义地址(后端按 provider 预设解析);切到 custom 不动 baseUrl
-  if (p.key !== 'custom') {
-    settings.value.baseUrl = ''
+function selectActiveProvider(pid: ProviderId) {
+  activeProvider.value = pid
+}
+
+function toggleAdvanced() {
+  advancedExpanded.value = !advancedExpanded.value
+}
+
+function buildPayload() {
+  // 构造新 shape body 发 PUT
+  const providers: Record<string, { apiKey: string; model?: string; baseUrl?: string }> = {}
+  for (const meta of PROVIDER_CATALOG) {
+    const entry = providerForms.value[meta.id]
+    const hasNewKey = !!entry.apiKey.trim()
+    const hasOldKey = entry.hasApiKey
+    // 没填新 key 也没旧 key → 跳过(未配置 provider 不入 payload)
+    if (!hasNewKey && !hasOldKey) continue
+    const item: { apiKey: string; model?: string; baseUrl?: string } = {
+      // 空串表示"保留旧 apiKey"(backend Task J 处理逻辑)
+      apiKey: entry.apiKey.trim(),
+    }
+    const trimmedModel = entry.model.trim()
+    if (trimmedModel) item.model = trimmedModel
+    const trimmedBase = entry.baseUrl.trim()
+    if (trimmedBase) item.baseUrl = trimmedBase
+    providers[meta.id] = item
+  }
+  // 组装 advanced(只在用户改过的字段才发,空对象不发)
+  const adv: NonNullable<GetLlmSettingsResponse['advanced']> = {}
+  const common: NonNullable<NonNullable<GetLlmSettingsResponse['advanced']>['common']> = {}
+  if (advanced.value.temperature !== null) common.temperature = advanced.value.temperature
+  if (advanced.value.maxTokens !== null) common.maxTokens = advanced.value.maxTokens
+  if (advanced.value.topP !== null) common.topP = advanced.value.topP
+  if (Object.keys(common).length > 0) adv.common = common
+
+  if (activeProvider.value === 'anthropic') {
+    const ant: NonNullable<NonNullable<GetLlmSettingsResponse['advanced']>['anthropic']> = {}
+    if (advanced.value.promptCaching) ant.promptCaching = true
+    if (advanced.value.thinkingEnabled) {
+      ant.thinkingEnabled = true
+      if (advanced.value.thinkingBudgetTokens != null && advanced.value.thinkingBudgetTokens > 0) {
+        ant.thinkingBudgetTokens = advanced.value.thinkingBudgetTokens
+      }
+    }
+    if (Object.keys(ant).length > 0) adv.anthropic = ant
+  }
+  if (activeProvider.value === 'gemini') {
+    const gem: NonNullable<NonNullable<GetLlmSettingsResponse['advanced']>['gemini']> = {}
+    if (advanced.value.jsonMode) gem.jsonMode = true
+    if (advanced.value.longContextStrategy !== 'truncate') {
+      gem.longContextStrategy = advanced.value.longContextStrategy
+    }
+    if (Object.keys(gem).length > 0) adv.gemini = gem
+  }
+
+  return {
+    activeProvider: activeProvider.value,
+    providers,
+    ...(Object.keys(adv).length > 0 ? { advanced: adv } : {}),
   }
 }
 
 async function saveLlm() {
   if (saving.value) return
   saveError.value = ''
-  if (!settings.value.apiKey && !hasStoredApiKey.value) {
-    saveError.value = '请填写 API Key'
-    return
-  }
-  // 自定义 provider 必须填接口地址,否则后端无法路由
-  const isCustom = settings.value.provider === 'custom'
-  const trimmedBaseUrl = settings.value.baseUrl?.trim() ?? ''
-  if (isCustom && !trimmedBaseUrl) {
-    saveError.value = '自定义 provider 需要填写接口地址'
+  // 校验:active provider 必须已配 apiKey(新填的或已存的)
+  const entry = providerForms.value[activeProvider.value]
+  if (!entry.apiKey.trim() && !entry.hasApiKey) {
+    saveError.value = `请先为 ${activeMeta.value?.name ?? activeProvider.value} 填写 API Key`
     return
   }
   saving.value = true
   try {
-    await saveLlmSettings({
-      provider: settings.value.provider,
-      apiKey: settings.value.apiKey, // 空串 → 后端保留原 key
-      model: settings.value.model,
-      baseUrl: isCustom ? trimmedBaseUrl : undefined,
-      apiType: isCustom ? (settings.value.apiType ?? 'openai-compatible') : undefined,
-    })
+    await api.put('/api/auth/llm-settings', buildPayload())
     invalidateLlmSettingsCache()
-    hasStoredApiKey.value = true
-    settings.value.apiKey = ''
+    // 保存成功后:把所有刚填入的 apiKey 转成 hasApiKey=true,清空 input
+    for (const meta of PROVIDER_CATALOG) {
+      const e = providerForms.value[meta.id]
+      if (e.apiKey.trim()) {
+        e.hasApiKey = true
+        e.apiKey = ''
+      }
+    }
     emit('update:open', false)
   } catch (err) {
     saveError.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
@@ -198,7 +336,7 @@ async function saveImage() {
   try {
     await saveImageLlmSettings({
       provider: imageSettings.value.provider,
-      apiKey: imageSettings.value.apiKey, // 空串 → 后端保留原 key
+      apiKey: imageSettings.value.apiKey,
       baseUrl: imageSettings.value.baseUrl?.trim() || undefined,
       model: imageSettings.value.model?.trim() || undefined,
     })
@@ -209,19 +347,6 @@ async function saveImage() {
     imageSaveError.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
   } finally {
     savingImage.value = false
-  }
-}
-
-async function copyKey() {
-  if (!settings.value.apiKey) return
-  try {
-    await navigator.clipboard.writeText(settings.value.apiKey)
-    copiedKey.value = true
-    setTimeout(() => {
-      copiedKey.value = false
-    }, 1500)
-  } catch {
-    // ignore
   }
 }
 
@@ -261,6 +386,7 @@ watch(
       await Promise.all([loadSettings(), loadImageSettings(), refresh()])
     }
   },
+  { immediate: true },
 )
 
 onMounted(() => {
@@ -326,103 +452,237 @@ onMounted(() => {
         <div v-if="activeTab === 'llm'" class="modal-body">
           <section class="form-section">
             <header class="section-header">
-              <span class="section-title">API 提供商</span>
-              <span class="section-hint">选择内置供应商或自定义接入</span>
+              <span class="section-title">活跃 Provider</span>
+              <span class="section-hint">主 LLM 走哪家;切换前先保证该 provider 已配 API Key</span>
             </header>
-            <div class="provider-grid">
-              <button
-                v-for="p in PROVIDERS"
-                :key="p.key"
-                type="button"
-                class="provider-card"
-                :class="{ active: settings.provider === p.key }"
-                @click="selectProvider(p)"
+            <select v-model="activeProvider" class="input-bare active-provider-select">
+              <option
+                v-for="meta in PROVIDER_CATALOG"
+                :key="meta.id"
+                :value="meta.id"
+                :disabled="!configuredProviderIds.includes(meta.id)"
               >
-                <span class="provider-avatar">{{ p.avatar }}</span>
-                <span class="provider-name">{{ p.name }}</span>
-                <span v-if="settings.provider === p.key" class="provider-check">
-                  <Check :size="14" :stroke-width="2.4" />
-                </span>
-              </button>
-            </div>
-          </section>
-
-          <section v-if="isCustomProvider" class="form-section">
-            <header class="section-header">
-              <span class="section-title">接口类型</span>
-              <span v-if="currentApiTypeHint" class="section-hint">{{ currentApiTypeHint }}</span>
-            </header>
-            <select v-model="settings.apiType" class="input-bare">
-              <option v-for="t in API_TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
+                {{ meta.name }}
+                <template v-if="!configuredProviderIds.includes(meta.id)">（未配置）</template>
+              </option>
             </select>
           </section>
 
-          <section v-if="isCustomProvider" class="form-section">
-            <header class="section-header">
-              <span class="section-title">接口地址</span>
-              <span class="section-hint">中转 / 自部署的 base URL,不带 /chat/completions 后缀</span>
-            </header>
-            <input
-              v-model="settings.baseUrl"
-              type="text"
-              placeholder="https://your-endpoint/v1"
-              autocomplete="off"
-              class="input-bare"
-            />
-          </section>
-
           <section class="form-section">
             <header class="section-header">
-              <span class="section-title">API Key</span>
-              <span class="section-hint">
-                {{ hasStoredApiKey ? '已保存（服务端加密）。如需更换请重新输入' : '服务端 AES-256-GCM 加密存储，不回传' }}
-              </span>
+              <span class="section-title">Provider 配置</span>
+              <span class="section-hint">每家独立配 Key / Model / 接口地址;留空 API Key 表示不修改</span>
             </header>
-            <div class="input-group">
-              <input
-                v-model="settings.apiKey"
-                :type="showApiKey ? 'text' : 'password'"
-                :placeholder="hasStoredApiKey ? '留空表示不修改' : 'sk-...'"
-                autocomplete="off"
-                class="input-group__input"
-              />
-              <button
-                type="button"
-                class="input-group__action"
-                :title="showApiKey ? '隐藏' : '显示'"
-                :aria-label="showApiKey ? '隐藏' : '显示'"
-                @click="showApiKey = !showApiKey"
+            <div class="provider-list">
+              <article
+                v-for="meta in PROVIDER_CATALOG"
+                :key="meta.id"
+                class="provider-config-card"
+                :class="{ active: activeProvider === meta.id }"
+                :data-provider-id="meta.id"
               >
-                <EyeOff v-if="showApiKey" :size="16" :stroke-width="1.8" />
-                <Eye v-else :size="16" :stroke-width="1.8" />
-              </button>
-              <button
-                type="button"
-                class="input-group__action"
-                :title="copiedKey ? '已复制' : '复制'"
-                :aria-label="copiedKey ? '已复制' : '复制'"
-                :disabled="!settings.apiKey"
-                @click="copyKey"
-              >
-                <Check v-if="copiedKey" :size="16" :stroke-width="2" />
-                <Copy v-else :size="16" :stroke-width="1.8" />
-              </button>
+                <header class="provider-config-head">
+                  <span class="provider-config-name">{{ meta.name }}</span>
+                  <span class="provider-family-badge">{{ meta.family }}</span>
+                  <span
+                    v-if="providerForms[meta.id].hasApiKey || providerForms[meta.id].apiKey.trim()"
+                    class="provider-config-state state-ok"
+                  >
+                    <Check :size="12" :stroke-width="2.4" />已配置
+                  </span>
+                  <span v-else class="provider-config-state state-empty">未配置</span>
+                  <button
+                    v-if="activeProvider !== meta.id"
+                    type="button"
+                    class="provider-config-activate"
+                    :disabled="!providerForms[meta.id].hasApiKey && !providerForms[meta.id].apiKey.trim()"
+                    @click="selectActiveProvider(meta.id)"
+                  >
+                    设为活跃
+                  </button>
+                </header>
+                <div class="provider-config-fields">
+                  <label class="field-row">
+                    <span class="field-label">API Key</span>
+                    <div class="input-group">
+                      <input
+                        v-model="providerForms[meta.id].apiKey"
+                        :type="providerForms[meta.id].showApiKey ? 'text' : 'password'"
+                        :placeholder="
+                          providerForms[meta.id].hasApiKey
+                            ? '留空表示不修改'
+                            : meta.family === 'anthropic'
+                              ? 'sk-ant-...'
+                              : 'sk-...'
+                        "
+                        autocomplete="off"
+                        class="input-group__input"
+                        :data-test="`apikey-${meta.id}`"
+                      />
+                      <button
+                        type="button"
+                        class="input-group__action"
+                        :title="providerForms[meta.id].showApiKey ? '隐藏' : '显示'"
+                        :aria-label="providerForms[meta.id].showApiKey ? '隐藏' : '显示'"
+                        @click="providerForms[meta.id].showApiKey = !providerForms[meta.id].showApiKey"
+                      >
+                        <EyeOff v-if="providerForms[meta.id].showApiKey" :size="14" :stroke-width="1.8" />
+                        <Eye v-else :size="14" :stroke-width="1.8" />
+                      </button>
+                    </div>
+                  </label>
+                  <label class="field-row">
+                    <span class="field-label">Model</span>
+                    <input
+                      v-model="providerForms[meta.id].model"
+                      type="text"
+                      :placeholder="`默认:${meta.defaultModel}`"
+                      autocomplete="off"
+                      class="input-bare"
+                      :data-test="`model-${meta.id}`"
+                    />
+                  </label>
+                  <label class="field-row">
+                    <span class="field-label">
+                      Base URL
+                      <span v-if="meta.family !== 'openai-compatible'" class="field-label-hint">（可选）</span>
+                    </span>
+                    <input
+                      v-model="providerForms[meta.id].baseUrl"
+                      type="text"
+                      :placeholder="
+                        'defaultBaseUrl' in meta
+                          ? `默认:${(meta as { defaultBaseUrl: string }).defaultBaseUrl}`
+                          : '中转 / 自部署的 base URL'
+                      "
+                      autocomplete="off"
+                      class="input-bare"
+                      :data-test="`baseurl-${meta.id}`"
+                    />
+                  </label>
+                </div>
+              </article>
             </div>
           </section>
 
           <section class="form-section">
-            <header class="section-header">
-              <span class="section-title">模型名称</span>
-              <span v-if="currentProviderHint" class="section-hint">{{ currentProviderHint }}</span>
-            </header>
-            <input v-model="settings.model" type="text" placeholder="模型名称" class="input-bare" />
+            <button
+              type="button"
+              class="advanced-toggle"
+              :class="{ expanded: advancedExpanded }"
+              :aria-expanded="advancedExpanded"
+              @click="toggleAdvanced"
+            >
+              <ChevronDown :size="14" :stroke-width="1.8" />
+              <span class="section-title">Advanced</span>
+              <span class="section-hint">采样参数 + provider 特有配置</span>
+            </button>
+            <div v-if="advancedExpanded" class="advanced-panel" data-test="advanced-panel">
+              <div class="advanced-subblock">
+                <header class="subblock-title">通用</header>
+                <label class="field-row">
+                  <span class="field-label">Temperature ({{ advanced.temperature ?? '默认' }})</span>
+                  <input
+                    v-model.number="advanced.temperature"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    class="input-slider"
+                    data-test="adv-temperature"
+                  />
+                </label>
+                <label class="field-row">
+                  <span class="field-label">Max Tokens</span>
+                  <input
+                    v-model.number="advanced.maxTokens"
+                    type="number"
+                    min="1"
+                    placeholder="留空走 provider 默认"
+                    class="input-bare"
+                    data-test="adv-max-tokens"
+                  />
+                </label>
+                <label class="field-row">
+                  <span class="field-label">Top P ({{ advanced.topP ?? '默认' }})</span>
+                  <input
+                    v-model.number="advanced.topP"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    class="input-slider"
+                    data-test="adv-top-p"
+                  />
+                </label>
+              </div>
+
+              <div v-if="activeProvider === 'anthropic'" class="advanced-subblock" data-test="anthropic-advanced">
+                <header class="subblock-title">Anthropic 专有</header>
+                <label class="field-row toggle-row">
+                  <span class="field-label">Prompt Caching</span>
+                  <input
+                    v-model="advanced.promptCaching"
+                    type="checkbox"
+                    class="input-toggle"
+                    data-test="adv-prompt-caching"
+                  />
+                </label>
+                <label class="field-row toggle-row">
+                  <span class="field-label">Extended Thinking</span>
+                  <input
+                    v-model="advanced.thinkingEnabled"
+                    type="checkbox"
+                    class="input-toggle"
+                    data-test="adv-thinking-enabled"
+                  />
+                </label>
+                <label class="field-row">
+                  <span class="field-label">Thinking Budget (tokens)</span>
+                  <input
+                    v-model.number="advanced.thinkingBudgetTokens"
+                    type="number"
+                    min="0"
+                    :disabled="!advanced.thinkingEnabled"
+                    class="input-bare"
+                    data-test="adv-thinking-budget"
+                  />
+                </label>
+              </div>
+
+              <div v-if="activeProvider === 'gemini'" class="advanced-subblock" data-test="gemini-advanced">
+                <header class="subblock-title">Gemini 专有</header>
+                <label class="field-row toggle-row">
+                  <span class="field-label">JSON Mode</span>
+                  <input
+                    v-model="advanced.jsonMode"
+                    type="checkbox"
+                    class="input-toggle"
+                    data-test="adv-json-mode"
+                  />
+                </label>
+                <label class="field-row">
+                  <span class="field-label">Long Context Strategy</span>
+                  <select v-model="advanced.longContextStrategy" class="input-bare" data-test="adv-long-ctx">
+                    <option value="truncate">truncate（截断旧消息）</option>
+                    <option value="segment">segment（分段总结）</option>
+                  </select>
+                </label>
+              </div>
+            </div>
           </section>
 
-          <p v-if="saveError" class="form-error">{{ saveError }}</p>
+          <p v-if="saveError" class="form-error" data-test="save-error">{{ saveError }}</p>
 
           <div class="modal-footer">
             <button type="button" class="btn-secondary" :disabled="saving" @click="close">取消</button>
-            <button type="button" class="btn-primary" :disabled="saving" @click="saveLlm">
+            <button
+              type="button"
+              class="btn-primary"
+              :disabled="saving"
+              data-test="save-button"
+              @click="saveLlm"
+            >
               {{ saving ? '保存中...' : '保存' }}
             </button>
           </div>
@@ -439,8 +699,8 @@ onMounted(() => {
                 v-for="srv in presetServers"
                 :key="srv.id"
                 :server="srv"
-                :llm="settings"
-                :has-llm-key="hasStoredApiKey"
+                :llm="activeProviderLegacyShape"
+                :has-llm-key="activeProviderHasLlmKey"
                 @update="handleUpdate(srv.id, $event)"
               />
             </div>
@@ -571,7 +831,7 @@ onMounted(() => {
 .modal-content {
   background: var(--color-bg-elevated);
   border-radius: var(--radius-lg);
-  width: 600px;
+  width: 720px;
   max-width: 100%;
   max-height: 92vh;
   overflow: hidden;
@@ -672,7 +932,6 @@ onMounted(() => {
 }
 
 .seg-tabs--three .seg-tab {
-  /* grid item 自动等宽,移除 min-width 防止 grid 失效 */
   min-width: 0;
 }
 
@@ -752,75 +1011,176 @@ onMounted(() => {
   color: var(--color-fg-muted);
 }
 
-/* ---- Provider Grid ---- */
-.provider-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-2);
+/* ---- Active Provider Select ---- */
+.active-provider-select {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
 }
 
-.provider-card {
-  position: relative;
+/* ---- Provider Config Card list ---- */
+.provider-list {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.provider-config-card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-bg-surface);
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
+  padding: var(--space-3) var(--space-4);
   transition:
     border-color var(--dur-fast) var(--ease-out),
     background var(--dur-fast) var(--ease-out),
     box-shadow var(--dur-fast) var(--ease-out);
 }
 
-.provider-card:hover {
-  border-color: var(--color-border-strong);
-  background: var(--color-bg-subtle);
-}
-
-.provider-card.active {
+.provider-config-card.active {
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
   box-shadow: 0 0 0 3px rgba(193, 95, 60, 0.08);
 }
 
-.provider-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-md);
-  background: var(--color-accent-soft);
-  color: var(--color-accent-hover);
+.provider-config-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.provider-config-name {
+  font-weight: var(--fw-semibold);
+  color: var(--color-fg-primary);
+  font-size: var(--fs-md);
+}
+
+.provider-family-badge {
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-subtle);
+  color: var(--color-fg-tertiary);
+  font-family: var(--font-mono);
+}
+
+.provider-config-state {
+  font-size: var(--fs-sm);
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-weight: var(--fw-semibold);
-  font-size: var(--fs-sm);
-  flex-shrink: 0;
+  gap: 4px;
+  margin-left: auto;
 }
 
-.provider-card.active .provider-avatar {
-  background: var(--color-accent);
-  color: var(--color-accent-fg);
-}
-
-.provider-name {
-  flex: 1;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-medium);
-  color: var(--color-fg-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.provider-check {
+.state-ok {
   color: var(--color-accent);
-  display: inline-flex;
-  flex-shrink: 0;
+}
+
+.state-empty {
+  color: var(--color-fg-muted);
+}
+
+.provider-config-activate {
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  color: var(--color-fg-secondary);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.provider-config-activate:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.provider-config-activate:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.provider-config-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.field-label {
+  font-size: var(--fs-sm);
+  color: var(--color-fg-secondary);
+}
+
+.field-label-hint {
+  color: var(--color-fg-muted);
+  font-size: 11px;
+}
+
+.toggle-row .input-toggle {
+  justify-self: start;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.input-slider {
+  width: 100%;
+}
+
+/* ---- Advanced Toggle / Panel ---- */
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  color: var(--color-fg-secondary);
+  text-align: left;
+}
+
+.advanced-toggle svg {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.advanced-toggle.expanded svg {
+  transform: rotate(180deg);
+}
+
+.advanced-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+}
+
+.advanced-subblock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.subblock-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-fg-primary);
+  margin-bottom: var(--space-1);
 }
 
 /* ---- Input Group (API Key) ---- */
@@ -895,6 +1255,11 @@ onMounted(() => {
 .input-bare:focus {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+.input-bare:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* ---- Image LLM intro ---- */
