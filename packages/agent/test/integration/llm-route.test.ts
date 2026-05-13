@@ -212,7 +212,10 @@ describe('POST /api/llm/chat/completions(canonical 路由)', () => {
     )
     expect(res.status).toBe(500)
     const body = (await res.json()) as { error: { message: string } }
-    expect(body.error.message).toMatch(/缺 activeProvider/)
+    // Task F 起 parseLlmSettings 走 zod schema;失败抛 ZodError(message 是 issue 数组的 JSON
+    // 序列化串)。zod 错误一定提到 'activeProvider' 字段名(path)+ 缺失原因。
+    expect(body.error.message).toContain('LLM 配置解密 / 解析失败')
+    expect(body.error.message).toContain('activeProvider')
   })
 
   it('llmSettings 配的 provider 未注册(如 anthropic Task G 前) → 400', async () => {

@@ -18,7 +18,13 @@
     "init-db": "node scripts/init-db.mjs",
     "init-test-db": "node scripts/init-test-db.mjs",
     "probe:duckcoding": "dotenv -e .env.test.local -- node scripts/probe-duckcoding.mjs",
-    "test:smoke": "dotenv -e .env.test.local -- vitest run --testNamePattern='smoke' src/llm/__tests__/smoke"
+    "test:smoke": "dotenv -e .env.test.local -- vitest run --testNamePattern='smoke' src/llm/__tests__/smoke",
+    "migrate:llm-settings": "dotenv -e .env.development.local -e .env.local -- node scripts/migrate-llm-settings.mjs",
+    "migrate:llm-settings:test": "dotenv -e .env.test.local -- node scripts/migrate-llm-settings.mjs",
+    "migrate:llm-settings:prod": "dotenv -e .env.production.local -- node scripts/migrate-llm-settings.mjs",
+    "migrate:deck-chats": "dotenv -e .env.development.local -e .env.local -- node scripts/migrate-deck-chats.mjs",
+    "migrate:deck-chats:test": "dotenv -e .env.test.local -- node scripts/migrate-deck-chats.mjs",
+    "migrate:deck-chats:prod": "dotenv -e .env.production.local -- node scripts/migrate-deck-chats.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
@@ -34,7 +40,8 @@
     "hono": "^4.12.15",
     "http-proxy": "^1.18.1",
     "mysql2": "^3.22.2",
-    "openai": "6.37.0"
+    "openai": "6.37.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

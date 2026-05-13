@@ -18,6 +18,8 @@ import {
 } from '../template-switch-job.js'
 import { rewriteForTemplate } from '../prompts/rewriteForTemplate.js'
 import { getHolder } from '../slidev-lock.js'
+import { canonicalToRow, rowToCanonical } from '../llm/chat-row.js'
+import type { CanonicalMessage, CanonicalRole } from '../llm/types.js'
 
 type UserVars = AuthVars
 
@@ -369,12 +371,34 @@ decksRoute.get('/decks/:id{[0-9]+}/chats', async (c) => {
   if (!check.ok) return c.json({ error: check.error }, check.status)
 
   const db = getDb()
-  const chats = await db
+  const rows = await db
     .select()
     .from(deckChats)
     .where(eq(deckChats.deckId, deckId))
     .orderBy(deckChats.createdAt)
     .limit(1000)
+
+  // Phase 12 Task F:返回保留向后兼容字段(id / role / content / toolCallId / createdAt)
+  // 同时附加新 canonical 字段。frontend Task I 切到 canonical 后 content / toolCallId
+  // 仅 fallback;deck_chats 当前 reader(frontend chat history 渲染)还在用 content
+  // 字符串 + toolCallId 拼 OpenAI shape,不能立刻改回。
+  const chats = rows.map((r) => {
+    const canonical = rowToCanonical({
+      role: r.role,
+      content: r.content,
+      toolCallId: r.toolCallId,
+      canonicalContent: r.canonicalContent,
+    })
+    return {
+      id: r.id,
+      deckId: r.deckId,
+      role: r.role,
+      content: r.content,
+      toolCallId: r.toolCallId,
+      canonical: canonical.content,
+      createdAt: r.createdAt,
+    }
+  })
   return c.json({ chats })
 })
 
@@ -388,23 +412,55 @@ decksRoute.post('/decks/:id{[0-9]+}/chats', async (c) => {
 
   type ChatBody = {
     role?: 'system' | 'user' | 'assistant' | 'tool'
+    /** 老入参:字符串。frontend Task I 前仍发字符串 content + toolCallId 单独字段 */
     content?: string
     toolCallId?: string
+    /** Task I+ 起 frontend 可直接发 canonical Block[],route 优先用它;否则回退老路径 */
+    canonical?: CanonicalMessage['content']
   }
   const body = await c.req.json<ChatBody>().catch((): ChatBody => ({}))
   if (!body.role || !['system', 'user', 'assistant', 'tool'].includes(body.role)) {
     return c.json({ error: 'role 非法' }, 400)
   }
-  if (body.content === undefined || body.content === null) {
+  // 入参兼容:必须有 canonical 或 content 之一
+  if (body.canonical === undefined && (body.content === undefined || body.content === null)) {
     return c.json({ error: 'content 不能为空' }, 400)
   }
+
+  // 构造 canonical message:优先用 frontend 给的 Block[],否则从老 content + toolCallId 重组
+  let msg: CanonicalMessage
+  if (Array.isArray(body.canonical)) {
+    msg = { role: body.role as CanonicalRole, content: body.canonical }
+  } else {
+    // 老路径:把 content 当 text(tool 走 tool_result + toolCallId);跟 chat-row.legacyRowToCanonical 一致逻辑
+    if (body.role === 'tool') {
+      msg = {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool_result',
+            toolUseId: body.toolCallId ?? '',
+            content: body.content ?? '',
+          },
+        ],
+      }
+    } else {
+      msg = {
+        role: body.role as CanonicalRole,
+        content: [{ type: 'text', text: body.content ?? '' }],
+      }
+    }
+  }
+
+  const { content, toolCallId, canonicalContent } = canonicalToRow(msg)
 
   const db = getDb()
   await db.insert(deckChats).values({
     deckId,
     role: body.role,
-    content: body.content,
-    toolCallId: body.toolCallId ?? null,
+    content,
+    toolCallId,
+    canonicalContent,
   })
   return c.json({ ok: true }, 201)
 })

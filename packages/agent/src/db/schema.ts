@@ -13,6 +13,7 @@ import {
   varchar,
   text,
   mediumtext,
+  longtext,
   datetime,
   timestamp,
   mysqlEnum,
@@ -131,8 +132,21 @@ export const deckChats = mysqlTable(
       .notNull()
       .references(() => decks.id, { onDelete: 'cascade' }),
     role: mysqlEnum('role', ['system', 'user', 'assistant', 'tool']).notNull(),
+    /** 老字段(Phase 5–11):assistant OpenAI shape JSON / tool text / user text。canonical 双写期保留供老 row 读 + provider mock 输出兜底 */
     content: mediumtext('content').notNull(),
+    /** 老字段:tool message 的 tool_call_id;canonical Block[] 把它包进 ToolResultBlock.toolUseId */
     toolCallId: varchar('tool_call_id', { length: 128 }),
+    /**
+     * Phase 12 Task F 新增:CanonicalMessage.content(`Block[]`)的 JSON 序列化。
+     *
+     * 双写期:新插入 row 同时填 content + canonicalContent;老 row 的 canonicalContent
+     * 为 NULL,读路径 fallback 解析 content + toolCallId 重组 Block[](见 chat-row.ts)。
+     *
+     * 用 longtext(4GB 上限)预留 thinking blocks / 多模态 image base64 dataURL 等
+     * 大体积场景;chat row 一般 1-10KB 用不完 mediumtext 16MB,但 thinking 模式 +
+     * 长 tool result 字符串(generate_slide_image 返 base64)会撑到 mediumtext 上限。
+     */
+    canonicalContent: longtext('canonical_content'),
     createdAt: timestamp('created_at').default(NOW).notNull(),
   },
   (t) => ({
