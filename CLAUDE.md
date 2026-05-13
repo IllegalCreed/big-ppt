@@ -273,6 +273,8 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - **E2E 跳真 LLM**：用 `BIG_PPT_TEST_REWRITE_MODE=skeleton` env 让 `rewriteForTemplate` 直接读 starter，免烧 token；playwright.config webServer env 写死该值
 - **Vitest 4 起 vi.mock 对 dynamic import 拦截不稳定**：同一文件多次 `await import('mod')` 第二次会绕过 mock 拿真模块。vitest 2 时代"用 dynamic import 让 vi.mock 能拦截"的注释在 4 之后**反向**，改用 static import + 顶层 vi.mock factory（`() => ({ ... })`）才稳定。production 等价（ESM 模块缓存，首次开销忽略）（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 踩坑 2）
 - **Vitest 4 v8 coverage 引擎换为 AST-based remapping**（替 v8-to-istanbul）：statements/branches 按 AST 节点级而非物理行级算，分母变大，跨 vitest 2/4 的 coverage 数字不可直接对比；升级时门槛要按新引擎 baseline 重新定，不能简单"维持原值"（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 踩坑 4）
+- **mysql2 prepared-statement `LIMIT ?` 参数化触发 ER_PARSE_ERROR**：某些 MySQL 版本上 mysql2 会把 Number 序列化成 string 给 `LIMIT ?`，server 端 prepared-statement parser 拒绝。解法：`LIMIT ${safeLimit}` 直接拼字符串，`safeLimit = Math.max(1, Math.floor(internal_number))`——`safeLimit` 必须来自内部整型常量不来自用户输入，否则有 SQL injection 风险。其他 user-supplied 值仍走 `?` 占位绑定（[plan 26](docs/plans/26-phase12-multi-llm-providers.md) 踩坑 1）
+- **跨 workspace 包共享 TS types 走单向 re-export**：shared 包是 source-of-truth；agent / creator 用 `import type { X } from '@big-ppt/shared'` re-export。反向（agent 当 source，shared re-export）会撞 `TS6059: ... not under rootDir`，因为每个 workspace 包的 tsconfig 有独立 rootDir，跨包 import .ts 源码越界。Task B 的 canonical types + Task D 的 SSE wire format 都走这套（[plan 26](docs/plans/26-phase12-multi-llm-providers.md) 踩坑 2）
 
 ### 前端约定
 
@@ -287,6 +289,9 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - **AI 输出落 disk 前必做 schema validation + 自由文本字段必走白名单**（[plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 踩坑 6）
 - **Prompt contract test 用结构性断言不做字符级 diff**，避免文案微调红测试（[plan 12](docs/plans/12-phase6-template-architecture.md) 踩坑 1）
 - **裁剪/压缩 chat history 时严守 `tool` ↔ `assistant.tool_calls` 配对**：OpenAI/GLM spec 要求 `role:'tool'` 必须紧跟带匹配 `tool_call_id` 的 `assistant`，slice/summarize 切口落在配对中间会让 tool 变孤儿，上游返回 "messages 参数非法"；裁剪后必须向前 drop 孤儿 tool（commit `1879bb4`）
+- **各家 SDK baseURL 语义不统一**：OpenAI SDK 把 baseURL 当 prefix 直接拼 `/chat/completions`（所以必含 `/v1`）；Anthropic SDK 自动追加 `/v1/messages`（所以**不能**含 `/v1`）；Gemini SDK 用 `httpOptions.baseUrl` 自动追加 `/v1beta/...`。配置 LLM provider baseUrl 时必须显式查目标 SDK 文档，跨 provider 的 `BASE_URL` env 不能照抄（[plan 26](docs/plans/26-phase12-multi-llm-providers.md) 踩坑 5）
+- **Thinking-tier 模型 maxTokens 计入 thinking budget**：gpt-5.2 / gemini-2.5-flash / claude-opus-4-7 thinking 模型，`maxTokens` 是「thinking + output」总额。给 50 tokens 跑会触发 MAX_TOKENS finish reason 且 output 空。规则：用 thinking-tier 模型时 `maxTokens` 至少 **2x 预期 output**（[plan 26](docs/plans/26-phase12-multi-llm-providers.md) 踩坑 4）
+- **删 session / DB / ALS 全局字段写入路径前必须 grep 所有读取方**：Task F 把 `users.llm_settings` 从老 shape `{provider, apiKey, ...}` 升级到新 shape `{activeProvider, providers, advanced?}`，只 grep 了 `deckChats` 消费者，漏掉 6 个 `llm_settings` 消费者（rewriteForTemplate / mcp.ts / mcp-registry / auth.ts GET+PUT）。production migration 跑后会 silently break MCP `$LLM_KEY` 替换 + Settings UI 保存覆盖回老 shape。**改 schema 字段语义时全包 grep 字段名两次**（一次 reader、一次 writer）写补 helper 兼容期支持双 shape（[plan 26](docs/plans/26-phase12-multi-llm-providers.md) 踩坑 / Task F-fix `b33b712`）
 
 ### 安全
 

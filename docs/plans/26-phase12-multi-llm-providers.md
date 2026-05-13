@@ -1380,6 +1380,85 @@ export const deckChats = mysqlTable('deck_chats', {
 
 **probe 不入 commit log**：probe 跑由 controller 主机用 inline env 执行（key 不落 disk），结果只追加到本 plan。生产配置由用户在 Settings UI 自填，不依赖 probe。
 
+### Task B 偏离 #1：跨包 type 共享方向反转
+
+- **原 plan**: `packages/agent/src/llm/types.ts` 是 source-of-truth，`packages/shared/src/llm-canonical.ts` re-export 给 creator
+- **实际**: 反向——shared 是 source，agent re-export。
+- **why**: 首先尝试原 plan 方向，tsc 报 `TS6059: File 'packages/shared/src/llm-canonical.ts' is not under 'rootDir' 'packages/agent/src'`（跨 rootDir 不能 import）。反过来则无此约束。CLAUDE.md「single source of truth」原则保留。
+- **同样套路**：Task D 的 `canonical-sse.ts` 也走 shared 作 source，agent 当 thin re-export。
+
+### Task B 偏离 #2：vitest.config.ts include 扩展
+
+- **原 plan**: 单测放 `src/llm/__tests__/`，没说要改 vitest config
+- **实际**: 项目默认 vitest include glob 是 `test/**/*.test.ts`，新增 `src/**/__tests__/**/*.test.ts` 让 sibling-colocated 单测能被收集；同时给 coverage exclude 加 `src/**/__tests__/**`
+- **why**: 测试文件放 src sibling 比放统一 `test/` 目录更易找到对应实现，符合 CLAUDE.md「测试跟实现同包同目录」精神
+
+### Task B 偏离 #3：assertNever helper hoist 到 types.ts
+
+- **原 plan**: 只是 forward-looking 建议（code review M4），实施 subagent 在 Task C 时执行
+- **实际**: Task B 末尾 + Task C 都用上了，hoist 到 `packages/agent/src/llm/types.ts` 作 export
+- **why**: translate 层 `switch on Block.type / Event.type` 大量用到 exhaustiveness check，single source 更干净
+
+### Task C 偏离 #1：OpenAI SDK 实际未装，需自行 `pnpm add`
+
+- **原 plan**: 假设 `openai` SDK 已在 package.json
+- **实际**: 项目从未装过官方 openai SDK（之前 routes/llm.ts 是纯 fetch 透传），Task C 实施时 `pnpm add openai`，锁 `^6.37.0`（npm latest 验证 stable，无 beta）
+- **why**: plan 草稿未仔细查 deps 现状；不影响 spec，多了一步 install。后续 Task G/H 同样需要装 `@anthropic-ai/sdk` + `@google/genai`（已在 Task A 完成）
+
+### Task E 偏离 #1：测试 mount 路径与 production 不一致 → 补丁修复
+
+- **原 plan**: 集成测 mount 在 `/api`，调用路径 `/api/chat/completions`
+- **实际**: production app 实际 mount 在 `/api/llm`（路径 `/api/llm/chat/completions`），code review 指出违反 memory `feedback_remove-session-field-grep-readers` 原则「单测过不代表 HTTP 路径过」
+- **修复**: commit `70ad58a` 把测试路径改对齐 + 同步移除 vitest.config 的 stale `src/routes/llm.ts` coverage exclude（该文件 Phase 12 起被 9 个集成测覆盖）
+
+### Task F 偏离 #1：parseLlmSettings stub → 完整 zod；**漏改 6 个 llm_settings 消费者** → 补丁修复
+
+- **原 plan 风险章节**: 只说要 grep `deckChats` 所有 writer/reader
+- **实际**: code review 发现还漏改 6 个 `users.llm_settings` 消费者（rewriteForTemplate / rewriteSinglePageToComponents / routes/mcp.ts / mcp-registry/registry.ts / routes/auth.ts GET+PUT），production migration 跑后会 silently break MCP `$LLM_KEY` 替换 / 切模板 LLM 调用 / Settings UI 保存覆盖回老 shape
+- **修复**: commit `b33b712` 抽 `getActiveProviderConfig` helper 同时支持老/新 shape，6 个 consumer 全切到 helper，PUT 内部 migrateLegacySettings 后写入；routes/llm.ts 改 `LlmSettingsSchema.safeParse` 返回用户友好中文 message（不泄漏 zod issues）
+- **教训**: 「删 session/DB/ALS 全局字段写入路径前必须 grep 所有读取方」memory feedback 在 plan 的 Task F 风险章节没专门提，落地实施 subagent 漏掉 → 已在执行期偏离这一节显式记录，下次模板必须列「全 grep」步骤
+
+### Task G 偏离 #1：tool message 不合并进 user message（Anthropic 协议解释差异）
+
+- **原 plan**: spec 说「canonical tool message 的 tool_result blocks 要并入 user message 的 content[]」
+- **实际**: implementer 选 1:1 mapping（每个 canonical tool message → 独立的 Anthropic user message with tool_result blocks）
+- **why**: Anthropic SDK 文档明确「Consecutive `user` or `assistant` turns ... will be combined into a single turn」——server 端自动合并，client 端 1:1 mapping 也对，且**翻译层 stateless 更简单**。code review 验证 SDK 源码 + 接受这个 deviation
+
+### Task G/H 已知限制（已记在代码）：
+
+- **Anthropic thinking signature 未保留**：`from-anthropic-stream.ts` silent-drop `signature_delta`，`to-anthropic.ts` 回填 `signature: ''`。当前 Phase 12 主用例（template rewrite / chat）不走 thinking 多轮回显，所以未实施。**未来如做 deep-research 类多轮思考**，需要扩 canonical `ThinkingBlock` 加 `signature?: string` 字段 + adapter 透传。已在 to-anthropic.ts:203 注释。
+- **Gemini thinking 不显式**：Gemini-2.5-flash 是 thinking-tier 模型，`usageMetadata.thoughtsTokenCount` 计费 thinking tokens 但 SDK 流里**不暴露** thinking blocks（不像 Anthropic 的 thinking_delta event）。所以 frontend ThinkingBlock UI 仅 Anthropic 触发，Gemini 不触发——已知限制，不属于 bug。
+
+### Task H 偏离 #1：responseSchema 漏 sanitize → 补丁修复
+
+- **原 plan**: tools 走 `sanitizeForGemini`，但 `structuredOutput.schema` 未提及
+- **实际 bug**: 用户配 structured output schema 含 `additionalProperties` 会被 Gemini API 400
+- **修复**: commit `0e990ef` 让 structuredOutput 也走 sanitization；同步 dynamic `require('node:crypto')` → static `import`
+
+### Task I 偏离 #1：行数变化 +142 而非 plan 估计的 -500
+
+- **原 plan**: 预计 `useAIChat.ts` 869 → ~370（净减 500 行）
+- **实际**: 869 → 1011（+142 行）
+- **breakdown**:
+  - 真删 ~170 行（OpenAI delta state machine + 手工 SSE parser + OpenAI history guard）
+  - 真加（commentary ~134、exported `consumeCanonicalEventStream` helper ~55、三个 build*Message helpers ~25、4 个新 refs + cleanup ~20、UI 集成 ~80）
+- **why**: plan 预估太乐观——重写要保持新功能（thinking UI + cache hint + 4 个新 refs），同时增加可测试性（exported helper 让单测能脱离 fetch 测状态机）。复杂度真减少（单 switch 取代嵌套 stream loop），但行数代价存在
+
+### Task J 偏离 #1：跨 provider advanced 数据 silent 丢失 → 补丁修复
+
+- **bug**: 用户保存 anthropic advanced（如 promptCaching: true），切 active 到 openai 保存，PUT body 只含 advanced.common，backend 整体覆盖 advanced block，anthropic 配置静默从 DB 丢
+- **修复**: commit `54a0d50` 加 `mergeAdvanced(old, new)` helper，子区粒度 spread 旧+新，prune 空 sub-block；加 3 个 regression test
+
+### Task K 偏离 #1：smoke test baseURL 命名歧义 → 补丁修复
+
+- **bug**: OpenAI SDK 要求 baseURL 含 `/v1`，Anthropic SDK 自动追加，Gemini 用原始 base；单一 `DUCKCODING_TEST_BASE_URL` env 无法满足三家
+- **修复**: commit `9e9de5f` 让 openai.smoke.test.ts 内部对 BASE_URL 加 `/v1` 后缀
+
+### Task K 偏离 #2：thinking-tier 模型 maxTokens=50 不够
+
+- **bug**: gpt-5.2-low / gemini-2.5-flash 是 reasoning-tier，maxTokens=50 不够覆盖 thinking + output（44 tokens 烧 thinking，剩 6 tokens output → 触发 MAX_TOKENS 但没 text.delta）
+- **修复**: chat smoke maxTokens 50 → 200，tool smoke 保留 100
+
 ---
 
 ## 踩坑与解决（实施期 / 关闭后追加）
@@ -1387,17 +1466,83 @@ export const deckChats = mysqlTable('deck_chats', {
 > 按「症状 / 根因 / 修复 / 防再犯」四段记完整故事。
 > **判断要不要提炼到 [CLAUDE.md 已知坑](../../CLAUDE.md#已知坑)**：换 Phase 还会撞的工具链 / 测试基建 / 构建系统坑才提炼。
 
-- _（待填）_
+### 坑 1：mysql2 prepared-statement `LIMIT ?` 参数化触发 ER_PARSE_ERROR
+
+- **症状**: 集成测跑 `migrate-deck-chats.mjs` 时 `conn.execute('SELECT ... LIMIT ?', [batchSize])` 抛 `Incorrect arguments to mysqld_stmt_execute`
+- **根因**: mysql2 在某些 MySQL 版本上把 Number 序列化成 string 给 `LIMIT ?`，server 端 prepared-statement parser 不接受 string
+- **修复**: 改 `LIMIT ${safeLimit}` 直接拼字符串，`safeLimit = Math.max(1, Math.floor(internal_number))`，安全因为 `safeLimit` 来自内部整型常量不来自用户输入
+- **防再犯**: **已提炼到 CLAUDE.md「已知坑」/「测试基建」** — 后续 LIMIT/OFFSET 等数字常量场景统一这套路
+
+### 坑 2：跨 rootDir TS 源码 import 失败（type-share via re-export 方向反转）
+
+- **症状**: shared/src/llm-canonical.ts 写 `export type * from '../../agent/src/llm/types.js'` 触发 `TS6059: File 'packages/agent/src/llm/types.ts' is not under 'rootDir' 'packages/shared/src'`
+- **根因**: 每个 workspace 包的 tsconfig 有独立 `rootDir`，跨包 import 源码（`.ts`）超出 rootDir 边界 tsc 拒绝
+- **修复**: 反转方向——shared 是 single source（agent re-export from shared via `@big-ppt/shared` package import）
+- **防再犯**: **已提炼到 CLAUDE.md「跨包共享 types」** — 单向 shared→agent/creator re-export 作为默认套路（也已在 Task D 复用）
+
+### 坑 3：Vitest 4 `vi.spyOn` 不能拦截实例上 arrow function 字段（Gemini SDK)
+
+- **症状**: Task H mock Gemini SDK 时 `vi.spyOn(GoogleGenAI.prototype.models, 'generateContentStream')` 不生效
+- **根因**: Gemini SDK 的 `generateContentStream` 是 `Models` 实例**构造时赋值的 arrow function**（不是 prototype 上的方法），prototype 上找不到这个属性
+- **修复**: 走 factory injection seam pattern：`__setClientFactoryForTesting()` 同 `__setMasterKeyGetterForTesting` 模式，测试期注入 fake client constructor
+- **防再犯**: **不提炼到 CLAUDE.md**（一次性 vendor SDK 形态，未来 SDK 升级 / 换 vendor 不会复用）；如其他 SDK 同坑参考 `packages/agent/src/llm/adapters/gemini.ts` 的 seam pattern
+
+### 坑 4：thinking-tier 模型 maxTokens 计入 thinking budget
+
+- **症状**: smoke test 给 gpt-5.2-low / gemini-2.5-flash maxTokens=50，response 含 0 个 text.delta + finishReason=MAX_TOKENS
+- **根因**: reasoning-tier 模型 maxTokens 包含 thinking tokens + output tokens，thinking 占大头 → output 被截断
+- **修复**: smoke chat case maxTokens 提到 200；adapter 默认 maxTokens（如 Anthropic 用 8192）已留足空间
+- **防再犯**: **已提炼到 CLAUDE.md「LLM / Tool 工程」** — 用 thinking-tier 模型时 maxTokens 至少 2x 预期 output
+
+### 坑 5：OpenAI SDK baseURL 必含 `/v1`，Anthropic SDK 自动追加
+
+- **症状**: smoke test 用单一 `DUCKCODING_TEST_BASE_URL='https://www.duckcoding.ai'` 跑 OpenAI smoke 0 chunks 返回，Anthropic smoke 正常
+- **根因**: OpenAI SDK 把 baseURL 当 prefix 直接拼 `/chat/completions`，所以 baseURL 必含 `/v1`；Anthropic SDK 内部追加 `/v1/messages` 所以 baseURL **不能**含 `/v1`
+- **修复**: openai.smoke.test.ts 内部把 raw BASE_URL 加 `/v1` 后缀
+- **防再犯**: **已提炼到 CLAUDE.md「LLM / Tool 工程」** — 各家 SDK baseURL 语义不一致，配置时显式查 SDK 文档
 
 ---
 
 ## 测试数量落地（关闭后追加）
 
-| 指标             | 起点 | 终点 | 增量 |
+---
+
+## 测试数量落地（关闭后追加）
+
+> 测试运行口径：`pnpm -F @big-ppt/<pkg> test`（不含 smoke）；agent 含 `lumideck_test` 真 MySQL 集成测。
+> 起点 = Task A 落地后 = Phase 12 实际开始前；终点 = Task K 全部落地 + Task L 验证完后（2026-05-13）。
+
+| 指标             | 起点 (pre-Phase 12) | 终点 (post-Task K) | 增量 |
 | ---------------- | ---- | ---- | ---- |
-| agent unit       |      |      |      |
-| creator unit     |      |      |      |
-| shared unit      |      |      |      |
-| E2E              |      |      |      |
-| coverage lines   |      |      |      |
-| coverage branch  |      |      |      |
+| agent unit (含集成)       | 573 (~59 files)  | **1007 (73 files)** | **+434**  |
+| creator unit     | ~96 (~17 files)   | **134 (21 files)** | **+38**  |
+| shared unit      | 3 (1 file) | **3 (1 file)** | 0 |
+| E2E              | 未跑 (Phase 12 不动)   | 未跑   | —    |
+| smoke test (新)  | —    | **6 tests (3 files, 默认 skipIf 跳)** | +6 |
+| coverage lines   | agent 90 / creator 75 (门槛维持)  | agent 90 / creator 75（维持）  | 维持 |
+| coverage branch  | agent 80 / creator 65   | agent 80 / creator 65（维持）  | 维持 |
+| 三家 native adapter coverage (per-file) | — | to-anthropic 95.79/93.5; from-anthropic-stream 98.14/92.98; anthropic 100/92.94; to-gemini 96.29/94.66; from-gemini-stream 96.15/96; gemini 95.74/90; to-openai 95/86.04; from-openai-stream 97.67/87.03; openai-compatible 100/91.04 | 全部 ≥ 90/85 |
+
+**真 API smoke 实测**（2026-05-13，controller 跑，key 不持久化）：
+
+| Provider | Model | Chat (text+finish) | Tool call | 用时 |
+|---|---|---|---|---|
+| OpenAI (via duckcoding) | gpt-5.2-low | ✅ | ✅ | ~5s |
+| Anthropic (via duckcoding) | claude-sonnet-4-6 | ✅ | ✅ | ~9s |
+| Gemini (via duckcoding) | gemini-2.5-flash | ✅ | ✅ | ~7s |
+
+**Phase 12 commits 索引**（21 个）：
+
+- spec + plan: `13c9e48` `d17e2bc`
+- Task A: `6b54bb9` (probe + SDK) `a156be5` (probe 结果)
+- Task B: `a8251eb`
+- Task C: `8450ab4`
+- Task D: `d7ce6d3` `f30aa3a` (cancel hook fix)
+- Task E: `e88d8ee` `70ad58a` (mount path + coverage exclude fix)
+- Task F: `22fead1` `b33b712` (6 consumer fix)
+- Task G: `e06a988`
+- Task H: `d91a5c2` `0e990ef` (sanitize fix)
+- Task I: `3982624`
+- Task J: `02ba2bb` `54a0d50` (advanced merge fix)
+- Task K: `13e086e` `9e9de5f` (URL + maxTokens fix)
+- Task L (本): pending close-out commit

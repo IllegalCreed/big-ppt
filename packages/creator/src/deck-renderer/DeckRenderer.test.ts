@@ -98,7 +98,7 @@ describe('DeckRenderer', () => {
       w.unmount()
       expect(observers[0]?.disconnect).toHaveBeenCalledTimes(1)
     } finally {
-      // @ts-expect-error 清理
+      // @ts-expect-error 清理：恢复测试前抓的 ResizeObserver（可能是 undefined）
       globalThis.ResizeObserver = original
     }
   })

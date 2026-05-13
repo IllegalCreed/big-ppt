@@ -735,7 +735,17 @@
 - [ ] 用户可在前端自由切换 provider，API key per-provider 独立加密存储
 - [ ] 老用户的 LLM 设置自动迁移到新 schema 不丢
 
-**状态**：待开始
+**状态**：✅ 代码完成（2026-05-13，plan 26），**待用户授权部署 + dogfood**
+
+> **代码层全部完成**（11/12 Task）：A-K 共 21 个 commit 落 main，含三家 native adapter + canonical SSE wire + zod schema 迁移 + frontend 重写 + Settings UI 改造 + smoke test 套件。**真 key smoke 6/6 全绿**（gpt-5.2-low / claude-sonnet-4-6 / gemini-2.5-flash 都跑通 chat + tool call）。
+>
+> **Task L 留给用户**：① 本地浏览器 dogfood 验证 UX ② `pnpm deploy:backend` + ssh 跑 migration script + `pnpm deploy:creator` ③ prod dogfood 跑「Claude 生成 + Gemini 编辑」E2E。详见 [plan 26 Task L](../plans/26-phase12-multi-llm-providers.md)。
+>
+> **遗留 forward-looking 限制**（已记在 plan 执行期偏离）：
+> - Anthropic extended thinking 的 `signature_delta` 未保留 → 多轮 deep-research 场景下 thinking 历史不能回显（template rewrite / chat 主用例不影响）
+> - Gemini SDK 不暴露 thinking blocks → frontend ThinkingBlock UI 仅 Anthropic 触发
+>
+> **未决评估**：用户提到 pi-agent 可能解决多 LLM 接入问题，已请求更多 context 但用户未回复；在此期间 Phase 12 在仓库保留可部署状态，是否切 pi-agent 等用户决策。
 
 **依赖**：Phase 10.5 完成 ✅（Phase 11 已废弃，本 Phase 与 viewer 架构正交）
 
