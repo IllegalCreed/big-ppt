@@ -1,0 +1,35 @@
+[
+  {
+    "candidates": [
+      {
+        "content": {
+          "parts": [{ "text": "Let me search." }],
+          "role": "model"
+        }
+      }
+    ]
+  },
+  {
+    "candidates": [
+      {
+        "content": {
+          "parts": [
+            {
+              "functionCall": {
+                "name": "searchPages",
+                "args": { "q": "hello world" }
+              }
+            }
+          ],
+          "role": "model"
+        },
+        "finishReason": "STOP"
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 24,
+      "candidatesTokenCount": 18,
+      "totalTokenCount": 42
+    }
+  }
+]

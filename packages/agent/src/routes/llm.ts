@@ -31,6 +31,7 @@ import { acquireLlmSlot, LlmConcurrencyTimeoutError } from '../middleware/llm-se
 import { ProviderRegistry } from '../llm/provider.js'
 import { createOpenAICompatibleProvider } from '../llm/adapters/openai-compatible.js'
 import { createAnthropicProvider } from '../llm/adapters/anthropic.js'
+import { createGeminiProvider } from '../llm/adapters/gemini.js'
 import { eventsToSSEStream } from '../llm/canonical-sse.js'
 import { LLMError } from '../llm/errors.js'
 import { LlmSettingsSchema } from '../llm/settings.js'
@@ -52,7 +53,7 @@ function buildDefaultRegistry(): ProviderRegistry {
       ['moonshot', createOpenAICompatibleProvider],
       ['qwen', createOpenAICompatibleProvider],
       ['anthropic', createAnthropicProvider],
-      // gemini 在 Task H 注册
+      ['gemini', createGeminiProvider],
     ]),
   )
 }

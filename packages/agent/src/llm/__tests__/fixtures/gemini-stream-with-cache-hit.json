@@ -1,0 +1,32 @@
+[
+  {
+    "candidates": [
+      {
+        "content": {
+          "parts": [{ "text": "Answer is 42." }],
+          "role": "model"
+        }
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 100,
+      "candidatesTokenCount": 5,
+      "cachedContentTokenCount": 800,
+      "totalTokenCount": 905
+    }
+  },
+  {
+    "candidates": [
+      {
+        "content": { "parts": [], "role": "model" },
+        "finishReason": "STOP"
+      }
+    ],
+    "usageMetadata": {
+      "promptTokenCount": 100,
+      "candidatesTokenCount": 5,
+      "cachedContentTokenCount": 800,
+      "totalTokenCount": 905
+    }
+  }
+]

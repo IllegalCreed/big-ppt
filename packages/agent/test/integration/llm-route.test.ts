@@ -223,11 +223,12 @@ describe('POST /api/llm/chat/completions(canonical 路由)', () => {
     expect(body.error.message).not.toContain('zod')
   })
 
-  it('llmSettings 配的 provider 未注册(如 gemini Task H 前) → 400', async () => {
+  it('llmSettings 配的 provider 在 registry 没注册 → 400', async () => {
     const { user, cookie } = await createLoggedInUser('unregistered@a.com')
-    // 配 gemini 但默认 registry 还没注册 gemini factory(Task H 才注册)。
-    // Task G 起 anthropic 已注册,改用 gemini 验证 registry 未命中分支。
+    // Task H 起所有 7 个 settings schema provider 都在默认 registry 里;为验证
+    // "未命中 factory" 分支,注入空 registry 强制 resolve 时找不到 factory。
     await setLlmSettings(user.id, newShapeSettings('gemini', 'sk-gemini'))
+    __setRegistryForTesting(new ProviderRegistry(new Map()))
 
     const res = await buildApp().fetch(
       new Request('http://x/api/llm/chat/completions', {
