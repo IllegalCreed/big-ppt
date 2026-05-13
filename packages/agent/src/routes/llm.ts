@@ -30,6 +30,7 @@ import { decryptApiKey } from '../crypto/apikey.js'
 import { acquireLlmSlot, LlmConcurrencyTimeoutError } from '../middleware/llm-semaphore.js'
 import { ProviderRegistry } from '../llm/provider.js'
 import { createOpenAICompatibleProvider } from '../llm/adapters/openai-compatible.js'
+import { createAnthropicProvider } from '../llm/adapters/anthropic.js'
 import { eventsToSSEStream } from '../llm/canonical-sse.js'
 import { LLMError } from '../llm/errors.js'
 import { LlmSettingsSchema } from '../llm/settings.js'
@@ -50,7 +51,8 @@ function buildDefaultRegistry(): ProviderRegistry {
       ['deepseek', createOpenAICompatibleProvider],
       ['moonshot', createOpenAICompatibleProvider],
       ['qwen', createOpenAICompatibleProvider],
-      // anthropic / gemini 在 Task G/H 注册
+      ['anthropic', createAnthropicProvider],
+      // gemini 在 Task H 注册
     ]),
   )
 }

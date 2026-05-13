@@ -223,10 +223,11 @@ describe('POST /api/llm/chat/completions(canonical 路由)', () => {
     expect(body.error.message).not.toContain('zod')
   })
 
-  it('llmSettings 配的 provider 未注册(如 anthropic Task G 前) → 400', async () => {
+  it('llmSettings 配的 provider 未注册(如 gemini Task H 前) → 400', async () => {
     const { user, cookie } = await createLoggedInUser('unregistered@a.com')
-    // 配 anthropic 但默认 registry 还没注册 anthropic factory(Task G 才注册)
-    await setLlmSettings(user.id, newShapeSettings('anthropic', 'sk-anthropic'))
+    // 配 gemini 但默认 registry 还没注册 gemini factory(Task H 才注册)。
+    // Task G 起 anthropic 已注册,改用 gemini 验证 registry 未命中分支。
+    await setLlmSettings(user.id, newShapeSettings('gemini', 'sk-gemini'))
 
     const res = await buildApp().fetch(
       new Request('http://x/api/llm/chat/completions', {
@@ -237,7 +238,7 @@ describe('POST /api/llm/chat/completions(canonical 路由)', () => {
     )
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: { message: string } }
-    expect(body.error.message).toMatch(/provider "anthropic" adapter 未注册/)
+    expect(body.error.message).toMatch(/provider "gemini" adapter 未注册/)
   })
 
   it('happy path:fake provider yield 2 text.delta + 1 finish → SSE 流含这 3 个 event', async () => {
