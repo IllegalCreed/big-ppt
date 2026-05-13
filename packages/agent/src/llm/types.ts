@@ -29,3 +29,15 @@ export type {
   FinishReason,
   ToolDef,
 } from '@big-ppt/shared'
+
+/**
+ * Exhaustiveness helper:translate 层在 `switch(block.type)` / `switch(event.type)`
+ * 末尾调 `assertNever(x)` —— 加新 Block / Event 类型而未覆盖分支时 TS 立刻报错
+ * (x 必须是 never,否则编译期红测)。运行时永远不应跑到这里;一旦跑到说明
+ * union 类型扩展了但 switch 没补 case,抛错而非 silent drop 让 bug 立刻浮现。
+ *
+ * 在 types.ts hoist 让 Task C/G/H 三个 translate 模块共享同一份 helper。
+ */
+export function assertNever(x: never): never {
+  throw new Error(`unexpected union member: ${JSON.stringify(x)}`)
+}
