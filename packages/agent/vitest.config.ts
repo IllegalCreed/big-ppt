@@ -2,7 +2,10 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['test/**/*.test.ts'],
+    // Phase 12 起,LLM 抽象层单测放 `src/llm/__tests__/`(plan 26),
+    // 让 mock 测试跟被测代码 sibling、便于 grep 阅读;coverage 配置
+    // 仍按 `src/**/*.ts` 收集,与既有 `test/**/*.test.ts` 共存。
+    include: ['test/**/*.test.ts', 'src/**/__tests__/**/*.test.ts'],
     environment: 'node',
     // threads pool 确保 vi.mock 能可靠拦截 ESM 动态 import()。
     // forks pool 默认开启每个 worker 独立 module cache,在并行跑多文件时
@@ -36,6 +39,7 @@ export default defineConfig({
         'src/prompts/**', // system prompt 组装，是数据构造不是逻辑
         'src/tools/local/**', // thin wrapper → slides-store；核心逻辑已在 slides-store 覆盖
         'src/logger/**', // Phase 2 产物，不在 Phase 5 补测范围
+        'src/**/__tests__/**', // Phase 12 起 LLM 抽象层 sibling 测试
         'dist/**',
         'test/**',
         'scripts/**',
