@@ -384,12 +384,21 @@ async function saveNewShape(
     return c.json({ error: `active provider "${activeProvider}" 未配置 apiKey` }, 400)
   }
 
+  // **跨 provider 切换 advanced 不丢失**(Code review fix):body.advanced 是 active provider
+  // 视角的 partial 视图(active=openai 时 UI 不发 anthropic / gemini 专有子区),
+  // 直接覆盖 oldSettings.advanced 会让另一 provider 之前调好的 promptCaching /
+  // thinkingEnabled 等配置静默丢失。改成「子区粒度 merge 旧+新」,再 prune 全空子区
+  // 防 `{anthropic: undefined}` 触发 zod typed-shape 不匹配。
+  const incomingAdvanced =
+    body.advanced && typeof body.advanced === 'object'
+      ? (body.advanced as LlmSettings['advanced'])
+      : undefined
+  const mergedAdvanced = mergeAdvanced(oldSettings?.advanced, incomingAdvanced)
+
   const candidate: LlmSettings = {
     activeProvider,
     providers: merged as LlmSettings['providers'],
-    ...(body.advanced && typeof body.advanced === 'object'
-      ? { advanced: body.advanced as LlmSettings['advanced'] }
-      : {}),
+    ...(mergedAdvanced ? { advanced: mergedAdvanced } : {}),
   }
 
   // 最终 zod 校验:advanced 子区数值范围 + provider entry baseUrl URL 合法性等
@@ -402,6 +411,41 @@ async function saveNewShape(
   const db = getDb()
   await db.update(users).set({ llmSettings: encrypted }).where(eq(users.id, user.id))
   return c.json({ ok: true })
+}
+
+/**
+ * 合并新旧 `advanced`:子区粒度逐字段覆盖,prune 全空子区。
+ *
+ * 设计:
+ * - **sub-block 粒度合并**:不直接 `{...old, ...new}` 顶层 spread —— 那样会让
+ *   `new.common` 整个子对象覆盖 `old.common`(若 UI 只发 partial common 也会丢)。
+ *   改成 common / anthropic / gemini 三个子区各自 spread 旧+新。
+ * - **prune 语义**:UI 取消勾选(如 promptCaching: false)时,代码上层把该字段
+ *   从 payload 里直接拿掉(只发 truthy 字段);因此 backend merge 默认是「相加」不「相减」,
+ *   要清字段需 UI 显式发 `{promptCaching: false}` 或 `null`。Phase 12 Task J 起 UI 不
+ *   发 false(buildPayload 跳过 falsy),所以 backend 不主动删字段,与 UI 行为一致。
+ * - **prune 全空子区**:三个子区如果合并后是 `{}`(没任何字段),整个删掉。否则
+ *   zod 看到 `{anthropic: {}}` 会通过但语义噪声;删掉更干净。
+ * - 全空 advanced(三个子区都没字段)→ 返 undefined,让 caller `if (mergedAdvanced)` 跳过 advanced。
+ *
+ * 入参 `old` / `incoming` 任一可为 undefined。
+ */
+function mergeAdvanced(
+  old: LlmSettings['advanced'],
+  incoming: LlmSettings['advanced'],
+): LlmSettings['advanced'] {
+  if (!old && !incoming) return undefined
+
+  const common = { ...(old?.common ?? {}), ...(incoming?.common ?? {}) }
+  const anthropic = { ...(old?.anthropic ?? {}), ...(incoming?.anthropic ?? {}) }
+  const gemini = { ...(old?.gemini ?? {}), ...(incoming?.gemini ?? {}) }
+
+  const result: NonNullable<LlmSettings['advanced']> = {}
+  if (Object.keys(common).length > 0) result.common = common
+  if (Object.keys(anthropic).length > 0) result.anthropic = anthropic
+  if (Object.keys(gemini).length > 0) result.gemini = gemini
+
+  return Object.keys(result).length > 0 ? result : undefined
 }
 
 async function saveLegacyShape(
