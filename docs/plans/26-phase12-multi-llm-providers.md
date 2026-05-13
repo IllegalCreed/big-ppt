@@ -1360,11 +1360,25 @@ export const deckChats = mysqlTable('deck_chats', {
 
 ---
 
-## 执行期偏离（关闭后追加）
+## 执行期偏离（实施期追加）
 
 > 实际跑下来与 plan 不一致的点，写清"原 plan 怎么说 / 实际怎么做 / 为什么改"。
 
-- _（待填）_
+### Task A 探测结果（2026-05-13）
+
+**`duckcoding.ai` 中转协议支持矩阵**（用户提供的三把测试 key 实测）：
+
+| Provider | 端点 | 协议 | 状态 | 可用模型 |
+|---|---|---|---|---|
+| OpenAI 兼容 | `/v1/chat/completions` | OpenAI native | ✅ 200 | `gpt-5.2` / `gpt-5.2-low` / `gpt-5.2-medium` / `gpt-5.2-high` |
+| Anthropic | `/v1/messages` | Anthropic native（含 thinking blocks） | ✅ 200 | `claude-sonnet-4-6` / `claude-opus-4-7` |
+| Gemini | `/v1beta/models/<m>:generateContent` | Gemini native | ✅ 200 | `gemini-2.5-flash` |
+
+**关键发现**：Anthropic 响应已带 `{ type: 'thinking', thinking: '...' }` block，证明中转**完整透传 Anthropic 原生协议**（含 extended thinking）。所以 smoke test 可以直接用中转 key 跑 native SDK 路径，等价产线，**plan 「中转不支持 native 则需准备直连 key」的次理想分支用不上**。
+
+**模型名说明**：keys 是 distributor-scoped，各自只能访问对应 group 的模型集合（CodeX专用 / Claude Code专用）。其他模型名（`gpt-5` / `claude-sonnet-4-5` 等）会 503。Phase 12 Task K smoke test 默认用上述可用模型名，DB 里 `users.llm_settings.providers.<p>.model` 字段允许用户覆盖。
+
+**probe 不入 commit log**：probe 跑由 controller 主机用 inline env 执行（key 不落 disk），结果只追加到本 plan。生产配置由用户在 Settings UI 自填，不依赖 probe。
 
 ---
 
