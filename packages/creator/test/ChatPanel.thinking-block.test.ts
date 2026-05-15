@@ -5,7 +5,7 @@
  * - UsageStatsHint：
  *   - cached > 0 时渲染缓存命中片段
  *   - cost.total > 0 时渲染 ¥ 成本（按 USD_TO_RMB=7.2 换算）
- *   - cacheRead > 0 时附加「节省 ¥X」
+ *   - cacheRead > 0 时附加「缓存命中 ¥X」（已付价，不是节省额——code review fix）
  *   - usage=null / 全 0 时整条 hint 不渲染（visible computed 控制）
  */
 import { describe, expect, it } from 'vitest'
@@ -68,10 +68,13 @@ describe('UsageStatsHint', () => {
     })
     // 0.001 USD × 7.2 = 0.0072 RMB；4 位小数显示
     expect(wrapper.text()).toContain('本轮 ¥0.0072')
+    // 不应误导写「节省」（pi-ai cacheRead 是已付价不是节省）
     expect(wrapper.text()).not.toContain('节省')
+    // 没 cacheRead 字段时也不显示缓存命中价
+    expect(wrapper.text()).not.toContain('缓存命中 ¥')
   })
 
-  it('cacheRead > 0 时附加节省片段', () => {
+  it('cacheRead > 0 时附加「缓存命中 ¥X」（已付价，不是节省额）', () => {
     const wrapper = mount(UsageStatsHint, {
       props: {
         usage: {
@@ -89,7 +92,10 @@ describe('UsageStatsHint', () => {
     })
     expect(wrapper.text()).toContain('缓存命中 512 tokens')
     expect(wrapper.text()).toContain('本轮 ¥0.0144') // 0.002 × 7.2
-    expect(wrapper.text()).toContain('节省 ¥0.0007') // 0.0001 × 7.2 = 0.00072 → toFixed(4) = '0.0007'
+    // pi-ai cacheRead 是缓存读取**已付**的钱（typical normal input rate 的 10%~25%）；
+    // label「缓存命中 ¥X」而不是误导的「节省 ¥X」（code review fix）
+    expect(wrapper.text()).toContain('缓存命中 ¥0.0007') // 0.0001 × 7.2 = 0.00072 → toFixed(4) = '0.0007'
+    expect(wrapper.text()).not.toContain('节省')
   })
 
   it('usage=null 时整条 hint 不渲染', () => {

@@ -15,8 +15,13 @@
  *
  * 渲染规则（visible）：
  * - cached > 0 → 渲染缓存命中片段
- * - cost.total > 0 → 渲染 ¥ 成本片段（节省额仅当 cacheRead > 0 时附加）
+ * - cost.total > 0 → 渲染 ¥ 成本片段（缓存命中价仅当 cacheRead > 0 时附加）
  * - 两者都为 0/空 → 整体不渲染
+ *
+ * **重要：「缓存命中 ¥X」不是节省额**：pi-ai 的 `cost.cacheRead` 是缓存读取
+ * **已付**的钱（typical 是 normal input rate 的 ~10%），不是「节省了多少」。
+ * 早期把它显示为「节省 ¥X」是误导（code review 指出）；改成「缓存命中 ¥X」
+ * 让用户知道这是「用缓存的成本」，再对比 cost.input 自行体会差价。
  */
 import { computed } from 'vue'
 import type { TokenUsage } from '@big-ppt/shared'
@@ -37,15 +42,23 @@ const totalRmb = computed(() => {
 })
 
 /**
- * 节省额 = cost.cacheRead × USD_TO_RMB。
- * pi-ai 把 cacheRead 算成单独一项成本（缓存读取价，通常远低于 input price）；
- * 直接把它显示为「节省 ¥X」最直观——用户看到非零节省即知本轮吃到 cache。
- * cacheRead 不存在 / =0 时不显示节省片段。
+ * 缓存读取的实际成本（不是节省额）。
+ *
+ * 重要：pi-ai 的 `cost.cacheRead` 是**缓存读取已付**的钱（typical 是 normal
+ * input rate 的 10%~25%），不是「节省了多少」。早期写成「节省 ¥X」误导用户
+ * （code review fix）。诚实做法是直接 label「缓存命中 ¥X」—— 让用户知道这
+ * 是「用缓存的成本」，可对比 `cost.input` 体会差价。
+ *
+ * 真节省 ≈ cacheRead_tokens × (normal_rate − cache_read_rate)，但不同 provider
+ * cache rate 差异大（OpenAI 25% / Anthropic 10% / Gemini 10%...），单一估算
+ * 反而误导。等 pi-ai 上游补 `savings` 字段后再扩展；现在保持「显示已付价」最诚实。
  */
-const savingsRmb = computed(() => {
+const cacheReadCostRmb = computed(() => {
   const cr = cost.value?.cacheRead
   return typeof cr === 'number' && cr > 0 ? cr * USD_TO_RMB : 0
 })
+
+const cacheHit = computed(() => cacheReadCostRmb.value > 0)
 
 const visible = computed(() => cachedTokens.value > 0 || totalRmb.value > 0)
 
@@ -67,8 +80,8 @@ function formatRmb(rmb: number): string {
     </span>
     <span v-if="totalRmb > 0" class="part part--cost">
       本轮 ¥{{ formatRmb(totalRmb) }}
-      <span v-if="savingsRmb > 0" class="savings">
-        (节省 ¥{{ formatRmb(savingsRmb) }})
+      <span v-if="cacheHit" class="cache-cost">
+        (缓存命中 ¥{{ formatRmb(cacheReadCostRmb) }})
       </span>
     </span>
   </div>
@@ -96,8 +109,10 @@ function formatRmb(rmb: number): string {
   color: var(--color-fg-secondary, #6a6a6a);
 }
 
-.savings {
-  color: var(--color-success, var(--ld-color-success, #4a9d4a));
+.cache-cost {
+  /* 不再用 success 绿色——「缓存命中」是中性事实，不是「节省 / 收益」语义；
+     保持次级文字色让它视觉上像辅助说明（subtle hint）而非高亮成就。 */
+  color: var(--color-fg-tertiary, var(--ld-color-text-subtle, #888));
   margin-left: 2px;
 }
 </style>
