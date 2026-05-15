@@ -48,6 +48,21 @@ async function click(el: HTMLElement): Promise<void> {
   await flushPromises()
 }
 
+/**
+ * 渐进披露 UX:未配置 provider 默认只渲染单行(name + family badge + 「配置」按钮),
+ * 点「配置」按钮才内嵌展开紧凑 form(apikey / model / baseUrl)。测试要给未配置
+ * provider 填字段前必须先点这一下。
+ */
+async function expandUnconfigured(providerId: string): Promise<void> {
+  const btn = $(`[data-test="configure-${providerId}"]`)
+  if (!btn) {
+    throw new Error(
+      `expandUnconfigured(${providerId}): 找不到「配置」按钮(可能 provider 已是 active 或已配置)`,
+    )
+  }
+  await click(btn)
+}
+
 function defaultHandlers(initialState: 'empty' | 'configured-zhipu' | 'multi' = 'empty') {
   let getResponse: unknown = {
     activeProvider: null,
@@ -173,7 +188,9 @@ describe('SettingsModal save (PUT new-shape payload)', () => {
     })
     await flushPromises()
 
-    // 加 openai key + 改 model
+    // openai 此时是「未配置」(initialState=configured-zhipu 只配了 zhipu),
+    // 先点「配置」展开内嵌 form 才能填字段
+    await expandUnconfigured('openai')
     await setInput($('[data-test="apikey-openai"]')!, 'sk-openai-new')
     await setInput($('[data-test="model-openai"]')!, 'gpt-5.5')
     await click($('[data-test="save-button"]')!)
@@ -203,7 +220,8 @@ describe('SettingsModal save (PUT new-shape payload)', () => {
     })
     await flushPromises()
 
-    // 配 anthropic key + 切到 active
+    // empty 起始态下 anthropic 在未配置区:先点「配置」展开 + 填 key + 设为活跃
+    await expandUnconfigured('anthropic')
     await setInput($('[data-test="apikey-anthropic"]')!, 'sk-ant-xxx')
     await setSelect($('.active-provider-select')!, 'anthropic')
 
@@ -241,6 +259,8 @@ describe('SettingsModal save (PUT new-shape payload)', () => {
     })
     await flushPromises()
 
+    // empty 起始态下 gemini 在未配置区:先展开 inline form
+    await expandUnconfigured('gemini')
     await setInput($('[data-test="apikey-gemini"]')!, 'gem-1')
     await setSelect($('.active-provider-select')!, 'gemini')
 

@@ -29,6 +29,26 @@ async function setInput(el: HTMLElement, value: string): Promise<void> {
   await flushPromises()
 }
 
+async function click(el: HTMLElement): Promise<void> {
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await flushPromises()
+}
+
+/**
+ * 渐进披露 UX:未配置 provider 默认只渲染单行,model input 要点「配置」展开内嵌
+ * form 后才存在;model dropdown 测试针对 openai / mistral 等非 active provider,
+ * empty 起始态(active=zhipu)下必须先展开。
+ */
+async function expandUnconfigured(providerId: string): Promise<void> {
+  const btn = document.body.querySelector(
+    `[data-test="configure-${providerId}"]`,
+  ) as HTMLElement | null
+  if (!btn) {
+    throw new Error(`expandUnconfigured(${providerId}): 找不到「配置」按钮`)
+  }
+  await click(btn)
+}
+
 function defaultGetHandlers() {
   return [
     http.get('/api/auth/llm-settings', () =>
@@ -81,6 +101,8 @@ describe('SettingsModal model dropdown (Phase 12.5 Task D)', () => {
     const wrapper = mount(SettingsModal, { props: { open: true }, attachTo: document.body })
     await flushPromises()
 
+    // empty 起始态:openai 在未配置区,先展开内嵌 form 才能 query model input
+    await expandUnconfigured('openai')
     const input = $('[data-test="model-openai"]') as HTMLInputElement
     expect(input).not.toBeNull()
     // 触发 focus → loadModelsIfNeeded('openai')
@@ -107,6 +129,7 @@ describe('SettingsModal model dropdown (Phase 12.5 Task D)', () => {
     const wrapper = mount(SettingsModal, { props: { open: true }, attachTo: document.body })
     await flushPromises()
 
+    await expandUnconfigured('openai')
     const input = $('[data-test="model-openai"]') as HTMLInputElement
     input.dispatchEvent(new Event('focus', { bubbles: true }))
     await flushPromises()
@@ -125,6 +148,7 @@ describe('SettingsModal model dropdown (Phase 12.5 Task D)', () => {
     const wrapper = mount(SettingsModal, { props: { open: true }, attachTo: document.body })
     await flushPromises()
 
+    await expandUnconfigured('mistral')
     const input = $('[data-test="model-mistral"]') as HTMLInputElement
     input.dispatchEvent(new Event('focus', { bubbles: true }))
     await flushPromises()
@@ -153,6 +177,7 @@ describe('SettingsModal model dropdown (Phase 12.5 Task D)', () => {
     const wrapper = mount(SettingsModal, { props: { open: true }, attachTo: document.body })
     await flushPromises()
 
+    await expandUnconfigured('openai')
     const input = $('[data-test="model-openai"]') as HTMLInputElement
     input.dispatchEvent(new Event('focus', { bubbles: true }))
     await flushPromises()

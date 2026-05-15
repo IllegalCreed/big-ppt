@@ -26,7 +26,7 @@ import type {
   ProviderId,
 } from '@big-ppt/shared'
 import { PROVIDER_CATALOG, getProviderEntry } from '@big-ppt/shared'
-import { Check, ChevronDown, Eye, EyeOff, X } from 'lucide-vue-next'
+import { Check, ChevronDown, ChevronRight, Eye, EyeOff, X } from 'lucide-vue-next'
 import { useMCP } from '../composables/useMCP'
 import { useAuth } from '../composables/useAuth'
 import { invalidateLlmSettingsCache } from '../composables/useAIChat'
@@ -166,6 +166,37 @@ const configuredProviderIds = computed<ProviderId[]>(() => {
 /** 当前 active provider 的元信息(从 catalog 查)。 */
 const activeMeta = computed(() => getProviderEntry(activeProvider.value))
 
+/**
+ * 渐进披露三层分组：active / 其他已配置 / 未配置。
+ *
+ * 此前 UI 平铺 12 张完整卡片(每张 API Key+Model+Base URL+advanced),用户反馈
+ * "enterprise admin panel" 感太重——实际只用 1-2 个 provider。改成:
+ *
+ * 1. **活跃 provider 完整卡片**(顶部置顶,永展开,含 advanced 子区)
+ * 2. **其他已配置**(默认展开 details,紧凑卡片去掉 advanced,「设为活跃」按钮在右下)
+ * 3. **未配置**(默认折叠 details,列表行 + 「配置」按钮,点击展开紧凑 form)
+ *
+ * 已配置 = `hasApiKey`(后端存了)或 `apiKey.trim()`(用户刚填还没保存)。
+ */
+const otherConfiguredProviders = computed(() =>
+  PROVIDER_CATALOG.filter(
+    (m) => m.id !== activeProvider.value && configuredProviderIds.value.includes(m.id),
+  ),
+)
+
+const unconfiguredProviders = computed(() =>
+  PROVIDER_CATALOG.filter(
+    (m) => m.id !== activeProvider.value && !configuredProviderIds.value.includes(m.id),
+  ),
+)
+
+/** 未配置区:点击「配置」按钮内嵌展开紧凑 form 的 provider id。 */
+const expandedUnconfigured = ref<ProviderId | null>(null)
+
+function toggleUnconfigured(id: ProviderId): void {
+  expandedUnconfigured.value = expandedUnconfigured.value === id ? null : id
+}
+
 /** 给 MCPCatalogItem 用的兼容 LLMSettings shape:active provider 的配置摊平。 */
 const activeProviderLegacyShape = computed<LLMSettings>(() => {
   const entry = providerForms.value[activeProvider.value]
@@ -267,6 +298,11 @@ async function loadImageSettings() {
 
 function selectActiveProvider(pid: ProviderId) {
   activeProvider.value = pid
+  // 切到的 provider 可能此前被展开在"未配置"区(刚 inline 填完 key);切完自动收起,
+  // 避免下一次打开未配置 details 时残留旧 expanded 状态。
+  if (expandedUnconfigured.value === pid) {
+    expandedUnconfigured.value = null
+  }
 }
 
 function toggleAdvanced() {
@@ -499,118 +535,322 @@ onMounted(() => {
             </select>
           </section>
 
+          <!--
+            Provider 配置三层渐进披露(取代此前的 12 卡片平铺):
+            1) 活跃 provider 完整卡片(置顶,永展开)
+            2) 其他已配置(default 展开 details,紧凑卡)
+            3) 未配置(default 折叠 details,列表行 + 「配置」展开紧凑 form)
+
+            一张卡片三种渲染分支(complete / compact / unconfigured-row),共享同
+            一个 data-provider-id="id" 锚点 + 同一份 apikey-/model-/baseurl- data-
+            test 命名,保证测试 / 选择器在三层间任找一份都能 query 到该 provider。
+
+            没拆 ProviderCard 子组件——遵循 Phase 12 Task J 的"保持单文件"决策
+            (per-template scoped style + 内嵌 v-if 分支足够,避免 component file
+            爆炸)。
+          -->
           <section class="form-section">
             <header class="section-header">
-              <span class="section-title">Provider 配置</span>
-              <span class="section-hint">每家独立配 Key / Model / 接口地址;留空 API Key 表示不修改</span>
+              <span class="section-title">活跃 Provider 配置</span>
+              <span class="section-hint">主 LLM 走哪家;留空 API Key 表示保留旧值</span>
             </header>
-            <div class="provider-list">
-              <article
-                v-for="meta in PROVIDER_CATALOG"
-                :key="meta.id"
-                class="provider-config-card"
-                :class="{ active: activeProvider === meta.id }"
-                :data-provider-id="meta.id"
-              >
-                <header class="provider-config-head">
-                  <span class="provider-config-name">{{ meta.name }}</span>
-                  <span class="provider-family-badge">{{ meta.family }}</span>
-                  <span
-                    v-if="providerForms[meta.id].hasApiKey || providerForms[meta.id].apiKey.trim()"
-                    class="provider-config-state state-ok"
-                  >
-                    <Check :size="12" :stroke-width="2.4" />已配置
-                  </span>
-                  <span v-else class="provider-config-state state-empty">未配置</span>
-                  <button
-                    v-if="activeProvider !== meta.id"
-                    type="button"
-                    class="provider-config-activate"
-                    :disabled="!providerForms[meta.id].hasApiKey && !providerForms[meta.id].apiKey.trim()"
-                    @click="selectActiveProvider(meta.id)"
-                  >
-                    设为活跃
-                  </button>
-                </header>
-                <div class="provider-config-fields">
-                  <label class="field-row">
-                    <span class="field-label">API Key</span>
-                    <div class="input-group">
-                      <input
-                        v-model="providerForms[meta.id].apiKey"
-                        :type="providerForms[meta.id].showApiKey ? 'text' : 'password'"
-                        :placeholder="
-                          providerForms[meta.id].hasApiKey
-                            ? '留空表示不修改'
-                            : meta.family === 'anthropic'
-                              ? 'sk-ant-...'
-                              : 'sk-...'
-                        "
-                        autocomplete="off"
-                        class="input-group__input"
-                        :data-test="`apikey-${meta.id}`"
-                      />
-                      <button
-                        type="button"
-                        class="input-group__action"
-                        :title="providerForms[meta.id].showApiKey ? '隐藏' : '显示'"
-                        :aria-label="providerForms[meta.id].showApiKey ? '隐藏' : '显示'"
-                        @click="providerForms[meta.id].showApiKey = !providerForms[meta.id].showApiKey"
-                      >
-                        <EyeOff v-if="providerForms[meta.id].showApiKey" :size="14" :stroke-width="1.8" />
-                        <Eye v-else :size="14" :stroke-width="1.8" />
-                      </button>
-                    </div>
-                  </label>
-                  <label class="field-row">
-                    <span class="field-label">Model</span>
-                    <!--
-                      Phase 12.5 Task D：HTML5 datalist combobox。
-                      - input 上 `list="model-options-<id>"` 关联同 ID 的 datalist
-                      - focus 时懒加载 fetchModels(meta.id) 填充候选
-                      - 用户仍可自由输入 dropdown 外的 model id（中转场景必备）
-                    -->
+            <article
+              v-if="activeMeta"
+              class="provider-config-card active"
+              :data-provider-id="activeProvider"
+            >
+              <header class="provider-config-head">
+                <span class="provider-config-name">{{ activeMeta.name }}</span>
+                <span class="provider-family-badge">{{ activeMeta.family }}</span>
+                <span
+                  v-if="providerForms[activeProvider].hasApiKey || providerForms[activeProvider].apiKey.trim()"
+                  class="provider-config-state state-ok"
+                >
+                  <Check :size="12" :stroke-width="2.4" />已配置
+                </span>
+                <span v-else class="provider-config-state state-empty">未配置</span>
+              </header>
+              <div class="provider-config-fields">
+                <label class="field-row">
+                  <span class="field-label">API Key</span>
+                  <div class="input-group">
                     <input
-                      v-model="providerForms[meta.id].model"
-                      type="text"
-                      :placeholder="`默认:${meta.defaultModel}`"
-                      autocomplete="off"
-                      class="input-bare"
-                      :list="`model-options-${meta.id}`"
-                      :data-test="`model-${meta.id}`"
-                      @focus="loadModelsIfNeeded(meta.id)"
-                    />
-                    <datalist :id="`model-options-${meta.id}`">
-                      <option
-                        v-for="opt in modelOptions[meta.id] ?? []"
-                        :key="opt.id"
-                        :value="opt.id"
-                      >
-                        {{ opt.name }}
-                      </option>
-                    </datalist>
-                  </label>
-                  <label class="field-row">
-                    <span class="field-label">
-                      Base URL
-                      <span v-if="meta.family !== 'openai-compatible'" class="field-label-hint">（可选）</span>
-                    </span>
-                    <input
-                      v-model="providerForms[meta.id].baseUrl"
-                      type="text"
+                      v-model="providerForms[activeProvider].apiKey"
+                      :type="providerForms[activeProvider].showApiKey ? 'text' : 'password'"
                       :placeholder="
-                        'defaultBaseUrl' in meta
-                          ? `默认:${(meta as { defaultBaseUrl: string }).defaultBaseUrl}`
-                          : '中转 / 自部署的 base URL'
+                        providerForms[activeProvider].hasApiKey
+                          ? '留空表示不修改'
+                          : activeMeta.family === 'anthropic'
+                            ? 'sk-ant-...'
+                            : 'sk-...'
                       "
                       autocomplete="off"
-                      class="input-bare"
-                      :data-test="`baseurl-${meta.id}`"
+                      class="input-group__input"
+                      :data-test="`apikey-${activeProvider}`"
                     />
-                  </label>
+                    <button
+                      type="button"
+                      class="input-group__action"
+                      :title="providerForms[activeProvider].showApiKey ? '隐藏' : '显示'"
+                      :aria-label="providerForms[activeProvider].showApiKey ? '隐藏' : '显示'"
+                      @click="providerForms[activeProvider].showApiKey = !providerForms[activeProvider].showApiKey"
+                    >
+                      <EyeOff v-if="providerForms[activeProvider].showApiKey" :size="14" :stroke-width="1.8" />
+                      <Eye v-else :size="14" :stroke-width="1.8" />
+                    </button>
+                  </div>
+                </label>
+                <label class="field-row">
+                  <span class="field-label">Model</span>
+                  <input
+                    v-model="providerForms[activeProvider].model"
+                    type="text"
+                    :placeholder="`默认:${activeMeta.defaultModel}`"
+                    autocomplete="off"
+                    class="input-bare"
+                    :list="`model-options-${activeProvider}`"
+                    :data-test="`model-${activeProvider}`"
+                    @focus="loadModelsIfNeeded(activeProvider)"
+                  />
+                  <datalist :id="`model-options-${activeProvider}`">
+                    <option
+                      v-for="opt in modelOptions[activeProvider] ?? []"
+                      :key="opt.id"
+                      :value="opt.id"
+                    >
+                      {{ opt.name }}
+                    </option>
+                  </datalist>
+                </label>
+                <label class="field-row">
+                  <span class="field-label">
+                    Base URL
+                    <span v-if="activeMeta.family !== 'openai-compatible'" class="field-label-hint">（可选）</span>
+                  </span>
+                  <input
+                    v-model="providerForms[activeProvider].baseUrl"
+                    type="text"
+                    :placeholder="
+                      'defaultBaseUrl' in activeMeta
+                        ? `默认:${(activeMeta as { defaultBaseUrl: string }).defaultBaseUrl}`
+                        : '中转 / 自部署的 base URL'
+                    "
+                    autocomplete="off"
+                    class="input-bare"
+                    :data-test="`baseurl-${activeProvider}`"
+                  />
+                </label>
+              </div>
+            </article>
+          </section>
+
+          <!-- 其他已配置:default 展开(已配说明用户关心) -->
+          <section v-if="otherConfiguredProviders.length > 0" class="form-section">
+            <details class="provider-group" open data-test="other-configured-group">
+              <summary class="provider-group-summary">
+                <ChevronRight :size="14" :stroke-width="1.8" class="provider-group-chevron" />
+                <span class="section-title">其他已配置</span>
+                <span class="provider-group-count">{{ otherConfiguredProviders.length }}</span>
+              </summary>
+              <div class="provider-list">
+                <article
+                  v-for="meta in otherConfiguredProviders"
+                  :key="meta.id"
+                  class="provider-config-card compact"
+                  :data-provider-id="meta.id"
+                >
+                  <header class="provider-config-head">
+                    <span class="provider-config-name">{{ meta.name }}</span>
+                    <span class="provider-family-badge">{{ meta.family }}</span>
+                    <span class="provider-config-state state-ok">
+                      <Check :size="12" :stroke-width="2.4" />已配置
+                    </span>
+                  </header>
+                  <div class="provider-config-fields">
+                    <label class="field-row">
+                      <span class="field-label">API Key</span>
+                      <div class="input-group">
+                        <input
+                          v-model="providerForms[meta.id].apiKey"
+                          :type="providerForms[meta.id].showApiKey ? 'text' : 'password'"
+                          :placeholder="
+                            providerForms[meta.id].hasApiKey
+                              ? '留空表示不修改'
+                              : meta.family === 'anthropic'
+                                ? 'sk-ant-...'
+                                : 'sk-...'
+                          "
+                          autocomplete="off"
+                          class="input-group__input"
+                          :data-test="`apikey-${meta.id}`"
+                        />
+                        <button
+                          type="button"
+                          class="input-group__action"
+                          :title="providerForms[meta.id].showApiKey ? '隐藏' : '显示'"
+                          :aria-label="providerForms[meta.id].showApiKey ? '隐藏' : '显示'"
+                          @click="providerForms[meta.id].showApiKey = !providerForms[meta.id].showApiKey"
+                        >
+                          <EyeOff v-if="providerForms[meta.id].showApiKey" :size="14" :stroke-width="1.8" />
+                          <Eye v-else :size="14" :stroke-width="1.8" />
+                        </button>
+                      </div>
+                    </label>
+                    <label class="field-row">
+                      <span class="field-label">Model</span>
+                      <input
+                        v-model="providerForms[meta.id].model"
+                        type="text"
+                        :placeholder="`默认:${meta.defaultModel}`"
+                        autocomplete="off"
+                        class="input-bare"
+                        :list="`model-options-${meta.id}`"
+                        :data-test="`model-${meta.id}`"
+                        @focus="loadModelsIfNeeded(meta.id)"
+                      />
+                      <datalist :id="`model-options-${meta.id}`">
+                        <option
+                          v-for="opt in modelOptions[meta.id] ?? []"
+                          :key="opt.id"
+                          :value="opt.id"
+                        >
+                          {{ opt.name }}
+                        </option>
+                      </datalist>
+                    </label>
+                    <label class="field-row">
+                      <span class="field-label">
+                        Base URL
+                        <span v-if="meta.family !== 'openai-compatible'" class="field-label-hint">（可选）</span>
+                      </span>
+                      <input
+                        v-model="providerForms[meta.id].baseUrl"
+                        type="text"
+                        :placeholder="
+                          'defaultBaseUrl' in meta
+                            ? `默认:${(meta as { defaultBaseUrl: string }).defaultBaseUrl}`
+                            : '中转 / 自部署的 base URL'
+                        "
+                        autocomplete="off"
+                        class="input-bare"
+                        :data-test="`baseurl-${meta.id}`"
+                      />
+                    </label>
+                  </div>
+                  <footer class="provider-config-footer">
+                    <button
+                      type="button"
+                      class="provider-config-activate"
+                      :data-test="`set-active-${meta.id}`"
+                      @click="selectActiveProvider(meta.id)"
+                    >
+                      设为活跃
+                    </button>
+                  </footer>
+                </article>
+              </div>
+            </details>
+          </section>
+
+          <!-- 未配置:default 折叠(默认看到的卡片数 12 → 1) -->
+          <section v-if="unconfiguredProviders.length > 0" class="form-section">
+            <details class="provider-group" data-test="unconfigured-group">
+              <summary class="provider-group-summary">
+                <ChevronRight :size="14" :stroke-width="1.8" class="provider-group-chevron" />
+                <span class="section-title">未配置</span>
+                <span class="provider-group-count">{{ unconfiguredProviders.length }}</span>
+              </summary>
+              <div class="provider-unconfigured-list">
+                <div
+                  v-for="meta in unconfiguredProviders"
+                  :key="meta.id"
+                  class="provider-unconfigured-item"
+                  :data-provider-id="meta.id"
+                >
+                  <div class="provider-unconfigured-row">
+                    <span class="provider-config-name">{{ meta.name }}</span>
+                    <span class="provider-family-badge">{{ meta.family }}</span>
+                    <span class="provider-config-state state-empty">未配置</span>
+                    <button
+                      type="button"
+                      class="provider-config-activate"
+                      :data-test="`configure-${meta.id}`"
+                      @click="toggleUnconfigured(meta.id)"
+                    >
+                      {{ expandedUnconfigured === meta.id ? '收起' : '配置' }}
+                    </button>
+                  </div>
+                  <div
+                    v-if="expandedUnconfigured === meta.id"
+                    class="provider-config-fields provider-unconfigured-fields"
+                  >
+                    <label class="field-row">
+                      <span class="field-label">API Key</span>
+                      <div class="input-group">
+                        <input
+                          v-model="providerForms[meta.id].apiKey"
+                          :type="providerForms[meta.id].showApiKey ? 'text' : 'password'"
+                          :placeholder="meta.family === 'anthropic' ? 'sk-ant-...' : 'sk-...'"
+                          autocomplete="off"
+                          class="input-group__input"
+                          :data-test="`apikey-${meta.id}`"
+                        />
+                        <button
+                          type="button"
+                          class="input-group__action"
+                          :title="providerForms[meta.id].showApiKey ? '隐藏' : '显示'"
+                          :aria-label="providerForms[meta.id].showApiKey ? '隐藏' : '显示'"
+                          @click="providerForms[meta.id].showApiKey = !providerForms[meta.id].showApiKey"
+                        >
+                          <EyeOff v-if="providerForms[meta.id].showApiKey" :size="14" :stroke-width="1.8" />
+                          <Eye v-else :size="14" :stroke-width="1.8" />
+                        </button>
+                      </div>
+                    </label>
+                    <label class="field-row">
+                      <span class="field-label">Model</span>
+                      <input
+                        v-model="providerForms[meta.id].model"
+                        type="text"
+                        :placeholder="`默认:${meta.defaultModel}`"
+                        autocomplete="off"
+                        class="input-bare"
+                        :list="`model-options-${meta.id}`"
+                        :data-test="`model-${meta.id}`"
+                        @focus="loadModelsIfNeeded(meta.id)"
+                      />
+                      <datalist :id="`model-options-${meta.id}`">
+                        <option
+                          v-for="opt in modelOptions[meta.id] ?? []"
+                          :key="opt.id"
+                          :value="opt.id"
+                        >
+                          {{ opt.name }}
+                        </option>
+                      </datalist>
+                    </label>
+                    <label class="field-row">
+                      <span class="field-label">
+                        Base URL
+                        <span v-if="meta.family !== 'openai-compatible'" class="field-label-hint">（可选）</span>
+                      </span>
+                      <input
+                        v-model="providerForms[meta.id].baseUrl"
+                        type="text"
+                        :placeholder="
+                          'defaultBaseUrl' in meta
+                            ? `默认:${(meta as { defaultBaseUrl: string }).defaultBaseUrl}`
+                            : '中转 / 自部署的 base URL'
+                        "
+                        autocomplete="off"
+                        class="input-bare"
+                        :data-test="`baseurl-${meta.id}`"
+                      />
+                    </label>
+                  </div>
                 </div>
-              </article>
-            </div>
+              </div>
+            </details>
           </section>
 
           <section class="form-section">
@@ -1156,6 +1396,88 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.provider-config-card.compact {
+  background: var(--color-bg-surface);
+  padding: var(--space-3);
+}
+
+.provider-config-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-3);
+}
+
+/* ---- Provider Group (details / summary 折叠) ---- */
+.provider-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.provider-group-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  padding: var(--space-1) 0;
+  color: var(--color-fg-secondary);
+}
+
+.provider-group-summary::-webkit-details-marker {
+  display: none;
+}
+
+.provider-group-chevron {
+  transition: transform var(--dur-fast) var(--ease-out);
+  color: var(--color-fg-tertiary);
+}
+
+.provider-group[open] .provider-group-chevron {
+  transform: rotate(90deg);
+}
+
+.provider-group-count {
+  font-size: 11px;
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-subtle);
+  color: var(--color-fg-tertiary);
+}
+
+/* ---- Unconfigured list (单行 + on-demand 展开内嵌 form) ---- */
+.provider-unconfigured-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.provider-unconfigured-item {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  padding: var(--space-2) var(--space-3);
+}
+
+.provider-unconfigured-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.provider-unconfigured-row .provider-config-state {
+  margin-left: auto;
+}
+
+.provider-unconfigured-fields {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--color-border-subtle);
 }
 
 .field-row {

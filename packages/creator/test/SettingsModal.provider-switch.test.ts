@@ -72,21 +72,39 @@ describe('SettingsModal provider switch (active provider advanced sub-block)', (
     document.body.innerHTML = ''
   })
 
-  it('打开 modal 后默认显示 LLM tab,12 个 provider 卡片全渲染（Phase 12.5 起）', async () => {
+  it('打开 modal 后默认显示 LLM tab,渐进披露三层：1 个活跃卡片 + 其他已配置折叠组 + 未配置折叠组', async () => {
+    // defaultHandlers: activeProvider=zhipu, configured={zhipu,anthropic,gemini,openai}
+    // 期望:
+    //   - 1 张活跃完整卡片(zhipu, .active)
+    //   - 其他已配置组(展开): 3 张紧凑卡片(openai/anthropic/gemini)
+    //   - 未配置组(折叠): 8 个列表项(deepseek/moonshot/qwen/mistral/groq/xai/openrouter/cerebras)
     const wrapper = mount(SettingsModal, {
       props: { open: true },
       attachTo: document.body,
     })
     await flushPromises()
 
-    const cards = $all('.provider-config-card')
-    expect(cards.length).toBe(12)
-    const ids = cards.map((c) => c.getAttribute('data-provider-id'))
-    expect(ids).toEqual([
-      'openai',
-      'anthropic',
-      'gemini',
-      'zhipu',
+    // 默认活跃卡片只有 1 张
+    const activeCards = $all('.provider-config-card.active')
+    expect(activeCards.length).toBe(1)
+    expect(activeCards[0]!.getAttribute('data-provider-id')).toBe('zhipu')
+
+    // 其他已配置组默认展开,渲染 3 张紧凑卡片
+    const otherGroup = $('[data-test="other-configured-group"]') as HTMLDetailsElement | null
+    expect(otherGroup).not.toBeNull()
+    expect(otherGroup!.hasAttribute('open')).toBe(true)
+    const compactCards = $all('[data-test="other-configured-group"] .provider-config-card')
+    const compactIds = compactCards.map((c) => c.getAttribute('data-provider-id'))
+    // PROVIDER_CATALOG 顺序保留:openai/anthropic/gemini
+    expect(compactIds).toEqual(['openai', 'anthropic', 'gemini'])
+
+    // 未配置组默认折叠,但 details 内的 8 个 item 仍在 DOM 里(details 只视觉折叠)
+    const unconfiguredGroup = $('[data-test="unconfigured-group"]') as HTMLDetailsElement | null
+    expect(unconfiguredGroup).not.toBeNull()
+    expect(unconfiguredGroup!.hasAttribute('open')).toBe(false)
+    const unconfiguredItems = $all('[data-test="unconfigured-group"] .provider-unconfigured-item')
+    const unconfiguredIds = unconfiguredItems.map((i) => i.getAttribute('data-provider-id'))
+    expect(unconfiguredIds).toEqual([
       'deepseek',
       'moonshot',
       'qwen',
