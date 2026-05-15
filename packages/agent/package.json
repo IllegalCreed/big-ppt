@@ -9,6 +9,7 @@
     "start": "dotenv -e .env.production.local -- node dist/index.js",
     "type-check": "tsc --noEmit",
     "test": "dotenv -e .env.test.local -- vitest run",
+    "test:smoke": "dotenv -e .env.test.local -- vitest run --testNamePattern='smoke' src/llm/__tests__/smoke",
     "test:watch": "dotenv -e .env.test.local -- vitest",
     "test:coverage": "dotenv -e .env.test.local -- vitest run --coverage",
     "lint": "eslint src test",
