@@ -78,6 +78,45 @@ export function hasTool(name: string, userId?: number): boolean {
   return getTool(name, userId) !== undefined
 }
 
+/**
+ * Phase 12.7 Task B：返回该 user 视角下全部 `ToolDef`(全局 + per-user)。
+ *
+ * 跟 `listTools(userId)` 区别:listTools 返回 LLMTool wire shape(OpenAI 工具
+ * schema),供 /api/tools 路由透出给前端 / LLM;`listToolDefsForUser` 返回内部
+ * ToolDef(含 exec 回调),供 pi-agent-core AgentTool 桥接(`buildToolsForUser`)
+ * 直接 wrap exec。前端永远拿不到也不应感知 exec。
+ */
+export function listToolDefsForUser(userId: number): ToolDef[] {
+  const all: ToolDef[] = [...globalRegistry.values()]
+  const userMap = userRegistries.get(userId)
+  if (userMap) all.push(...userMap.values())
+  return all
+}
+
+/**
+ * Phase 12.7 Task B：按 (userId, toolName, args) 执行工具。
+ *
+ * 仅是 `getTool(name, userId).exec(args)` 的命名包装;有独立函数让
+ * `vi.spyOn(registry, 'executeToolForUser')` 在 tool-bridge 单测里可以直接
+ * stub,避免去 mock 内部 Map。`signal` 暂未传入老 `ToolDef.exec` 签名(后者
+ * 老链路不接 signal),但保留参数让未来扩 ToolDef shape 不破 API。
+ *
+ * 找不到工具直接抛错(pi-agent-core 的 `AgentTool.execute` 约定 throw on
+ * failure,loop 内部会把 throw 翻译成 isError=true 的 ToolResultMessage)。
+ */
+export async function executeToolForUser(
+  userId: number,
+  toolName: string,
+  args: Record<string, unknown>,
+  _signal?: AbortSignal,
+): Promise<string> {
+  const tool = getTool(toolName, userId)
+  if (!tool) {
+    throw new Error(`[tool-registry] tool not found: ${toolName} (user=${userId})`)
+  }
+  return tool.exec(args)
+}
+
 /** 删除一个全局工具（用于本地工具热卸载，目前未用；保留对称 API） */
 export function unregister(name: string): boolean {
   return globalRegistry.delete(name)
