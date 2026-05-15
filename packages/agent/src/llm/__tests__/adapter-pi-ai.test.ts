@@ -328,6 +328,85 @@ describe('createPiAiAdapter — usage / cost / cache.hit 透传', () => {
     expect(out[0]!.type).toBe('finish')
   })
 
+  /**
+   * Phase 12.5 Task C-fix:cost 字段透传 regression。
+   *
+   * Task C bug:translatePiEvent 的 done case 构造 canonicalUsage 时漏 spread
+   * usage.cost，导致 TokenUsage.cost 永远 undefined。本 case 验证 fix 后 cost
+   * 对象按 pi-ai 实际字段（cacheRead / cacheWrite）原样透传到 canonical finish
+   * 事件。Task D 前端 ¥ 显示 + Task E smoke test cost.total > 0 断言都依赖此。
+   */
+  it('translatePiEvent: done 时 usage.cost 透传到 finish.usage.cost(Task C-fix regression)', async () => {
+    const doneEvt = {
+      type: 'done',
+      reason: 'stop',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'hi' }],
+        api: 'openai-completions',
+        provider: 'openai',
+        model: 'gpt-4o',
+        usage: {
+          input: 100,
+          output: 50,
+          cacheRead: 30,
+          cacheWrite: 0,
+          totalTokens: 150,
+          cost: {
+            input: 0.000125,
+            output: 0.000375,
+            cacheRead: 0.0000375,
+            cacheWrite: 0,
+            total: 0.0005375,
+          },
+        },
+        stopReason: 'stop',
+        timestamp: Date.now(),
+      },
+    } as AssistantMessageEvent
+    const out: CanonicalEvent[] = []
+    for await (const e of translatePiEvent(doneEvt, new Map(), 'openai')) {
+      out.push(e)
+    }
+    // 第 2 个事件是 finish(第 1 个是 cache.hit 因 cacheRead > 0)
+    const finishEvt = out.find((e) => e.type === 'finish') as
+      | { type: 'finish'; usage: { cost?: { total: number; input: number; output: number; cacheRead?: number; cacheWrite?: number } } }
+      | undefined
+    expect(finishEvt).toBeDefined()
+    expect(finishEvt!.usage.cost).toEqual({
+      input: 0.000125,
+      output: 0.000375,
+      cacheRead: 0.0000375,
+      cacheWrite: 0,
+      total: 0.0005375,
+    })
+    expect(finishEvt!.usage.cost!.total).toBeGreaterThan(0)
+  })
+
+  it('translatePiEvent: 当 usage.cost 缺省时 finish.usage 不携带 cost 字段', async () => {
+    const doneEvt = {
+      type: 'done',
+      reason: 'stop',
+      message: {
+        role: 'assistant',
+        content: [],
+        api: 'openai-completions',
+        provider: 'openai',
+        model: 'gpt-4o',
+        // 故意省略 cost 字段 —— 模拟 pi-ai 未来版本 / 中转 provider 不返 cost
+        usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15 },
+        stopReason: 'stop',
+        timestamp: Date.now(),
+      },
+    } as unknown as AssistantMessageEvent
+    const out: CanonicalEvent[] = []
+    for await (const e of translatePiEvent(doneEvt, new Map(), 'openai')) {
+      out.push(e)
+    }
+    const finishEvt = out[0] as { usage: { cost?: unknown } }
+    expect(finishEvt.usage.cost).toBeUndefined()
+  })
+
   it('translatePiEvent: 未知 stopReason fallback 到 stop', async () => {
     const doneEvt = {
       type: 'done',

@@ -15,9 +15,11 @@
  *   (id 走 state map 记忆，pi-ai delta 事件只有 contentIndex)
  * - toolcall_end → canonical tool_call.end { id }
  * - done → 拆 2 个 event：先 cache.hit(如 usage.cacheRead > 0) 再 finish
- *   (pi-ai 把 usage.cost 作为对象 {input, output, cacheRead, cacheWrite, total}
- *    返回；canonical TokenUsage 用 cached 单字段；total cost 不进 canonical
- *    用 logServerEvent 单独记)
+ *   (pi-ai 返回 usage.cost 对象 {total, input, output, cacheRead, cacheWrite}
+ *    全部透传到 canonical TokenUsage.cost（USD 浮点数）；frontend 渲染按
+ *    USD_TO_RMB 换算 ¥ 显示。pi-ai 0.74.0 用 cacheRead/cacheWrite 字段名
+ *    （不是 cachedRead），canonical TokenUsage.cost 类型字段名已对齐。
+ *    Phase 12.5 Task C 起 cost 字段透传上线，Task D 前端消费。)
  * - error → canonical error { code, message }（pi-ai 错误是 stream 内事件，
  *   非 throw；error.errorMessage 是用户可见消息；reason='aborted'|'error'）
  *
@@ -451,6 +453,11 @@ export async function* translatePiEvent(
         input: inputTokens,
         output: usage.output ?? 0,
         ...(cacheRead > 0 ? { cached: cacheRead } : {}),
+        // Phase 12.5 Task C-fix:pi-ai 返回的 usage.cost 对象(USD 浮点)透传到
+        // canonical TokenUsage.cost。frontend(Task D)按 USD_TO_RMB 换算显示 ¥；
+        // Task E smoke test 也断言 cost.total > 0。pi-ai 0.74.0 实际字段名
+        // cacheRead / cacheWrite(不是 cachedRead/cachedWrite),canonical 类型已对齐。
+        ...(usage.cost ? { cost: usage.cost } : {}),
       }
       yield {
         type: 'finish',

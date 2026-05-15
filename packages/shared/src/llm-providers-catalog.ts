@@ -1,16 +1,30 @@
 /**
- * Phase 12 Task J:LLM provider 静态元信息目录。
+ * Phase 12 Task J:LLM provider 静态元信息目录（Phase 12.5 Task C 扩到 12 个）。
  *
- * 跨 agent + creator 复用的 7 个 provider 配置常量:每条含 id / 显示名 /
- * 默认 baseUrl(若适用)/ 默认 model / 协议族。Settings UI 用它渲染 7 张 provider
+ * 跨 agent + creator 复用的 12 个 provider 配置常量:每条含 id / 显示名 /
+ * 默认 baseUrl(若适用)/ 默认 model / 协议族。Settings UI 用它渲染 12 张 provider
  * 卡片;后端 ProviderRegistry 也可在未来需要 default model fallback 时复用同一份。
  *
  * **唯一事实来源**:模板元数据归 `packages/slidev/templates/<id>/`,provider 元
  * 数据归本文件;不允许在 agent / creator 内重写硬编表(详见 CLAUDE.md 「模板
  * 元数据归属」节同款约束)。
  *
- * `as const` 保留 literal:`PROVIDER_CATALOG[0].family` 推导成
- * `'openai-compatible'` 而非 `string`,跟 `ProviderFamily` union 对齐免强转。
+ * `as const` 保留 literal,推导出 `ProviderFamilyTag` 字面 union（5 个值含
+ * mistral / xai）。
+ *
+ * **Two-type family 设计（intentional drift）**:
+ * - `ProviderFamilyTag`(本文件)= UI badge 显示用,5 个值:openai-compatible /
+ *   anthropic / gemini / mistral / xai —— UI 上想让用户看到独立厂商品牌。
+ * - `ProviderFamily`(agent/src/llm/provider.ts)= adapter dispatch routing,
+ *   只 3 个值:openai-compatible / anthropic / gemini —— adapter 层只关心传输
+ *   协议族,mistral / xai 走 pi-ai 内部 streamXxx 但 family 字段统一标 openai-
+ *   compatible(实际 grok / mistral 走 OpenAI 兼容协议或自家 SDK,canonical 层
+ *   不区分)。
+ *
+ * 两者**有意 drift**:catalog 比 provider 多 mistral / xai 是因为 UI 上要独立
+ * 品牌展示;实际 pi-ai dispatch 全走 OpenAI-compatible / Mistral SDK / Anthropic /
+ * Google,跟 catalog.family 不一一对应。caller 想拿 adapter family 用
+ * `LLMProvider.family`,想拿 UI 显示 tag 用 `catalog.family`。
  */
 
 export const PROVIDER_CATALOG = [
@@ -63,10 +77,16 @@ export const PROVIDER_CATALOG = [
   },
   // Phase 12.5 新增 5 个 provider —— defaultModel 取自 pi-ai 0.74.0 MODELS 表
   // 实测可用 model id(见 plan 27 Task C Step 3 probe 结果)。
-  // family 标签:5 个里 mistral / xai 因 pi-ai 内部走专用 streamMistral /
-  // 自家 grok endpoint(openai-compatible 兼容但带 SDK-level 适配),catalog
-  // 标记成独立家族让 UI badge 显示更精准;其他 3 个(groq / openrouter /
-  // cerebras)走 streamOpenAICompletions 归入 openai-compatible。
+  //
+  // family 标签:
+  // - mistral 走 pi-ai 内部 streamMistral 独立 SDK(Mistral 自家协议),catalog
+  //   标 'mistral' 让 UI badge 显示独立品牌。
+  // - xai 标 'xai' **仅为 UI badge 显示精准**(实际 pi-ai dispatch 走
+  //   openai-completions,跟 groq / openrouter / cerebras 同走 OpenAI 兼容协议;
+  //   pi-ai 没有 streamXai)。这是 catalog vs ProviderFamily 有意 drift 的典型
+  //   case —— UI 想要独立品牌,adapter 层不区分。
+  // - groq / openrouter / cerebras 走 streamOpenAICompletions,归入 openai-
+  //   compatible 没有别名。
   {
     id: 'mistral',
     name: 'Mistral',
