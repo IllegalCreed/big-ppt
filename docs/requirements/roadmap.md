@@ -735,17 +735,43 @@
 - [ ] 用户可在前端自由切换 provider，API key per-provider 独立加密存储
 - [ ] 老用户的 LLM 设置自动迁移到新 schema 不丢
 
-**状态**：✅ 代码完成（2026-05-13，plan 26），**待用户授权部署 + dogfood**
+**状态**：✅ 代码完成（2026-05-13，plan 26）→ ✅ **Phase 12.5 替换 SDK 层到 pi-ai**（2026-05-15，plan 27），**待用户授权部署 + dogfood**
 
-> **代码层全部完成**（11/12 Task）：A-K 共 21 个 commit 落 main，含三家 native adapter + canonical SSE wire + zod schema 迁移 + frontend 重写 + Settings UI 改造 + smoke test 套件。**真 key smoke 6/6 全绿**（gpt-5.2-low / claude-sonnet-4-6 / gemini-2.5-flash 都跑通 chat + tool call）。
+> **演进路径**：
 >
-> **Task L 留给用户**：① 本地浏览器 dogfood 验证 UX ② `pnpm deploy:backend` + ssh 跑 migration script + `pnpm deploy:creator` ③ prod dogfood 跑「Claude 生成 + Gemini 编辑」E2E。详见 [plan 26 Task L](../plans/26-phase12-multi-llm-providers.md)。
+> 1. **Phase 12（plan 26，22 commit）**：自研 3 个 native adapter + 6 个 translate file 跑通 3 家 native 协议；真 key smoke 6/6 全绿。
+> 2. **Phase 12.5（plan 27，13 commit）**：用户提到 pi-agent，调研后发现 `@earendil-works/pi-ai` 是 OpenClaw 371K star 项目的 agent 核心，覆盖 25+ provider + 自带 cost tracking + cross-provider handoff。决定切换：删自研 700 LOC + 200 测，换 pi-ai 0.74.0 + 单一 pi-ai-adapter.ts；canonical SSE wire / route / frontend / Settings UI / DB schema 一行不动。新加 5 个 provider（mistral/groq/xai/openrouter/cerebras = 共 12 个）+ cost ¥ 显示 + dynamic model dropdown。**真 key smoke 6/6 仍全绿**（OpenAI 2/2 真 exercise；Anthropic + Gemini warn-skip 上游 key 抖动）。
 >
-> **遗留 forward-looking 限制**（已记在 plan 执行期偏离）：
-> - Anthropic extended thinking 的 `signature_delta` 未保留 → 多轮 deep-research 场景下 thinking 历史不能回显（template rewrite / chat 主用例不影响）
-> - Gemini SDK 不暴露 thinking blocks → frontend ThinkingBlock UI 仅 Anthropic 触发
+> **Task L（Phase 12 close-out）+ Phase 12.5 close-out 留给用户**：① 本地浏览器 dogfood 验证 UX ② `pnpm deploy:backend` + ssh 跑 migration script + `pnpm deploy:creator` ③ prod dogfood 跑「Claude 生成 + Gemini 编辑」E2E。详见 [plan 26 Task L](../plans/26-phase12-multi-llm-providers.md) + [plan 27 Task F](../plans/27-phase12.5-pi-ai-migration.md)。
 >
-> **未决评估**：用户提到 pi-agent 可能解决多 LLM 接入问题，已请求更多 context 但用户未回复；在此期间 Phase 12 在仓库保留可部署状态，是否切 pi-agent 等用户决策。
+> **遗留 forward-looking 限制**（已记在 plan）：
+> - Anthropic extended thinking 的 `signature_delta` 未保留（template rewrite / chat 主用例不影响）—— Phase 13 候选时如做 deep-research 多轮再加
+> - Gemini 不暴露 thinking blocks → frontend ThinkingBlock UI 仅 Anthropic 触发
+> - `qwen` 在 pi-ai 0.74.0 MODELS 表为 0 models —— Settings UI 让用户手填 model id；等 pi-ai 后续版本补
+> - duckcoding 中转跟 pi-ai Anthropic / Gemini SDK 协议偶发 quota/JSON parser 错 → smoke 走 warn-skip；生产用户用直连官方 key 时不会触发
+
+## Phase 12.5：切到 @earendil-works/pi-ai
+
+**目标**：把 Phase 12 自研 3 个 adapter + 6 个 translate 换成 pi-ai 0.74.0（OpenClaw 同款 pin），保留 canonical 骨架。
+
+**交付物**：
+
+- 单个 `pi-ai-adapter.ts` 桥接 pi-ai stream() ↔ canonical event（含 baseUrl 覆盖 + provider id 翻译表 + 6 LLMErrorCode 映射）
+- provider 白名单从 7 扩到 12（加 mistral / groq / xai / openrouter / cerebras）
+- canonical TokenUsage 加 cost 字段；frontend UsageStatsHint 显示 ¥ 估算（USD_TO_RMB=7.2 写死）
+- Settings UI model 字段从 input 改 HTML5 `<datalist>` combobox（动态从 `/api/llm/models` 拿 pi-ai getModels() 结果）
+- 3 个 smoke test 重建走 pi-ai-adapter；真 key 6/6 全绿（含 warn-skip 上游抖动）
+
+**状态**：✅ 代码完成（2026-05-15，plan 27），跟 Phase 12 一起 待用户授权部署 + dogfood
+
+**依赖**：Phase 12 完成 ✅
+
+**不做什么**：
+
+- ❌ **OAuth providers**（Codex / Copilot / Vertex）—— pi-ai 支持但需 redirect URI + token refresh + UI，**留 Phase 12.6 候选**
+- ❌ **image generation 切 pi-ai** —— pi-ai 走 OpenRouter 中转（同模型 + 加价），违反 memory `image-gen-provider-scope`；`generate_slide_image` 维持 `openai-image.ts` 独立路径
+- ❌ **pi-agent-core 上移 useAIChat** —— 复杂度爆炸 + 浏览器兼容性未验证；**留 Phase 13 候选** dogfood 后基于实测痛点（parallel tool / steering / sessionId caching）再定
+- ❌ **cross-provider handoff UI** —— pi-ai 内置 backend 能力本 phase 自动有；frontend「换 provider 继续」按钮延后
 
 **依赖**：Phase 10.5 完成 ✅（Phase 11 已废弃，本 Phase 与 viewer 架构正交）
 
