@@ -64,6 +64,17 @@ function rowToConfig(row: UserMcpServer): McpServerConfig {
   }
 }
 
+/** sentinel value(必须和 routes/mcp.ts:LLM_KEY_SENTINEL / registry.ts:LLM_KEY_SENTINEL 保持一致) */
+const LLM_KEY_SENTINEL = '$LLM_KEY'
+
+/** row 的解密 headers 是否含 `$LLM_KEY` sentinel(任意 value) */
+function headersHaveSentinel(headers: Record<string, string>): boolean {
+  for (const v of Object.values(headers)) {
+    if (typeof v === 'string' && v.includes(LLM_KEY_SENTINEL)) return true
+  }
+  return false
+}
+
 export class DrizzleRepo implements McpServerRepo {
   /** 串行化每个 user 的写入，避免并发 patch 相互覆盖（不同 user 间允许并行） */
   private writeQueues = new Map<number, Promise<void>>()
@@ -77,7 +88,48 @@ export class DrizzleRepo implements McpServerRepo {
       const seeded = await db.select().from(userMcpServers).where(eq(userMcpServers.userId, userId))
       return seeded.map(rowToConfig)
     }
+
+    // Phase 12.5 hotfix:auto-heal preset 行的 headers 缺 sentinel 的情况。
+    // 老用户 dev DB 已 seed 的 preset 行 headers 是 `{}`(改 presets.ts 默认 sentinel
+    // 之前 seed 的),自动 patch update 补默认 sentinel,避免 enable 后撞智谱 1001 auth 错。
+    // 仅作用 preset 行;用户已加的非 auth header 通过 merge 保留(不动)。
+    // best-effort:写失败 console.warn 但不阻塞 list 返回(返回 in-memory healed config)。
+    await this.autoHealPresetHeaders(userId, rows)
+
     return rows.map(rowToConfig)
+  }
+
+  private async autoHealPresetHeaders(userId: number, rows: UserMcpServer[]): Promise<void> {
+    for (const row of rows) {
+      if (!row.preset) continue
+      const preset = PRESET_MCP_SERVERS.find((p) => p.id === row.serverId)
+      if (!preset) continue
+      const presetHeaders = preset.headers ?? {}
+      if (Object.keys(presetHeaders).length === 0) continue
+      const currentHeaders = decryptHeaders(row.headers)
+      if (headersHaveSentinel(currentHeaders)) continue
+      // 不覆盖用户已设的 header key:current 优先,preset 仅补 user 没设的 key。
+      // 例如 user 在 Authorization 写了自己的 'Bearer real-xxx' → 保留;
+      // user 只设了 X-Custom 没设 Authorization → preset 补 Authorization sentinel。
+      // 注意:user 把 Authorization 显式清空(headers={})也会被 heal 补回。这是预期:
+      // preset zhipu MCP 没 auth 就 100% 报 1001 错,清空没有实际用途。
+      const merged = { ...presetHeaders, ...currentHeaders }
+      const encrypted = encryptHeaders(merged)
+      try {
+        await getDb()
+          .update(userMcpServers)
+          .set({ headers: encrypted })
+          .where(
+            and(eq(userMcpServers.userId, userId), eq(userMcpServers.serverId, row.serverId)),
+          )
+        // 同步更新 in-memory row 让本次 return 的 config 是 healed 后的
+        row.headers = encrypted
+      } catch (err) {
+        console.warn(
+          `[mcp-drizzle] auto-heal preset headers 失败 user=${userId} server=${row.serverId}: ${(err as Error).message}`,
+        )
+      }
+    }
   }
 
   async get(userId: number, serverId: string): Promise<McpServerConfig | undefined> {

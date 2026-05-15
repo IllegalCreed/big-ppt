@@ -105,7 +105,10 @@ describe('GET /api/mcp/servers', () => {
       'zhipu-zread',
     ])
     for (const s of json.servers) expect(s.status.state).toBe('disabled')
-    for (const s of json.servers) expect(s.headers).toEqual({})
+    // Phase 12.5 hotfix:preset headers 默认带 `Bearer $LLM_KEY` sentinel,GET 脱敏成 ***
+    // reuseLlmKey=true 让前端默认显示已勾选复用复选框,用户配好智谱 key 即可启用
+    for (const s of json.servers) expect(s.headers).toEqual({ Authorization: '***' })
+    for (const s of json.servers) expect(s.reuseLlmKey).toBe(true)
   })
 
   it('设置过 key 后，GET 返回 Authorization: ***', async () => {
@@ -369,7 +372,7 @@ describe('PATCH /api/mcp/servers/:id', () => {
     expect(transportSpy.lastHeaders?.Authorization).not.toContain('$LLM_KEY')
   })
 
-  it('PATCH 取消复用(发空 headers) → sentinel 被清空,GET 返回 reuseLlmKey=false', async () => {
+  it('PATCH 取消复用(填用户自己的 key) → sentinel 被清空,GET 返回 reuseLlmKey=false', async () => {
     const { encryptApiKey } = await import('../src/crypto/apikey.js')
     const { users } = await import('../src/db/index.js')
     await getDb()
@@ -385,19 +388,22 @@ describe('PATCH /api/mcp/servers/:id', () => {
         body: JSON.stringify({ headers: { Authorization: 'Bearer $LLM_KEY' } }),
       }),
     )
-    // 再取消(发空 headers,前端 buildAuthValue 返回 '')
+    // 取消复用 + 填用户自己的 key(真实 UX 流程:取消 sentinel 不会发空,会发 user 的 key)。
+    // Phase 12.5 hotfix 后,空 headers 会被 auto-heal 补回 sentinel(preset 没 auth 100% 失败,
+    // 空状态没意义);所以"取消复用"必须配真实 key 才生效。
     await buildApp().request(
       '/api/mcp/servers/zhipu-web-search',
       authed(cookieA, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ headers: {} }),
+        body: JSON.stringify({ headers: { Authorization: 'Bearer user-own-key' } }),
       }),
     )
     const list = await (await buildApp().request('/api/mcp/servers', authed(cookieA))).json()
     const found = list.servers.find((s: any) => s.id === 'zhipu-web-search')
     expect(found.reuseLlmKey).toBe(false)
-    expect(found.headers.Authorization ?? '').toBe('')
+    // Authorization 已设非 sentinel 值 → 脱敏成 ***
+    expect(found.headers.Authorization).toBe('***')
   })
 
   it('PATCH headers.Authorization = "Bearer new-val" → 覆盖旧值', async () => {
@@ -506,9 +512,10 @@ describe('跨用户隔离（Phase 9-F A01 修复）', () => {
     const list = await (await buildApp().request('/api/mcp/servers', authed(cookieB))).json()
     expect(list.servers).toHaveLength(3)
     const found = list.servers.find((s: any) => s.id === 'zhipu-web-search')
-    // B 自己的应是默认 disabled + 空 headers
+    // B 自己的应是默认 disabled + Phase 12.5 默认 sentinel(脱敏成 ***)
     expect(found.enabled).toBe(false)
-    expect(found.headers).toEqual({})
+    expect(found.headers).toEqual({ Authorization: '***' })
+    expect(found.reuseLlmKey).toBe(true)
     // 不应含 A 的 token
     expect(JSON.stringify(list)).not.toContain('A-secret')
   })

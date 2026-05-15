@@ -167,4 +167,78 @@ describe('DrizzleRepo per-user', () => {
     const repo = new DrizzleRepo()
     await expect(repo.update(userIdA, 'nope', { enabled: true })).rejects.toThrow(/not found/i)
   })
+
+  it('Phase 12.5 hotfix:list() 自动 heal preset 行缺 sentinel(老用户 dev DB 已 seed 空 headers)', async () => {
+    const repo = new DrizzleRepo()
+    // 手工写一行模拟"老 seed"：preset=true 但 headers 是空 JSON('{}')
+    const db = getDb()
+    await db.insert(userMcpServers).values({
+      userId: userIdA,
+      serverId: 'zhipu-web-search',
+      displayName: '联网搜索(智谱)',
+      description: '...',
+      url: 'https://open.bigmodel.cn/api/mcp/web_search_prime/mcp',
+      headers: '{}', // 老格式:空 headers
+      enabled: false,
+      preset: true,
+      badge: '搜索',
+    })
+    // list 应自动补 sentinel(返回明文带 $LLM_KEY)
+    const list = await repo.list(userIdA)
+    const found = list.find((c) => c.id === 'zhipu-web-search')!
+    expect(found.headers.Authorization).toBe('Bearer $LLM_KEY')
+    // DB 里实际也已被 patch 更新(下次读不再触发 heal)
+    const [row] = await db
+      .select({ headers: userMcpServers.headers })
+      .from(userMcpServers)
+      .where(
+        and(eq(userMcpServers.userId, userIdA), eq(userMcpServers.serverId, 'zhipu-web-search')),
+      )
+      .limit(1)
+    const stored = JSON.parse(row!.headers) as Record<string, string>
+    expect(stored.Authorization).toBeDefined()
+    expect(stored.Authorization!.startsWith('v1:')).toBe(true) // 加密落盘
+  })
+
+  it('Phase 12.5 hotfix:auto-heal 保留用户已加的非默认 header(merge 而非 replace)', async () => {
+    const repo = new DrizzleRepo()
+    const { encryptApiKey } = await import('../src/crypto/apikey.js')
+    const db = getDb()
+    // 模拟老用户:preset 行有自定义 X-Custom header 但 Authorization 空
+    const partialHeaders = JSON.stringify({
+      'X-Custom': encryptApiKey('user-extra-val'),
+    })
+    await db.insert(userMcpServers).values({
+      userId: userIdA,
+      serverId: 'zhipu-web-search',
+      displayName: '联网搜索(智谱)',
+      description: '...',
+      url: 'https://open.bigmodel.cn/api/mcp/web_search_prime/mcp',
+      headers: partialHeaders,
+      enabled: false,
+      preset: true,
+      badge: '搜索',
+    })
+    const list = await repo.list(userIdA)
+    const found = list.find((c) => c.id === 'zhipu-web-search')!
+    expect(found.headers.Authorization).toBe('Bearer $LLM_KEY') // 补的
+    expect(found.headers['X-Custom']).toBe('user-extra-val') // 保留的
+  })
+
+  it('Phase 12.5 hotfix:auto-heal 不动 non-preset 行', async () => {
+    const repo = new DrizzleRepo()
+    // 用户自己加的 server,headers 空 → 不该被 heal
+    await repo.create(userIdA, {
+      id: 'my-custom',
+      displayName: 'Mine',
+      description: '',
+      url: 'https://x.example/mcp',
+      headers: {},
+      enabled: false,
+      preset: false,
+    })
+    const list = await repo.list(userIdA)
+    const found = list.find((c) => c.id === 'my-custom')!
+    expect(found.headers).toEqual({})
+  })
 })

@@ -6,6 +6,14 @@ import type { McpServerConfig } from '@big-ppt/shared'
  * 首次启动时 seed 进 user_mcp_servers,enabled=false;用户在 Settings 勾选启用 +
  * 填 API key 或勾"复用 LLM Key"。
  *
+ * **headers 默认 sentinel(Phase 12.5 hotfix)**:智谱 MCP 端点(web_reader / web_search_prime
+ * / zread)要求 `Authorization: Bearer <key>` header(curl 实测无此 header 返
+ * `{"code":1001,"msg":"Header中未收到Authorization参数..."}` → MCP SDK zod 校验
+ * union 全 fail,raw error 喷到 UI)。所以 preset 默认带 `$LLM_KEY` sentinel,
+ * routes/mcp.ts:headersContainSentinel 据此推 reuseLlmKey=true,
+ * mcp-registry/registry.ts:activate() connect 前替换 sentinel 为 user 活跃 provider 的真 apiKey。
+ * 新用户首次 seed 即正确(仅需把智谱设为活跃 provider 并配 key)。
+ *
  * 已核对(2026-04-28 https://docs.bigmodel.cn/cn/coding-plan/mcp/):
  * - zhipu-web-search / zhipu-web-reader / zhipu-zread: StreamableHTTP, URL 正确
  * - zhipu-vision: 智谱**只提供 npx(stdio)**,无 HTTP endpoint。当前架构
@@ -20,7 +28,7 @@ export const PRESET_MCP_SERVERS: McpServerConfig[] = [
     displayName: '联网搜索(智谱)',
     description: '基于智谱 MCP 的联网搜索,返回网页标题 / 摘要 / URL。',
     url: 'https://open.bigmodel.cn/api/mcp/web_search_prime/mcp',
-    headers: {},
+    headers: { Authorization: 'Bearer $LLM_KEY' },
     enabled: false,
     preset: true,
     badge: '搜索',
@@ -30,7 +38,7 @@ export const PRESET_MCP_SERVERS: McpServerConfig[] = [
     displayName: '网页读取(智谱)',
     description: '抓取指定 URL 的网页正文,转为模型友好的 markdown。',
     url: 'https://open.bigmodel.cn/api/mcp/web_reader/mcp',
-    headers: {},
+    headers: { Authorization: 'Bearer $LLM_KEY' },
     enabled: false,
     preset: true,
     badge: '读网页',
@@ -40,7 +48,7 @@ export const PRESET_MCP_SERVERS: McpServerConfig[] = [
     displayName: 'GitHub 仓库读取(智谱 Zread)',
     description: '读取 GitHub 仓库结构、文件、搜索文档。',
     url: 'https://open.bigmodel.cn/api/mcp/zread/mcp',
-    headers: {},
+    headers: { Authorization: 'Bearer $LLM_KEY' },
     enabled: false,
     preset: true,
     badge: 'GitHub',

@@ -119,11 +119,58 @@ const statusText = computed(() => {
     case 'connecting':
       return '连接中…'
     case 'error':
-      return `错误 · ${props.server.status.error ?? '未知'}`
+      // 错误详情走专门的 error-pane(友好 message + 折叠 raw),状态行只标 "连接失败"
+      return '连接失败'
     case 'disabled':
     default:
       return '未启用'
   }
+})
+
+/**
+ * activate 失败时后端把 raw error message 写到 server.status.error。
+ * 这里识别 4 类常见错并显示友好 message,raw 收进折叠区。
+ * 触发场景:
+ * - 智谱 API auth 错(code 1001 / "Header中未收到Authorization" / unrecognized_keys 含 success):
+ *   智谱端点要 Authorization: Bearer <key>,preset headers 缺 sentinel 或用户没把智谱设活跃且没填 key
+ * - MCP JSON-RPC zod 校验错(path:["jsonrpc"] / Invalid input: expected "2.0"):
+ *   端点返非 JSON-RPC 响应(常见是 auth fail 后返业务 JSON 而非 JSON-RPC envelope)
+ * - 网络错(fetch failed / ECONNREFUSED / timeout):URL 错或网络不通
+ * - 其他:截断 raw 前 200 字符 + 折叠完整
+ */
+const rawError = computed(() => props.server.status.error ?? '')
+const friendlyErrorMessage = computed(() => {
+  const raw = rawError.value
+  if (!raw) return ''
+  // 智谱 API auth 错(优先匹配,因 zod 错里也可能嵌套这串)
+  if (
+    raw.includes('"code":1001') ||
+    raw.includes('Header中未收到Authorization') ||
+    (raw.includes('unrecognized_keys') && raw.includes('"success"'))
+  ) {
+    return '智谱 MCP 需要 Authorization。请先在 LLM 标签页配置智谱 API Key 并设为活跃 provider,或在本卡片"配置"里手动填入 Authorization header。'
+  }
+  // MCP JSON-RPC 协议错
+  if (
+    raw.includes('"path":["jsonrpc"]') ||
+    raw.includes('"path": ["jsonrpc"]') ||
+    raw.includes('expected "2.0"') ||
+    raw.includes("expected '2.0'")
+  ) {
+    return 'MCP 服务器返回的不是合法 JSON-RPC 响应(常见原因:鉴权失败、URL 错误、或端点不是 MCP 协议)。'
+  }
+  // 网络错
+  if (
+    /fetch failed/i.test(raw) ||
+    /ECONNREFUSED/.test(raw) ||
+    /ENOTFOUND/.test(raw) ||
+    /timeout/i.test(raw) ||
+    /Network request failed/i.test(raw)
+  ) {
+    return '无法连接 MCP 服务器,请检查网络或 URL 配置。'
+  }
+  // 其他:截前 200 字符
+  return raw.length > 200 ? `${raw.slice(0, 200)}…` : raw
 })
 
 function applyKey() {
@@ -203,6 +250,14 @@ async function copyKey() {
           :class="{ rotated: expanded }"
         />
       </button>
+    </div>
+
+    <div v-if="server.status.state === 'error' && rawError" class="mcp-card__error-pane">
+      <div class="mcp-card__error-summary">⚠️ {{ friendlyErrorMessage }}</div>
+      <details class="mcp-card__error-details">
+        <summary>查看技术细节</summary>
+        <pre class="mcp-card__error-raw">{{ rawError }}</pre>
+      </details>
     </div>
 
     <div v-if="expanded" class="mcp-card__config-body">
@@ -527,6 +582,59 @@ async function copyKey() {
 .mcp-card__key-action:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* ---- Error pane (friendly + collapsible raw) ---- */
+.mcp-card__error-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-danger) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 25%, transparent);
+}
+
+.mcp-card__error-summary {
+  font-size: var(--fs-sm);
+  color: var(--color-fg-primary);
+  line-height: var(--lh-normal);
+}
+
+.mcp-card__error-details {
+  font-size: var(--fs-xs);
+  color: var(--color-fg-tertiary);
+}
+
+.mcp-card__error-details summary {
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 0;
+  color: var(--color-fg-tertiary);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.mcp-card__error-details summary:hover {
+  color: var(--color-fg-secondary);
+}
+
+.mcp-card__error-raw {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-fg-secondary);
+  line-height: var(--lh-tight);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
 }
 
 /* ---- Status indicator stripe (inset shadow) ---- */
