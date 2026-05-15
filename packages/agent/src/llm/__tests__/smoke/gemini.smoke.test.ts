@@ -66,6 +66,11 @@ describe.skipIf(!GEMINI_KEY)('gemini smoke (via pi-ai)', () => {
         throw e
       }
 
+      // pi-ai stream 内 error event 走 skip(Gemini 真 key 跑撞过 "Incomplete JSON
+      // segment" —— pi-ai google-generative-ai parser 跟 duckcoding 中转 SSE 兼容
+      // 性问题;详见 isSkippable 注释 (4))
+      if (skipIfStreamError(events, `${PROVIDER_ID} smoke (chat)`)) return
+
       if (!events.some((e) => e.type === 'text.delta')) {
         console.warn(
           `⚠️ ${PROVIDER_ID} chat: no text.delta. Events seen: ${events.map((e) => e.type).join(', ')}`,
@@ -133,6 +138,9 @@ describe.skipIf(!GEMINI_KEY)('gemini smoke (via pi-ai)', () => {
         throw e
       }
 
+      // pi-ai stream 内 error event 走 skip(同 chat case)
+      if (skipIfStreamError(events, `${PROVIDER_ID} smoke (tool)`)) return
+
       expect(events.some((e) => e.type === 'finish')).toBe(true)
       if (!events.some((e) => e.type === 'tool_call.start')) {
         console.warn(
@@ -143,13 +151,38 @@ describe.skipIf(!GEMINI_KEY)('gemini smoke (via pi-ai)', () => {
   )
 })
 
+/**
+ * Skippable 错误判定:四类走 warn 不 fail。详见 openai.smoke.test.ts 同名 helper 注释。
+ */
 function isSkippable(e: unknown): boolean {
   if (!(e instanceof Error)) return false
   const msg = e.message ?? ''
-  if (msg.includes('pi-ai 找不到 provider')) return true
-  return /timeout|ECONNREFUSED|502|503|504|fetch failed|AbortError|aborted/i.test(msg)
+  return (
+    // 网络 / 中转抖动
+    /timeout|ECONNREFUSED|502|503|504|fetch failed|AbortError|aborted/i.test(msg) ||
+    // pi-ai MODELS 表找不到
+    /pi-ai 找不到/i.test(msg) ||
+    // 中转 quota / 计费 / plan limit
+    /quota|extra usage|plan limit|insufficient|billing|credit|top.?up/i.test(msg) ||
+    // pi-ai / SDK 内部 JSON parser 错(Gemini 真 key 跑撞过 "Incomplete JSON segment")
+    /Incomplete JSON|JSON parse|Unexpected token|SyntaxError/i.test(msg)
+  )
 }
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
+}
+
+/**
+ * 扫 events 找首个 `error`(pi-ai stream 内 emit 不抛错),命中 isSkippable 时 warn skip。
+ * 详见 openai.smoke.test.ts 同名 helper 注释。
+ */
+function skipIfStreamError(events: CanonicalEvent[], label: string): boolean {
+  const errorEvt = events.find((e) => e.type === 'error')
+  if (!errorEvt || errorEvt.type !== 'error') return false
+  if (isSkippable(new Error(errorEvt.message))) {
+    console.warn(`⚠️ ${label} skipped (stream error): ${errorEvt.message.slice(0, 200)}`)
+    return true
+  }
+  return false
 }

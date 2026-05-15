@@ -75,6 +75,11 @@ describe.skipIf(!OPENAI_KEY)('openai smoke (via pi-ai)', () => {
         throw e
       }
 
+      // pi-ai 0.74.0 多数错误走 stream 内 `error` event 而非 throw —— for-await
+      // 正常结束,events 数组里只有 `error` event。扫一遍,quota / JSON parser
+      // 等 skippable 错误同样走 warn 不 fail(详见 isSkippable 注释 (3)(4))
+      if (skipIfStreamError(events, `${PROVIDER_ID} smoke (chat)`)) return
+
       // 缺 text.delta 时把所有看到的 event type 打出来,方便排查 thinking-tier 模型被
       // MAX_TOKENS 截断、translator 漏 emit、provider 协议错位等故障模式
       if (!events.some((e) => e.type === 'text.delta')) {
@@ -146,6 +151,9 @@ describe.skipIf(!OPENAI_KEY)('openai smoke (via pi-ai)', () => {
         throw e
       }
 
+      // pi-ai stream 内 error event 走 skip(同 chat case)
+      if (skipIfStreamError(events, `${PROVIDER_ID} smoke (tool)`)) return
+
       // 强断言:finish event 必有(无论 model 走 tool call 还是直接 text 回答)
       expect(events.some((e) => e.type === 'finish')).toBe(true)
       // 软断言:tool call 是否被触发,model 可能 hallucinate 直接答 "I don't know"
@@ -159,21 +167,60 @@ describe.skipIf(!OPENAI_KEY)('openai smoke (via pi-ai)', () => {
 })
 
 /**
- * Skippable 错误判定:三类走 warn 不 fail。
+ * Skippable 错误判定:四类走 warn 不 fail。
  *
  * (1) 上游中转不稳:timeout / 502 / 503 / 504 / ECONNREFUSED / fetch failed /
  *     AbortError / aborted。
  * (2) pi-ai MODELS 表找不到 model id —— `defaultResolver` 抛 "pi-ai 找不到 provider"
  *     clear error。pi-ai 0.74.0 MODELS 是按时间冻结的快照,中转支持的某些 model id
  *     可能未进表;smoke 不应因此 block 全测试。
+ * (3) 中转 quota / 计费 / plan limit:控制面真 key 跑时撞过 Anthropic 中转 400
+ *     "Third-party apps now draw from your extra usage..." —— key 耗尽 plan
+ *     quota,要 top-up 才能继续。**典型 key 不稳定 case**,按 warn-not-fail 原则 skip。
+ * (4) pi-ai / SDK 内部 JSON parser 错:Gemini 跑真 key 撞过 "Incomplete JSON segment
+ *     at the end" —— pi-ai 的 google-generative-ai parser 收到不完整 SSE chunk
+ *     或 duckcoding 中转返了非 streaming 响应。**也属上游 SSE 格式兼容性问题**,
+ *     不是 adapter bug,按 warn-not-fail skip。
+ *
+ * Used in two places:
+ * - catch 路径:pi-ai throw 时直接判定(getModel 找不到 / 同步 fetch failure)
+ * - for-await 后:pi-ai 0.74.0 多数错误走 stream 内 `error` event 而非 throw;
+ *   loop 结束后必须扫 events 找 `error` event,用 message 喂 isSkippable 判定
  */
 function isSkippable(e: unknown): boolean {
   if (!(e instanceof Error)) return false
   const msg = e.message ?? ''
-  if (msg.includes('pi-ai 找不到 provider')) return true
-  return /timeout|ECONNREFUSED|502|503|504|fetch failed|AbortError|aborted/i.test(msg)
+  return (
+    // 网络 / 中转抖动
+    /timeout|ECONNREFUSED|502|503|504|fetch failed|AbortError|aborted/i.test(msg) ||
+    // pi-ai MODELS 表找不到(可能 model id 不在表)
+    /pi-ai 找不到/i.test(msg) ||
+    // 中转 quota / 计费 / plan limit(typical key 不稳定 case)
+    /quota|extra usage|plan limit|insufficient|billing|credit|top.?up/i.test(msg) ||
+    // pi-ai / SDK 内部 JSON parser 报错(SSE chunk 不完整 / 中转返非 streaming)
+    /Incomplete JSON|JSON parse|Unexpected token|SyntaxError/i.test(msg)
+  )
 }
 
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
+}
+
+/**
+ * pi-ai 0.74.0 多数 LLM 端错误走 stream 内 `error` event 而非 throw(见
+ * pi-ai-adapter.ts translatePiEvent error 分支)。for-await 正常退出后,events
+ * 里只有 `error` event 没有 text.delta / finish,如果直接走 expect 断言就 fail。
+ *
+ * 本 helper 扫 events 找首个 `error`,如果 message 命中 isSkippable 则 warn 返
+ * true(caller 应 `return` skip 全 case);否则返 false(让后续断言去 catch
+ * 真 adapter bug —— 比如 translator 漏 emit / canonical schema 违例)。
+ */
+function skipIfStreamError(events: CanonicalEvent[], label: string): boolean {
+  const errorEvt = events.find((e) => e.type === 'error')
+  if (!errorEvt || errorEvt.type !== 'error') return false
+  if (isSkippable(new Error(errorEvt.message))) {
+    console.warn(`⚠️ ${label} skipped (stream error): ${errorEvt.message.slice(0, 200)}`)
+    return true
+  }
+  return false
 }
