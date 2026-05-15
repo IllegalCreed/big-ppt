@@ -190,6 +190,106 @@ describe('McpRegistry.sync', () => {
   })
 })
 
+describe('McpRegistry.resyncIfStale', () => {
+  it('session 不存在 + enabled=true → activate', async () => {
+    mocks.connectDefault.mockResolvedValue(undefined)
+    mocks.listTools.mockResolvedValue({
+      tools: [{ name: 'fetch', inputSchema: { type: 'object', properties: {} } }],
+    })
+    const registry = new McpRegistry(new FakeRepo([]) as any, TEST_USER_ID)
+    // 没 initialize 过 → sessions Map 空
+    await registry.resyncIfStale(mkConfig({ id: 'srv', enabled: true }))
+    expect(mocks.connectDefault).toHaveBeenCalledTimes(1)
+    expect(registry.getStatus('srv').state).toBe('ok')
+    expect(hasTool('mcp__srv__fetch', TEST_USER_ID)).toBe(true)
+  })
+
+  it('session 不存在 + enabled=false → noop(不 activate)', async () => {
+    const registry = new McpRegistry(new FakeRepo([]) as any, TEST_USER_ID)
+    await registry.resyncIfStale(mkConfig({ id: 'srv', enabled: false }))
+    expect(mocks.connectDefault).not.toHaveBeenCalled()
+    expect(registry.getStatus('srv').state).toBe('disabled')
+  })
+
+  it('headers 一致 → noop(不重连不动 tools)', async () => {
+    mocks.connectDefault.mockResolvedValue(undefined)
+    mocks.listTools.mockResolvedValue({
+      tools: [{ name: 'fetch', inputSchema: { type: 'object', properties: {} } }],
+    })
+    const cfg = mkConfig({ id: 'srv', headers: { Authorization: 'Bearer abc' } })
+    const registry = new McpRegistry(new FakeRepo([cfg]) as any, TEST_USER_ID)
+    await registry.initialize()
+    expect(mocks.connectDefault).toHaveBeenCalledTimes(1)
+    expect(mocks.close).not.toHaveBeenCalled()
+
+    // 再次传入 headers 完全一致的 cfg → 不应触发 close / 再 connect
+    await registry.resyncIfStale({ ...cfg, headers: { Authorization: 'Bearer abc' } })
+    expect(mocks.connectDefault).toHaveBeenCalledTimes(1)
+    expect(mocks.close).not.toHaveBeenCalled()
+    expect(registry.getStatus('srv').state).toBe('ok')
+  })
+
+  it('headers diverge → 关旧 session 重 activate(模拟 auto-heal 后)', async () => {
+    // 先用空 headers connect 失败(模拟 auto-heal 前的 stale state='error' 场景)
+    mocks.connectPerUrl.set('https://srv.example/mcp', () => {
+      throw new Error('401 Unauthorized')
+    })
+    const cfg0 = mkConfig({
+      id: 'srv',
+      url: 'https://srv.example/mcp',
+      headers: {},
+    })
+    const registry = new McpRegistry(new FakeRepo([cfg0]) as any, TEST_USER_ID)
+    await registry.initialize()
+    expect(registry.getStatus('srv').state).toBe('error')
+    expect(mocks.connectDefault).not.toHaveBeenCalled() // url-specific override 命中
+    const connectCallsBefore = mocks.connectPerUrl.size // for sanity
+
+    // auto-heal 后:DB headers 补成 sentinel,且替换为 active provider apiKey 后能连上。
+    // 切换 connect 行为为成功 + 提供 tools
+    let secondConnectInvoked = false
+    mocks.connectPerUrl.set('https://srv.example/mcp', async () => {
+      secondConnectInvoked = true
+    })
+    mocks.listTools.mockResolvedValue({
+      tools: [{ name: 'fetch', inputSchema: { type: 'object', properties: {} } }],
+    })
+    const cfg1 = mkConfig({
+      id: 'srv',
+      url: 'https://srv.example/mcp',
+      headers: { Authorization: 'Bearer healed-key' },
+    })
+    await registry.resyncIfStale(cfg1)
+
+    expect(secondConnectInvoked).toBe(true) // 重新 connect 触发
+    expect(registry.getStatus('srv').state).toBe('ok') // 新 session 上线
+    expect(hasTool('mcp__srv__fetch', TEST_USER_ID)).toBe(true)
+    // sanity:保持 per-url 映射干净(未泄漏到默认 mock)
+    expect(connectCallsBefore).toBe(1)
+  })
+
+  it('headers diverge 且原 session 已成功连接 → 关 mocks.close + 重 activate', async () => {
+    // session 处于 ok 状态时 close 调用会真正 hit mocks.close(client 不为 null)
+    mocks.connectDefault.mockResolvedValue(undefined)
+    mocks.listTools.mockResolvedValue({
+      tools: [{ name: 'fetch', inputSchema: { type: 'object', properties: {} } }],
+    })
+    const cfg0 = mkConfig({ id: 'srv', headers: { Authorization: 'old-key' } })
+    const registry = new McpRegistry(new FakeRepo([cfg0]) as any, TEST_USER_ID)
+    await registry.initialize()
+    expect(registry.getStatus('srv').state).toBe('ok')
+    expect(mocks.connectDefault).toHaveBeenCalledTimes(1)
+
+    const cfg1 = mkConfig({ id: 'srv', headers: { Authorization: 'new-key' } })
+    await registry.resyncIfStale(cfg1)
+
+    expect(mocks.close).toHaveBeenCalledTimes(1) // 旧 client.close 被调
+    expect(mocks.connectDefault).toHaveBeenCalledTimes(2) // 重 connect
+    expect(registry.getStatus('srv').state).toBe('ok')
+    expect(hasTool('mcp__srv__fetch', TEST_USER_ID)).toBe(true)
+  })
+})
+
 describe('McpRegistry callTool 委派', () => {
   it('calling mcp__srv__fetch via tool-registry delegates to session.callTool', async () => {
     mocks.connectDefault.mockResolvedValue(undefined)

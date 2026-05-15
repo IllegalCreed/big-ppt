@@ -65,6 +65,35 @@ export class McpRegistry {
     }
   }
 
+  /**
+   * Phase 12.5 hotfix:auto-heal 后让 in-memory session 跟最新 cfg 对齐。
+   *
+   * 触发场景:drizzle-repo.list() 的 autoHealPresetHeaders 给老 seed 的 preset 行
+   * 补默认 $LLM_KEY Authorization header,DB 行 headers 被改;但 McpRegistry.sessions
+   * 里仍是 ensureInitialized 阶段(headers 空)connect 失败的 stale session,state='error'。
+   * 不调 sync 的话只有用户手动 toggle disable→enable 才能重连。
+   *
+   * 逻辑:
+   *   - session 不存在 + cfg.enabled=true → activate(首次进入或 evict 后再进)
+   *   - session 不存在 + cfg.enabled=false → noop
+   *   - session 存在 + headers stringified deep equal → noop(常态,无开销)
+   *   - session 存在 + headers diverged → 关旧 session 重 activate(走 sync 路径)
+   *
+   * 注:对比用 JSON.stringify 而非 deep equal 库,headers 是 string→string 浅对象,
+   * key 顺序不稳定但同一份代码生成的 stringify 同序,实务足够。
+   */
+  async resyncIfStale(config: McpServerConfig): Promise<void> {
+    const existing = this.sessions.get(config.id)
+    if (!existing) {
+      if (config.enabled) await this.activate(config)
+      return
+    }
+    const oldHeaders = JSON.stringify(existing.config.headers ?? {})
+    const newHeaders = JSON.stringify(config.headers ?? {})
+    if (oldHeaders === newHeaders) return
+    await this.sync(config)
+  }
+
   getStatus(id: string): McpServerStatus {
     return this.sessions.get(id)?.status ?? { state: 'disabled' }
   }

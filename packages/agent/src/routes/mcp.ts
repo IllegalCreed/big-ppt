@@ -104,6 +104,15 @@ mcp.get('/mcp/servers', async (c) => {
     const registry = getRegistry(userId)
     await registry.ensureInitialized()
     const configs = await repo.list(userId)
+    // Phase 12.5 hotfix:repo.list 在内部对 preset 行做 auto-heal,DB headers 已被改但
+    // in-memory session 仍是 stale。在收集 status 前对每个 enabled cfg 调 resyncIfStale,
+    // 若 cfg.headers 跟 session.config.headers 一致 → noop;不一致 → 关旧 session 重 activate。
+    // 并行:registry 内部按 server-id 互不抢占,Promise.all 不会出错。
+    await Promise.all(
+      configs
+        .filter((cfg) => cfg.enabled && !UNSUPPORTED_SERVER_IDS.has(cfg.id))
+        .map((cfg) => registry.resyncIfStale(cfg)),
+    )
     const servers = configs
       // 过滤老用户 DB 残留的 unsupported preset(如 zhipu-vision: 仅 stdio,当前不支持)
       .filter((cfg) => !UNSUPPORTED_SERVER_IDS.has(cfg.id))
