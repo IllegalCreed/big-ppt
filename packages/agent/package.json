@@ -18,7 +18,6 @@
     "init-db": "node scripts/init-db.mjs",
     "init-test-db": "node scripts/init-test-db.mjs",
     "probe:duckcoding": "dotenv -e .env.test.local -- node scripts/probe-duckcoding.mjs",
-    "test:smoke": "dotenv -e .env.test.local -- vitest run --testNamePattern='smoke' src/llm/__tests__/smoke",
     "migrate:llm-settings": "dotenv -e .env.development.local -e .env.local -- node scripts/migrate-llm-settings.mjs",
     "migrate:llm-settings:test": "dotenv -e .env.test.local -- node scripts/migrate-llm-settings.mjs",
     "migrate:llm-settings:prod": "dotenv -e .env.production.local -- node scripts/migrate-llm-settings.mjs",

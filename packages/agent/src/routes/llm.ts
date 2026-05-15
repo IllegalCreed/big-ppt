@@ -29,37 +29,31 @@ import type { AuthVars } from '../middleware/auth.js'
 import { decryptApiKey } from '../crypto/apikey.js'
 import { acquireLlmSlot, LlmConcurrencyTimeoutError } from '../middleware/llm-semaphore.js'
 import { ProviderRegistry } from '../llm/provider.js'
-import type { ProviderConfig, LLMProvider } from '../llm/provider.js'
 import { eventsToSSEStream } from '../llm/canonical-sse.js'
 import { LLMError } from '../llm/errors.js'
 import { LlmSettingsSchema } from '../llm/settings.js'
 import { logServerEvent } from '../logger/server-log.js'
 import type { CanonicalChatRequest } from '../llm/types.js'
+import { createPiAiAdapter } from '../llm/adapters/pi-ai-adapter.js'
 
 /**
- * Phase 12.5 Task A 临时 stub:Phase 12 自研的 3 个 adapter(openai-compatible /
- * anthropic / gemini)+ 6 个 translate 文件全删,registry factory 暂指向 stub
- * 抛错。Task B 落地 pi-ai-adapter 后,本 stubFactory 整个替换为真 adapter
- * 工厂。本 Task 期间 `/api/llm/chat/completions` 不可用 —— 预期破坏。
+ * Phase 12.5 Task B：7 个 LLM provider 全部走 pi-ai-adapter（统一 factory
+ * 根据 providerId 内部分流到 pi-ai 对应 streamXxx 实现）。
+ *
+ * Task A 临时 stub 已删；Task C-H 加新 provider（mistral / groq / xai /
+ * openrouter / cerebras 等）时仅需在 settings.ts 的 ActiveProviderIdSchema
+ * 加 id + 这里 Map 加一行 `[id, createPiAiAdapter]`，adapter 代码零修改。
  */
-const stubFactory = (cfg: ProviderConfig): LLMProvider => ({
-  id: cfg.id,
-  family: 'openai-compatible' as const,
-  async *streamChat() {
-    throw new Error(`Task A stub: provider "${cfg.id}" 待 Task B pi-ai-adapter 实现`)
-  },
-})
-
 function buildDefaultRegistry(): ProviderRegistry {
   return new ProviderRegistry(
     new Map([
-      ['openai', stubFactory],
-      ['zhipu', stubFactory],
-      ['deepseek', stubFactory],
-      ['moonshot', stubFactory],
-      ['qwen', stubFactory],
-      ['anthropic', stubFactory],
-      ['gemini', stubFactory],
+      ['openai', createPiAiAdapter],
+      ['anthropic', createPiAiAdapter],
+      ['gemini', createPiAiAdapter],
+      ['zhipu', createPiAiAdapter],
+      ['deepseek', createPiAiAdapter],
+      ['moonshot', createPiAiAdapter],
+      ['qwen', createPiAiAdapter],
     ]),
   )
 }
