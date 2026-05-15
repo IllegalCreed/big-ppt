@@ -81,11 +81,18 @@ export type TokenUsage = {
 export type FinishReason = 'stop' | 'length' | 'tool_use' | 'content_filter'
 
 export type CanonicalEvent =
+  // Phase 12.7 新增:turn / tool_execution
+  | { type: 'turn.start'; turnId: string }
+  | { type: 'turn.end'; usage: TokenUsage; reason: FinishReason }
+  | { type: 'tool_execution.start'; toolCallId: string; toolName: string }
+  | { type: 'tool_execution.delta'; toolCallId: string; partial: unknown }
+  | { type: 'tool_execution.end'; toolCallId: string; isError: boolean }
+  // 原 8 类保留
   | { type: 'text.delta'; text: string }
   | { type: 'tool_call.start'; id: string; name: string }
   | { type: 'tool_call.delta'; id: string; argsChunk: string }
   | { type: 'tool_call.end'; id: string }
   | { type: 'thinking.delta'; text: string }
   | { type: 'cache.hit'; cachedTokens: number; costTokens: number }
-  | { type: 'finish'; reason: FinishReason; usage: TokenUsage }
+  | { type: 'finish'; reason: FinishReason; usage: TokenUsage } // 非 agent 单轮调用仍用
   | { type: 'error'; code: string; message: string }

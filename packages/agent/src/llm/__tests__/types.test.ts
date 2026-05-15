@@ -92,7 +92,7 @@ describe('canonical types', () => {
     expect(blockContent.isError).toBe(true)
   })
 
-  it('CanonicalEvent union exhaustive (8 类全覆盖)', () => {
+  it('CanonicalEvent union exhaustive (13 类全覆盖 — 原 8 类 + Phase 12.7 新增 5 类)', () => {
     const events: CanonicalEvent[] = [
       { type: 'text.delta', text: 'hello' },
       { type: 'tool_call.start', id: 't1', name: 'searchPages' },
@@ -102,6 +102,12 @@ describe('canonical types', () => {
       { type: 'cache.hit', cachedTokens: 100, costTokens: 5 },
       { type: 'finish', reason: 'stop', usage: { input: 10, output: 20 } },
       { type: 'error', code: 'rate_limit', message: 'too fast' },
+      // Phase 12.7 新增:turn / tool_execution
+      { type: 'turn.start', turnId: 'turn_1' },
+      { type: 'turn.end', usage: { input: 10, output: 20 }, reason: 'stop' },
+      { type: 'tool_execution.start', toolCallId: 't1', toolName: 'searchPages' },
+      { type: 'tool_execution.delta', toolCallId: 't1', partial: { count: 3 } },
+      { type: 'tool_execution.end', toolCallId: 't1', isError: false },
     ]
 
     const seen: string[] = []
@@ -131,6 +137,21 @@ describe('canonical types', () => {
         case 'error':
           seen.push('error')
           break
+        case 'turn.start':
+          seen.push('turn.start')
+          break
+        case 'turn.end':
+          seen.push('turn.end')
+          break
+        case 'tool_execution.start':
+          seen.push('tool_execution.start')
+          break
+        case 'tool_execution.delta':
+          seen.push('tool_execution.delta')
+          break
+        case 'tool_execution.end':
+          seen.push('tool_execution.end')
+          break
         default:
           assertNever(event)
       }
@@ -145,6 +166,11 @@ describe('canonical types', () => {
       'cache.hit',
       'finish',
       'error',
+      'turn.start',
+      'turn.end',
+      'tool_execution.start',
+      'tool_execution.delta',
+      'tool_execution.end',
     ])
   })
 

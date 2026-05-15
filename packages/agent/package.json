@@ -30,6 +30,7 @@
     "@anthropic-ai/sdk": "^0.95.2",
     "@big-ppt/shared": "workspace:*",
     "@big-ppt/slidev": "workspace:*",
+    "@earendil-works/pi-agent-core": "0.74.0",
     "@earendil-works/pi-ai": "0.74.0",
     "@google/genai": "^2.2.0",
     "@hono/node-server": "^2.0.0",

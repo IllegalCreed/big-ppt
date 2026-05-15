@@ -343,6 +343,15 @@ export async function consumeCanonicalEventStream(
         break
       case 'error':
         throw new Error(`LLM error [${evt.code}]: ${evt.message}`)
+      // Phase 12.7 新增 agent event:此 consumer 走非 agent 单轮路径,
+      // 不应见到 turn / tool_execution event;若上游误发则静默跳过(Task G
+      // 在 chat-stream 路径会实施真正的 ToolExecutionBlock 渲染)
+      case 'turn.start':
+      case 'turn.end':
+      case 'tool_execution.start':
+      case 'tool_execution.delta':
+      case 'tool_execution.end':
+        break
       default: {
         // exhaustiveness：未知 event 类型时静默跳过（向前兼容 backend 加新事件）
         const _exhaustive: never = evt
