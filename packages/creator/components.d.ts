@@ -20,7 +20,6 @@ declare module 'vue' {
     BeitouImageContent: typeof import('./../slidev/layouts/beitou/beitou-image-content.vue')['default']
     BeitouSectionTitle: typeof import('./../slidev/layouts/beitou/beitou-section-title.vue')['default']
     BeitouToc: typeof import('./../slidev/layouts/beitou/beitou-toc.vue')['default']
-    CacheStatsHint: typeof import('./src/components/CacheStatsHint.vue')['default']
     ChatPanel: typeof import('./src/components/ChatPanel.vue')['default']
     DeckEditorCanvas: typeof import('./src/components/DeckEditorCanvas.vue')['default']
     EqualSplit: typeof import('./../slidev/components/grid/EqualSplit.vue')['default']
@@ -59,6 +58,7 @@ declare module 'vue' {
     ThinkingBlock: typeof import('./src/components/ThinkingBlock.vue')['default']
     TwoColumnsTwoRows: typeof import('./../slidev/components/grid/TwoColumnsTwoRows.vue')['default']
     UndoToast: typeof import('./src/components/UndoToast.vue')['default']
+    UsageStatsHint: typeof import('./src/components/UsageStatsHint.vue')['default']
     VersionTimeline: typeof import('./src/components/VersionTimeline.vue')['default']
   }
 }
@@ -73,7 +73,6 @@ declare global {
   const BeitouImageContent: typeof import('./../slidev/layouts/beitou/beitou-image-content.vue')['default']
   const BeitouSectionTitle: typeof import('./../slidev/layouts/beitou/beitou-section-title.vue')['default']
   const BeitouToc: typeof import('./../slidev/layouts/beitou/beitou-toc.vue')['default']
-  const CacheStatsHint: typeof import('./src/components/CacheStatsHint.vue')['default']
   const ChatPanel: typeof import('./src/components/ChatPanel.vue')['default']
   const DeckEditorCanvas: typeof import('./src/components/DeckEditorCanvas.vue')['default']
   const EqualSplit: typeof import('./../slidev/components/grid/EqualSplit.vue')['default']
@@ -112,5 +111,6 @@ declare global {
   const ThinkingBlock: typeof import('./src/components/ThinkingBlock.vue')['default']
   const TwoColumnsTwoRows: typeof import('./../slidev/components/grid/TwoColumnsTwoRows.vue')['default']
   const UndoToast: typeof import('./src/components/UndoToast.vue')['default']
+  const UsageStatsHint: typeof import('./src/components/UsageStatsHint.vue')['default']
   const VersionTimeline: typeof import('./src/components/VersionTimeline.vue')['default']
 }

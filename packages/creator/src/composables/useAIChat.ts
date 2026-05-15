@@ -853,7 +853,9 @@ export function useAIChat() {
             content: content,
             toolSteps: toolSteps.value.length > 0 ? toolSteps.value : undefined,
             thinking: fullThinking || undefined,
-            cacheStats: streamResult.cacheStats ?? undefined,
+            // Phase 12.5 Task D：bubble 上挂 canonical usage（含 cached + cost）。
+            // UsageStatsHint 消费同一份数据同时渲染「缓存命中」+「¥ 成本」两段。
+            usage: streamResult.usage ?? undefined,
           })
         }
         if (deckCtx && content) {

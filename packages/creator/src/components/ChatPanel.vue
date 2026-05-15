@@ -6,7 +6,7 @@ import type { ToolStep } from '../composables/useAIChat'
 import { useAIChat } from '../composables/useAIChat'
 import { useSlashCommands } from '../composables/useSlashCommands'
 import ThinkingBlock from './ThinkingBlock.vue'
-import CacheStatsHint from './CacheStatsHint.vue'
+import UsageStatsHint from './UsageStatsHint.vue'
 
 const {
   chatMessages,
@@ -58,7 +58,8 @@ function renderToolChain(steps: ToolStep[]) {
 
 interface BubbleItem {
   key: string
-  role: 'user' | 'ai' | 'ai-chain' | 'ai-thinking' | 'ai-cache'
+  // Phase 12.5 Task D：'ai-cache' → 'ai-usage'（语义从「缓存提示」扩到「缓存 + 成本」）
+  role: 'user' | 'ai' | 'ai-chain' | 'ai-thinking' | 'ai-usage'
   content: unknown
   loading?: boolean
 }
@@ -90,15 +91,13 @@ const bubbleItems = computed(() => {
     if (msg.content) {
       items.push({ key: `a-${i}`, role: 'ai', content: msg.content })
     }
-    // Phase 12 Task I：cache 提示放在 assistant bubble 下方（看到答案后再注意提示）
-    if (msg.cacheStats) {
+    // Phase 12.5 Task D：usage 提示（缓存命中 + ¥ 成本）放在 assistant bubble 下方。
+    // UsageStatsHint 内部按 cached / cost.total 自行 visible 判断，这里只要有 usage 即可挂上。
+    if (msg.usage) {
       items.push({
-        key: `a-${i}-cache`,
-        role: 'ai-cache',
-        content: h(CacheStatsHint, {
-          cached: msg.cacheStats.cached,
-          cost: msg.cacheStats.cost,
-        }),
+        key: `a-${i}-usage`,
+        role: 'ai-usage',
+        content: h(UsageStatsHint, { usage: msg.usage }),
       })
     }
   }
@@ -148,7 +147,7 @@ const roles = computed(() => ({
     placement: 'start' as const,
     variant: 'borderless' as const,
   },
-  'ai-cache': {
+  'ai-usage': {
     placement: 'start' as const,
     variant: 'borderless' as const,
   },

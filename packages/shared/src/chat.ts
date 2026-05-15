@@ -51,8 +51,11 @@ export interface ChatBubble {
    */
   thinking?: string
   /**
-   * Phase 12 Task I：本轮 prompt cache 命中数据（Anthropic prompt caching 触发）。
-   * 仅在 assistant bubble 上有值；UI 在 bubble 下方一行小字提示节省 token。
+   * Phase 12.5 Task D：本轮 LLM usage（input / output / cached? + cost?）。
+   *
+   * 替代了原 `cacheStats: { cached, cost }` 字段（cost 字段语义从「计费 token 数」
+   * 变成 pi-ai 透传的 USD 浮点成本对象）。UI 走 `<UsageStatsHint :usage="...">` 同时
+   * 渲染缓存命中 + ¥ 成本两段。仅在 assistant bubble 上有值；null/undefined 时 UI 不渲染。
    */
-  cacheStats?: { cached: number; cost: number }
+  usage?: import('./llm-canonical.js').TokenUsage
 }

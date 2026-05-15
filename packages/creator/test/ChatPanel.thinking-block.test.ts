@@ -1,13 +1,17 @@
 /**
- * Phase 12 Task I：ChatPanel 折叠 thinking block + cache 提示渲染测试。
+ * Phase 12 Task I（thinking 部分）+ Phase 12.5 Task D（UsageStatsHint 部分）：
  *
- * 不真跑 useAIChat 状态机，直接 mock 出 chatMessages 含 thinking/cacheStats 的 bubble，
- * 验证 ThinkingBlock 默认折叠 / 点击展开、CacheStatsHint 渲染 token 数与节省比例。
+ * - ThinkingBlock：默认折叠 / 点击展开 / 再点收起 / chevron 旋转。
+ * - UsageStatsHint：
+ *   - cached > 0 时渲染缓存命中片段
+ *   - cost.total > 0 时渲染 ¥ 成本（按 USD_TO_RMB=7.2 换算）
+ *   - cacheRead > 0 时附加「节省 ¥X」
+ *   - usage=null / 全 0 时整条 hint 不渲染（visible computed 控制）
  */
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ThinkingBlock from '../src/components/ThinkingBlock.vue'
-import CacheStatsHint from '../src/components/CacheStatsHint.vue'
+import UsageStatsHint from '../src/components/UsageStatsHint.vue'
 
 describe('ThinkingBlock', () => {
   it('默认折叠，不渲染 text', () => {
@@ -44,27 +48,68 @@ describe('ThinkingBlock', () => {
   })
 })
 
-describe('CacheStatsHint', () => {
-  it('渲染 cached 和 cost token 数', () => {
-    const wrapper = mount(CacheStatsHint, { props: { cached: 1024, cost: 256 } })
-    expect(wrapper.text()).toContain('本轮命中缓存 1024 tokens')
-    expect(wrapper.text()).toContain('计费 256 tokens')
+describe('UsageStatsHint', () => {
+  it('cached > 0 时渲染缓存命中片段（自动 k 单位）', () => {
+    const wrapper = mount(UsageStatsHint, {
+      props: { usage: { input: 1280, output: 5, cached: 1024 } },
+    })
+    expect(wrapper.text()).toContain('缓存命中 1.0k tokens')
   })
 
-  it('计算节省比例', () => {
-    // 1024 / (1024 + 256) = 0.8 → 80%
-    const wrapper = mount(CacheStatsHint, { props: { cached: 1024, cost: 256 } })
-    expect(wrapper.text()).toContain('80%')
-  })
-
-  it('当 cached + cost = 0 时不显示节省比例（避免 NaN%）', () => {
-    const wrapper = mount(CacheStatsHint, { props: { cached: 0, cost: 0 } })
-    expect(wrapper.text()).toContain('本轮命中缓存 0 tokens')
+  it('cost.total > 0 时按 USD_TO_RMB=7.2 渲染 ¥ 成本', () => {
+    const wrapper = mount(UsageStatsHint, {
+      props: {
+        usage: {
+          input: 100,
+          output: 50,
+          cost: { total: 0.001, input: 0.0007, output: 0.0003 },
+        },
+      },
+    })
+    // 0.001 USD × 7.2 = 0.0072 RMB；4 位小数显示
+    expect(wrapper.text()).toContain('本轮 ¥0.0072')
     expect(wrapper.text()).not.toContain('节省')
   })
 
-  it('全部命中 cache（cost=0）时显示 100%', () => {
-    const wrapper = mount(CacheStatsHint, { props: { cached: 1000, cost: 0 } })
-    expect(wrapper.text()).toContain('100%')
+  it('cacheRead > 0 时附加节省片段', () => {
+    const wrapper = mount(UsageStatsHint, {
+      props: {
+        usage: {
+          input: 100,
+          output: 50,
+          cached: 512,
+          cost: {
+            total: 0.002,
+            input: 0.0014,
+            output: 0.0006,
+            cacheRead: 0.0001,
+          },
+        },
+      },
+    })
+    expect(wrapper.text()).toContain('缓存命中 512 tokens')
+    expect(wrapper.text()).toContain('本轮 ¥0.0144') // 0.002 × 7.2
+    expect(wrapper.text()).toContain('节省 ¥0.0007') // 0.0001 × 7.2 = 0.00072 → toFixed(4) = '0.0007'
+  })
+
+  it('usage=null 时整条 hint 不渲染', () => {
+    const wrapper = mount(UsageStatsHint, { props: { usage: null } })
+    expect(wrapper.find('.usage-stats-hint').exists()).toBe(false)
+  })
+
+  it('cached=0 且 cost.total=0 时不渲染（避免空 hint）', () => {
+    const wrapper = mount(UsageStatsHint, {
+      props: { usage: { input: 0, output: 0, cost: { total: 0, input: 0, output: 0 } } },
+    })
+    expect(wrapper.find('.usage-stats-hint').exists()).toBe(false)
+  })
+
+  it('仅 cached 有值（无 cost）也能渲染（向前兼容老 SSE 流）', () => {
+    const wrapper = mount(UsageStatsHint, {
+      props: { usage: { input: 100, output: 5, cached: 256 } },
+    })
+    expect(wrapper.find('.usage-stats-hint').exists()).toBe(true)
+    expect(wrapper.text()).toContain('缓存命中 256 tokens')
+    expect(wrapper.text()).not.toContain('本轮 ¥')
   })
 })

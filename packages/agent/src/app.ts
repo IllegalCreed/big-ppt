@@ -12,6 +12,7 @@
  */
 import { Hono } from 'hono'
 import { llm } from './routes/llm.js'
+import { llmModels } from './routes/llm-models.js'
 import { slides } from './routes/slides.js'
 import { templates } from './routes/templates.js'
 import { promptsRoute } from './routes/prompts.js'
@@ -54,6 +55,11 @@ app.route('/api/auth', auth)
 app.route('/api', decksRoute)
 app.route('/api', lockRoute)
 app.route('/api/llm', llm)
+// Phase 12.5 Task D：model dropdown 调它拿 pi-ai 内置的 model 列表。
+// 显式 mount 在 /api/llm/models 路径，**不**跟 /api/llm 的 sub-router 合并 ——
+// llm 内部对 /chat/completions 等做 path-specific middleware 校验，把 models 端点
+// 挂同前缀容易触发 CLAUDE.md「Hono sub-router wildcard 泄漏」坑。
+app.route('/api/llm/models', llmModels)
 app.route('/api', slides)
 app.route('/api', templates)
 app.route('/api', promptsRoute)

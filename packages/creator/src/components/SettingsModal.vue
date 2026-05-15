@@ -17,7 +17,7 @@
  *
  * 协议:GET / PUT 都用新 shape(backend Task J 同步改);apiKey 空串=保留旧值。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import type {
   ImageLlmSettings,
   LLMSettings,
@@ -31,6 +31,7 @@ import { useMCP } from '../composables/useMCP'
 import { useAuth } from '../composables/useAuth'
 import { invalidateLlmSettingsCache } from '../composables/useAIChat'
 import { api, ApiError } from '../api/client'
+import { fetchModels, type ModelInfo } from '../api/llm-models'
 import MCPCatalogItem from './MCPCatalogItem.vue'
 import MCPCustomServer from './MCPCustomServer.vue'
 
@@ -100,6 +101,30 @@ const advanced = ref<AdvancedForm>(emptyAdvanced())
 const advancedExpanded = ref(false)
 const saving = ref(false)
 const saveError = ref('')
+
+/**
+ * Phase 12.5 Task D：每个 provider 的 model dropdown 数据源（懒加载，focus 时拉一次）。
+ *
+ * 用 `<datalist>` + `<input list="...">` 实现 combobox 行为：
+ * - 下拉显示候选 model id（来自 pi-ai getModels 接口）
+ * - 同时允许用户自由输入 dropdown 外的 model id（中转 / 自部署 baseUrl 常见场景）
+ *
+ * 走原生 HTML datalist 而非 antdv-next a-auto-complete：保持跟 SettingsModal 其他
+ * 字段（plain `<input>` / `<select>`）样式一致，零额外依赖；测试也只需 query input
+ * 元素就够，不用处理 Teleport 弹层。
+ */
+const modelOptions = reactive<Record<string, ModelInfo[]>>({})
+const modelOptionsLoading = reactive<Record<string, boolean>>({})
+
+async function loadModelsIfNeeded(providerId: string): Promise<void> {
+  if (modelOptions[providerId] || modelOptionsLoading[providerId]) return
+  modelOptionsLoading[providerId] = true
+  try {
+    modelOptions[providerId] = await fetchModels(providerId)
+  } finally {
+    modelOptionsLoading[providerId] = false
+  }
+}
 
 // === image LLM (独立于主 LLM,Phase 11.5 保留不动)===
 const DEFAULT_IMAGE_SETTINGS: ImageLlmSettings = {
@@ -539,14 +564,31 @@ onMounted(() => {
                   </label>
                   <label class="field-row">
                     <span class="field-label">Model</span>
+                    <!--
+                      Phase 12.5 Task D：HTML5 datalist combobox。
+                      - input 上 `list="model-options-<id>"` 关联同 ID 的 datalist
+                      - focus 时懒加载 fetchModels(meta.id) 填充候选
+                      - 用户仍可自由输入 dropdown 外的 model id（中转场景必备）
+                    -->
                     <input
                       v-model="providerForms[meta.id].model"
                       type="text"
                       :placeholder="`默认:${meta.defaultModel}`"
                       autocomplete="off"
                       class="input-bare"
+                      :list="`model-options-${meta.id}`"
                       :data-test="`model-${meta.id}`"
+                      @focus="loadModelsIfNeeded(meta.id)"
                     />
+                    <datalist :id="`model-options-${meta.id}`">
+                      <option
+                        v-for="opt in modelOptions[meta.id] ?? []"
+                        :key="opt.id"
+                        :value="opt.id"
+                      >
+                        {{ opt.name }}
+                      </option>
+                    </datalist>
                   </label>
                   <label class="field-row">
                     <span class="field-label">

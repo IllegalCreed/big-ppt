@@ -235,7 +235,8 @@ describe('useAIChat tool loop (canonical)', () => {
     await chat.sendMessage('hi')
 
     expect(chat.lastCacheStats.value).toEqual({ cached: 1024, cost: 128 })
-    expect(chat.chatMessages.value[1]!.cacheStats).toEqual({ cached: 1024, cost: 128 })
+    // Phase 12.5 Task D：bubble 从 cacheStats 改挂 canonical usage（含 cached + cost?）
+    expect(chat.chatMessages.value[1]!.usage).toEqual({ input: 1152, output: 5, cached: 1024 })
   })
 
   it('thinking event 同步累积到 thinkingContent + assistant bubble.thinking', async () => {
