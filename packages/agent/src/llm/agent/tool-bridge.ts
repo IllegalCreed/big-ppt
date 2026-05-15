@@ -22,15 +22,6 @@
  * - **错误传播**：pi-agent-core 约定 `AgentTool.execute` throw on failure；
  *   loop 内部会把 throw 翻成 isError=true 的 ToolResultMessage，UI 路径
  *   仍能渲染失败状态。我们这里直接 propagate `ToolDef.exec` 的抛错。
- *
- * 与 plan 28 Task B 假设的偏离（写到这里供 commit body 引用）:
- * 1. 原 plan 假设 `executeTool(userId, toolName, args, signal)` 返回
- *    `{content, isError, terminate?}` —— 实际 registry 的 `ToolDef.exec`
- *    只接 args 返回 string，没有 signal / isError / terminate 概念。
- *    我们改成 wrap 老接口而非改造 registry signature（最小破坏）。
- * 2. 原 plan 假设 `normalizeToolResultBlocks` 三 shape 转换（array / string /
- *    fallback JSON.stringify），实际只走 string → 单个 TextContent；array /
- *    object 返回方式当前没有 ToolDef 用，留作未来扩 ToolDef shape 时再加。
  */
 
 import type {

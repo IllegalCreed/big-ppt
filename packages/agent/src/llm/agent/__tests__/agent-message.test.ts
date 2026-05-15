@@ -1,5 +1,5 @@
 /**
- * Phase 12.7 Task B：agent-message 双向翻译单测（8 测）。
+ * Phase 12.7 Task B：agent-message 双向翻译单测（9 测）。
  *
  * 覆盖：
  * 1. pi UserMessage → canonical：string content 也能翻成单 text block
@@ -10,8 +10,9 @@
  * 5. canonical → pi user / assistant / tool 三 role 全覆盖（含 image / thinking
  *    字段换名 + tool_use → toolCall 类型名换 + tool_result 顶层化）
  * 6. canonical system role → throw（不入 message 链）
- * 7. round-trip：canonical → pi → canonical 内容 + role 不变（忽略 timestamp）
- * 8. canonical tool 消息缺 tool_result block → throw（防御性）
+ * 7. canonical tool 消息缺 tool_result block → throw（防御性）
+ * 8. canonical tool 消息 tool_result content 为 Block[]（含 image）→ pi 翻译保留 image+text
+ * 9. round-trip：canonical → pi → canonical 内容 + role 不变（忽略 timestamp）
  */
 import { describe, expect, it } from 'vitest'
 import {

@@ -62,7 +62,10 @@ describe('buildToolsForUser', () => {
     expect(tools99.map((t) => t.name).sort()).toEqual(['global_a', 'global_b'])
   })
 
-  it('AgentTool.execute 透传 args/signal 给 executeToolForUser 并包成 AgentToolResult', async () => {
+  it('AgentTool.execute 透传 args 给 executeToolForUser 并包成 AgentToolResult', async () => {
+    // 注:当前 signal 在 executeToolForUser 边界被丢弃(`_signal` 前缀),因为
+    // 老 ToolDef.exec 协议没有 signal 参数。这里只断 args 透传 + 返回值
+    // wrap shape。如未来给 ToolDef 加 signal-aware 抢占,补一条测覆盖 abort。
     const execSpy = vi.fn(async (args: Record<string, unknown>) => `got ${JSON.stringify(args)}`)
     registry.register(makeStubTool('echo', execSpy))
 
