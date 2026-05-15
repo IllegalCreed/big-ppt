@@ -29,9 +29,7 @@ import type { AuthVars } from '../middleware/auth.js'
 import { decryptApiKey } from '../crypto/apikey.js'
 import { acquireLlmSlot, LlmConcurrencyTimeoutError } from '../middleware/llm-semaphore.js'
 import { ProviderRegistry } from '../llm/provider.js'
-import { createOpenAICompatibleProvider } from '../llm/adapters/openai-compatible.js'
-import { createAnthropicProvider } from '../llm/adapters/anthropic.js'
-import { createGeminiProvider } from '../llm/adapters/gemini.js'
+import type { ProviderConfig, LLMProvider } from '../llm/provider.js'
 import { eventsToSSEStream } from '../llm/canonical-sse.js'
 import { LLMError } from '../llm/errors.js'
 import { LlmSettingsSchema } from '../llm/settings.js'
@@ -39,21 +37,29 @@ import { logServerEvent } from '../logger/server-log.js'
 import type { CanonicalChatRequest } from '../llm/types.js'
 
 /**
- * 默认 registry:Task E 先接 5 个 OpenAI 兼容 provider。
- * Anthropic / Gemini 工厂在 Task G/H 完成 adapter 后,通过本文件 `__setRegistryForTesting`
- * **不**注入(那是测试用),而是直接修改本常量加 entries。或者把 registry
- * 提到独立 module(`packages/agent/src/llm/default-registry.ts`)。Task G/H 决定。
+ * Phase 12.5 Task A 临时 stub:Phase 12 自研的 3 个 adapter(openai-compatible /
+ * anthropic / gemini)+ 6 个 translate 文件全删,registry factory 暂指向 stub
+ * 抛错。Task B 落地 pi-ai-adapter 后,本 stubFactory 整个替换为真 adapter
+ * 工厂。本 Task 期间 `/api/llm/chat/completions` 不可用 —— 预期破坏。
  */
+const stubFactory = (cfg: ProviderConfig): LLMProvider => ({
+  id: cfg.id,
+  family: 'openai-compatible' as const,
+  async *streamChat() {
+    throw new Error(`Task A stub: provider "${cfg.id}" 待 Task B pi-ai-adapter 实现`)
+  },
+})
+
 function buildDefaultRegistry(): ProviderRegistry {
   return new ProviderRegistry(
     new Map([
-      ['openai', createOpenAICompatibleProvider],
-      ['zhipu', createOpenAICompatibleProvider],
-      ['deepseek', createOpenAICompatibleProvider],
-      ['moonshot', createOpenAICompatibleProvider],
-      ['qwen', createOpenAICompatibleProvider],
-      ['anthropic', createAnthropicProvider],
-      ['gemini', createGeminiProvider],
+      ['openai', stubFactory],
+      ['zhipu', stubFactory],
+      ['deepseek', stubFactory],
+      ['moonshot', stubFactory],
+      ['qwen', stubFactory],
+      ['anthropic', stubFactory],
+      ['gemini', stubFactory],
     ]),
   )
 }
