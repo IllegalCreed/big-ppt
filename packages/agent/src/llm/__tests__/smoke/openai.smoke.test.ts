@@ -17,9 +17,10 @@
  * - chat case maxTokens=200(reasoning-tier 模型 thinking + output 共享 budget,Phase 12
  *   Task K 学到 50 会被 MAX_TOKENS 截断)。
  *
- * 模型:`gpt-5.2-low`(Phase 12 Task A probe 验证的中转可用 model;pi-ai 0.74.0 MODELS
- * 表可能没有这个变种 id —— 此时走 warn-skip 兜底,开发者按需在 settings 改用 `gpt-5.2`
- * 等 pi-ai 内置 id 验通后,再申请 pi-ai 上游补表)。
+ * 模型:`gpt-5.2`(Phase 12 Task A probe 验证的中转可用 model)。
+ * model 选 'gpt-5.2' 而非 'gpt-5.2-low' —— pi-ai 0.74.0 MODELS 表无
+ * reasoning-effort 变体(`-low`/`-medium`/`-high`),duckcoding 中转两个都支持
+ * (Phase 12 Task A probe verified);用 base id 让 pi-ai getModel() 拿到 Model。
  *
  * **baseUrl 拼接**:OpenAI SDK 把 baseURL 当 prefix 直接拼 `/chat/completions`,必须含 /v1。
  * 单一 `DUCKCODING_TEST_BASE_URL` env 是根 URL(不含 /v1),smoke 内部拼;strip 末尾 / 避免 //v1。
@@ -50,7 +51,7 @@ describe.skipIf(!OPENAI_KEY)('openai smoke (via pi-ai)', () => {
         id: PROVIDER_ID,
         apiKey: OPENAI_KEY!,
         baseUrl: BASE_URL,
-        model: 'gpt-5.2-low',
+        model: 'gpt-5.2',
       })
       const events: CanonicalEvent[] = []
       const controller = new AbortController()
@@ -101,7 +102,7 @@ describe.skipIf(!OPENAI_KEY)('openai smoke (via pi-ai)', () => {
         id: PROVIDER_ID,
         apiKey: OPENAI_KEY!,
         baseUrl: BASE_URL,
-        model: 'gpt-5.2-low',
+        model: 'gpt-5.2',
       })
       const tools: ToolDef[] = [
         {
