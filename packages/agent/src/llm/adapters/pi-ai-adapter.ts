@@ -65,16 +65,73 @@ type PiAssistantBlock = PiTextContent | PiThinkingContent | PiToolCall
 type PiUserContent = PiTextContent | PiImageContent
 
 /**
+ * 我们的 provider id → pi-ai MODELS 表 key 翻译。
+ *
+ * pi-ai 用它自己一套 provider id（来自 KnownProvider union，见
+ * pi-ai/dist/types.d.ts:6）。我们 7 个 id 里有 3 个跟 pi-ai 不一致：
+ * - `gemini` → pi-ai 用 `google`
+ * - `zhipu` → pi-ai 用 `zai`
+ * - `moonshot` → pi-ai 用 `moonshotai`
+ *
+ * 其他 4 个 (openai / anthropic / deepseek / qwen) key 名一致。
+ *
+ * **Task C 加新 provider 时一并校验本表**：mistral / groq / xai /
+ * openrouter / cerebras 等 pi-ai key 已经看过(getProviders())跟 canonical
+ * 名一致；本 map 只在不一致时填一行。
+ *
+ * 不在 map 里的 id 走 fallback 用原名（这样 production 不会 silent miss）。
+ */
+const PI_AI_PROVIDER_MAP: Record<string, string> = {
+  openai: 'openai',
+  anthropic: 'anthropic',
+  gemini: 'google',
+  zhipu: 'zai',
+  moonshot: 'moonshotai',
+  deepseek: 'deepseek',
+  qwen: 'qwen',
+}
+
+export function toPiAiProviderId(ourId: string): string {
+  return PI_AI_PROVIDER_MAP[ourId] ?? ourId
+}
+
+/**
  * 测试期可注入的 model resolver。生产路径用 pi-ai `getModel(provider, modelId)`
  * 查内置 MODELS 表；faux 单测期 `registerFauxProvider` 注册的 model 不进
  * MODELS 表，必须通过测试 seam 直接塞入 Model 实例。
  *
  * 参考 routes/llm.ts 的 `__setRegistryForTesting` 模式：默认实现 + 测试期注入点。
+ *
+ * **defaultResolver 必须做两件事**:
+ * 1. 走 `toPiAiProviderId` 翻译 provider id 到 pi-ai MODELS key。
+ * 2. 检测 `getModel` 返回 undefined → 抛清晰错（pi-ai 0.74.0 的 `getModel`
+ *    内部会 throw `Cannot read properties of undefined (reading 'api')`，
+ *    错误消息对用户毫无意义；这里包装成可操作信息）。
  */
 type ModelResolver = (providerId: string, modelId: string) => PiModel<PiApi>
 
-const defaultResolver: ModelResolver = (providerId, modelId) =>
-  getModel(providerId as KnownProvider, modelId as Parameters<typeof getModel>[1])
+export const defaultResolver: ModelResolver = (providerId, modelId) => {
+  const piProviderId = toPiAiProviderId(providerId)
+  let model: PiModel<PiApi> | undefined
+  try {
+    model = getModel(piProviderId as KnownProvider, modelId as Parameters<typeof getModel>[1])
+  } catch (e) {
+    // pi-ai 0.74.0 内部访问 undefined.api 时 throw，转成 clear error
+    throw new Error(
+      `pi-ai 找不到 provider "${piProviderId}" model "${modelId}"。` +
+      `检查 settings 配的 model id 是否在 pi-ai MODELS 表里;` +
+      `用户配置可填中转支持的 model id(参考 Phase 12 Task A probe 结果)。原始错误: ${(e as Error).message}`,
+    )
+  }
+  if (!model) {
+    throw new Error(
+      `pi-ai 找不到 provider "${piProviderId}" model "${modelId}"。` +
+      `检查 settings 配的 model id 是否在 pi-ai MODELS 表里;` +
+      `用户配置可填中转支持的 model id(参考 Phase 12 Task A probe 结果)。`,
+    )
+  }
+  return model
+}
 
 let _resolver: ModelResolver = defaultResolver
 
@@ -147,15 +204,36 @@ function detectFamily(id: string): 'openai-compatible' | 'anthropic' | 'gemini' 
   return 'openai-compatible' // 其他 5 个 + 未来扩展全归 openai-compatible 家族
 }
 
+/**
+ * 默认 model id 必须存在于 pi-ai 内置 MODELS 表（按 toPiAiProviderId 翻译
+ * 后的 provider key 查询）。0.74.0 实测可用 model（`getModels(piProvider)`
+ * 列表里挑代表性 / 性价比款）：
+ *
+ * - openai: 42 models, gpt-4o
+ * - anthropic: 23 models, claude-3-5-sonnet-20241022
+ * - google: 27 models, gemini-2.5-flash
+ * - zai: 5 models (glm-4.5-air / glm-4.7 / glm-5-turbo / glm-5.1 / glm-5v-turbo), glm-5.1
+ * - moonshotai: 7 models, kimi-k2-0711-preview
+ * - deepseek: 2 models (v4-flash / v4-pro), deepseek-v4-flash
+ * - qwen: **0 models in pi-ai 0.74.0**（registry 有 provider key 但 MODELS
+ *   表空）—— 默认值无论填什么 defaultResolver 都会抛清晰错；保留 `qwen-plus`
+ *   占位让用户看到错误信息后到 settings 手填 model id（或等 pi-ai 后续版本
+ *   补 MODELS 表）。
+ *
+ * **用户配 baseUrl 走 duckcoding 等中转时**：必须保证 cfg.model 也在 pi-ai
+ * MODELS 表（pi-ai 用 model.api 字段 dispatch 到 streamOpenAICompletions /
+ * streamAnthropic / streamGoogle 等）；中转支持的 model 可能不在内置表，
+ * 用户需手填一个 pi-ai 认得的 model id（同家族同 api 即可）。
+ */
 function getDefaultModel(id: string): string {
   const defaults: Record<string, string> = {
     openai: 'gpt-4o',
-    anthropic: 'claude-sonnet-4-5',
+    anthropic: 'claude-3-5-sonnet-20241022',
     gemini: 'gemini-2.5-flash',
-    zhipu: 'glm-4.6',
-    deepseek: 'deepseek-chat',
-    moonshot: 'kimi-k2',
-    qwen: 'qwen3-max',
+    zhipu: 'glm-5.1',
+    moonshot: 'kimi-k2-0711-preview',
+    deepseek: 'deepseek-v4-flash',
+    qwen: 'qwen-plus', // pi-ai 0.74.0 qwen MODELS 空,占位让 defaultResolver 抛清晰错
   }
   return defaults[id] ?? 'gpt-4o'
 }

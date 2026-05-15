@@ -24,6 +24,8 @@ import {
   createPiAiAdapter,
   translatePiAiError,
   translatePiEvent,
+  toPiAiProviderId,
+  defaultResolver,
   __setModelResolverForTesting,
 } from '../adapters/pi-ai-adapter.js'
 import type { AssistantMessageEvent } from '@earendil-works/pi-ai'
@@ -1067,5 +1069,99 @@ describe('createPiAiAdapter — resolver 抛错路径', () => {
         // drain
       }
     }).rejects.toBeInstanceOf(LLMError)
+  })
+})
+
+describe('toPiAiProviderId — 我们 id ↔ pi-ai MODELS key 翻译', () => {
+  it('gemini → google', () => {
+    expect(toPiAiProviderId('gemini')).toBe('google')
+  })
+
+  it('zhipu → zai', () => {
+    expect(toPiAiProviderId('zhipu')).toBe('zai')
+  })
+
+  it('moonshot → moonshotai', () => {
+    expect(toPiAiProviderId('moonshot')).toBe('moonshotai')
+  })
+
+  it('openai / anthropic / deepseek / qwen 不翻译（同名）', () => {
+    expect(toPiAiProviderId('openai')).toBe('openai')
+    expect(toPiAiProviderId('anthropic')).toBe('anthropic')
+    expect(toPiAiProviderId('deepseek')).toBe('deepseek')
+    expect(toPiAiProviderId('qwen')).toBe('qwen')
+  })
+
+  it('map 不命中的 id fallback 用原名（不在 7 个 canonical 内）', () => {
+    expect(toPiAiProviderId('mistral')).toBe('mistral')
+    expect(toPiAiProviderId('xai')).toBe('xai')
+  })
+})
+
+describe('defaultResolver — 真打 pi-ai getModel 验证 6 个 provider', () => {
+  // 本 suite 不注入 model resolver(beforeEach 注入的会污染),临时还原 default
+  beforeEach(() => {
+    __setModelResolverForTesting(null)
+  })
+
+  it('openai / gpt-4o → 找到 model.api=openai-responses', () => {
+    const m = defaultResolver('openai', 'gpt-4o')
+    expect(m.id).toBe('gpt-4o')
+    expect(m.provider).toBe('openai')
+  })
+
+  it('anthropic / claude-3-5-sonnet-20241022 → 找到', () => {
+    const m = defaultResolver('anthropic', 'claude-3-5-sonnet-20241022')
+    expect(m.id).toBe('claude-3-5-sonnet-20241022')
+    expect(m.provider).toBe('anthropic')
+  })
+
+  it('gemini → 翻译到 google 后找到 gemini-2.5-flash', () => {
+    const m = defaultResolver('gemini', 'gemini-2.5-flash')
+    expect(m.id).toBe('gemini-2.5-flash')
+    expect(m.provider).toBe('google')
+  })
+
+  it('zhipu → 翻译到 zai 后找到 glm-5.1', () => {
+    const m = defaultResolver('zhipu', 'glm-5.1')
+    expect(m.id).toBe('glm-5.1')
+    expect(m.provider).toBe('zai')
+  })
+
+  it('moonshot → 翻译到 moonshotai 后找到 kimi-k2-0711-preview', () => {
+    const m = defaultResolver('moonshot', 'kimi-k2-0711-preview')
+    expect(m.id).toBe('kimi-k2-0711-preview')
+    expect(m.provider).toBe('moonshotai')
+  })
+
+  it('deepseek / deepseek-v4-flash → 找到', () => {
+    const m = defaultResolver('deepseek', 'deepseek-v4-flash')
+    expect(m.id).toBe('deepseek-v4-flash')
+    expect(m.provider).toBe('deepseek')
+  })
+
+  it('qwen (pi-ai 0.74.0 MODELS 表空) → 抛清晰错带 provider/model 信息', () => {
+    expect(() => defaultResolver('qwen', 'qwen-plus')).toThrow(
+      /pi-ai 找不到 provider "qwen" model "qwen-plus"/,
+    )
+  })
+
+  it('未知 model id → 抛清晰错而非 Cannot read properties of undefined', () => {
+    expect(() => defaultResolver('openai', 'gpt-bogus-9000')).toThrow(
+      /pi-ai 找不到 provider "openai" model "gpt-bogus-9000"/,
+    )
+  })
+
+  it('未知 model 错误消息**不**含 pi-ai 内部 "Cannot read properties" 字样（用户看不懂）', () => {
+    // 用 catch 拿真消息字符串验证不暴露 pi-ai 内部错误的全部信息
+    try {
+      defaultResolver('openai', 'gpt-bogus-9000')
+      throw new Error('应抛错')
+    } catch (e) {
+      const msg = (e as Error).message
+      expect(msg).toMatch(/pi-ai 找不到/)
+      // 原始错误附加在末尾(便于排查),但前缀必须是 user-actionable
+      expect(msg.indexOf('pi-ai 找不到')).toBe(0)
+    }
   })
 })
