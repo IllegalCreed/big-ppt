@@ -97,15 +97,23 @@ export function createPiAiAdapter(cfg: ProviderConfig): LLMProvider {
     id: providerId,
     family: detectFamily(providerId),
     async *streamChat(req, signal) {
-      let model: PiModel<PiApi>
+      let baseModel: PiModel<PiApi>
       try {
-        model = _resolver(providerId, modelId)
+        baseModel = _resolver(providerId, modelId)
       } catch (e) {
         throw translatePiAiError(e, providerId)
       }
+      // pi-ai 的 StreamOptions 没有 baseUrl 字段；baseUrl 是 Model 自身字段
+      // （pi-ai/dist/types.d.ts:385）。用户配的 baseUrl（走 duckcoding.ai 等中转
+      // 或自建端点）必须 clone Model 覆盖 baseUrl 后再传给 stream()，否则会
+      // hit pi-ai 内置默认（官方 OpenAI / Anthropic / Google 端点）而 401。
+      //
+      // Task E smoke test 强依赖此逻辑：controller 的 3 把 key 全是 duckcoding.ai
+      // 中转 key，没有 baseUrl override 就跑不通。
+      const model: PiModel<PiApi> = cfg.baseUrl
+        ? { ...baseModel, baseUrl: cfg.baseUrl }
+        : baseModel
       const piContext = canonicalToPiContext(req)
-      // pi-ai 的 StreamOptions 接受 apiKey / signal（baseUrl 是 Model 自身字段，
-      // 不在 StreamOptions 里——12.5 暂不接 baseUrl override，后续 PR 处理）。
       const piOptions: { apiKey?: string; signal?: AbortSignal; maxTokens?: number } = {
         apiKey: cfg.apiKey,
         signal,

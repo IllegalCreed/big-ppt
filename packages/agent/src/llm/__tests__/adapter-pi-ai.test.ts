@@ -980,6 +980,78 @@ describe('translatePiEvent — 边界路径', () => {
   })
 })
 
+describe('createPiAiAdapter — cfg.baseUrl 覆盖', () => {
+  it('cfg.baseUrl 非空时 model.baseUrl 被覆盖（透传给 pi-ai stream）', async () => {
+    // FauxResponseFactory 第 4 参数是 model 实例——adapter 内部 clone 的
+    // model（含 cfg.baseUrl override）会原样传给 stream()，faux 把它转交给
+    // factory，所以这里能直接断言。
+    let capturedBaseUrl: string | undefined
+    faux!.setResponses([
+      (_ctx, _opts, _state, model) => {
+        capturedBaseUrl = model.baseUrl
+        return fauxAssistantMessage([fauxText('ok')])
+      },
+    ])
+    const adapter = createPiAiAdapter({
+      id: 'openai',
+      apiKey: 'sk-key',
+      baseUrl: 'https://duckcoding.ai/v1',
+    })
+    const controller = new AbortController()
+    for await (const _evt of adapter.streamChat({ messages: [userText('hi')] }, controller.signal)) {
+      // drain
+    }
+    expect(capturedBaseUrl).toBe('https://duckcoding.ai/v1')
+  })
+
+  it('cfg.baseUrl 缺省时保留 resolver 返回的默认 model.baseUrl', async () => {
+    let capturedBaseUrl: string | undefined
+    const fauxModel = faux!.getModel()
+    const defaultBaseUrl = fauxModel.baseUrl
+    faux!.setResponses([
+      (_ctx, _opts, _state, model) => {
+        capturedBaseUrl = model.baseUrl
+        return fauxAssistantMessage([fauxText('ok')])
+      },
+    ])
+    const adapter = createPiAiAdapter({ id: 'openai', apiKey: 'sk-key' }) // 没传 baseUrl
+    const controller = new AbortController()
+    for await (const _evt of adapter.streamChat({ messages: [userText('hi')] }, controller.signal)) {
+      // drain
+    }
+    expect(capturedBaseUrl).toBe(defaultBaseUrl)
+  })
+
+  it('cfg.baseUrl 覆盖时其他 model 字段（id / api / provider）保留', async () => {
+    let capturedModel: { id: string; api: string; provider: string; baseUrl: string } | undefined
+    const fauxModel = faux!.getModel()
+    faux!.setResponses([
+      (_ctx, _opts, _state, model) => {
+        capturedModel = {
+          id: model.id,
+          api: model.api,
+          provider: model.provider,
+          baseUrl: model.baseUrl,
+        }
+        return fauxAssistantMessage([fauxText('ok')])
+      },
+    ])
+    const adapter = createPiAiAdapter({
+      id: 'openai',
+      apiKey: 'sk-key',
+      baseUrl: 'https://relay.example.com/v1',
+    })
+    const controller = new AbortController()
+    for await (const _evt of adapter.streamChat({ messages: [userText('hi')] }, controller.signal)) {
+      // drain
+    }
+    expect(capturedModel?.id).toBe(fauxModel.id)
+    expect(capturedModel?.api).toBe(fauxModel.api)
+    expect(capturedModel?.provider).toBe(fauxModel.provider)
+    expect(capturedModel?.baseUrl).toBe('https://relay.example.com/v1')
+  })
+})
+
 describe('createPiAiAdapter — resolver 抛错路径', () => {
   it('resolver 抛错被 translatePiAiError 包装', async () => {
     __setModelResolverForTesting(() => {
