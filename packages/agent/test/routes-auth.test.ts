@@ -497,12 +497,12 @@ describe('routes/auth', () => {
         activeProvider: 'openai',
         providers: {
           openai: { apiKey: 'sk-1' },
-          mistral: { apiKey: 'sk-2' }, // 不在白名单
+          cohere: { apiKey: 'sk-2' }, // 不在白名单（Phase 12.5 后 mistral 已在白名单，换用 cohere）
         },
       }),
     })
     expect(res.status).toBe(400)
-    expect((await res.json()).error).toContain('mistral')
+    expect((await res.json()).error).toContain('cohere')
   })
 
   it('llm-settings PUT: 新 shape body activeProvider 不在白名单 → 400', async () => {

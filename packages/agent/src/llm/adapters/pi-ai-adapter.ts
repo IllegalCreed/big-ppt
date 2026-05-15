@@ -68,16 +68,14 @@ type PiUserContent = PiTextContent | PiImageContent
  * 我们的 provider id → pi-ai MODELS 表 key 翻译。
  *
  * pi-ai 用它自己一套 provider id（来自 KnownProvider union，见
- * pi-ai/dist/types.d.ts:6）。我们 7 个 id 里有 3 个跟 pi-ai 不一致：
+ * pi-ai/dist/types.d.ts:6）。我们 12 个 id 里有 3 个跟 pi-ai 不一致：
  * - `gemini` → pi-ai 用 `google`
  * - `zhipu` → pi-ai 用 `zai`
  * - `moonshot` → pi-ai 用 `moonshotai`
  *
- * 其他 4 个 (openai / anthropic / deepseek / qwen) key 名一致。
- *
- * **Task C 加新 provider 时一并校验本表**：mistral / groq / xai /
- * openrouter / cerebras 等 pi-ai key 已经看过(getProviders())跟 canonical
- * 名一致；本 map 只在不一致时填一行。
+ * 其他 9 个 (openai / anthropic / deepseek / qwen / mistral / groq / xai /
+ * openrouter / cerebras) key 名跟 pi-ai 完全一致（Task C 已通过 getProviders()
+ * 重新 verified）。
  *
  * 不在 map 里的 id 走 fallback 用原名（这样 production 不会 silent miss）。
  */
@@ -89,6 +87,12 @@ const PI_AI_PROVIDER_MAP: Record<string, string> = {
   moonshot: 'moonshotai',
   deepseek: 'deepseek',
   qwen: 'qwen',
+  // Phase 12.5：以下 5 个 id 跟 pi-ai key 一致（identity 映射保留以便 grep）
+  mistral: 'mistral',
+  groq: 'groq',
+  xai: 'xai',
+  openrouter: 'openrouter',
+  cerebras: 'cerebras',
 }
 
 export function toPiAiProviderId(ourId: string): string {
@@ -220,6 +224,14 @@ function detectFamily(id: string): 'openai-compatible' | 'anthropic' | 'gemini' 
  *   占位让用户看到错误信息后到 settings 手填 model id（或等 pi-ai 后续版本
  *   补 MODELS 表）。
  *
+ * Phase 12.5 新增 5 个 provider 的 pi-ai 0.74.0 实测可用 model：
+ * - mistral: 28 models, mistral-large-latest（flagship）
+ * - groq: 18 models, llama-3.3-70b-versatile（high-quality 通用款）
+ * - xai: 25 models, grok-4-fast（最新 flagship-fast，性价比）
+ * - openrouter: 275 models, openai/gpt-4o（OpenRouter 上最通用的默认）
+ * - cerebras: 4 models (gpt-oss-120b / llama3.1-8b / qwen-3-235b... / zai-glm-4.7),
+ *   选 qwen-3-235b-a22b-instruct-2507（4 个里最大）
+ *
  * **用户配 baseUrl 走 duckcoding 等中转时**：必须保证 cfg.model 也在 pi-ai
  * MODELS 表（pi-ai 用 model.api 字段 dispatch 到 streamOpenAICompletions /
  * streamAnthropic / streamGoogle 等）；中转支持的 model 可能不在内置表，
@@ -234,6 +246,12 @@ function getDefaultModel(id: string): string {
     moonshot: 'kimi-k2-0711-preview',
     deepseek: 'deepseek-v4-flash',
     qwen: 'qwen-plus', // pi-ai 0.74.0 qwen MODELS 空,占位让 defaultResolver 抛清晰错
+    // Phase 12.5 新增 5 个（pi-ai 0.74.0 MODELS 表实测可用）
+    mistral: 'mistral-large-latest',
+    groq: 'llama-3.3-70b-versatile',
+    xai: 'grok-4-fast',
+    openrouter: 'openai/gpt-4o',
+    cerebras: 'qwen-3-235b-a22b-instruct-2507',
   }
   return defaults[id] ?? 'gpt-4o'
 }

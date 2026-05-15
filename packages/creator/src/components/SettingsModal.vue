@@ -89,6 +89,12 @@ const providerForms = ref<Record<ProviderId, ProviderFormEntry>>({
   deepseek: emptyEntry(),
   moonshot: emptyEntry(),
   qwen: emptyEntry(),
+  // Phase 12.5 新增 5 个 provider
+  mistral: emptyEntry(),
+  groq: emptyEntry(),
+  xai: emptyEntry(),
+  openrouter: emptyEntry(),
+  cerebras: emptyEntry(),
 })
 const advanced = ref<AdvancedForm>(emptyAdvanced())
 const advancedExpanded = ref(false)

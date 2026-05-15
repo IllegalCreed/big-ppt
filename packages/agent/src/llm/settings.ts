@@ -44,6 +44,11 @@ export const ActiveProviderIdSchema = z.enum([
   'deepseek',
   'moonshot',
   'qwen',
+  'mistral', // Phase 12.5
+  'groq', // Phase 12.5
+  'xai', // Phase 12.5
+  'openrouter', // Phase 12.5
+  'cerebras', // Phase 12.5
 ])
 
 export type ActiveProviderId = z.infer<typeof ActiveProviderIdSchema>
@@ -58,6 +63,11 @@ export const LlmSettingsSchema = z.object({
     deepseek: ProviderConfigSchema.optional(),
     moonshot: ProviderConfigSchema.optional(),
     qwen: ProviderConfigSchema.optional(),
+    mistral: ProviderConfigSchema.optional(), // Phase 12.5
+    groq: ProviderConfigSchema.optional(), // Phase 12.5
+    xai: ProviderConfigSchema.optional(), // Phase 12.5
+    openrouter: ProviderConfigSchema.optional(), // Phase 12.5
+    cerebras: ProviderConfigSchema.optional(), // Phase 12.5
   }),
   advanced: z
     .object({

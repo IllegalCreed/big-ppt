@@ -37,12 +37,13 @@ import type { CanonicalChatRequest } from '../llm/types.js'
 import { createPiAiAdapter } from '../llm/adapters/pi-ai-adapter.js'
 
 /**
- * Phase 12.5 Task B：7 个 LLM provider 全部走 pi-ai-adapter（统一 factory
+ * Phase 12.5 Task B/C：12 个 LLM provider 全部走 pi-ai-adapter（统一 factory
  * 根据 providerId 内部分流到 pi-ai 对应 streamXxx 实现）。
  *
- * Task A 临时 stub 已删；Task C-H 加新 provider（mistral / groq / xai /
- * openrouter / cerebras 等）时仅需在 settings.ts 的 ActiveProviderIdSchema
- * 加 id + 这里 Map 加一行 `[id, createPiAiAdapter]`，adapter 代码零修改。
+ * Task A 临时 stub 已删；Task C 起新 provider（mistral / groq / xai /
+ * openrouter / cerebras）已注册；后续再加 provider 时仅需在 settings.ts 的
+ * ActiveProviderIdSchema 加 id + 这里 Map 加一行 `[id, createPiAiAdapter]`，
+ * adapter 代码零修改。
  */
 function buildDefaultRegistry(): ProviderRegistry {
   return new ProviderRegistry(
@@ -54,6 +55,11 @@ function buildDefaultRegistry(): ProviderRegistry {
       ['deepseek', createPiAiAdapter],
       ['moonshot', createPiAiAdapter],
       ['qwen', createPiAiAdapter],
+      ['mistral', createPiAiAdapter], // Phase 12.5
+      ['groq', createPiAiAdapter], // Phase 12.5
+      ['xai', createPiAiAdapter], // Phase 12.5
+      ['openrouter', createPiAiAdapter], // Phase 12.5
+      ['cerebras', createPiAiAdapter], // Phase 12.5
     ]),
   )
 }

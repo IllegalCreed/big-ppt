@@ -61,6 +61,47 @@ export const PROVIDER_CATALOG = [
     defaultModel: 'qwen-plus',
     family: 'openai-compatible',
   },
+  // Phase 12.5 新增 5 个 provider —— defaultModel 取自 pi-ai 0.74.0 MODELS 表
+  // 实测可用 model id(见 plan 27 Task C Step 3 probe 结果)。
+  // family 标签:5 个里 mistral / xai 因 pi-ai 内部走专用 streamMistral /
+  // 自家 grok endpoint(openai-compatible 兼容但带 SDK-level 适配),catalog
+  // 标记成独立家族让 UI badge 显示更精准;其他 3 个(groq / openrouter /
+  // cerebras)走 streamOpenAICompletions 归入 openai-compatible。
+  {
+    id: 'mistral',
+    name: 'Mistral',
+    defaultBaseUrl: 'https://api.mistral.ai/v1',
+    defaultModel: 'mistral-large-latest',
+    family: 'mistral',
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    defaultBaseUrl: 'https://api.groq.com/openai/v1',
+    defaultModel: 'llama-3.3-70b-versatile',
+    family: 'openai-compatible',
+  },
+  {
+    id: 'xai',
+    name: 'xAI',
+    defaultBaseUrl: 'https://api.x.ai/v1',
+    defaultModel: 'grok-4-fast',
+    family: 'xai',
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'openai/gpt-4o',
+    family: 'openai-compatible',
+  },
+  {
+    id: 'cerebras',
+    name: 'Cerebras',
+    defaultBaseUrl: 'https://api.cerebras.ai/v1',
+    defaultModel: 'qwen-3-235b-a22b-instruct-2507',
+    family: 'openai-compatible',
+  },
 ] as const
 
 export type ProviderCatalogEntry = (typeof PROVIDER_CATALOG)[number]

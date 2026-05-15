@@ -72,7 +72,7 @@ describe('SettingsModal provider switch (active provider advanced sub-block)', (
     document.body.innerHTML = ''
   })
 
-  it('打开 modal 后默认显示 LLM tab,7 个 provider 卡片全渲染', async () => {
+  it('打开 modal 后默认显示 LLM tab,12 个 provider 卡片全渲染（Phase 12.5 起）', async () => {
     const wrapper = mount(SettingsModal, {
       props: { open: true },
       attachTo: document.body,
@@ -80,9 +80,22 @@ describe('SettingsModal provider switch (active provider advanced sub-block)', (
     await flushPromises()
 
     const cards = $all('.provider-config-card')
-    expect(cards.length).toBe(7)
+    expect(cards.length).toBe(12)
     const ids = cards.map((c) => c.getAttribute('data-provider-id'))
-    expect(ids).toEqual(['openai', 'anthropic', 'gemini', 'zhipu', 'deepseek', 'moonshot', 'qwen'])
+    expect(ids).toEqual([
+      'openai',
+      'anthropic',
+      'gemini',
+      'zhipu',
+      'deepseek',
+      'moonshot',
+      'qwen',
+      'mistral',
+      'groq',
+      'xai',
+      'openrouter',
+      'cerebras',
+    ])
 
     wrapper.unmount()
   })

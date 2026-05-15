@@ -283,3 +283,23 @@ describe('getActiveProviderConfig(shape-agnostic 读取)', () => {
     expect(getActiveProviderConfig(encryptApiKey(plaintext))).toBe(null)
   })
 })
+
+describe('Phase 12.5: 5 个新 provider id', () => {
+  for (const id of ['mistral', 'groq', 'xai', 'openrouter', 'cerebras'] as const) {
+    it(`accepts activeProvider="${id}"`, () => {
+      const result = LlmSettingsSchema.safeParse({
+        activeProvider: id,
+        providers: { [id]: { apiKey: 'sk-test' } },
+      })
+      expect(result.success).toBe(true)
+    })
+  }
+
+  it('rejects unknown provider id', () => {
+    const result = LlmSettingsSchema.safeParse({
+      activeProvider: 'cohere',
+      providers: { cohere: { apiKey: 'sk' } },
+    })
+    expect(result.success).toBe(false)
+  })
+})

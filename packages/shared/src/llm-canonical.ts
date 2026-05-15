@@ -58,7 +58,26 @@ export type CanonicalChatRequest = {
   structuredOutput?: { schema: Record<string, unknown> }
 }
 
-export type TokenUsage = { input: number; output: number; cached?: number }
+export type TokenUsage = {
+  input: number
+  output: number
+  cached?: number
+  /**
+   * Phase 12.5:pi-ai 返回的成本数据(USD 浮点数)。
+   * frontend 渲染时按 USD_TO_RMB = 7.2 换算成 ¥ 显示。
+   *
+   * 注:pi-ai 0.74.0 实际字段是 cacheRead / cacheWrite(不是 spec 假设的
+   * cachedRead / cachedWrite),Task B 已 verified。如未来 pi-ai 升级改字段,
+   * 这里同步改。
+   */
+  cost?: {
+    total: number
+    input: number
+    output: number
+    cacheRead?: number
+    cacheWrite?: number
+  }
+}
 export type FinishReason = 'stop' | 'length' | 'tool_use' | 'content_filter'
 
 export type CanonicalEvent =
