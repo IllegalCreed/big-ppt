@@ -9,6 +9,8 @@ import { reorderSlidesTool } from './reorder-slides.js'
 import { readTemplateTool } from './read-template.js'
 import { switchTemplateTool } from './switch-template.js'
 import { generateSlideImageTool } from './generate-slide-image.js'
+import { listUploadedFilesTool } from './list-uploaded-files.js'
+import { readUploadedFileTool } from './read-uploaded-file.js'
 
 /**
  * Phase 11.6 dogfood 后:删除 list_templates 工具(跨模板返回所有 manifest 触发污染:
@@ -30,4 +32,6 @@ export function registerLocalTools(): void {
   register(readTemplateTool)
   register(switchTemplateTool)
   register(generateSlideImageTool)
+  register(listUploadedFilesTool)
+  register(readUploadedFileTool)
 }
