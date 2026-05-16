@@ -1,3 +1,4 @@
+/** useSlashCommands composable 单测：6 指令行为 + slashItems 候选 + handleSenderChange + handleSlashSubmit/Select 各分支。 */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSlashCommands } from '../src/composables/useSlashCommands'
 
@@ -175,5 +176,118 @@ describe('useSlashCommands · handleSlashSubmit', () => {
     expect(api.handleSlashSubmit('hello world')).toBe(false)
     expect(stubs.clearHistory).not.toHaveBeenCalled()
     expect(stubs.appendLocalMessage).not.toHaveBeenCalled()
+  })
+
+  it('/retry 走 handleSlashSubmit 路径 → 调 retryLastUserMessage', () => {
+    const api = mkApi(stubs)
+    expect(api.handleSlashSubmit('/retry')).toBe(true)
+    expect(stubs.retryLastUserMessage).toHaveBeenCalledOnce()
+  })
+
+  it('/help 走 handleSlashSubmit 路径 → appendLocalMessage 列出全部指令', () => {
+    const api = mkApi(stubs)
+    expect(api.handleSlashSubmit('/help')).toBe(true)
+    const msg = stubs.appendLocalMessage.mock.calls[0]![0] as string
+    for (const v of ['/clear', '/retry', '/undo', '/redo', '/log', '/help']) {
+      expect(msg).toContain(v)
+    }
+  })
+
+  it('指令后跟参数仍按指令名匹配（/clear extra args 也走 clearHistory）', () => {
+    const api = mkApi(stubs)
+    expect(api.handleSlashSubmit('/clear   extra ignored')).toBe(true)
+    expect(stubs.clearHistory).toHaveBeenCalledOnce()
+  })
+
+  it('空字符串返回 false', () => {
+    const api = mkApi(stubs)
+    expect(api.handleSlashSubmit('')).toBe(false)
+    expect(api.handleSlashSubmit('   ')).toBe(false)
+  })
+})
+
+describe('useSlashCommands · handleSlashSelect', () => {
+  let stubs: Stubs
+  beforeEach(() => {
+    stubs = mkStubs()
+  })
+
+  it('已知指令 value → 调对应 run（/clear → clearHistory）', () => {
+    const api = mkApi(stubs)
+    api.handleSlashSelect('clear')
+    expect(stubs.clearHistory).toHaveBeenCalledOnce()
+    expect(stubs.appendLocalMessage).toHaveBeenCalledWith('对话已清空。')
+  })
+
+  it('已知指令 value → /retry → retryLastUserMessage', () => {
+    const api = mkApi(stubs)
+    api.handleSlashSelect('retry')
+    expect(stubs.retryLastUserMessage).toHaveBeenCalledOnce()
+  })
+
+  it('未知 value → 静默不动 callback', () => {
+    const api = mkApi(stubs)
+    api.handleSlashSelect('unknown-value')
+    expect(stubs.clearHistory).not.toHaveBeenCalled()
+    expect(stubs.appendLocalMessage).not.toHaveBeenCalled()
+    expect(stubs.retryLastUserMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('useSlashCommands · commands metadata（6 个 value/label）', () => {
+  it('commands 列表恰好 6 个,value/label 顺序固定', () => {
+    const api = mkApi(mkStubs())
+    expect(api.commands).toHaveLength(6)
+    expect(api.commands.map((c) => c.value)).toEqual([
+      'clear',
+      'retry',
+      'undo',
+      'redo',
+      'log',
+      'help',
+    ])
+    expect(api.commands.map((c) => c.label)).toEqual([
+      '/clear',
+      '/retry',
+      '/undo',
+      '/redo',
+      '/log',
+      '/help',
+    ])
+    // 每个 command 都有 description 字符串
+    for (const c of api.commands) {
+      expect(typeof c.description).toBe('string')
+      expect(c.description.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('slashItems(空 query) 返 6 个候选,顺序对齐 commands', () => {
+    const api = mkApi(mkStubs())
+    const items = api.slashItems({})
+    expect(items.map((i) => i.value)).toEqual([
+      'clear',
+      'retry',
+      'undo',
+      'redo',
+      'log',
+      'help',
+    ])
+  })
+
+  it('slashItems(query=c) 只剩 /clear', () => {
+    const api = mkApi(mkStubs())
+    const items = api.slashItems({ query: 'c' })
+    expect(items.map((i) => i.value)).toEqual(['clear'])
+  })
+
+  it('slashItems(query=h) 只剩 /help', () => {
+    const api = mkApi(mkStubs())
+    const items = api.slashItems({ query: 'h' })
+    expect(items.map((i) => i.value)).toEqual(['help'])
+  })
+
+  it('slashItems 接受 undefined info(默认走空 query 返全部)', () => {
+    const api = mkApi(mkStubs())
+    expect(api.slashItems().length).toBe(6)
   })
 })
