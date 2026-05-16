@@ -819,7 +819,56 @@
 
 ---
 
-## Phase 13：预制 MCP 服务扩展（catalog）
+## Phase 13：文件上传 + 引用 + 用户级 Asset 管理
+
+**目标**：让 PPT-agent 用户上传 PDF / DOCX / XLSX / Image / MD / TXT 作为参考素材，agent 通过 `list_uploaded_files` + `read_uploaded_file` 两个工具读取（image 类直接 multi-modal 喂主 LLM）。配套 user_assets 表 + 本地 fs 存储 + per-user 100MB / per-file 10MB 硬 cap + 「我的素材」管理面板。原 Phase 13「MCP catalog 扩展」被 Phase 13.5 接管（dogfood 反馈让 file-upload 优先级更高,2026-05-16 用户拍板）。
+
+**交付物**：
+
+- **数据层**：`user_assets` 表 drizzle schema（11 字段，含 extractStatus / extractedText / sha256 dedup）+ `storage.ts` fs 抽象（`${LUMIDECK_ASSETS_DIR}/<userId>/<assetId>` 落字节）+ `quota.ts` per-user/per-file 配额 helper + 7 单测 + 11 集成测
+- **路由**：`POST/GET/DELETE /api/uploads`（multipart + magic-bytes 白名单 + 跨用户 404 不泄漏 + 14 集成测）
+- **Extractor worker**：进程内 queue + worker pool（concurrency=3, timeout=30s）+ 5 type parser（pdf-parse 2.x / mammoth / xlsx / text UTF-8/GBK / image-skip）+ 12 集成测；upload 路由 enqueue 跟 worker 解耦
+- **Agent tools**：`list_uploaded_files`（返当前 user 全部 asset + 200 字 summary）+ `read_uploaded_file`（mode='text'\|'image',按 extractStatus 4 态 + 主 LLM multi-modal 检测分支返友好错）+ 16 单测;system prompt 末尾自动拼 user assets inventory
+- **前端**：ChatPanel sender 区 paperclip + 拖拽 + UploadProgress chip（uploading/done/error）+ AssetManagerPanel 抽屉（容量条 + 列表 + 删除 + 空态）+ DeckEditorCanvas 顶栏「我的素材」入口 + 22 组件/composable 单测
+- **E2E**：`file-upload-flow.spec.ts`（GLM_TEST_KEY 真打,验注册→建 deck→配 key→上传 .md→等 done→chat 引用→断言 token,26s 过）+ `assets-quota.spec.ts`（3 case:per-file 413 / per-user 413 / AssetManagerPanel 删除）
+- **运维**：`LUMIDECK_ASSETS_DIR` / `LUMIDECK_QUOTA_PER_USER_BYTES` / `LUMIDECK_QUOTA_PER_FILE_BYTES` 三环境变量；`scripts/deploy.sh` 自动 `mkdir -p /var/lumideck/user-assets`;`.env.production.example` 增补
+- **测试增量**：agent +68（878→946，+5 file）/ creator +22（223→245，+4 file）/ E2E +2 spec（22→24）
+
+**验收条件**：
+
+- [x] user_assets 表 drizzle push 到 dev / test / prod 库
+- [x] POST/GET/DELETE /api/uploads 跑通 + 14 集成测全过
+- [x] 5 type parser + extractor worker queue + 12 集成测
+- [x] list_uploaded_files / read_uploaded_file 两 tool + 16 单测;multi-modal LLM 检测覆盖 12 provider
+- [x] createAgent systemPrompt 自动拼 user assets inventory + 5 case 扩展单测
+- [x] ChatPanel paperclip + 拖拽 + UploadProgress + AssetManagerPanel + 22 组件测
+- [x] 2 E2E spec(file-upload-flow + assets-quota)全跑通
+- [x] type-check / lint / build / 全测试套 全绿(agent 946 / creator 245 / shared 3)
+- [x] prod healthz 200 + LUMIDECK_ASSETS_DIR 路径权限 OK
+- [x] plan 29 close-out 三章节 + CLAUDE.md 两条新坑 + roadmap Phase 13 ✅
+
+**状态**：✅ 落地（2026-05-16，[plan 29](../plans/29-phase13-file-upload-assets.md)，11 commit + Task G close-out）
+
+**依赖**：Phase 12.7 完成
+
+**后续候选**：
+- **Phase 13.5**：原 Phase 13 主体——预制 MCP 服务扩展 catalog（含 stdio transport / zhipu-vision 解封）
+- **Phase 13.x（音频）**：ASR / 音频转录,接当前 extractor worker queue（pattern 是 generic 的）
+- **Phase 13.x（品牌 asset）**：跨 deck 复用 logo / 主色 / 字体的品牌 asset 持久化
+- **Phase 14**：导出（PDF/PPTX/PNG 序列）
+
+**不做什么**：
+
+- ❌ 音视频文件本期不做（Phase 13.x 候选）
+- ❌ PPTX 导入 Phase 15 单独
+- ❌ Vision LLM 独立配置（Settings 第 4 tab）— 走主 LLM 多模态直传
+- ❌ OSS / S3 远程存储 — 产品化时再迁
+- ❌ 文件版本管理 / 重命名再上传 — 上传即唯一
+- ❌ OCR / 物体检测 — multi-modal LLM 自身能力够
+
+---
+
+## Phase 13.5：预制 MCP 服务扩展（catalog）—— 原 Phase 13 主体
 
 **目标**：当前只预置了 3 个智谱 StreamableHTTP MCP（web-search / web-reader / zread）。把社区与官方常用且对 PPT 创作有直接增益的 MCP 整理成 catalog，降低用户接入成本。每个预置卡片填好 endpoint、必要 headers、场景说明，让用户从"加 MCP"流程减到分钟级。**同时本 Phase 引入 stdio transport 支持**，让 npx-only 的 MCP（如智谱视觉理解）可用，并解封 [packages/agent/src/mcp-server-repo/presets.ts](../../packages/agent/src/mcp-server-repo/presets.ts) 里的 `UNSUPPORTED_SERVER_IDS` 黑名单。
 
@@ -843,7 +892,7 @@
 
 **状态**：待开始
 
-**依赖**：Phase 12 完成
+**依赖**：Phase 13 完成
 
 **不做什么**：
 
@@ -873,7 +922,7 @@
 
 **状态**：待开始
 
-**依赖**：Phase 13 完成
+**依赖**：Phase 13 完成（Phase 13.5 MCP catalog 与 Phase 14 可并行）
 
 **不做什么**：
 
