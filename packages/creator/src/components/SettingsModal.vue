@@ -280,6 +280,14 @@ function resolveLegacyThinkingLevel(
 async function loadSettings() {
   try {
     const data = await api.get<GetLlmSettingsResponse>('/api/auth/llm-settings')
+    // 修 race(2026-05-16 dogfood):用户在 modal 打开但 GET 未返时已经开始打字,
+    // 下面的 reset 会把这些输入擦掉。snapshot 已敲的明文 apiKey,inject 之后
+    // restore 覆盖 server 永远返"" 的占位(server 不回明文)。
+    const pendingApiKeys: Partial<Record<ProviderId, string>> = {}
+    for (const meta of PROVIDER_CATALOG) {
+      const cur = providerForms.value[meta.id]
+      if (cur?.apiKey && cur.apiKey.trim()) pendingApiKeys[meta.id] = cur.apiKey
+    }
     // 重置表单
     for (const meta of PROVIDER_CATALOG) {
       providerForms.value[meta.id] = emptyEntry()
@@ -290,12 +298,18 @@ async function loadSettings() {
       const id = pid as ProviderId
       if (!providerForms.value[id]) continue
       providerForms.value[id] = {
-        apiKey: '',
+        apiKey: pendingApiKeys[id] ?? '',
         model: view.model ?? '',
         baseUrl: view.baseUrl ?? '',
         hasApiKey: !!view.hasApiKey,
         showApiKey: false,
       }
+    }
+    // 恢复未在 server 数据里的 provider(老用户首次激活某 provider 还没保存 → server
+    // 不返该 provider 但用户已经在前端 form 里填了 apiKey)
+    for (const [id, key] of Object.entries(pendingApiKeys)) {
+      const entry = providerForms.value[id as ProviderId]
+      if (entry && !entry.apiKey) entry.apiKey = key
     }
     // 注入 advanced
     if (data.advanced) {
