@@ -768,7 +768,7 @@
 
 **不做什么**：
 
-- ❌ **OAuth providers**（Codex / Copilot / Vertex）—— pi-ai 支持但需 redirect URI + token refresh + UI，**留 Phase 12.6 候选**
+- ❌ **OAuth providers**（Codex / Copilot / Vertex）—— **不做**：Codex / Copilot 等平台 ToS 明确禁止第三方 agent 集成，OAuth 流就算技术上能跑，账号也面临风控；用户走 API key + 自选中转就够了
 - ❌ **image generation 切 pi-ai** —— pi-ai 走 OpenRouter 中转（同模型 + 加价），违反 memory `image-gen-provider-scope`；`generate_slide_image` 维持 `openai-image.ts` 独立路径
 - ❌ **pi-agent-core 上移 useAIChat** —— 复杂度爆炸 + 浏览器兼容性未验证；**留 Phase 13 候选** dogfood 后基于实测痛点（parallel tool / steering / sessionId caching）再定
 - ❌ **cross-provider handoff UI** —— pi-ai 内置 backend 能力本 phase 自动有；frontend「换 provider 继续」按钮延后
@@ -808,13 +808,12 @@
 - ❌ **steering UI**：留 Phase 13.x 候选独立 UI 设计
 - ❌ **cross-provider handoff UI**：留 Phase 13.x 候选
 - ❌ **Custom AgentMessage 类型**：纯重构无新价值
-- ❌ **OAuth providers**：Phase 12.6 候选独立做（Codex / Copilot / Vertex）
+- ❌ **OAuth providers**（Codex / Copilot / Vertex）：**不做**——平台 ToS 禁止第三方 agent 集成，账号风控风险
 - ❌ **MCP catalog 扩展**：Phase 13 主体
 - ❌ **删 POST `/api/decks/:id/chats` 兼容期**：保留 + log deprecated，Phase 14/15 再清理
 - ❌ **删 `chatStreamLegacy`**：实际 grep 零调用方已在 Task G 整文件删（plan 写「保留」是过度防御）
 
 **后续候选**：
-- Phase 12.6 OAuth providers
 - Phase 13 MCP catalog 扩展（含 stdio transport）
 - 未来 Phase：transformContext / steering / cross-provider handoff UI（dogfood 出痛点后再启动）
 

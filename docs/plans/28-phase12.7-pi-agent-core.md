@@ -4,7 +4,7 @@
 >
 > **状态**：待启动
 > **前置阶段**：[plan 26 Phase 12](26-phase12-multi-llm-providers.md) ✅ + [plan 27 Phase 12.5](27-phase12.5-pi-ai-migration.md) ✅
-> **后续候选**：Phase 12.6 OAuth providers / Phase 13 MCP catalog 扩展
+> **后续候选**：Phase 13 MCP catalog 扩展
 > **路线图**：[roadmap.md Phase 12.7](../requirements/roadmap.md)
 > **设计 spec**：[2026-05-15-phase12.7-pi-agent-core-design.md](../superpowers/specs/2026-05-15-phase12.7-pi-agent-core-design.md)
 > **执行子技能**：`superpowers:subagent-driven-development`
@@ -2234,7 +2234,7 @@ git commit -m "docs(phase12.7-H): plan 28 close-out — 偏离 / 踩坑 / 测试
 - ❌ **steering UI**：留 Phase 13.x 候选独立 UI 设计
 - ❌ **cross-provider handoff UI**：留 Phase 13.x 候选
 - ❌ **Custom AgentMessage 类型**：纯重构无新价值
-- ❌ **OAuth providers**：Phase 12.6 候选独立做
+- ❌ **OAuth providers**：**永不做**——平台 ToS 禁止第三方 agent 集成
 - ❌ **MCP catalog 扩展**：Phase 13 主体
 - ❌ **删 `/api/decks/:id/chats` POST route**：兼容期保留 + log deprecated，Phase 14/15 再清理
 - ❌ **删 `chatStreamLegacy`**：`rewriteForTemplate` / `rewriteSinglePageToComponents` 等非 agent 单轮 LLM call 仍依赖
