@@ -103,10 +103,20 @@ function buildStructuredImagePrompt(userPrompt: string, style: ImageGenStyle): s
  * fixture 文件由 Task H 添加在 packages/agent/test/fixtures/test-image.png。
  * 工具内只在 NODE_ENV !== 'production' && BIG_PPT_TEST_IMAGE_MODE === 'stub' 时启用,
  * 防生产误触。
+ *
+ * fallback 模式(同 env,值为 'fallback'):强制 generateImage 抛错走 Phase 11.6
+ * graceful-degradation 路径。给 image-gen-fallback.spec.ts 用,验 fallback-rewrote
+ * 状态机 + slide layout 回到组件版,不需要真制造 OpenAI 失败。
  */
 function shouldUseStub(): boolean {
   return (
     process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_IMAGE_MODE === 'stub'
+  )
+}
+
+function shouldForceFallback(): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_IMAGE_MODE === 'fallback'
   )
 }
 
@@ -130,6 +140,15 @@ async function stubGenerateImage(_input: ImageGenInput): Promise<ImageGenOutput>
     modelUsed: 'stub-fixture',
     pathTaken: 'B',
   }
+}
+
+/**
+ * fallback 模式专用 stub:模拟 OpenAI 路 A + 路 B 都崩,让 worker 进入 Phase 11.6
+ * graceful-degradation 重写分支。配 BIG_PPT_TEST_REWRITE_MODE=skeleton 一起用,
+ * rewriteSinglePage 也走 skeleton 不烧 token,整体跑通 fallback-rewrote 终态。
+ */
+async function fallbackForcedGenerateImage(_input: ImageGenInput): Promise<ImageGenOutput> {
+  throw new Error('forced fallback (BIG_PPT_TEST_IMAGE_MODE=fallback)')
 }
 
 const TOOL_NAME = 'generate_slide_image'
@@ -239,7 +258,7 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
 
   let imageSettings = await getImageLlmSettings(ctx.userId)
   if (!imageSettings) {
-    if (shouldUseStub()) {
+    if (shouldUseStub() || shouldForceFallback()) {
       imageSettings = { provider: 'openai', apiKey: 'stub' }
     } else {
       return JSON.stringify({
@@ -283,9 +302,9 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
       async () => {
         const settings = imageSettings!
         const deps: RunImageJobDeps = {
-          generateImage: shouldUseStub()
+          generateImage: shouldForceFallback()
             ? (a) =>
-                stubGenerateImage({
+                fallbackForcedGenerateImage({
                   prompt: a.prompt,
                   size: a.size,
                   signal: a.signal,
@@ -293,15 +312,25 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
                   baseUrl: settings.baseUrl,
                   primaryModel: a.model,
                 })
-            : (a) =>
-                generateImage({
-                  prompt: a.prompt,
-                  size: a.size,
-                  signal: a.signal,
-                  apiKey: settings.apiKey,
-                  baseUrl: settings.baseUrl,
-                  primaryModel: a.model,
-                }),
+            : shouldUseStub()
+              ? (a) =>
+                  stubGenerateImage({
+                    prompt: a.prompt,
+                    size: a.size,
+                    signal: a.signal,
+                    apiKey: settings.apiKey,
+                    baseUrl: settings.baseUrl,
+                    primaryModel: a.model,
+                  })
+              : (a) =>
+                  generateImage({
+                    prompt: a.prompt,
+                    size: a.size,
+                    signal: a.signal,
+                    apiKey: settings.apiKey,
+                    baseUrl: settings.baseUrl,
+                    primaryModel: a.model,
+                  }),
           createAsset: async (args2) => createAsset(args2),
           updateSlide: async (args2) => {
             const fm: Record<string, unknown> = {

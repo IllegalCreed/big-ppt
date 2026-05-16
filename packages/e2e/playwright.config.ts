@@ -3,6 +3,22 @@ import { defineConfig } from '@playwright/test'
 const AGENT_PORT = Number(process.env.AGENT_PORT ?? 4100)
 const CREATOR_PORT = Number(process.env.CREATOR_PORT ?? 3130)
 
+/**
+ * BIG_PPT_TEST_IMAGE_MODE 选择(默认 stub):
+ *   - BIG_PPT_E2E_IMAGE_MODE 显式指定 → 用该值(image-gen-fallback.spec.ts 走 'fallback'
+ *     强制 generateImage 抛错走 Phase 11.6 graceful-degradation 重写)
+ *   - 设了 OPENAI_IMAGE_TEST_KEY → 留空 unset,让 generate_slide_image 走真打 OpenAI
+ *     (image-gen-smoke.spec.ts 用,验真打 happy path)
+ *   - 缺省 → stub(image-content.spec.ts 等已有 spec 用,读 fixture PNG)
+ */
+function resolveImageMode(): string | undefined {
+  if (process.env.BIG_PPT_E2E_IMAGE_MODE) return process.env.BIG_PPT_E2E_IMAGE_MODE
+  if (process.env.OPENAI_IMAGE_TEST_KEY) return undefined
+  return 'stub'
+}
+
+const IMAGE_MODE = resolveImageMode()
+
 export default defineConfig({
   testDir: './tests',
   timeout: 30_000,
@@ -43,8 +59,11 @@ export default defineConfig({
         // Phase 7D：让 rewriteForTemplate 跳 LLM 直接读 starter.md，
         // 使切模板状态机端到端跑通无需调真 LLM
         BIG_PPT_TEST_REWRITE_MODE: 'skeleton',
-        // Phase 11.5：让 generate_slide_image 工具跳真 OpenAI,直接读 fixture PNG
-        BIG_PPT_TEST_IMAGE_MODE: 'stub',
+        // Phase 11.5+：generate_slide_image 工具 mode 切换:
+        //  - stub(默认)读 fixture PNG → 不烧 OpenAI 配额
+        //  - fallback → 强制 generateImage 抛错走 Phase 11.6 graceful-degradation
+        //  - 设 OPENAI_IMAGE_TEST_KEY 时 unset → 真打 OpenAI(image-gen-smoke.spec.ts 用)
+        ...(IMAGE_MODE !== undefined ? { BIG_PPT_TEST_IMAGE_MODE: IMAGE_MODE } : {}),
         // 让 e2e 的 mirror 写到 tmp 而非 packages/slidev/slides.md，
         // 避免你 dev 跑着的 :3031 slidev HMR 被 e2e 切模板搞乱（root cause：
         // 大改 frontmatter 触发 slidev cli full reload，dev iframe 闪/状态错乱）。
