@@ -298,6 +298,7 @@ ${manifest.promptPersona}
    - \`edit_slides(old_string, new_string)\` — 页内小改：改一个词 / 一个数字。old_string 必须是文件中**唯一**存在的片段
 3. **提问确认**：需求不明时先问（主题、页数、受众），不要猜
 4. **纯回答**：用户只是询问时直接回答，不调工具
+5. **读取已上传素材**：用户说「读 / 总结 / 概括 / 分析 / 看一下 / 帮我看 / 介绍一下」上传的 PDF/DOCX/XLSX/MD/TXT 文件时,只调 \`read_uploaded_file\` 拿内容然后**直接用文本回答**——**不要**主动 \`write_slides\` / \`create_slide\` / \`update_slide\` / \`generate_slide_image\`,除非用户明确说「做成 PPT / 生成幻灯片 / 配图 / 改写成演示 / 转成汇报」等创建意图。同样原则:用户问「这文件讲啥」≠「把它做成 PPT」。如果用户后续追加「那帮我做成 PPT」,再走首次生成流程。
 
 **粒度判定（重要）**：
 - 只改一个数字、日期、词 → \`edit_slides\`

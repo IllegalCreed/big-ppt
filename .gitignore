@@ -186,3 +186,8 @@ slides-*.md
 # 但未来该目录新增运行时文件容易漏 ignore；根 ignore 加固一层。
 packages/agent/data/*
 !packages/agent/data/.gitkeep
+
+# Phase 13 dogfood:E2E real-document fixtures。用户本地放真实业务文档(可能含敏感
+# 内部资料)作为 file-upload-real-docs.spec.ts 的 fixture。不入 git;CI 没文件时
+# spec 自动 skip。每个 dev 自带或共享内部网盘
+packages/e2e/files/*
