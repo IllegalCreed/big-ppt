@@ -376,6 +376,61 @@ describe('SettingsModal save (PUT new-shape payload)', () => {
     wrapper.unmount()
   })
 
+  it('Phase 12.7 Task E (review fix):active=gemini 改 gemini thinkingLevel=high → payload 含 advanced.gemini.thinkingLevel', async () => {
+    server.use(
+      ...defaultHandlers('empty'),
+      http.put('/api/auth/llm-settings', async ({ request }) => {
+        capturedPayload = await request.json()
+        return HttpResponse.json({ ok: true })
+      }),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    await expandUnconfigured('gemini')
+    await setInput($('[data-test="apikey-gemini"]')!, 'gem-1')
+    await setSelect($('.active-provider-select')!, 'gemini')
+
+    await click($('.advanced-toggle')!)
+    await setSelect($('[data-test="adv-gemini-thinking-level"]')!, 'high')
+    await click($('[data-test="save-button"]')!)
+
+    const advanced = (capturedPayload as { advanced?: { gemini?: { thinkingLevel?: string } } })
+      .advanced
+    expect(advanced?.gemini?.thinkingLevel).toBe('high')
+
+    wrapper.unmount()
+  })
+
+  it('Phase 12.7 Task E (review fix):common thinkingLevel=medium → payload 含 advanced.common.thinkingLevel(active 不论谁)', async () => {
+    server.use(
+      ...defaultHandlers('configured-zhipu'),
+      http.put('/api/auth/llm-settings', async ({ request }) => {
+        capturedPayload = await request.json()
+        return HttpResponse.json({ ok: true })
+      }),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    // active=zhipu(非 anthropic / 非 gemini)→ common 子区是「全局默认」,始终生效
+    await click($('.advanced-toggle')!)
+    await setSelect($('[data-test="adv-common-thinking-level"]')!, 'medium')
+    await click($('[data-test="save-button"]')!)
+
+    const advanced = (capturedPayload as { advanced?: { common?: { thinkingLevel?: string } } })
+      .advanced
+    expect(advanced?.common?.thinkingLevel).toBe('medium')
+
+    wrapper.unmount()
+  })
+
   it('Phase 12.7 Task E:thinkingLevel 保持 off 默认 → payload 不含 advanced.anthropic.thinkingLevel', async () => {
     server.use(
       ...defaultHandlers('empty'),

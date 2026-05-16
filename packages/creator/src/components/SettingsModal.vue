@@ -12,11 +12,13 @@
  *   未配 apiKey 的卡片显示"未配置"灰色徽章;active 卡高亮(border + bg)。
  * - **Advanced 折叠区**:default 折叠,展开后:
  *   - common 子区:temperature slider / maxTokens input / topP slider
- *   - 当 active 是 anthropic:promptCaching toggle / thinkingLevel 6 档下拉 / thinkingBudgetTokens
- *   - 当 active 是 gemini:jsonMode toggle / longContextStrategy(truncate / segment)
+ *   - common 子区:含「Thinking 级别(全局默认)」(6 档下拉,active 不论谁都生效)
+ *   - 当 active 是 anthropic:promptCaching toggle / Thinking 级别(anthropic 专有,6 档) / thinkingBudgetTokens
+ *   - 当 active 是 gemini:jsonMode toggle / longContextStrategy(truncate / segment) / Thinking 级别(gemini 专有,6 档)
  *
  * Phase 12.7 Task E:thinkingEnabled(boolean)替换成 thinkingLevel(6 档 enum:
- * off / minimal / low / medium / high / xhigh)对齐 pi-agent-core 的 thinkingLevel 概念。
+ * off / minimal / low / medium / high / xhigh)对齐 pi-agent-core 的 thinkingLevel 概念;
+ * spec §6 要求 anthropic / gemini / common 三域 UI 都可调,各域独立 v-model 字段。
  *
  * 协议:GET / PUT 都用新 shape(backend Task J 同步改);apiKey 空串=保留旧值。
  */
@@ -61,12 +63,21 @@ function emptyEntry(): ProviderFormEntry {
 
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
+/**
+ * Phase 12.7 Task E (review fix):thinkingLevel 三域独立(anthropic/gemini/common),
+ * spec §6 要求三域 UI 都可调。schema + migration 早已三域;UI 之前只落 anthropic,
+ * 此处补 gemini + common。`thinkingLevelCommon` 是「全局默认」语义,active provider
+ * 没单独配 thinkingLevel 时由 createAgent 回落到 common(已在 Task C resolveThinkingLevel
+ * 实现:advanced.<provider>.thinkingLevel → advanced.common.thinkingLevel → 'off')。
+ */
 interface AdvancedForm {
   temperature: number | null
   maxTokens: number | null
   topP: number | null
   promptCaching: boolean
-  thinkingLevel: ThinkingLevel
+  thinkingLevelAnthropic: ThinkingLevel
+  thinkingLevelGemini: ThinkingLevel
+  thinkingLevelCommon: ThinkingLevel
   thinkingBudgetTokens: number | null
   jsonMode: boolean
   longContextStrategy: 'truncate' | 'segment'
@@ -78,7 +89,9 @@ function emptyAdvanced(): AdvancedForm {
     maxTokens: null,
     topP: null,
     promptCaching: false,
-    thinkingLevel: 'off',
+    thinkingLevelAnthropic: 'off',
+    thinkingLevelGemini: 'off',
+    thinkingLevelCommon: 'off',
     thinkingBudgetTokens: 5000,
     jsonMode: false,
     longContextStrategy: 'truncate',
@@ -230,11 +243,12 @@ interface GetLlmSettingsResponse {
       topP?: number
       stopSequences?: string[]
       thinkingLevel?: ThinkingLevel
+      // Phase 12.7 Task E 兼容期:GET 仍可能回老 boolean 字段(后端 migration 跑前)
+      thinkingEnabled?: boolean
     }
     anthropic?: {
       promptCaching?: boolean
       thinkingLevel?: ThinkingLevel
-      // Phase 12.7 Task E 兼容期:GET 仍可能回老 boolean 字段(后端 migration 跑前)
       thinkingEnabled?: boolean
       thinkingBudgetTokens?: number
     }
@@ -242,8 +256,26 @@ interface GetLlmSettingsResponse {
       jsonMode?: boolean
       longContextStrategy?: 'truncate' | 'segment'
       thinkingLevel?: ThinkingLevel
+      thinkingEnabled?: boolean
     }
   }
+}
+
+/**
+ * Phase 12.7 Task E 兼容:把 GET response 里残留的老 `thinkingEnabled` boolean
+ * 转回新 `thinkingLevel` 枚举。三域(anthropic/gemini/common)共用同套规则:
+ * - `thinkingEnabled === true` → `'medium'`
+ * - `thinkingEnabled === false` → `'off'`
+ * - 已是 `thinkingLevel` enum → 优先用
+ * - 都没 → `'off'` 默认
+ */
+function resolveLegacyThinkingLevel(
+  sub: { thinkingLevel?: ThinkingLevel; thinkingEnabled?: boolean } | undefined,
+): ThinkingLevel {
+  if (!sub) return 'off'
+  if (sub.thinkingLevel) return sub.thinkingLevel
+  if (sub.thinkingEnabled === true) return 'medium'
+  return 'off'
 }
 
 async function loadSettings() {
@@ -271,16 +303,15 @@ async function loadSettings() {
       const cmn = data.advanced.common ?? {}
       const ant = data.advanced.anthropic ?? {}
       const gem = data.advanced.gemini ?? {}
-      // Phase 12.7 Task E 兼容:GET 可能返老 thinkingEnabled(migration 跑前),
-      // 转回新 thinkingLevel 提供 v-model 一致体验
-      const legacyThinkingLevel: ThinkingLevel | undefined =
-        ant.thinkingEnabled === true ? 'medium' : ant.thinkingEnabled === false ? 'off' : undefined
       advanced.value = {
         temperature: cmn.temperature ?? null,
         maxTokens: cmn.maxTokens ?? null,
         topP: cmn.topP ?? null,
         promptCaching: !!ant.promptCaching,
-        thinkingLevel: ant.thinkingLevel ?? legacyThinkingLevel ?? 'off',
+        // Phase 12.7 Task E 三域 thinkingLevel,各域走同套 legacy 兼容
+        thinkingLevelAnthropic: resolveLegacyThinkingLevel(ant),
+        thinkingLevelGemini: resolveLegacyThinkingLevel(gem),
+        thinkingLevelCommon: resolveLegacyThinkingLevel(cmn),
         thinkingBudgetTokens: ant.thinkingBudgetTokens ?? 5000,
         jsonMode: !!gem.jsonMode,
         longContextStrategy: gem.longContextStrategy ?? 'truncate',
@@ -354,19 +385,24 @@ function buildPayload() {
     providers[meta.id] = item
   }
   // 组装 advanced(只在用户改过的字段才发,空对象不发)
+  // Phase 12.7 Task E:三域 thinkingLevel != 'off' 才发(跳过 default off);
+  // anthropic / gemini 子区受 activeProvider 闸门(跟 promptCaching / jsonMode 一致),
+  // common 子区是「全局默认」始终允许发(active 不论谁,common.thinkingLevel 都生效)。
   const adv: NonNullable<GetLlmSettingsResponse['advanced']> = {}
   const common: NonNullable<NonNullable<GetLlmSettingsResponse['advanced']>['common']> = {}
   if (advanced.value.temperature !== null) common.temperature = advanced.value.temperature
   if (advanced.value.maxTokens !== null) common.maxTokens = advanced.value.maxTokens
   if (advanced.value.topP !== null) common.topP = advanced.value.topP
+  if (advanced.value.thinkingLevelCommon !== 'off') {
+    common.thinkingLevel = advanced.value.thinkingLevelCommon
+  }
   if (Object.keys(common).length > 0) adv.common = common
 
   if (activeProvider.value === 'anthropic') {
     const ant: NonNullable<NonNullable<GetLlmSettingsResponse['advanced']>['anthropic']> = {}
     if (advanced.value.promptCaching) ant.promptCaching = true
-    // Phase 12.7 Task E:thinkingLevel != 'off' 才发(buildPayload 跳过 truthy "off" 字段)
-    if (advanced.value.thinkingLevel !== 'off') {
-      ant.thinkingLevel = advanced.value.thinkingLevel
+    if (advanced.value.thinkingLevelAnthropic !== 'off') {
+      ant.thinkingLevel = advanced.value.thinkingLevelAnthropic
       if (advanced.value.thinkingBudgetTokens != null && advanced.value.thinkingBudgetTokens > 0) {
         ant.thinkingBudgetTokens = advanced.value.thinkingBudgetTokens
       }
@@ -378,6 +414,9 @@ function buildPayload() {
     if (advanced.value.jsonMode) gem.jsonMode = true
     if (advanced.value.longContextStrategy !== 'truncate') {
       gem.longContextStrategy = advanced.value.longContextStrategy
+    }
+    if (advanced.value.thinkingLevelGemini !== 'off') {
+      gem.thinkingLevel = advanced.value.thinkingLevelGemini
     }
     if (Object.keys(gem).length > 0) adv.gemini = gem
   }
@@ -929,6 +968,21 @@ onMounted(() => {
                     data-test="adv-top-p"
                   />
                 </label>
+                <label class="field-row">
+                  <span class="field-label">Thinking 级别（全局默认）</span>
+                  <select
+                    v-model="advanced.thinkingLevelCommon"
+                    class="input-bare"
+                    data-test="adv-common-thinking-level"
+                  >
+                    <option value="off">关闭</option>
+                    <option value="minimal">最少</option>
+                    <option value="low">低</option>
+                    <option value="medium">中等</option>
+                    <option value="high">高</option>
+                    <option value="xhigh">极高</option>
+                  </select>
+                </label>
               </div>
 
               <div v-if="activeProvider === 'anthropic'" class="advanced-subblock" data-test="anthropic-advanced">
@@ -945,7 +999,7 @@ onMounted(() => {
                 <label class="field-row">
                   <span class="field-label">Thinking 级别</span>
                   <select
-                    v-model="advanced.thinkingLevel"
+                    v-model="advanced.thinkingLevelAnthropic"
                     class="input-bare"
                     data-test="adv-thinking-level"
                   >
@@ -963,7 +1017,7 @@ onMounted(() => {
                     v-model.number="advanced.thinkingBudgetTokens"
                     type="number"
                     min="0"
-                    :disabled="advanced.thinkingLevel === 'off'"
+                    :disabled="advanced.thinkingLevelAnthropic === 'off'"
                     class="input-bare"
                     data-test="adv-thinking-budget"
                   />
@@ -986,6 +1040,21 @@ onMounted(() => {
                   <select v-model="advanced.longContextStrategy" class="input-bare" data-test="adv-long-ctx">
                     <option value="truncate">truncate（截断旧消息）</option>
                     <option value="segment">segment（分段总结）</option>
+                  </select>
+                </label>
+                <label class="field-row">
+                  <span class="field-label">Thinking 级别</span>
+                  <select
+                    v-model="advanced.thinkingLevelGemini"
+                    class="input-bare"
+                    data-test="adv-gemini-thinking-level"
+                  >
+                    <option value="off">关闭</option>
+                    <option value="minimal">最少</option>
+                    <option value="low">低</option>
+                    <option value="medium">中等</option>
+                    <option value="high">高</option>
+                    <option value="xhigh">极高</option>
                   </select>
                 </label>
               </div>
