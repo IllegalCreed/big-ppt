@@ -1,5 +1,5 @@
 /** Phase 12.7 Task G：thin canonical event consumer —— agent loop 由后端 pi-agent-core 接管。 */
-import { computed, inject, ref, shallowRef, type ComputedRef, type InjectionKey, type Ref, type ShallowRef } from 'vue'
+import { computed, inject, ref, shallowRef, watch, type ComputedRef, type InjectionKey, type Ref, type ShallowRef } from 'vue'
 import {
   decodeSSEStream,
   type CanonicalEvent,
@@ -7,7 +7,7 @@ import {
   type TokenUsage,
 } from '@big-ppt/shared'
 import { chatTurn } from '../api/chat'
-import { useDecks, type DeckChat } from './useDecks'
+import { useDecks, type DeckChat, type ImageJobState } from './useDecks'
 import { useSlideStore } from './useSlideStore'
 import { useGenerateImageJob } from './useGenerateImageJob'
 
@@ -38,6 +38,23 @@ export interface ToolExecutionState {
   resultPreview?: string
 }
 
+/**
+ * Phase 12.7 dogfood 修正:每个 generate_slide_image 工具 jobId 的实时进度
+ * 跟踪条目。useAIChat 维护一个 Map<jobId, ImageJobTracking>,ChatPanel 渲染
+ * ImageJobsPanel 时绑定到本 Map(sender 上方持久面板,跨 turn 跨 bubble 汇总)。
+ */
+export interface ImageJobTracking {
+  jobId: string
+  /** 后端 image-jobs 表已知 slideIndex 后填充(pending 阶段可能为 undefined)。 */
+  slideIndex?: number
+  stage: ImageJobState
+  /** 0~1,running 阶段每次 poll 累加;UI 渲染进度条用。 */
+  progressRatio: number
+  errorMsg?: string
+  /** abort 用,clearHistory 时调 instance.abort()。 */
+  instance: ReturnType<typeof useGenerateImageJob>
+}
+
 export interface UseAIChatReturn {
   /** ChatPanel 渲染的气泡数组（user / assistant）。turn.end 后从 backend refresh。 */
   chatMessages: Ref<ChatBubble[]>
@@ -46,6 +63,12 @@ export interface UseAIChatReturn {
   lastUsage: Ref<TokenUsage | null>
   lastTurnId: Ref<string | null>
   currentToolExecutions: ShallowRef<Map<string, ToolExecutionState>>
+  /**
+   * Phase 12.7 dogfood 修正:image-gen job 实时跟踪 Map。Key=jobId,Value=最新
+   * state + slideIndex + progress。跨 turn 持久,terminal 后保留 5s 让用户看到
+   * ✅/❌ 终态再 auto-prune。clearHistory 时全 abort。
+   */
+  imageJobs: ShallowRef<Map<string, ImageJobTracking>>
   status: Ref<ChatStatus>
   statusText: ComputedRef<string>
   isGenerating: ComputedRef<boolean>
@@ -55,6 +78,17 @@ export interface UseAIChatReturn {
   appendLocalMessage: (content: string) => void
   retryLastUserMessage: () => void
 }
+
+const IMAGE_JOB_TERMINAL_STATES = new Set<ImageJobState>([
+  'done',
+  'failed',
+  'cancelled',
+  'fallback-rewrote',
+  'fallback-failed',
+])
+
+/** terminal 后 UI 保留几秒让用户看到终态再 prune,避免「啪一下消失」。 */
+const IMAGE_JOB_PRUNE_AFTER_TERMINAL_MS = 5_000
 
 /**
  * Phase 12.7：thin canonical event consumer。
@@ -81,19 +115,25 @@ export function useAIChat(): UseAIChatReturn {
   let abortController: AbortController | null = null
 
   /**
-   * Phase 11.5 / Phase 12.7-G fix：异步 image-gen job 跟踪。
+   * Phase 11.5 / Phase 12.7-G fix:异步 image-gen job 跟踪。
    *
-   * 背景：`generate_slide_image` 工具同步只返 `{success, jobId}` —— backend
-   * 把 tool_execution.end 报为 isError=false（工具入队成功），但实际图片
+   * 背景:`generate_slide_image` 工具同步只返 `{success, jobId}` —— backend
+   * 把 tool_execution.end 报为 isError=false(工具入队成功),但实际图片
    * worker 异步还在跑。pi-agent-core 的 canonical tool_execution.end 不带
-   * 工具 result 字段，故无法直接从 SSE 流提 jobId。
+   * 工具 result 字段,故无法直接从 SSE 流提 jobId。
    *
-   * 策略：每次 turn.end 后 listChats 拉全 deck_chats（含 tool 行）；扫所有
-   * tool 行的 content（JSON），凡有 `jobId` 字段且未见过的，启 useGenerateImageJob
-   * 轮询；done / fallback-rewrote 时 composable 内部已经 slideStore.refresh()
+   * 策略:每次 turn.end 后 listChats 拉全 deck_chats(含 tool 行);扫所有
+   * tool 行的 content(JSON),凡有 `jobId` 字段且未见过的,启 useGenerateImageJob
+   * 轮询;done / fallback-rewrote 时 composable 内部已经 slideStore.refresh()
    * 把图片或兜底重写后的内容同步给 DeckRenderer。
+   *
+   * Phase 12.7 dogfood 二次修正:不再 fire-and-forget,把 composable 实例挂在
+   * `imageJobs` Map 里,watch 它的 stage / progressRatio / info 同步回 Map,
+   * 让 ImageJobsPanel 能渲染「第 N 页 · 排队中 / 生成中 X% / 完成 / 失败」。
+   * 终态保留 5s 自动 prune。
    */
-  const trackedImageJobIds = new Set<string>()
+  const imageJobs = shallowRef<Map<string, ImageJobTracking>>(new Map())
+  const imageJobPruneTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   const isGenerating = computed(() => status.value === 'sending' || status.value === 'streaming')
 
@@ -147,15 +187,63 @@ export function useAIChat(): UseAIChatReturn {
       }
       if (parsed?.success !== true) continue
       const jobId = typeof parsed.jobId === 'string' ? parsed.jobId : null
-      if (!jobId || trackedImageJobIds.has(jobId)) continue
-      trackedImageJobIds.add(jobId)
-      const job = useGenerateImageJob()
-      // 注意：useGenerateImageJob.start 内部 done / fallback-rewrote 已 slideStore.refresh()，
-      // failed / cancelled 仅 throw —— 这里 catch 静默，避免未处理 promise rejection。
-      job.start({ jobId }).catch((err) => {
-        console.error('[useAIChat] image job tracking failed:', jobId, (err as Error).message)
-      })
+      if (!jobId || imageJobs.value.has(jobId)) continue
+      startTrackingImageJob(jobId)
     }
+  }
+
+  function startTrackingImageJob(jobId: string): void {
+    const instance = useGenerateImageJob()
+
+    // 初始 entry 写入 Map,UI 立即看到「排队中」(等 poll 拿到 slideIndex 再补)。
+    const next = new Map(imageJobs.value)
+    next.set(jobId, {
+      jobId,
+      slideIndex: undefined,
+      stage: 'pending',
+      progressRatio: 0,
+      errorMsg: undefined,
+      instance,
+    })
+    imageJobs.value = next
+
+    // watch composable 内部 refs 同步回 Map(每次 poll 推一帧)。
+    const stopWatch = watch(
+      [instance.stage, instance.progressRatio, instance.error, instance.info],
+      ([stage, ratio, err, info]) => {
+        const m = new Map(imageJobs.value)
+        const cur = m.get(jobId)
+        if (!cur) return // 已 prune,无需再写
+        m.set(jobId, {
+          ...cur,
+          stage,
+          progressRatio: ratio,
+          errorMsg: err ?? undefined,
+          slideIndex: info?.slideIndex ?? cur.slideIndex,
+        })
+        imageJobs.value = m
+
+        if (IMAGE_JOB_TERMINAL_STATES.has(stage)) {
+          // 已 terminal:停止 watch + 排 5s 后 prune,避免无效 watcher 持有 + 给
+          // 用户看到「✅ 完成 / ❌ 失败」终态再退场。
+          stopWatch()
+          if (imageJobPruneTimers.has(jobId)) return
+          const timer = setTimeout(() => {
+            imageJobPruneTimers.delete(jobId)
+            const m2 = new Map(imageJobs.value)
+            m2.delete(jobId)
+            imageJobs.value = m2
+          }, IMAGE_JOB_PRUNE_AFTER_TERMINAL_MS)
+          imageJobPruneTimers.set(jobId, timer)
+        }
+      },
+    )
+
+    // composable.start 内部 done/fallback-rewrote 已经 slideStore.refresh();
+    // failed/cancelled 仅 throw,这里 catch 静默,避免 unhandled rejection。
+    instance.start({ jobId }).catch((err) => {
+      console.error('[useAIChat] image job tracking failed:', jobId, (err as Error).message)
+    })
   }
 
   function consumeEvent(event: CanonicalEvent): void {
@@ -284,7 +372,13 @@ export function useAIChat(): UseAIChatReturn {
     lastTurnId.value = null
     status.value = 'idle'
     errorMessage.value = ''
-    trackedImageJobIds.clear()
+    // 中断所有正在跑的 image polling + 清面板,避免泄漏 setTimeout / fetch。
+    for (const tracking of imageJobs.value.values()) {
+      tracking.instance.abort()
+    }
+    for (const timer of imageJobPruneTimers.values()) clearTimeout(timer)
+    imageJobPruneTimers.clear()
+    imageJobs.value = new Map()
   }
 
   function appendLocalMessage(content: string): void {
@@ -310,6 +404,7 @@ export function useAIChat(): UseAIChatReturn {
     lastUsage,
     lastTurnId,
     currentToolExecutions,
+    imageJobs,
     status,
     statusText,
     isGenerating,

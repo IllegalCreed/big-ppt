@@ -40,12 +40,26 @@ vi.mock('../src/api/chat', () => ({
 }))
 
 // Phase 12.7-G fix：useGenerateImageJob mock，记录 start() 调到的 jobId
+// Phase 12.7 dogfood 二次修正:useAIChat 现在 watch 实例的 stage/progressRatio/info refs
+// + 在 clearHistory 调 instance.abort(),mock 需要给出完整接口。
 const imageJobStartMock = vi.fn()
-vi.mock('../src/composables/useGenerateImageJob', () => ({
-  useGenerateImageJob: () => ({
-    start: imageJobStartMock,
-  }),
-}))
+const imageJobAbortMock = vi.fn()
+vi.mock('../src/composables/useGenerateImageJob', async () => {
+  const { ref, shallowRef } = await import('vue')
+  return {
+    useGenerateImageJob: () => ({
+      stage: ref('pending' as const),
+      progressRatio: ref(0),
+      error: ref<string | null>(null),
+      info: shallowRef<unknown>(null),
+      result: shallowRef<unknown>(null),
+      running: ref(false),
+      start: imageJobStartMock,
+      abort: imageJobAbortMock,
+      cancel: vi.fn(),
+    }),
+  }
+})
 
 function makeSSEResponse(events: CanonicalEvent[]): Response {
   const encoder = new TextEncoder()

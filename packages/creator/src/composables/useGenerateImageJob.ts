@@ -53,6 +53,13 @@ export function useGenerateImageJob() {
   const error = ref<string | null>(null)
   const result = shallowRef<ImageJobInfo | null>(null)
   const running = ref(false)
+  /**
+   * 每次 poll 同步的最新 job info(含 slideIndex / pathTaken 等)。
+   * Phase 12.7 dogfood 修正:外部 UI (ImageJobsPanel) 需要在 pending/running 阶段
+   * 就能拿到 slideIndex 给用户「第 N 页」标签;result.value 只在 terminal-success
+   * 才填充,不满足 live 进度展示需求。
+   */
+  const info = shallowRef<ImageJobInfo | null>(null)
 
   let controller: AbortController | null = null
   let currentJobId: string | null = null
@@ -63,6 +70,7 @@ export function useGenerateImageJob() {
     progressRatio.value = 0
     error.value = null
     result.value = null
+    info.value = null
   }
 
   function abort() {
@@ -118,6 +126,7 @@ export function useGenerateImageJob() {
       }
       stage.value = initial.state
       progressRatio.value = STAGE_RATIO[initial.state]
+      info.value = initial
       if (terminal(initial.state)) {
         if (isSuccess(initial.state)) {
           result.value = initial
@@ -139,6 +148,7 @@ export function useGenerateImageJob() {
         const { job } = await getImageJob(params.jobId)
         if (job.id !== currentJobId) continue
         stage.value = job.state
+        info.value = job
         if (job.state === 'running') {
           const base = Math.max(progressRatio.value, STAGE_RATIO.running)
           progressRatio.value = Math.min(0.85, base + 0.02)
@@ -177,7 +187,7 @@ export function useGenerateImageJob() {
     }
   }
 
-  return { stage, progressRatio, error, result, running, start, abort, cancel }
+  return { stage, progressRatio, error, result, info, running, start, abort, cancel }
 }
 
 function terminal(s: ImageJobState): boolean {

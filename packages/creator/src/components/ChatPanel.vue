@@ -6,12 +6,14 @@ import { useAIChat } from '../composables/useAIChat'
 import { useSlashCommands } from '../composables/useSlashCommands'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolExecutionBlock from './ToolExecutionBlock.vue'
+import ImageJobsPanel from './ImageJobsPanel.vue'
 
 const {
   chatMessages,
   streamingContent,
   thinkingContent,
   currentToolExecutions,
+  imageJobs,
   status,
   statusText,
   isGenerating,
@@ -155,6 +157,10 @@ function handleCancel() {
     <div class="message-list">
       <Bubble.List :items="bubbleItems" :role="roles" :auto-scroll="true" />
     </div>
+
+    <!-- Phase 12.7 dogfood:image-gen 实时进度面板,sticky 在 sender 上方,
+         跨 turn / 跨 bubble 汇总所有图片任务,4 状态 chip + 进度条。 -->
+    <ImageJobsPanel :jobs="imageJobs" />
 
     <!-- 输入框（包 Suggestion 做斜杠指令自动补全） -->
     <div class="sender-area">
