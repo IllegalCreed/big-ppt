@@ -253,10 +253,7 @@ describe('translateAgentStream', () => {
     // 不发独立 error event(plan 27 + agent.js:325)。translateAgentStream 必须
     // 主动扫 messages 提 errorMessage 转 canonical error,否则上层只看到 turn.end
     // usage=0 silent fail。
-    const failureMsg = assistantMsg({
-      content: [{ type: 'text', text: '' }],
-      stopReason: 'error',
-    })
+    const failureMsg = assistantMsg({ stopReason: 'error' })
     failureMsg.errorMessage = 'missing api key for zai'
     const agent = fakeAgent([
       { type: 'agent_start' },
