@@ -46,70 +46,79 @@ const hasDetails = computed(() => Boolean(props.argsPreview || props.resultPrevi
 </template>
 
 <style scoped>
+/**
+ * Phase 12.7-G code review fix：token 命名同步成两层 fallback `--color-* → --ld-*`,
+ * 跟 ThinkingBlock / UsageStatsHint 等 peer 一致。`--color-*` 是 creator SPA 自身
+ * 的 Lumideck 设计 token（terracotta 暖色系,见 src/styles/tokens.css）;`--ld-*`
+ * 仅在 Slidev `.slidev-layout` 子树 resolve（多模板色板),ChatPanel 渲染时不会
+ * 命中,但作为 belt-and-suspenders 兜底保留,与 peer 模式对齐。
+ */
 .tool-execution-block {
-  font-size: var(--fs-sm, 12px);
-  padding: var(--space-2, 6px) var(--space-3, 10px);
-  border-radius: var(--radius-sm, 4px);
-  background: var(--color-bg-subtle, #f5f5f5);
-  margin: var(--space-1, 4px) 0;
-  border: 1px solid var(--color-border-subtle, transparent);
+  font-size: var(--fs-sm, var(--ld-font-size-sm, 12px));
+  padding: var(--space-2, var(--ld-space-2, 6px))
+    var(--space-3, var(--ld-space-3, 10px));
+  border-radius: var(--radius-sm, var(--ld-radius-sm, 4px));
+  background: var(--color-bg-subtle, var(--ld-bg-subtle, #f5f5f5));
+  margin: var(--space-1, var(--ld-space-1, 4px)) 0;
+  border: 1px solid var(--color-border-subtle, var(--ld-color-border-subtle, transparent));
 }
 
 .tool-execution-block.pending {
-  background: var(--color-bg-subtle, #f0f0f0);
-  color: var(--color-fg-tertiary, #888);
+  background: var(--color-bg-subtle, var(--ld-bg-subtle, #f0f0f0));
+  color: var(--color-fg-tertiary, var(--ld-color-text-muted, #888));
 }
 
 .tool-execution-block.running {
-  background: var(--color-accent-soft, #e8f4ff);
-  border-color: var(--color-accent, #6aa1d6);
+  background: var(--color-accent-soft, var(--ld-bg-info, #e8f4ff));
+  border-color: var(--color-accent, var(--ld-color-info, #6aa1d6));
 }
 
 .tool-execution-block.done {
-  background: var(--color-success-soft, #e8ffe8);
-  border-color: var(--color-success, #4a9d4a);
+  background: var(--color-success-soft, var(--ld-bg-success, #e8ffe8));
+  border-color: var(--color-success, var(--ld-color-success, #4a9d4a));
 }
 
 .tool-execution-block.error {
-  background: var(--color-danger-soft, #ffe8e8);
-  border-color: var(--color-danger, #c14747);
+  background: var(--color-danger-soft, var(--ld-bg-danger, #ffe8e8));
+  border-color: var(--color-danger, var(--ld-color-danger, #c14747));
 }
 
 .tool-exec-header {
   display: flex;
-  gap: var(--space-2, 8px);
+  gap: var(--space-2, var(--ld-space-2, 8px));
   align-items: center;
 }
 
 .tool-name {
   font-weight: var(--fw-medium, 500);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono, var(--ld-font-family-mono, monospace));
 }
 
 .tool-state {
-  color: var(--color-fg-muted, #888);
-  font-size: 11px;
+  color: var(--color-fg-muted, var(--ld-color-text-muted, #888));
+  font-size: var(--fs-xs, var(--ld-font-size-xs, 11px));
 }
 
 .tool-exec-details {
-  margin-top: var(--space-1, 4px);
+  margin-top: var(--space-1, var(--ld-space-1, 4px));
 }
 
 .tool-exec-details summary {
   cursor: pointer;
-  font-size: 11px;
-  color: var(--color-fg-tertiary, #999);
+  font-size: var(--fs-xs, var(--ld-font-size-xs, 11px));
+  color: var(--color-fg-tertiary, var(--ld-color-text-muted, #999));
   user-select: none;
 }
 
 .tool-exec-args,
 .tool-exec-result {
-  font-size: 11px;
+  font-size: var(--fs-xs, var(--ld-font-size-xs, 11px));
   overflow-x: auto;
-  margin-top: var(--space-1, 4px);
-  padding: var(--space-1, 4px) var(--space-2, 6px);
-  background: var(--color-bg-surface, #fff);
-  border-radius: var(--radius-sm, 3px);
+  margin-top: var(--space-1, var(--ld-space-1, 4px));
+  padding: var(--space-1, var(--ld-space-1, 4px))
+    var(--space-2, var(--ld-space-2, 6px));
+  background: var(--color-bg-surface, var(--ld-bg-page, #fff));
+  border-radius: var(--radius-sm, var(--ld-radius-sm, 3px));
   white-space: pre-wrap;
   word-break: break-word;
 }

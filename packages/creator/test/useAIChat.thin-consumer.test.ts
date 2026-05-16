@@ -39,6 +39,14 @@ vi.mock('../src/api/chat', () => ({
   chatTurn: (...args: unknown[]) => chatTurnMock(...args),
 }))
 
+// Phase 12.7-G fix：useGenerateImageJob mock，记录 start() 调到的 jobId
+const imageJobStartMock = vi.fn()
+vi.mock('../src/composables/useGenerateImageJob', () => ({
+  useGenerateImageJob: () => ({
+    start: imageJobStartMock,
+  }),
+}))
+
 function makeSSEResponse(events: CanonicalEvent[]): Response {
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -87,6 +95,8 @@ describe('useAIChat (thin consumer)', () => {
     setPageMock.mockReset()
     refreshMock.mockReset()
     setAIBusyMock.mockReset()
+    imageJobStartMock.mockReset()
+    imageJobStartMock.mockResolvedValue({ state: 'done', slideIndex: 1, assetId: 'a1' })
   })
   afterEach(() => {
     vi.clearAllMocks()
@@ -416,5 +426,139 @@ describe('useAIChat (thin consumer)', () => {
     expect(chat.chatMessages.value).toEqual([{ role: 'user', content: 'hi' }])
     await promise
     await flushPromises()
+  })
+
+  // Phase 12.7-G code review fix：异步 image-gen polling 回桥
+  it('refresh 后扫 tool 行 generate_slide_image jobId 启 image-job polling', async () => {
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    listChatsMock.mockResolvedValueOnce([
+      { id: 1, deckId: 7, role: 'user', content: '生成图片', toolCallId: null, createdAt: 't1' },
+      {
+        id: 2,
+        deckId: 7,
+        role: 'assistant',
+        content: '好的',
+        toolCallId: null,
+        createdAt: 't2',
+      },
+      {
+        id: 3,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: true, jobId: 'img-job-abc' }),
+        toolCallId: 'tc-1',
+        createdAt: 't3',
+      },
+    ])
+
+    const { chat } = setupChat()
+    await chat.sendMessage('生成图片')
+    await flushPromises()
+
+    expect(imageJobStartMock).toHaveBeenCalledWith({ jobId: 'img-job-abc' })
+    expect(imageJobStartMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('已 track 过的 jobId 不重复 start（多 turn 累积去重）', async () => {
+    chatTurnMock.mockResolvedValue(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    listChatsMock.mockResolvedValue([
+      {
+        id: 1,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: true, jobId: 'img-1' }),
+        toolCallId: 'tc',
+        createdAt: 't',
+      },
+    ])
+
+    const { chat } = setupChat()
+    await chat.sendMessage('a')
+    await flushPromises()
+    await chat.sendMessage('b')
+    await flushPromises()
+
+    // 两次 refresh 都见到 img-1，但只 start 一次
+    expect(imageJobStartMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('tool 行 success=false 不 start polling（job 创建失败 / 工具其他错）', async () => {
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    listChatsMock.mockResolvedValueOnce([
+      {
+        id: 1,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: false, error: 'quota exceeded' }),
+        toolCallId: 'tc',
+        createdAt: 't',
+      },
+    ])
+
+    const { chat } = setupChat()
+    await chat.sendMessage('try')
+    await flushPromises()
+    expect(imageJobStartMock).not.toHaveBeenCalled()
+  })
+
+  it('tool 行 content 不是 JSON / 无 jobId 字段：silent skip', async () => {
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    listChatsMock.mockResolvedValueOnce([
+      {
+        id: 1,
+        deckId: 7,
+        role: 'tool',
+        content: 'plain text result, not JSON',
+        toolCallId: 'tc',
+        createdAt: 't',
+      },
+      {
+        id: 2,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: true, slides: 5 }),
+        toolCallId: 'tc2',
+        createdAt: 't2',
+      },
+    ])
+
+    const { chat } = setupChat()
+    await chat.sendMessage('read')
+    await flushPromises()
+    expect(imageJobStartMock).not.toHaveBeenCalled()
+  })
+
+  it('clearHistory 清空 trackedImageJobIds → 同 jobId 再出现时重新 start', async () => {
+    chatTurnMock.mockResolvedValue(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    listChatsMock.mockResolvedValue([
+      {
+        id: 1,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: true, jobId: 'job-reusable' }),
+        toolCallId: 'tc',
+        createdAt: 't',
+      },
+    ])
+    const { chat } = setupChat()
+    await chat.sendMessage('a')
+    await flushPromises()
+    expect(imageJobStartMock).toHaveBeenCalledTimes(1)
+
+    chat.clearHistory()
+    await chat.sendMessage('b')
+    await flushPromises()
+    // clearHistory 清掉 dedup 集后,同 jobId 应再 track 一次
+    expect(imageJobStartMock).toHaveBeenCalledTimes(2)
   })
 })

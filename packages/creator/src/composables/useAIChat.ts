@@ -7,8 +7,9 @@ import {
   type TokenUsage,
 } from '@big-ppt/shared'
 import { chatTurn } from '../api/chat'
-import { useDecks } from './useDecks'
+import { useDecks, type DeckChat } from './useDecks'
 import { useSlideStore } from './useSlideStore'
+import { useGenerateImageJob } from './useGenerateImageJob'
 
 /**
  * DECK_CHAT_CONTEXT：DeckEditorCanvas provide 给下游 ChatPanel + useAIChat。
@@ -79,6 +80,21 @@ export function useAIChat(): UseAIChatReturn {
 
   let abortController: AbortController | null = null
 
+  /**
+   * Phase 11.5 / Phase 12.7-G fix：异步 image-gen job 跟踪。
+   *
+   * 背景：`generate_slide_image` 工具同步只返 `{success, jobId}` —— backend
+   * 把 tool_execution.end 报为 isError=false（工具入队成功），但实际图片
+   * worker 异步还在跑。pi-agent-core 的 canonical tool_execution.end 不带
+   * 工具 result 字段，故无法直接从 SSE 流提 jobId。
+   *
+   * 策略：每次 turn.end 后 listChats 拉全 deck_chats（含 tool 行）；扫所有
+   * tool 行的 content（JSON），凡有 `jobId` 字段且未见过的，启 useGenerateImageJob
+   * 轮询；done / fallback-rewrote 时 composable 内部已经 slideStore.refresh()
+   * 把图片或兜底重写后的内容同步给 DeckRenderer。
+   */
+  const trackedImageJobIds = new Set<string>()
+
   const isGenerating = computed(() => status.value === 'sending' || status.value === 'streaming')
 
   const statusText = computed(() => {
@@ -100,9 +116,45 @@ export function useAIChat(): UseAIChatReturn {
       chatMessages.value = chats
         .filter((c): c is typeof c & { role: 'user' | 'assistant' } => c.role === 'user' || c.role === 'assistant')
         .map((c) => ({ role: c.role, content: c.content }))
+      kickOffPendingImageJobs(chats)
     } catch (err) {
       // refresh 失败不阻塞下一轮发送，仅 console（用户 reload 后能恢复）
       console.error('[useAIChat] refreshChats failed:', (err as Error).message)
+    }
+  }
+
+  /**
+   * Phase 12.7-G fix：从 deck_chats 的 tool 行 content 提 jobId，对未见过的
+   * jobId 起异步轮询；done 后 useGenerateImageJob 内部已 slideStore.refresh()。
+   *
+   * 为什么不靠 SSE tool_execution.end 直接传 jobId：canonical event 当前签名
+   * 不带 result content（plan 28 §canonical 13 类）；扩展事件 schema 影响
+   * agent + shared + 所有消费方，单纯为这一个工具改协议成本高。从 deck_chats
+   * 反向解析 JSON 是当前最小改动方案。
+   *
+   * 仅识别 `generate_slide_image` 风格：content 是 JSON 且含 `jobId` 字段。
+   * 其他工具不返 jobId 自然被过滤掉。`trackedImageJobIds` 跨多 turn 累积避免
+   * 重启 polling；session 期间持有，clearHistory 时清空。
+   */
+  function kickOffPendingImageJobs(chats: DeckChat[]): void {
+    for (const c of chats) {
+      if (c.role !== 'tool') continue
+      let parsed: { jobId?: unknown; success?: unknown } | null = null
+      try {
+        parsed = JSON.parse(c.content) as { jobId?: unknown; success?: unknown }
+      } catch {
+        continue
+      }
+      if (parsed?.success !== true) continue
+      const jobId = typeof parsed.jobId === 'string' ? parsed.jobId : null
+      if (!jobId || trackedImageJobIds.has(jobId)) continue
+      trackedImageJobIds.add(jobId)
+      const job = useGenerateImageJob()
+      // 注意：useGenerateImageJob.start 内部 done / fallback-rewrote 已 slideStore.refresh()，
+      // failed / cancelled 仅 throw —— 这里 catch 静默，避免未处理 promise rejection。
+      job.start({ jobId }).catch((err) => {
+        console.error('[useAIChat] image job tracking failed:', jobId, (err as Error).message)
+      })
     }
   }
 
@@ -223,6 +275,7 @@ export function useAIChat(): UseAIChatReturn {
     lastTurnId.value = null
     status.value = 'idle'
     errorMessage.value = ''
+    trackedImageJobIds.clear()
   }
 
   function appendLocalMessage(content: string): void {
