@@ -11,6 +11,14 @@
  *
  * fixtures 用 pdf-lib / docx / xlsx 三个库在 beforeAll 运行时生成(避免提交二进制
  * 到仓库 + 不依赖外部下载)。MD / TXT 直接 Buffer.from。
+ *
+ * 已知 flake (8 次跑 6~8 次通过, 偶发个别 case "asset not found"):
+ * - 现象:seedAsset INSERT 成功(verify SELECT 也通过), enqueueExtraction +
+ *   waitForQueueIdle 返回, 但最终 getAsset 回查 0 行。
+ * - 推测:Task B / D 并行加 user_assets 相关测试 / 改 factories.ts 时, 共享
+ *   lumideck_test DB 跟 mysql2 connection pool 偶发 commit visibility 漂移。
+ *   Phase 13 三任务合并到 main 后单线性 CI 跑应稳定 (turbo concurrency=1)。
+ * - 不补 retry / 等待:flake 不能掩盖底层 race, 上线后若稳定不变则 OK。
  */
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
@@ -137,6 +145,14 @@ async function seedAsset(opts: {
     storagePath,
     extractStatus: 'pending',
   })
+  // 防御性回读:确认 row 真在 DB 里。空 INSERT (drizzle 静默吞掉) 才会触发,
+  // 不会拖累正常路径(只一条 SELECT)
+  const [verify] = await db
+    .select({ id: userAssets.id })
+    .from(userAssets)
+    .where(eq(userAssets.id, assetId))
+    .limit(1)
+  if (!verify) throw new Error(`seedAsset: INSERT 后立刻 SELECT 回查不到 ${assetId}`)
   return assetId
 }
 
