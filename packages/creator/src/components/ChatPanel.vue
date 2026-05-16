@@ -4,9 +4,12 @@ import { Bubble, Sender, Suggestion } from '@antdv-next/x'
 import type { SenderRef } from '@antdv-next/x'
 import { useAIChat } from '../composables/useAIChat'
 import { useSlashCommands } from '../composables/useSlashCommands'
+import { useUploads } from '../composables/useUploads'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolExecutionBlock from './ToolExecutionBlock.vue'
 import ImageJobsPanel from './ImageJobsPanel.vue'
+import UploadButton from './UploadButton.vue'
+import UploadProgress from './UploadProgress.vue'
 
 const {
   chatMessages,
@@ -133,6 +136,72 @@ function handleSubmit(message: string) {
 function handleCancel() {
   cancel()
 }
+
+// --- Phase 13 Task F:文件上传 chip 列表(显示最近 8 次状态,2s 后 done chip 自动消失) ---
+interface UploadChip {
+  key: string
+  filename: string
+  sizeBytes: number
+  status: 'uploading' | 'done' | 'error'
+  errorMsg?: string
+}
+
+const uploadChips = ref<UploadChip[]>([])
+let chipKeySeq = 0
+
+function pushChip(chip: Omit<UploadChip, 'key'>): string {
+  const key = `up-${++chipKeySeq}`
+  uploadChips.value = [...uploadChips.value, { key, ...chip }].slice(-8)
+  return key
+}
+
+function onUploadUploaded(asset: { id: string; filename: string; sizeBytes: number }) {
+  const key = pushChip({ filename: asset.filename, sizeBytes: asset.sizeBytes, status: 'done' })
+  // 2s 后自动从列表移除已成功的 chip
+  setTimeout(() => {
+    uploadChips.value = uploadChips.value.filter((c) => c.key !== key)
+  }, 2500)
+}
+
+function onUploadError(msg: string) {
+  pushChip({ filename: '上传失败', sizeBytes: 0, status: 'error', errorMsg: msg })
+}
+
+// 拖拽到 sender-area 任意位置
+function onSenderDragOver(e: DragEvent) {
+  if (e.dataTransfer?.types.includes('Files')) {
+    e.preventDefault()
+  }
+}
+
+const { uploadFile } = useUploads()
+
+async function onSenderDrop(e: DragEvent) {
+  e.preventDefault()
+  if (!e.dataTransfer?.files || e.dataTransfer.files.length === 0) return
+  for (const file of Array.from(e.dataTransfer.files)) {
+    const chipKey = pushChip({
+      filename: file.name,
+      sizeBytes: file.size,
+      status: 'uploading',
+    })
+    try {
+      await uploadFile(file)
+      uploadChips.value = uploadChips.value.map((c) =>
+        c.key === chipKey ? { ...c, status: 'done' as const } : c,
+      )
+      setTimeout(() => {
+        uploadChips.value = uploadChips.value.filter((c) => c.key !== chipKey)
+      }, 2500)
+    } catch (err) {
+      uploadChips.value = uploadChips.value.map((c) =>
+        c.key === chipKey
+          ? { ...c, status: 'error' as const, errorMsg: (err as Error).message }
+          : c,
+      )
+    }
+  }
+}
 </script>
 
 <template>
@@ -162,22 +231,41 @@ function handleCancel() {
          跨 turn / 跨 bubble 汇总所有图片任务,4 状态 chip + 进度条。 -->
     <ImageJobsPanel :jobs="imageJobs" />
 
-    <!-- 输入框（包 Suggestion 做斜杠指令自动补全） -->
-    <div class="sender-area">
-      <Suggestion :items="slash.slashItems" :block="true" @select="handleSlashSelect">
-        <template #default="{ onTrigger, onKeyDown }">
-          <Sender
-            ref="senderRef"
-            :loading="isGenerating"
-            placeholder="描述你想要的幻灯片，或输入 / 查看指令..."
-            :submit-type="'enter'"
-            :on-key-down="onKeyDown"
-            @change="(val: string) => slash.handleSenderChange(val, onTrigger)"
-            @submit="handleSubmit"
-            @cancel="handleCancel"
-          />
-        </template>
-      </Suggestion>
+    <!-- 输入框（包 Suggestion 做斜杠指令自动补全）+ Phase 13 文件上传 chip + paperclip -->
+    <div class="sender-area" @dragover="onSenderDragOver" @drop="onSenderDrop">
+      <div v-if="uploadChips.length > 0" class="upload-chip-row">
+        <UploadProgress
+          v-for="chip in uploadChips"
+          :key="chip.key"
+          :filename="chip.filename"
+          :size-bytes="chip.sizeBytes"
+          :status="chip.status"
+          :error-msg="chip.errorMsg"
+        />
+      </div>
+      <div class="sender-row">
+        <UploadButton
+          class="sender-upload-btn"
+          @uploaded="onUploadUploaded"
+          @error="onUploadError"
+        />
+        <div class="sender-input-wrap">
+          <Suggestion :items="slash.slashItems" :block="true" @select="handleSlashSelect">
+            <template #default="{ onTrigger, onKeyDown }">
+              <Sender
+                ref="senderRef"
+                :loading="isGenerating"
+                placeholder="描述你想要的幻灯片，或输入 / 查看指令..."
+                :submit-type="'enter'"
+                :on-key-down="onKeyDown"
+                @change="(val: string) => slash.handleSenderChange(val, onTrigger)"
+                @submit="handleSubmit"
+                @cancel="handleCancel"
+              />
+            </template>
+          </Suggestion>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -272,6 +360,31 @@ function handleCancel() {
 .sender-area {
   padding: var(--space-3) var(--space-5);
   border-top: 1px solid var(--color-border-subtle);
+}
+
+.upload-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.sender-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-end;
+}
+
+.sender-upload-btn {
+  flex-shrink: 0;
+  /* 跟 Sender 文本框底部对齐 */
+  align-self: flex-end;
+  margin-bottom: 4px;
+}
+
+.sender-input-wrap {
+  flex: 1;
+  min-width: 0;
 }
 
 .tool-exec-stack {

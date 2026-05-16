@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
-import { ArrowLeft, History, Layers, LogOut, Settings, Sparkles } from 'lucide-vue-next'
+import { ArrowLeft, FolderOpen, History, Layers, LogOut, Settings, Sparkles } from 'lucide-vue-next'
 import ChatPanel from './ChatPanel.vue'
 import SlidePreview from './SlidePreview.vue'
 import SettingsModal from './SettingsModal.vue'
 import TemplatePickerModal from './TemplatePickerModal.vue'
 import UndoToast from './UndoToast.vue'
 import VersionTimeline from './VersionTimeline.vue'
+import AssetManagerPanel from './AssetManagerPanel.vue'
 import {
   useDecks,
   type Deck,
@@ -158,6 +159,7 @@ function onMouseDown(e: MouseEvent) {
 const showSettings = ref(false)
 const showTimeline = ref(false)
 const showTemplatePicker = ref(false)
+const showAssetsPanel = ref(false)
 
 // ── UndoToast + VersionTimeline 高亮 ──────────────────────────────────────
 const undoToast = ref<{ visible: boolean; templateName: string; snapshotVersionId: number | null }>({
@@ -294,6 +296,15 @@ onUnmounted(() => {
         <button
           type="button"
           class="icon-btn"
+          title="我的素材"
+          aria-label="我的素材"
+          @click="showAssetsPanel = true"
+        >
+          <FolderOpen :size="18" :stroke-width="1.8" />
+        </button>
+        <button
+          type="button"
+          class="icon-btn"
           title="设置"
           aria-label="设置"
           @click="showSettings = true"
@@ -330,6 +341,7 @@ onUnmounted(() => {
     </main>
 
     <SettingsModal v-model:open="showSettings" />
+    <AssetManagerPanel v-model:open="showAssetsPanel" />
     <TemplatePickerModal
       v-model:open="showTemplatePicker"
       mode="switch"

@@ -13,6 +13,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     App: typeof import('./src/components/App.vue')['default']
+    AssetManagerPanel: typeof import('./src/components/AssetManagerPanel.vue')['default']
     BarChart: typeof import('./../slidev/components/block/BarChart.vue')['default']
     BeitouBackCover: typeof import('./../slidev/layouts/beitou/beitou-back-cover.vue')['default']
     BeitouContent: typeof import('./../slidev/layouts/beitou/beitou-content.vue')['default']
@@ -60,6 +61,8 @@ declare module 'vue' {
     ToolExecutionBlock: typeof import('./src/components/ToolExecutionBlock.vue')['default']
     TwoColumnsTwoRows: typeof import('./../slidev/components/grid/TwoColumnsTwoRows.vue')['default']
     UndoToast: typeof import('./src/components/UndoToast.vue')['default']
+    UploadButton: typeof import('./src/components/UploadButton.vue')['default']
+    UploadProgress: typeof import('./src/components/UploadProgress.vue')['default']
     UsageStatsHint: typeof import('./src/components/UsageStatsHint.vue')['default']
     VersionTimeline: typeof import('./src/components/VersionTimeline.vue')['default']
   }
@@ -68,6 +71,7 @@ declare module 'vue' {
 // For TSX support
 declare global {
   const App: typeof import('./src/components/App.vue')['default']
+  const AssetManagerPanel: typeof import('./src/components/AssetManagerPanel.vue')['default']
   const BarChart: typeof import('./../slidev/components/block/BarChart.vue')['default']
   const BeitouBackCover: typeof import('./../slidev/layouts/beitou/beitou-back-cover.vue')['default']
   const BeitouContent: typeof import('./../slidev/layouts/beitou/beitou-content.vue')['default']
@@ -115,6 +119,8 @@ declare global {
   const ToolExecutionBlock: typeof import('./src/components/ToolExecutionBlock.vue')['default']
   const TwoColumnsTwoRows: typeof import('./../slidev/components/grid/TwoColumnsTwoRows.vue')['default']
   const UndoToast: typeof import('./src/components/UndoToast.vue')['default']
+  const UploadButton: typeof import('./src/components/UploadButton.vue')['default']
+  const UploadProgress: typeof import('./src/components/UploadProgress.vue')['default']
   const UsageStatsHint: typeof import('./src/components/UsageStatsHint.vue')['default']
   const VersionTimeline: typeof import('./src/components/VersionTimeline.vue')['default']
 }
