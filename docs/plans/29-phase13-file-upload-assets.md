@@ -379,21 +379,22 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 
 **操作**:
 
-- [ ] **Step 1**:useUploads.ts:`uploadFile(file): Promise<UploadResult>` + `listAssets(): Promise<{assets, quota}>` + `deleteAsset(id): Promise<{quota}>` API client
-- [ ] **Step 2**:UploadButton.vue:paperclip 📎 按钮 + file picker(multiple)+ 拖拽 zone(drop event handler)+ multi-modal LLM 检测(从 useAuth 或 settings 拿当前 active provider/model,调 `isMultiModalLLM` mirror — 简单复制到 frontend)
-- [ ] **Step 3**:UploadProgress.vue:单文件 chip,filename + progress bar + 取消按钮。复用 sender 上方区域
-- [ ] **Step 4**:AssetManagerPanel.vue:
+- [x] **Step 1**:useUploads.ts:`uploadFile(file): Promise<UploadResult>` + `listAssets(): Promise<{assets, quota}>` + `deleteAsset(id): Promise<{quota}>` API client
+- [x] **Step 2**:UploadButton.vue:paperclip 按钮(lucide `Paperclip`)+ file picker(multiple)+ 拖拽 zone(drop event handler);accept 9 type mime。多模态 LLM 检测 frontend mirror 不做(backend `read_uploaded_file` image tool 真鉴权,frontend 仅 paperclip 入口不限制)
+- [x] **Step 3**:UploadProgress.vue:单文件 chip(filename + size + ↑/✓/✕ icon)。ChatPanel 内自管 chip 列表(最近 8 次,done 后 2.5s 自动消失)
+- [x] **Step 4**:AssetManagerPanel.vue:
   - 容量条头:已用 / 限制 + 警告 if >90%
   - 列表:filename / mime / size / 上传时间 / extract status / 删除
   - 空状态:「还没上传任何素材」
-  - 用 Drawer(antdv-next 有,或自己写)
-- [ ] **Step 5**:ChatPanel.vue 集成:sender 左侧嵌 UploadButton,sender-area 整个接 dragover/drop event,上传进度 chip 显示在 sender 上方
-- [ ] **Step 6**:DeckEditorHeader 加「我的素材」按钮(icon 📁 / folder)→ 打开 AssetManagerPanel drawer
-- [ ] **Step 7**:组件 + composable 测试:
-  - UploadButton 3 case(拖拽 / 点击 / 超限 toast)
-  - AssetManagerPanel 5 case(空状态 / 列表 / 容量条 / 删除 / 容量警告)
-  - useUploads 3 case(upload / list / delete)
-- [ ] **Step 8**:跑测 + commit
+  - 走 Teleport modal-overlay 沿用 SettingsModal 风格(没用 antdv Drawer,跟 Settings 一致更协调)
+- [x] **Step 5**:ChatPanel.vue 集成:sender 左侧嵌 UploadButton,sender-area 整个接 dragover/drop event,上传进度 chip 显示在 sender 上方
+- [x] **Step 6**:DeckEditorCanvas 顶栏(实际不是 DeckEditorHeader,而是 DeckEditorCanvas 内 inline header)加「我的素材」按钮(lucide `FolderOpen`)→ 打开 AssetManagerPanel
+- [x] **Step 7**:组件 + composable 测试(实际 22 case,>11~16 目标):
+  - UploadButton 5 case(渲染 / 点击 / change / drop / 错误)
+  - UploadProgress 3 case(uploading / done / error)
+  - AssetManagerPanel 7 case(空 / 3 资产 / quota <90% / quota >90% / 删除 / 取消删除 / 关闭)
+  - useUploads 7 case(uploadFile happy / 413 错 / uploading ref / listAssets / listAssets 错 / deleteAsset / delete 错)
+- [x] **Step 8**:跑测 + commit(我的 frontend 文件被 Task B 的 parallel commit `f723a54` 顺带带上落库,内容完整、测试 22/22 过;commit message 误挂 Task B 标签但 diff 全是 creator/ 下文件,后续在 Task G close-out 章节说明这次 parallel commit 撞车经历)
 
 **验收**:
 - 11~16 组件 + 单测全过
