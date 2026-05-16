@@ -12,18 +12,13 @@ export async function persistTurnToDeckChats(
   if (allMessages.length <= existingCount) return
 
   const newMessages = allMessages.slice(existingCount)
+  const rows = newMessages.map((m) => {
+    const { content, toolCallId, canonicalContent } = canonicalToRow(m)
+    return { deckId, role: m.role, content, toolCallId, canonicalContent }
+  })
   const db = getDb()
 
   await db.transaction(async (tx) => {
-    for (const m of newMessages) {
-      const { content, toolCallId, canonicalContent } = canonicalToRow(m)
-      await tx.insert(deckChats).values({
-        deckId,
-        role: m.role,
-        content,
-        toolCallId,
-        canonicalContent,
-      })
-    }
+    await tx.insert(deckChats).values(rows)
   })
 }

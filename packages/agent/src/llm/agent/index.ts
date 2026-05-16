@@ -19,21 +19,8 @@ export interface CreateAgentOpts {
   userId: number
   deckId: number
   encryptedSettings: string
-  signal: AbortSignal
 }
 
-/**
- * 构造 pi-agent-core Agent 实例。注入：
- *
- * - `streamFn` = pi-ai `streamSimple`（pi-agent-core `StreamFn` 类型对齐）
- * - `tools` = buildToolsForUser(userId) 现场 wrap
- * - `sessionId` = `lumideck:user-${id}:deck-${id}` —— Anthropic prompt cache 命中 key
- * - `toolExecution` = 'parallel' —— 多 tool 并发跑（per-user 信号量限流仍在 ToolDef 层）
- * - `beforeToolCall` / `afterToolCall` —— audit log 不 block
- * - `initialState.systemPrompt` / `messages` / `thinkingLevel` —— 接历史 + thinking 配置
- *
- * `agent.subscribe('agent_end')` 自动调 `persistTurnToDeckChats` 写本 turn 增量。
- */
 export async function createAgent(opts: CreateAgentOpts): Promise<Agent> {
   const cfg = getActiveProviderConfig(opts.encryptedSettings)
   if (!cfg) throw new Error('LLM 未配置 active provider 或缺 apiKey')
@@ -123,14 +110,7 @@ export async function createAgent(opts: CreateAgentOpts): Promise<Agent> {
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 const THINKING_LEVELS = new Set<string>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
 
-/**
- * thinkingLevel 解析顺序：advanced.<provider>.thinkingLevel → advanced.common.thinkingLevel
- * → 'off'。
- *
- * 当前 `LlmSettingsSchema.advanced` 还没把 thinkingLevel 字段落进 zod（schema
- * 升级前用户写也不会丢——helper 直接读 raw JSON 不经 zod parse）；未来 schema
- * 加字段后此 helper 不变继续可用。
- */
+/** thinkingLevel 解析顺序：advanced.<provider>.thinkingLevel → advanced.common.thinkingLevel → 'off'。 */
 function resolveThinkingLevel(
   rawSettings: Record<string, unknown>,
   providerId: string,

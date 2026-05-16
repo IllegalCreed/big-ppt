@@ -1,17 +1,4 @@
-/**
- * Phase 12.7 Task C：createAgent 单测（5 测）。
- *
- * 覆盖：
- * 1. sessionId 格式 = `lumideck:user-${id}:deck-${id}`
- * 2. toolExecution = 'parallel' 默认
- * 3. advanced.<provider>.thinkingLevel 优先级
- * 4. 无 advanced 时 thinkingLevel fallback 'off'
- * 5. activeProvider 未配置 apiKey → 抛错（getActiveProviderConfig 返 null）
- *
- * 用 vi.mock 拦截 tool-bridge / history-loader / buildSystemPrompt / pi-ai-adapter
- * 避免真打 DB / pi-ai MODELS 表。Agent 公开字段 sessionId / toolExecution /
- * state.thinkingLevel 直接读取（pi-agent-core/dist/agent.d.ts 上是 public 类字段）。
- */
+/** Phase 12.7 Task C: createAgent factory 单测。 */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../tool-bridge.js', () => ({
@@ -68,7 +55,6 @@ describe('createAgent', () => {
       userId: 42,
       deckId: 7,
       encryptedSettings: makeSettings(),
-      signal: new AbortController().signal,
     })
     expect(agent.sessionId).toBe('lumideck:user-42:deck-7')
   })
@@ -78,7 +64,6 @@ describe('createAgent', () => {
       userId: 1,
       deckId: 1,
       encryptedSettings: makeSettings(),
-      signal: new AbortController().signal,
     })
     expect(agent.toolExecution).toBe('parallel')
   })
@@ -90,7 +75,6 @@ describe('createAgent', () => {
       encryptedSettings: makeSettings({
         advanced: { anthropic: { thinkingLevel: 'high' } },
       }),
-      signal: new AbortController().signal,
     })
     expect(agent.state.thinkingLevel).toBe('high')
   })
@@ -100,7 +84,6 @@ describe('createAgent', () => {
       userId: 1,
       deckId: 1,
       encryptedSettings: makeSettings(),
-      signal: new AbortController().signal,
     })
     expect(agent.state.thinkingLevel).toBe('off')
   })
@@ -114,7 +97,6 @@ describe('createAgent', () => {
         userId: 1,
         deckId: 1,
         encryptedSettings: broken,
-        signal: new AbortController().signal,
       }),
     ).rejects.toThrow(/LLM 未配置/)
   })

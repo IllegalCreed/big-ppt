@@ -8,7 +8,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type {
   TemplateManifest,
   TemplateManifestLayout,
@@ -403,10 +403,7 @@ ${
   )
 }
 
-/**
- * Phase 12.7 Task C: deck-scoped 入口 —— 根据 deckId 查 templateId + 用户 image LLM
- * 配置,调 buildSystemPrompt 拼完整 prompt。createAgent 复用。
- */
+/** Phase 12.7 Task C: deck-scoped 入口（含所有权校验,defense in depth）。 */
 export async function buildSystemPromptForDeck(
   deckId: number,
   userId: number,
@@ -416,10 +413,10 @@ export async function buildSystemPromptForDeck(
   const [deck] = await db
     .select({ templateId: decks.templateId })
     .from(decks)
-    .where(eq(decks.id, deckId))
+    .where(and(eq(decks.id, deckId), eq(decks.userId, userId)))
     .limit(1)
   if (!deck) {
-    throw new Error(`[buildSystemPromptForDeck] deck ${deckId} 不存在`)
+    throw new Error(`[buildSystemPromptForDeck] deck 不存在或非所有者: deckId=${deckId}`)
   }
   const imageGenEnabled = !!(await getImageLlmSettings(userId))
   return buildSystemPrompt({ templateId: deck.templateId, mcpBadges, imageGenEnabled })
