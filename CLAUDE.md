@@ -240,6 +240,7 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - **nginx HTTPS bootstrap 必须分两阶段**：模板里 `listen 443 ssl` 含 `ssl_certificate` 路径,但 certbot 申请证书前文件不存在,nginx -t 直接 fail,且坏 conf 写入会让后续 `systemctl reload nginx` 拒绝重载,**全 nginx 站点风险**。先写 80-only conf 让 certbot --webroot 申请证书,成功后再 envsubst 完整模板（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 3）
 - **依赖升级前必看 npm `latest` dist-tag 是否指向 beta**：不是所有库都把 `latest` 严格对齐 stable；升 0.x → 1.x 类跨 major 时 `pnpm outdated` 显示的 latest 可能是 beta，显式锁 stable 版本号避免误升（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 踩坑 6）
 - **`@types/node` 跟 Node LTS 不跟 npm latest**：Node 25 还没 LTS 时 npm latest 已经是 25，但部署/CI 用 Node 22 LTS，类型版本应跟运行时 LTS 才不漂移（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 设计抉择 #7）
+- **pm2 reload 后 grandchild Node 进程残留占端口 → 新实例 EADDRINUSE crash-loop**：`start-agent.sh → pnpm exec → dotenv-cli → node` 四层 wrapper,pm2 reload 时 SIGTERM 顶层 wrapper 但 grandchild node 未及时退,新实例起到 listen(4000) 抛 EADDRINUSE,pm2 继续 restart 卡死(85+ 次)直到手动 `kill -9 <grandchild_pid>`。**排查口诀**：deploy 后 healthz 502 + pm2 status uptime 几秒 + restart 次数飙升 → `ss -tnlp \| grep :4000` 找到占端口的实际 PID(不是 pm2 tracked PID,是 grandchild)→ kill -9 那个 → pm2 自己起新的(2026-05-16 Phase 12.7 部署踩)
 
 ### Hono 路由
 
@@ -304,6 +305,7 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - **pi-agent-core 无 top-level `'error'` AgentEvent**：errors 走嵌套 `message_update.assistantMessageEvent.error`；plan 假设的 top-level error type 不存在。需要 assertNever 加 default guard 兜底 ([plan 28](docs/plans/28-phase12.7-pi-agent-core.md) Task D 偏离)
 - **扩 discriminated union 不是「非破坏」commit**：union 一扩就强制所有 `switch (event.type)` exhaustive site 同步加 case，type-check 红一片。Phase 12.7 Task A canonical event 8→13 类一扩就牵动 `types.test.ts assertNever` + `useAIChat consumeCanonicalEventStream` 2 处 exhaustiveness site。**先全包 grep `assertNever` / `case never` / `default:` 找全 exhaustiveness site 算入改动量** ([plan 28](docs/plans/28-phase12.7-pi-agent-core.md) 踩坑 3)
 - **改 schema / DB / ALS 全局字段时 grep readers 必须覆盖 createAgent / factory 等 "新增 reader"**：Phase 12 Task F 漏 grep 6 个 llm_settings 消费者已上 CLAUDE.md，Phase 12.7 Task E 再踩——thinkingEnabled → thinkingLevel migration plumb 到 parseLlmSettings / GET-llm-settings / PUT-llm-settings 三处 safeParse 入口，**漏了** Task C 刚加的 createAgent.resolveThinkingLevel 直接读 rawSettings.advanced.<provider>.thinkingEnabled。两份升级穿插时 reader 增量比想象多 ([plan 28](docs/plans/28-phase12.7-pi-agent-core.md) 踩坑 2)
+- **schema enum 限制升级时 legacy 自由字符串 row 会 migration 全失败**：Phase 12 把 `provider` 字段从「自由 string」变成 12-canonical-enum,prod 4 个老用户 `provider:"custom"` migrate-llm-settings.mjs 跑 zod 校验阶段全 failed → migration 报「迁移后 zod 校验失败」吐 4 行。**临时解** 直接 SQL UPDATE 让这些 row `llm_settings=NULL` 强迫用户重配。**正解** migration 设计带 admin-override pre-map(按 baseUrl host 推断 openai-compat / anthropic-compat) 或 schema 留 `Other` 兜底允许 passthrough。未来扩 enum 限制(thinkingLevel / 任何 provider-like enum) 必须考虑老 string row 怎么收尾 (2026-05-16 Phase 12.7 prod 部署踩)
 
 ### 安全
 
