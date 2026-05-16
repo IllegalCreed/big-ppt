@@ -66,7 +66,9 @@ const rows = computed<RowVm[]>(() => {
       progressPct: Math.round(j.progressRatio * 100),
       errorMsg: j.errorMsg,
       variant,
-      label: j.slideIndex !== undefined ? `第 ${j.slideIndex + 1} 页` : '排队中…',
+      // slideIndex 已经是 1-based(tool prompt 约定,见 generate-slide-image.ts:143),
+      // 直接用,不再 +1(2026-05-16 dogfood 修正:之前显示「第 3/4 页」实际是「第 2/3 页」)。
+      label: j.slideIndex !== undefined ? `第 ${j.slideIndex} 页` : '排队中…',
       detail: stageLabel(j.stage, j.progressRatio),
     }
   })
