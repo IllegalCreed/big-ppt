@@ -13,6 +13,7 @@
 import { Hono } from 'hono'
 import { llm } from './routes/llm.js'
 import { llmModels } from './routes/llm-models.js'
+import { chat } from './routes/chat.js'
 import { slides } from './routes/slides.js'
 import { templates } from './routes/templates.js'
 import { promptsRoute } from './routes/prompts.js'
@@ -60,6 +61,10 @@ app.route('/api/llm', llm)
 // llm 内部对 /chat/completions 等做 path-specific middleware 校验，把 models 端点
 // 挂同前缀容易触发 CLAUDE.md「Hono sub-router wildcard 泄漏」坑。
 app.route('/api/llm/models', llmModels)
+// Phase 12.7 Task F：pi-agent-core 驱动的 agent loop 端点（POST /api/chat/turn）。
+// 跟 /api/llm/chat/completions 并存:前者全权代理 agent loop（tool 调度内化在
+// 后端 / 工具执行不走前端 round-trip）,后者保留给非 agent 路径（如 rewriteForTemplate）。
+app.route('/api/chat', chat)
 app.route('/api', slides)
 app.route('/api', templates)
 app.route('/api', promptsRoute)
