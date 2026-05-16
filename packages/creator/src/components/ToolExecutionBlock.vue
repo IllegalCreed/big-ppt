@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /** Phase 12.7 Task G：单次 tool execution 状态块 —— pending/running/done/error 四态 + 折叠详情。 */
 import { computed } from 'vue'
-
-export type ToolExecutionStateName = 'pending' | 'running' | 'done' | 'error'
+import type { ToolExecutionStateName } from '../composables/useAIChat'
 
 const props = defineProps<{
   toolName: string

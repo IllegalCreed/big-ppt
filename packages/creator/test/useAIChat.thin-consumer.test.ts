@@ -389,6 +389,40 @@ describe('useAIChat (thin consumer)', () => {
     )
   })
 
+  // Phase 12.7-G code review M-3：retry 守护从 status !== 'idle' 改成
+  // sending/streaming 拒绝,允许 error 终态重试(用户最常见 /retry 场景)。
+  it('retryLastUserMessage 在 error 状态下也能重试（M-3）', async () => {
+    // 第一次失败 → status='error'
+    chatTurnMock.mockRejectedValueOnce(new Error('upstream 500'))
+    // 第二次（retry）成功
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    // listChats 在 failed turn 后仍会被 backend 写入 user 行(persistTurnToDeckChats
+    // 在 agent_end 即使错也照样落 user message),mock 模拟之
+    listChatsMock.mockResolvedValue([
+      { id: 1, deckId: 7, role: 'user', content: 'first try', toolCallId: null, createdAt: 't1' },
+    ])
+
+    const { chat } = setupChat()
+    await chat.sendMessage('first try')
+    await flushPromises()
+    expect(chat.status.value).toBe('error')
+    expect(chatTurnMock).toHaveBeenCalledTimes(1)
+    // chatMessages 包含 user "first try"(refresh 后 backend 视图)
+    expect(chat.chatMessages.value.some((m) => m.role === 'user' && m.content === 'first try')).toBe(true)
+
+    // error 终态 retry：旧守护会 silent return,新守护放行
+    chat.retryLastUserMessage()
+    await flushPromises()
+    expect(chatTurnMock).toHaveBeenCalledTimes(2)
+    expect(chatTurnMock).toHaveBeenLastCalledWith(
+      { deckId: 7, message: 'first try' },
+      expect.any(Object),
+    )
+    expect(chat.status.value).toBe('idle')
+  })
+
   it('sendMessage 重入保护：sending/streaming 期间再调直接返回', async () => {
     let resolveFirst: (r: Response) => void = () => {}
     chatTurnMock.mockImplementationOnce(

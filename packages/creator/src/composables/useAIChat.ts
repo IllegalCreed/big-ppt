@@ -206,6 +206,15 @@ export function useAIChat(): UseAIChatReturn {
         break
       case 'error':
         throw new Error(`agent error [${event.code}]: ${event.message}`)
+      default: {
+        // exhaustiveness 兜底:Phase 13+ canonical event 扩展时编译期 catch,运行期
+        // console.warn 出未知 type 不静默吞掉(便于 dogfood 发现 backend 漂)。
+        const _exhaustive: never = event
+        console.warn(
+          '[useAIChat] unknown canonical event type:',
+          (_exhaustive as { type: string }).type,
+        )
+      }
     }
   }
 
@@ -283,7 +292,9 @@ export function useAIChat(): UseAIChatReturn {
   }
 
   function retryLastUserMessage(): void {
-    if (status.value !== 'idle') return
+    // 守护跟 sendMessage 对齐：仅当真在跑(sending/streaming)时拒绝重入,error
+    // 终态允许重试(用户最常见 /retry 场景就是上一轮 LLM 错了想重发)。
+    if (status.value === 'sending' || status.value === 'streaming') return
     const lastUser = [...chatMessages.value].reverse().find((m) => m.role === 'user')
     if (!lastUser) {
       appendLocalMessage('没有可重试的用户消息。')
