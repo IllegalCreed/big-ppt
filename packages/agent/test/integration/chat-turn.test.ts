@@ -471,6 +471,74 @@ describe('POST /api/chat/turn(pi-agent-core driven)', () => {
     expect(rows[1]?.content).toContain('hello from agent')
   })
 
+  it('happy path 之后 slot 释放 + 下一轮新 limit=1 用户能立刻拿到新 slot', async () => {
+    // 接续 cancel 单测契约:验「turn 完整跑完 / 取消后,后续请求不被卡」。
+    // 这是 chat-cancel 用户体验的另一面 —— 即便不 abort,正常 turn 跑完
+    // 也必须 release slot,不能 leak。
+    //
+    // 策略:LLM_USER_CONCURRENCY=1 强制单 slot;同一 user 跑两轮 happy-path
+    // scripted events,第二轮若拿不到 slot 会 503,从而证 happy-path finally
+    // 路径释 slot 正常。
+    //
+    // 跟前一个 abort 单测互补:abort 单测验「signal 端到端 + agent.abort 触发」
+    // (留下 slot 释放路径给本测验);本测验「下一轮新请求能拿到新 slot」。
+    process.env.LLM_USER_CONCURRENCY = '1'
+    try {
+      const { user, cookie } = await createLoggedInUser('reuse-slot@a.com')
+      await setLlmSettings(user.id)
+      const { deck } = await createDeckDirect(user.id)
+
+      const scripted: AgentEvent[] = [
+        { type: 'agent_start' },
+        {
+          type: 'message_update',
+          message: assistantMsg(),
+          assistantMessageEvent: {
+            type: 'text_delta',
+            contentIndex: 0,
+            delta: 'OK',
+            partial: assistantMsg(),
+          },
+        },
+        { type: 'agent_end', messages: [assistantMsg()] },
+      ]
+
+      // 第一轮
+      const { agent: agent1 } = makeFakeAgent({ events: scripted })
+      __setCreateAgentForTesting(async () => agent1)
+      const res1 = await buildApp().fetch(
+        new Request('http://x/api/chat/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: cookie },
+          body: JSON.stringify({ deckId: deck.id, message: 'round-1' }),
+        }),
+      )
+      expect(res1.status).toBe(200)
+      const events1 = await collectSSE(res1)
+      expect(events1.map((e) => e.type)).toEqual(['turn.start', 'text.delta', 'turn.end'])
+      // slot 已 release(SSE 流跑完触发 finally release)
+      expect(__getLlmSemaphoreStateForTesting(user.id)).toEqual({ active: 0, queueLen: 0 })
+
+      // 第二轮(若 slot 未释会 acquireLlmSlot 排队 → LLM_QUEUE_TIMEOUT_MS 后 503)
+      const { agent: agent2 } = makeFakeAgent({ events: scripted })
+      __setCreateAgentForTesting(async () => agent2)
+      const res2 = await buildApp().fetch(
+        new Request('http://x/api/chat/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Cookie: cookie },
+          body: JSON.stringify({ deckId: deck.id, message: 'round-2' }),
+        }),
+      )
+      expect(res2.status).toBe(200)
+      const events2 = await collectSSE(res2)
+      expect(events2.map((e) => e.type)).toEqual(['turn.start', 'text.delta', 'turn.end'])
+      // 第二轮也干净 release
+      expect(__getLlmSemaphoreStateForTesting(user.id)).toEqual({ active: 0, queueLen: 0 })
+    } finally {
+      delete process.env.LLM_USER_CONCURRENCY
+    }
+  })
+
   it('createAgent throw → 400 + 中文通用 message;原英文错落 server-log 不外泄', async () => {
     const { user, cookie } = await createLoggedInUser('create-fail@a.com')
     await setLlmSettings(user.id)

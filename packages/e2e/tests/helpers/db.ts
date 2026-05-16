@@ -143,3 +143,50 @@ export function extractLayouts(content: string): string[] {
   }
   return out
 }
+
+// ─── deck_versions / deck_chats 直读 helper (lifecycle 测专用) ───────────
+
+/** 数指定 deck 的 deck_versions 行数（含初始 + tool call 写入快照） */
+export async function countVersionsByDeck(deckId: number): Promise<number> {
+  const [rows] = await getPool().query<mysql.RowDataPacket[]>(
+    'SELECT COUNT(*) AS n FROM deck_versions WHERE deck_id = ?',
+    [deckId],
+  )
+  return Number((rows[0] as { n: number }).n)
+}
+
+/** 数指定 deck 的 deck_chats 行数 */
+export async function countChatsByDeck(deckId: number): Promise<number> {
+  const [rows] = await getPool().query<mysql.RowDataPacket[]>(
+    'SELECT COUNT(*) AS n FROM deck_chats WHERE deck_id = ?',
+    [deckId],
+  )
+  return Number((rows[0] as { n: number }).n)
+}
+
+/** 列指定 deck 的所有 deck_versions（最新优先,带 content） */
+export async function listVersionsByDeckSql(deckId: number): Promise<
+  Array<{ id: number; deck_id: number; content: string; message: string | null; turn_id: string | null; created_at: Date }>
+> {
+  const [rows] = await getPool().query<mysql.RowDataPacket[]>(
+    'SELECT id, deck_id, content, message, turn_id, created_at FROM deck_versions WHERE deck_id = ? ORDER BY id DESC',
+    [deckId],
+  )
+  return rows as Array<{
+    id: number
+    deck_id: number
+    content: string
+    message: string | null
+    turn_id: string | null
+    created_at: Date
+  }>
+}
+
+/** 直读 deck 行(无 ownership 检查),lifecycle 验删完后行不存在(soft delete 时返 status='deleted') */
+export async function getDeckRawSql(id: number): Promise<DeckRow | null> {
+  const [rows] = await getPool().query<mysql.RowDataPacket[]>(
+    'SELECT id, user_id, title, template_id, current_version_id, status FROM decks WHERE id = ? LIMIT 1',
+    [id],
+  )
+  return (rows[0] as DeckRow) ?? null
+}
