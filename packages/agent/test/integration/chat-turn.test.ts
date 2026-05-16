@@ -424,7 +424,8 @@ describe('POST /api/chat/turn(pi-agent-core driven)', () => {
       {
         type: 'agent_end',
         messages: [
-          // existingCount=0 → 全部新消息入库;user prompt + assistant response
+          // pi-agent-core agent_end.messages 已是本轮 delta(agent-loop.js 内 newMessages),
+          // 直接全量 insert,不需要 slice。
           {
             role: 'user',
             content: [{ type: 'text', text: 'hi' }],
@@ -439,7 +440,7 @@ describe('POST /api/chat/turn(pi-agent-core driven)', () => {
       extraSubscribe: async (event) => {
         if (event.type !== 'agent_end') return
         const newCanonical = event.messages.map(agentMessageToCanonical)
-        await persistTurnToDeckChats(deck.id, newCanonical, 0)
+        await persistTurnToDeckChats(deck.id, newCanonical)
       },
     })
     __setCreateAgentForTesting(async () => agent)

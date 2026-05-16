@@ -118,6 +118,15 @@ function* mapEvent(event: AgentEvent): Generator<CanonicalEvent> {
       return
 
     case 'agent_end': {
+      // pi-agent-core handleRunFailure 把 LLM 调用抛错包装成 agent_end + 一条
+      // role:'assistant' 含 errorMessage 字段的 failureMessage(agent.js:325)。
+      // 不存在 top-level error event 让我们直接 catch 这条路径 —— 必须扫描
+      // messages 找 errorMessage,转 canonical error event 让前端看见
+      // (2026-05-16 dogfood: missing API key 路径全套 silent fail)。
+      const failure = extractFailureMessage(event.messages)
+      if (failure) {
+        yield { type: 'error', code: 'agent_run_failed', message: failure }
+      }
       const usage = extractFinalUsage(event.messages)
       if (usage && usage.cached && usage.cached > 0) {
         yield {
@@ -221,6 +230,19 @@ function extractFinalUsage(messages: ReadonlyArray<AgentMessage>): TokenUsage | 
     }
   }
   return out
+}
+
+/**
+ * 扫 agent_end.messages 提 failure 文案(pi-agent-core handleRunFailure
+ * 写入 AssistantMessage.errorMessage 字段)。无失败返 null。
+ */
+function extractFailureMessage(messages: ReadonlyArray<AgentMessage>): string | null {
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue
+    const errMsg = (m as AssistantMessage).errorMessage
+    if (typeof errMsg === 'string' && errMsg.length > 0) return errMsg
+  }
+  return null
 }
 
 function extractFinishReason(messages: ReadonlyArray<AgentMessage>): FinishReason {

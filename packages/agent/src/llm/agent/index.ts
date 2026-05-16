@@ -51,7 +51,6 @@ export async function createAgent(opts: CreateAgentOpts): Promise<Agent> {
   const systemPrompt = await buildSystemPromptForDeck(opts.deckId, opts.userId)
   const existingCanonical = await loadDeckChatHistory(opts.deckId)
   const existingAgentMessages = existingCanonical.map(canonicalToAgentMessage)
-  const existingCount = existingCanonical.length
 
   // pi-agent-core 的 StreamFn 期望 streamSimple 形态（SimpleStreamOptions 含
   // reasoning / thinkingBudgets 字段）；pi-ai 0.74.0 export 的 streamSimple
@@ -67,6 +66,16 @@ export async function createAgent(opts: CreateAgentOpts): Promise<Agent> {
       messages: existingAgentMessages,
     },
     streamFn,
+    // pi-agent-core agent-loop.js:167 在每次 LLM call 前 resolve API key:
+    //   resolvedApiKey = (getApiKey?(provider)) || config.apiKey
+    // 我们的 cfg.apiKey 来自 users.llm_settings AES 解密;必须经此 callback
+    // 注入,否则 pi-ai streamSimple 走 process.env.<PROVIDER>_API_KEY 回退,
+    // dev 进程根本没设 ZAI_API_KEY / ANTHROPIC_API_KEY 等 → 上游抛"missing
+    // apiKey" → pi-agent-core handleRunFailure 包装成 agent_end 含 errorMessage
+    // 的 failureMessage,SSE 输出只有 turn.start + turn.end usage=0(2026-05-16
+    // dogfood 实测踩坑)。我们的 model 只有一个 active provider,callback 直接
+    // 返回 cfg.apiKey 即可。
+    getApiKey: () => cfg.apiKey,
     sessionId: `lumideck:user-${opts.userId}:deck-${opts.deckId}`,
     toolExecution: 'parallel',
 
@@ -99,8 +108,10 @@ export async function createAgent(opts: CreateAgentOpts): Promise<Agent> {
   agent.subscribe(async (event: AgentEvent) => {
     if (event.type !== 'agent_end') return
     try {
+      // pi-agent-core agent_end.messages 已是本轮 delta(agent-loop.js 内 newMessages),
+      // 直接全量 insert,不再做 slice。
       const newCanonical = event.messages.map(agentMessageToCanonical)
-      await persistTurnToDeckChats(opts.deckId, newCanonical, existingCount)
+      await persistTurnToDeckChats(opts.deckId, newCanonical)
     } catch (err) {
       logServerEvent({
         category: 'agent',

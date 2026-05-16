@@ -247,6 +247,36 @@ describe('translateAgentStream', () => {
     expect(errorEvt!.code).toBe('error')
   })
 
+  it('handleRunFailure: agent_end 含 errorMessage 失败 message → emit canonical error', async () => {
+    // 2026-05-16 dogfood 修正:pi-agent-core handleRunFailure 把 LLM 抛错包装成
+    // agent_end + 一条 role:'assistant' 含 errorMessage 字段的 failureMessage,
+    // 不发独立 error event(plan 27 + agent.js:325)。translateAgentStream 必须
+    // 主动扫 messages 提 errorMessage 转 canonical error,否则上层只看到 turn.end
+    // usage=0 silent fail。
+    const failureMsg = assistantMsg({
+      content: [{ type: 'text', text: '' }],
+      stopReason: 'error',
+    })
+    failureMsg.errorMessage = 'missing api key for zai'
+    const agent = fakeAgent([
+      { type: 'agent_start' },
+      // 注意:这里没有 message_update —— handleRunFailure 路径下 streamFn 直接抛错,
+      // 不走 stream loop,只 emit agent_end with failureMessage
+      { type: 'agent_end', messages: [failureMsg] },
+    ])
+    const events = await collect(translateAgentStream(agent, 'q'))
+    const types = events.map((e) => e.type)
+    expect(types).toContain('error')
+    const errorEvt = events.find((e) => e.type === 'error') as
+      | { type: 'error'; code: string; message: string }
+      | undefined
+    expect(errorEvt).toBeDefined()
+    expect(errorEvt!.message).toBe('missing api key for zai')
+    expect(errorEvt!.code).toBe('agent_run_failed')
+    // turn.end 仍在(usage 全 0)
+    expect(types[types.length - 1]).toBe('turn.end')
+  })
+
   it('prompt() rejection: agent.prompt throw → generator throws', async () => {
     const agent = {
       subscribe: () => () => {},
