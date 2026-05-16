@@ -42,22 +42,44 @@ vi.mock('../src/api/chat', () => ({
 // Phase 12.7-G fix：useGenerateImageJob mock，记录 start() 调到的 jobId
 // Phase 12.7 dogfood 二次修正:useAIChat 现在 watch 实例的 stage/progressRatio/info refs
 // + 在 clearHistory 调 instance.abort(),mock 需要给出完整接口。
+//
+// dogfood 三连击补测:把每次 useGenerateImageJob() 创建的 refs 暴露给当前 test
+// 通过 imageJobInstances 拿到引用,从外部驱动 stage/progressRatio 模拟 worker 进度
+// (verify auto-prune / errorMsg 流转必须从外部喂数据,顶层 mock 共用 refs 不够用)。
+import type { Ref, ShallowRef } from 'vue'
+import type { ImageJobState, ImageJobInfo } from '../src/composables/useDecks'
 const imageJobStartMock = vi.fn()
 const imageJobAbortMock = vi.fn()
+type ImageJobInstanceHandle = {
+  stage: Ref<ImageJobState>
+  progressRatio: Ref<number>
+  error: Ref<string | null>
+  info: ShallowRef<ImageJobInfo | null>
+  result: ShallowRef<ImageJobInfo | null>
+  running: Ref<boolean>
+  start: typeof imageJobStartMock
+  abort: typeof imageJobAbortMock
+  cancel: () => void
+}
+const imageJobInstances: ImageJobInstanceHandle[] = []
 vi.mock('../src/composables/useGenerateImageJob', async () => {
   const { ref, shallowRef } = await import('vue')
   return {
-    useGenerateImageJob: () => ({
-      stage: ref('pending' as const),
-      progressRatio: ref(0),
-      error: ref<string | null>(null),
-      info: shallowRef<unknown>(null),
-      result: shallowRef<unknown>(null),
-      running: ref(false),
-      start: imageJobStartMock,
-      abort: imageJobAbortMock,
-      cancel: vi.fn(),
-    }),
+    useGenerateImageJob: () => {
+      const inst: ImageJobInstanceHandle = {
+        stage: ref<ImageJobState>('pending'),
+        progressRatio: ref(0),
+        error: ref<string | null>(null),
+        info: shallowRef<ImageJobInfo | null>(null),
+        result: shallowRef<ImageJobInfo | null>(null),
+        running: ref(false),
+        start: imageJobStartMock,
+        abort: imageJobAbortMock,
+        cancel: vi.fn(),
+      }
+      imageJobInstances.push(inst)
+      return inst
+    },
   }
 })
 
@@ -111,6 +133,8 @@ describe('useAIChat (thin consumer)', () => {
     setAIBusyMock.mockReset()
     imageJobStartMock.mockReset()
     imageJobStartMock.mockResolvedValue({ state: 'done', slideIndex: 1, assetId: 'a1' })
+    imageJobAbortMock.mockReset()
+    imageJobInstances.length = 0
   })
   afterEach(() => {
     vi.clearAllMocks()
@@ -608,5 +632,216 @@ describe('useAIChat (thin consumer)', () => {
     await flushPromises()
     // clearHistory 清掉 dedup 集后,同 jobId 应再 track 一次
     expect(imageJobStartMock).toHaveBeenCalledTimes(2)
+  })
+
+  // ─────────────────────────────────────────────────────────────
+  // Phase 12.7 dogfood 补测 1:handleRunFailure 路径
+  //
+  // 背景(commit 9da0ed0):pi-agent-core handleRunFailure 把 LLM 抛错包装成
+  // agent_end + 一条 role:'assistant' 含 errorMessage 字段的 failureMessage,
+  // **不发独立 error event**。Task D translateAgentStream 已修:扫
+  // agent_end.messages 提 errorMessage 后 yield canonical error event,
+  // 紧跟着照常 yield turn.end。
+  //
+  // 这里测的是 **frontend useAIChat consumer 角度**:error event 落地后:
+  // - status='error'
+  // - statusText 含 errorMessage
+  // - 仍走 turn.end 路径(refresh / 清缓冲)? —— 实际上 consumeEvent
+  //   遇到 error throw → for-await 中断 → 走 catch 分支(status='error'),
+  //   finally 仍 refreshFromBackend + 清缓冲。
+  // ─────────────────────────────────────────────────────────────
+  it('handleRunFailure 路径:error event 后再 turn.end → status=error 且 refresh 已跑', async () => {
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([
+        { type: 'turn.start', turnId: 't-fail' },
+        { type: 'text.delta', text: '部分输出' },
+        {
+          type: 'error',
+          code: 'agent_run_failed',
+          message: 'API key missing for openai-compatible',
+        },
+        // translateAgentStream 在 error 后照常 yield turn.end;但 consumer 在 error
+        // 处 throw,不会走到 turn.end —— for-await 中断
+        { type: 'turn.end', usage: { input: 0, output: 0 }, reason: 'stop' },
+      ]),
+    )
+    // refresh 仍跑(finally 不依赖 catch),返当前 deck_chats 视图
+    listChatsMock.mockResolvedValueOnce([
+      { id: 1, deckId: 7, role: 'user', content: '触发失败', toolCallId: null, createdAt: 't1' },
+    ])
+
+    const { chat } = setupChat()
+    await chat.sendMessage('触发失败')
+    await flushPromises()
+
+    expect(chat.status.value).toBe('error')
+    expect(chat.statusText.value).toContain('agent_run_failed')
+    expect(chat.statusText.value).toContain('API key missing for openai-compatible')
+    // streaming 缓冲在 finally 被清(避免和 history 重复)
+    expect(chat.streamingContent.value).toBe('')
+    // finally 仍跑 refreshFromBackend
+    expect(listChatsMock).toHaveBeenCalledWith(7)
+    // user 气泡保留(refresh 后从 backend 拿到)
+    expect(chat.chatMessages.value.some((m) => m.role === 'user' && m.content === '触发失败')).toBe(
+      true,
+    )
+  })
+
+  // ─────────────────────────────────────────────────────────────
+  // Phase 12.7 dogfood 补测 2:imageJobs auto-prune 跨 turn 持久 + 终态 5s 退场
+  //
+  // 背景(commit b01c6da):imageJobs Map 跨 turn 跨 bubble 汇总;每个 job
+  // composable 实例的 stage / progressRatio / info / error refs 通过 watch
+  // 同步回 Map;terminal 后保留 5s 让用户看到 ✅/❌ 终态再 auto-prune(避免
+  // 「啪一下消失」)。
+  //
+  // 这里覆盖:
+  // - 单 turn 触发 jobId → Map 立即有 entry,初始 stage='pending'
+  // - 改 mock 内部 ref 模拟 worker 进度推进(pending → running → done)
+  //   → Map 同步更新
+  // - 终态 5s 后 auto-prune(用 vi.useFakeTimers fast-forward)
+  // ─────────────────────────────────────────────────────────────
+  it('imageJobs Map 跨 watcher 同步 stage / progressRatio / info;终态后 5s auto-prune', async () => {
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    listChatsMock.mockResolvedValueOnce([
+      {
+        id: 1,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: true, jobId: 'job-progress' }),
+        toolCallId: 'tc',
+        createdAt: 't',
+      },
+    ])
+    // 模拟 worker 异步阻塞:start 不 resolve,让 case 通过 inst.stage 手工驱动
+    let resolveStart: (v: { state: ImageJobState }) => void = () => {}
+    imageJobStartMock.mockImplementationOnce(
+      () =>
+        new Promise((res) => {
+          resolveStart = res
+        }),
+    )
+
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { chat } = setupChat()
+    await chat.sendMessage('生成图片')
+    await flushPromises()
+
+    // imageJobs Map 立即有 entry(pending),imageJobInstances 收到 1 个实例
+    expect(chat.imageJobs.value.size).toBe(1)
+    expect(imageJobInstances.length).toBe(1)
+    const inst = imageJobInstances[0]!
+    const initial = chat.imageJobs.value.get('job-progress')!
+    expect(initial.stage).toBe('pending')
+    expect(initial.progressRatio).toBe(0)
+
+    // 通过 inst.stage / progressRatio / info 推进 → useAIChat 内 watch 同步回 Map
+    inst.stage.value = 'running'
+    inst.progressRatio.value = 0.5
+    inst.info.value = {
+      id: 'job-progress',
+      state: 'running',
+      slideIndex: 2,
+      createdAt: 't',
+    } as ImageJobInfo
+    await flushPromises()
+    const r = chat.imageJobs.value.get('job-progress')!
+    expect(r.stage).toBe('running')
+    expect(r.progressRatio).toBe(0.5)
+    expect(r.slideIndex).toBe(2)
+
+    // 推进到 done(terminal) → 立即不 prune(stopWatch 触发,排 5s timer)
+    inst.stage.value = 'done'
+    inst.progressRatio.value = 1
+    await flushPromises()
+    expect(chat.imageJobs.value.has('job-progress')).toBe(true)
+    expect(chat.imageJobs.value.get('job-progress')!.stage).toBe('done')
+
+    // fast-forward 5s → auto-prune
+    vi.advanceTimersByTime(5_001)
+    await flushPromises()
+    expect(chat.imageJobs.value.has('job-progress')).toBe(false)
+
+    // 清理:resolve 挂起的 start promise 让 fire-and-forget rejection 不污染
+    resolveStart({ state: 'done' })
+    vi.useRealTimers()
+  })
+
+  it('imageJobs:failed 终态 errorMsg 写进 Map,5s 后 prune', async () => {
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    listChatsMock.mockResolvedValueOnce([
+      {
+        id: 1,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: true, jobId: 'job-fail' }),
+        toolCallId: 'tc',
+        createdAt: 't',
+      },
+    ])
+    // useAIChat 内 instance.start().catch(...) 静默处理 reject,case 里也一样 swallow
+    imageJobStartMock.mockImplementationOnce(() => Promise.reject(new Error('quota exceeded')))
+
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { chat } = setupChat()
+    await chat.sendMessage('生成失败的图')
+    await flushPromises()
+
+    expect(imageJobInstances.length).toBe(1)
+    const inst = imageJobInstances[0]!
+
+    // 推进到 failed + errorMsg
+    inst.stage.value = 'failed'
+    inst.error.value = 'quota exceeded'
+    await flushPromises()
+    const r = chat.imageJobs.value.get('job-fail')!
+    expect(r.stage).toBe('failed')
+    expect(r.errorMsg).toBe('quota exceeded')
+
+    // 5s 后 prune
+    vi.advanceTimersByTime(5_001)
+    await flushPromises()
+    expect(chat.imageJobs.value.has('job-fail')).toBe(false)
+
+    vi.useRealTimers()
+  })
+
+  it('clearHistory:abort 所有 image job composable 实例', async () => {
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    listChatsMock.mockResolvedValueOnce([
+      {
+        id: 1,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: true, jobId: 'j1' }),
+        toolCallId: 'tc1',
+        createdAt: 't1',
+      },
+      {
+        id: 2,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: true, jobId: 'j2' }),
+        toolCallId: 'tc2',
+        createdAt: 't2',
+      },
+    ])
+
+    const { chat } = setupChat()
+    await chat.sendMessage('生成两张图')
+    await flushPromises()
+    expect(chat.imageJobs.value.size).toBe(2)
+    expect(imageJobAbortMock).not.toHaveBeenCalled()
+
+    chat.clearHistory()
+    // 两个实例都被 abort
+    expect(imageJobAbortMock).toHaveBeenCalledTimes(2)
+    expect(chat.imageJobs.value.size).toBe(0)
   })
 })
