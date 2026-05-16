@@ -12,13 +12,11 @@
  * fixtures 用 pdf-lib / docx / xlsx 三个库在 beforeAll 运行时生成(避免提交二进制
  * 到仓库 + 不依赖外部下载)。MD / TXT 直接 Buffer.from。
  *
- * 已知 flake (8 次跑 6~8 次通过, 偶发个别 case "asset not found"):
- * - 现象:seedAsset INSERT 成功(verify SELECT 也通过), enqueueExtraction +
- *   waitForQueueIdle 返回, 但最终 getAsset 回查 0 行。
- * - 推测:Task B / D 并行加 user_assets 相关测试 / 改 factories.ts 时, 共享
- *   lumideck_test DB 跟 mysql2 connection pool 偶发 commit visibility 漂移。
- *   Phase 13 三任务合并到 main 后单线性 CI 跑应稳定 (turbo concurrency=1)。
- * - 不补 retry / 等待:flake 不能掩盖底层 race, 上线后若稳定不变则 OK。
+ * Phase 13 三任务并行期曾有 "asset not found / 401 / FK violation" 偶发 flake,
+ * 根因是 test-db.ts 的 `TRUNCATE TABLE` + mysql2 prepared statement(`pool.execute`)
+ * 在 Aliyun RDS 上触发的 stale-plan 静默返空 bug。详见 `test/_setup/test-db.ts`
+ * 注释。已改为 `DELETE FROM` 修复(600 跑 0 失败),seedAsset 防御性 verify 保留
+ * 作为多层防护(开销可忽略)。
  */
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
