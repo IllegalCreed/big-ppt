@@ -24,6 +24,11 @@ export async function truncateAllTables(): Promise<void> {
   const conn = await getPool().getConnection()
   try {
     await conn.query('SET FOREIGN_KEY_CHECKS=0')
+    // Phase 13:加 user_assets 清理(quota / list/delete spec 依赖空表)。
+    // 注:e2e helper 仍用 TRUNCATE 是因为 Playwright runtime 不走 drizzle prepared
+    // statement(纯 mysql2 query),不触发 Aliyun RDS stale-plan bug;agent
+    // 集成测才必须用 DELETE FROM(见 test-db.ts 注释)。
+    await conn.query('TRUNCATE TABLE user_assets')
     await conn.query('TRUNCATE TABLE user_mcp_servers')
     await conn.query('TRUNCATE TABLE deck_assets')
     await conn.query('TRUNCATE TABLE deck_chats')

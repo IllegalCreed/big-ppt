@@ -72,6 +72,11 @@ export default defineConfig({
         // Phase 9-E：e2e 共享同一个 webServer，rate-limit 跨 spec 累计撞 5/15min/IP
         // 上限会让 register/login spec 挂；测试场景下统一禁用。
         RATE_LIMIT_ENABLED: 'false',
+        // Phase 13:e2e 用户素材落 tmp,跟 dev/prod 隔离;assets-quota spec 把
+        // limit 调到 50KB / 单文件 10KB 验 413(不需要真传 100MB megabyte 文件)。
+        LUMIDECK_ASSETS_DIR: '/tmp/lumideck-e2e-user-assets',
+        LUMIDECK_QUOTA_PER_USER_BYTES: '51200',
+        LUMIDECK_QUOTA_PER_FILE_BYTES: '10240',
       },
     },
     {
