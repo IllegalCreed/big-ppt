@@ -16,6 +16,7 @@ const stateLabel = computed(() => {
     case 'running': return '执行中'
     case 'done': return '完成'
     case 'error': return '失败'
+    default: return ''
   }
 })
 

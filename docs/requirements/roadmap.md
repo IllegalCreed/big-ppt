@@ -784,6 +784,42 @@
 
 ---
 
+## Phase 12.7：pi-agent-core 上移 backend agent runtime
+
+**目标**：把 chat agent execution loop 从 frontend `useAIChat.ts` 搬到 backend，用 `@earendil-works/pi-agent-core@0.74.0` 接管 tool loop / sessionId caching / beforeToolCall hooks / thinkingLevel 6 档 / terminate flag。frontend 从 1011 行瘦到 322 行（canonical event SSE consumer + UI 状态机），backend 拿到 parallel tool execution / Anthropic prompt cache 命中率提升等开箱即用能力。
+
+**交付物**：
+
+- backend `packages/agent/src/llm/agent/`：`index.ts` (createAgent factory) + `persistence.ts` (agent_end 写 deck_chats) + `history-loader.ts` + `tool-bridge.ts` + `agent-message.ts` + `translate-events.ts` (push→pull async generator) — 31 单测 + 集成测
+- backend `routes/chat.ts`：`POST /api/chat/turn` 路由 + 10 集成测；fake agent 通过 `__setCreateAgentForTesting` 注入避免打真 LLM SDK
+- canonical event 集合从 8 类扩到 13 类：新增 `turn.start` / `turn.end` / `tool_execution.{start,delta,end}`
+- thinkingLevel 6 档 enum 替换 thinkingEnabled boolean（settings.ts schema + migration script `migrate-thinking-level.mjs` + Settings UI 3 域 select + 兼容期 `normalizeThinkingFields`）
+- frontend `useAIChat.ts` 1011 → 322 行；新增 `ToolExecutionBlock.vue` (4 态 + 折叠详情) + `api/chat.ts` (`chatTurn()` helper)；删 `api/llm.ts` 整文件（`chatStreamLegacy` zombie export 无 caller）
+- image-gen 异步 polling 重接桥：post-turn-refresh + 扫 `deck_chats` `success && jobId` + `useGenerateImageJob.start` + `trackedImageJobIds` 跨 turn dedup
+- 全套测试：agent 878 + creator 159 + shared 3 全绿；type-check / lint / build 干净
+
+**状态**：✅ 代码完成（2026-05-16，plan 28，17 commit），待用户最终浏览器手验后部署
+
+**依赖**：Phase 12（multi-LLM canonical layer）+ Phase 12.5（pi-ai migration）全 ✅
+
+**不做什么**：
+
+- ❌ **transformContext compaction**：留候选（当前 chat 极少超 64K，无痛点）
+- ❌ **steering UI**：留 Phase 13.x 候选独立 UI 设计
+- ❌ **cross-provider handoff UI**：留 Phase 13.x 候选
+- ❌ **Custom AgentMessage 类型**：纯重构无新价值
+- ❌ **OAuth providers**：Phase 12.6 候选独立做（Codex / Copilot / Vertex）
+- ❌ **MCP catalog 扩展**：Phase 13 主体
+- ❌ **删 POST `/api/decks/:id/chats` 兼容期**：保留 + log deprecated，Phase 14/15 再清理
+- ❌ **删 `chatStreamLegacy`**：实际 grep 零调用方已在 Task G 整文件删（plan 写「保留」是过度防御）
+
+**后续候选**：
+- Phase 12.6 OAuth providers
+- Phase 13 MCP catalog 扩展（含 stdio transport）
+- 未来 Phase：transformContext / steering / cross-provider handoff UI（dogfood 出痛点后再启动）
+
+---
+
 ## Phase 13：预制 MCP 服务扩展（catalog）
 
 **目标**：当前只预置了 3 个智谱 StreamableHTTP MCP（web-search / web-reader / zread）。把社区与官方常用且对 PPT 创作有直接增益的 MCP 整理成 catalog，降低用户接入成本。每个预置卡片填好 endpoint、必要 headers、场景说明，让用户从"加 MCP"流程减到分钟级。**同时本 Phase 引入 stdio transport 支持**，让 npx-only 的 MCP（如智谱视觉理解）可用，并解封 [packages/agent/src/mcp-server-repo/presets.ts](../../packages/agent/src/mcp-server-repo/presets.ts) 里的 `UNSUPPORTED_SERVER_IDS` 黑名单。

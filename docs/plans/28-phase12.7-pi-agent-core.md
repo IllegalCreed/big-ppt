@@ -2245,27 +2245,226 @@ git commit -m "docs(phase12.7-H): plan 28 close-out — 偏离 / 踩坑 / 测试
 
 > 实际跑下来与 plan 不一致的点，写清"原 plan 怎么说 / 实际怎么做 / 为什么改"。
 
-- _（待填）_
+### Task A 偏离：扩 canonical event union 牵动 2 个 exhaustiveness site
+
+- **原 plan**：Task A 是「最小破坏 commit」，只装依赖 + 加 5 个 event type + 落骨架
+- **实际**：union 一扩 → `packages/agent/src/llm/__tests__/types.test.ts` 的 `assertNever` exhaustive 测试 + frontend `useAIChat.ts` 的 `consumeCanonicalEventStream` switch 必须同步加 5 个 case，否则 type-check 红测
+- **why**：discriminated union 在 TypeScript 里 *任何* 显式 exhaustive 都会编译期红测，找全所有相关 site 一起改是必要前置工作；plan 假设 union 扩张「非破坏」是错的
+
+### Task B 偏离：pi-agent-core 实际类型签名跟 plan 假设 7 处偏差
+
+实施期发现 `@earendil-works/pi-agent-core@0.74.0` API 跟 plan 假设有以下 mismatch（沿用 Phase 12.5 Task B 「读 dist/types.d.ts」教训），逐条修：
+
+1. `AgentMessage` role 用 camelCase `'toolResult'`，不是 plan 假设的 snake_case `'tool_result'`；canonical 端用 snake_case `'tool'`
+2. ThinkingBlock 字段 pi 端是 `{thinking, thinkingSignature?, redacted?}`，canonical 端是 `{text}`（双向丢弃 signature/redacted）
+3. ToolUseBlock 类型名 pi 用 `'toolCall'` (camelCase) + `arguments`，canonical 用 `'tool_use'` + `input`
+4. `AgentTool.parameters` 声明 TSchema (typebox) 但 runtime 接 JSON Schema → `as unknown as TSchema` cast
+5. `ToolResultMessage.toolName` 是 required 字段，但 canonical `tool_result` block 无 toolName 承载位置 → 翻译时占位空串（pi 用 toolCallId 配对足够）
+6. registry 现有 `ToolDef.exec` 只接 args 返回 string，没有 plan 假设的 `{content, isError, terminate}` 三件套 → wrap 老接口而非改造 registry signature；ToolDef.exec 抛错由 pi-agent-core loop 内部翻译成 isError=true
+7. tool-registry 公开 export 改名 `listToolDefsForUser` / `executeToolForUser`（plan 假设 `listToolsForUser` / `executeTool`），跟 `/api/tools` 路由现有公开 helper 区分（前者返完整 ToolDef 含 exec callback 给 agent 内部用，后者返 schema-only 给前端 UI）
+
+### Task C 偏离 #1：集成测路径从 sibling __tests__ 挪到 test/integration/
+
+- **原 plan**：单测 + 集成测都放 `packages/agent/src/llm/agent/__tests__/`
+- **实际**：单测在 sibling __tests__，集成测（`agent-persistence.test.ts`）放 `packages/agent/test/integration/`
+- **why**：tsconfig rootDir=`./src`，sibling __tests__ 无法 `import { useTestDb } from '../../../../test/_setup/test-db.js'`（rootDir 越界 → TS6059）；跟 `migrate-deck-chats.test.ts` / `migrate-llm-settings.test.ts` 同位
+
+### Task C 偏离 #2：pi-agent-core API 跟 plan 假设 4 处偏差
+
+- **原 plan**：`new Agent({ stream, tools, sessionId, beforeToolCall, ... })`
+- **实际**: 
+  1. `AgentOptions.initialState` 是 `Partial<Omit<AgentState, 'pendingToolCalls'|...>>`，thinkingLevel 直接走 ThinkingLevel union (`'off'|'minimal'|'low'|'medium'|'high'|'xhigh'`)
+  2. `Agent.subscribe(listener)` listener 收 AgentEvent union（不是 plan 假设的 `(event, signal)` 2 参数）
+  3. Agent 顶层 public 字段 `sessionId` / `toolExecution` / `state` (getter) 可直接读
+  4. `streamFn` 跟 pi-ai `streamSimple` 签名对齐（不是 `stream`），`cast as StreamFn` 即可
+- **why**：pi-agent-core 0.74.0 实际签名只能读 dist/types.d.ts 才准确；README 是 high-level 文档不到字段层
+
+### Task C 偏离 #3：`buildSystemPromptForDeck` 签名
+
+- **原 plan**：复用现有 `prompts/buildSystemPrompt` 的统一入口
+- **实际**：现有 `buildSystemPrompt(deckId, mcpBadges?)` 是单参数，需要 `templateId` + image LLM 配置；新加 `buildSystemPromptForDeck(deckId, userId, mcpBadges?)` 入口包装查 decks.templateId + image-llm-settings 后调原函数
+- **why**：纯前 commit 时漏想 createAgent 还需要 userId 作 ownership check + image-llm-settings 是 user-scoped；分两层（高层入口 query DB → 低层组装 prompt）保持低层纯
+
+### Task D 偏离：error 走嵌套不是 top-level AgentEvent
+
+- **原 plan**：plan 推断 pi-agent-core 有 top-level `'error'` AgentEvent type
+- **实际**：error 走 `message_update.assistantMessageEvent.error`（嵌套）；`toolcall_end` 直接 carry toolCall 不需要后扫
+- **why**：pi-agent-core 0.74.0 实际 event union 只有 11 类（不含 top-level error）；需要 assertNever 加 default guard 兜底
+- **修**：commit `4c5b18c` 加 default 分支 + 重测 error scenario 走嵌套路径
+
+### Task E 偏离 #1：grep all readers 漏 createAgent 路径
+
+- **原 plan**：thinkingEnabled → thinkingLevel schema 升级 + 3 处 safeParse 点 plumb normalizeThinkingFields
+- **实际**：Task C 已落地的 createAgent 内部 `resolveThinkingLevel(rawSettings.advanced)` 直接读老 boolean 字段，**绕过** schema 入口 → 老用户 `thinkingEnabled=true` 会被误判 `'off'` 直到 migration 跑完
+- **修**：commit `a92254f` 在 resolveThinkingLevel 前补 `normalizeThinkingFields(rawSettings)` 兜底；2 测覆盖 legacy shape 入 createAgent
+- **why**：memory `remove-session-field-grep-readers` 教训沿用——schema 字段语义改时必须全包 grep 字段名两次（reader + writer），Phase 12.5 Task F 已踩过同一坑这次又中
+
+### Task E 偏离 #2：UI 域从 1 处扩到 3 处
+
+- **原 plan**：SettingsModal 替换 anthropic `thinkingEnabled` 一处
+- **实际**：spec §6 实际要求 3 域（anthropic / gemini / common）都给 thinkingLevel UI；UI scope 从 1 个 `<select>` 扩到 3 个独立字段（`thinkingLevelAnthropic` / `thinkingLevelGemini` / `thinkingLevelCommon`），buildPayload + loadSettings 共用 `resolveLegacyThinkingLevel` helper
+- **修**：commit `6eeeb76` 补 Gemini + common 域 UI
+- **why**：spec / plan 不同步——spec §6 后期加的，plan 没刷新
+
+### Task F 偏离 #1：abort 路径单测改成验「agent.abort() 触发」
+
+- **原 plan**：Test 8 abort 触发 → agent.abort() + slot 释放，断言「slot 已释放」
+- **实际**：in-process `app.fetch(req)` 跟生产 undici fetch 在 stream cancel 时序上偏差大，slot 释放走 finally 但断言难稳定 → 改成只验 agent.abort() 被调用 + 走 wire（不再断言 slot 状态）
+- **why**：plan 已知坑「in-process app.fetch 测 SSE abort 时序跟生产 undici 偏」沿用 Phase 12 Task E 教训；abort 路径单测只验 wire，slot 释放走 happy path 隐式覆盖
+
+### Task F 偏离 #2：createAgent 错文案脱敏
+
+- **原 plan**：createAgent throw → 400 + 原 e.message
+- **实际**：code review 指出 `e.message` 可能含 crypto / SDK 实现细节（如「AES-GCM decryption failed」），改回 generic 「创建 AI 会话失败,请检查 LLM 配置」；raw error 走 logServerEvent('create-failed') 留服务端追踪
+- **修**：commit `2656bfb`
+- **why**：error message 直接回吐给前端属信息泄露，对应防御编码原则
+
+### Task G 偏离 #1：image-gen 异步 polling 必须 frontend 接桥
+
+- **原 plan**：useAIChat 大重写删 Phase 11.5 image polling，pi-agent-core canonical tool_execution.end 当工具完成
+- **实际**：generate_slide_image 工具同步返 jobId 后 tool_execution.end 立即触发「done」状态，但 worker 异步还在跑、slide 图没出来 → 用户看到 chat 显示完成但 deck 仍空白
+- **修**：commit `adae75b` 走 Option B (post-turn-refresh + 扫 deck_chats `success:true && jobId:string` 起 `useGenerateImageJob.start`)；`trackedImageJobIds` 跨 turn dedup
+- **why**：扩 canonical event schema 影响所有 adapter 成本高；frontend 接桥是最小路径
+
+### Task G 偏离 #2：useAIChat 最终 322 行（plan 目标 300）
+
+- **原 plan**：1011 → ≤350 行
+- **实际**：13f40c3 落地时 258 行（达成）；adae75b image-gen polling re-wire +53 行 → 311 行；3f844bb code review fix +11 行 → 322 行
+- **why**：plan 350 行上限是 ballpark，322 行内含 polling 接桥 + dedup + 状态机 + audit logging，已是合理收敛；上 350 目标也是达成
+
+### Task G 偏离 #3：删 api/llm.ts 整文件（plan 说改名 + 保留 chatStreamLegacy）
+
+- **原 plan**：`chatStream` → `chatStreamLegacy` 改名，保留给「Settings 健康检查等非 agent 路径」未来使用
+- **实际**：grep 全包发现 chatStreamLegacy **零调用方**（JSDoc 声称的 Settings 健康检查 caller 实际不存在），唯一活跃 export 就是这个改名 stub，整文件删干净不留死代码
+- **修**：commit `3f844bb`
+- **why**：code review 抓的「死 export 别留」原则；rewriteForTemplate 等非 agent 单轮 LLM call 走 backend `/api/llm/chat/completions` route 不依赖此 frontend helper
+
+### Task G 偏离 #4：CSS token 用 `--color-*` 不是 `--ld-*`
+
+- **原 plan / code review 反馈**：用 `--ld-*` Lumideck 设计 token
+- **实际**：creator SPA 自身的 design token 在 `src/styles/tokens.css` 叫 `--color-*` / `--space-*` / `--fs-*`；`--ld-*` 是 Slidev 模板色板，仅在 `.slidev-layout` 子树 resolve（chat panel 渲染时不会命中）
+- **修**：commit `adae75b` 用两层 fallback `--color-* → --ld-*`，跟 ThinkingBlock / UsageStatsHint 等 peer 一致
+
+### Task H 偏离：单测 + 集成测的 master key 注入未还原（pre-existing flakiness）
+
+- **原 plan**：Task H 只做 close-out / verification，不动测试代码
+- **实际**：完整跑 `pnpm -F @big-ppt/agent test` 时观察到 routes-auth / mcp-server-repo / llm-models 等 2-9 个 case 偶发失败；定位是 `test/integration/chat-turn.test.ts` `beforeAll(__setMasterKeyGetterForTesting(FIXED_KEY))` 缺 `afterAll(... null)` 复位 → 模块级 `_keyGetter` 被污染漏到后续测试文件
+- **修**：本 Task H 补 chat-turn.test.ts 的 `afterAll(() => __setMasterKeyGetterForTesting(null))`；附带修 `packages/creator/src/components/ToolExecutionBlock.vue` `vue/return-in-computed-property` lint 红测（switch 缺 default 返回值）
+- **why**：Phase 12.7 新加的 chat-turn integration test 是 first new test 用此 testing seam 后**没有同文件再覆盖回**（之前的 routes-auth / db-image-llm-settings / tools-generate-slide-image 等都用 0xab/0xcd/0xef 各自的 FIXED_KEY 但没还原，碰巧后续测试也不调 decryptApiKey 所以隐式 OK）
+- **防再犯**：见踩坑 6
 
 ---
 
 ## 踩坑与解决（实施期 / 关闭后追加）
 
 > 按「症状 / 根因 / 修复 / 防再犯」四段记完整故事。
+> **判断要不要提炼到 [CLAUDE.md 已知坑](../../CLAUDE.md#已知坑)**：换 Phase 还会撞的工具链 / 测试基建 / 构建系统坑才提炼。
 
-- _（待填）_
+### 坑 1：pi-agent-core 0.74.0 跟 README 字段名 / event 名 7 处偏差
+
+- **症状**：Task B / C / D 按 spec & README 写完 tool-bridge / agent-message / createAgent / translate-events，type-check 红一片 + 运行时拿 undefined / 错字段
+- **根因**：pi-agent-core 0.74.0 README 是 high-level 文档，确切签名要看 `node_modules/@earendil-works/pi-agent-core/dist/types.d.ts`；同样的 lesson Phase 12.5 Task B 已踩过（pi-ai 8 处偏差，已上 CLAUDE.md），这次 pi-agent-core 又栽
+- **修复**：Task B / C / D 逐条修—— `'toolResult'` (camelCase) / ThinkingBlock 字段名 `thinking` 不是 `text` / `'toolCall'` (camelCase) / TSchema cast / ToolResultMessage.toolName required / public sessionId/toolExecution/state getter / no top-level error event（走 message_update.assistantMessageEvent.error）
+- **防再犯**：**已提炼到 CLAUDE.md「LLM / Tool 工程」**——升级任何 pi-* / @earendil-works/* 系列 SDK 前必读 `dist/types.d.ts`；README 仅作 hint，不作字段层契约
+
+### 坑 2：thinkingLevel schema 升级漏 grep `createAgent` 这条 reader
+
+- **症状**：Task E migration 跑过的老用户 + Task C 已 wire 的 createAgent 路径，运行时 `thinkingEnabled=true` 被误判 `'off'`（thinking 不触发）
+- **根因**：Task E 已 plumb normalizeThinkingFields 到 `parseLlmSettings` + `GET /llm-settings` + `PUT /llm-settings` 三处 safeParse 入口；但 Task C 已落地的 createAgent 内部直接读 `rawSettings.advanced.<provider>.thinkingEnabled` 不走 schema → 老 boolean 不被 normalize 路径 catch
+- **修复**：commit `a92254f` 在 createAgent `resolveThinkingLevel(rawSettings.advanced)` **前**补 `normalizeThinkingFields(rawSettings)`；2 测覆盖 legacy shape 入 createAgent
+- **防再犯**：memory `remove-session-field-grep-readers` 教训沿用——schema 字段语义改时全包 grep 字段名两次（reader + writer），单测过不代表 HTTP 路径过。Phase 12.5 Task F 已踩过（llm_settings shape）这次 thinkingEnabled 再中，**已在 CLAUDE.md「LLM / Tool 工程」存档**
+
+### 坑 3：discriminated union 扩张不是「非破坏」commit
+
+- **症状**：Task A plan 自称「最小破坏 commit」装依赖 + 加 5 个 canonical event type，但提交后 type-check 立刻红 2 处（types.test.ts assertNever + useAIChat 的 consumeCanonicalEventStream switch）
+- **根因**：TypeScript discriminated union exhaustive 检查在任何 `switch (event.type) { case ... default: assertNever(...) }` 都会强制要求所有成员覆盖；plan 把「加新 case」当成非破坏，但 default 分支的 type narrow 让旧编译期红测
+- **修复**：commit `79550f1` 加新 case 时**同时**更新 2 个 exhaustiveness site；frontend useAIChat 给 5 个 fallthrough case 静默跳过（agent path 跑 turn / tool_execution event，单轮 path 不会见到）
+- **防再犯**：**已提炼到 CLAUDE.md「LLM / Tool 工程」**——下次扩任何 discriminated union 必先全包 grep `assertNever` / `case never` / `default:`，找全所有 exhaustiveness site 算入 PR 总改动量
+
+### 坑 4：in-process `app.fetch(req)` 测 SSE abort 时序跟生产 undici 偏
+
+- **症状**：Task F Test 8「客户端 abort 触发 agent.abort() + slot 释放」原计划用 fixed 50ms sleep 等待 → CI 时序抖动假阳
+- **根因**：in-process Hono `app.fetch(req)` 在 stream cancellation 路径上跟真实 undici fetch 不一致——前者 `req.signal.abort()` 跟 stream backpressure 释放是同步的，后者跟 OS socket / event loop 解耦；agent.abort() 调到了，但 slot 释放发生在 finally 里跟 fetch 解 stream 的时机间有 race
+- **修复**：commit `2656bfb` Test 9 用 `fake agent` 暴露 `promptDone` Promise，`await promptDone` 取代 `sleep(50)`；Test 8 改成只断言「agent.abort() 已调用」+ 走 wire，slot 释放走 happy path 隐式覆盖
+- **防再犯**：**已提炼到 CLAUDE.md「测试基建」**——in-process `app.fetch()` 测 SSE abort + cancel 时序跟生产 undici 偏；Phase 12 Task E + Phase 12.7 Task F 均踩；abort 路径单测只验 wire（agent.abort 触发），slot 释放走 happy path 隐式覆盖
+
+### 坑 5：image-gen 异步工具 tool_execution.end fires on jobId return 不是 image ready
+
+- **症状**：Task G 大瘦身后跑「生成 5 页 AI 历史 deck」dogfood，chat 显示「generate_slide_image 完成」但 deck 仍空白—— worker 后台还在跑，frontend 把 jobId-return 当 image-ready
+- **根因**：pi-agent-core canonical `tool_execution.end` 在 tool callback `return` 后立即 fire；`generate_slide_image` 工具设计就是 sync return jobId + 异步落地，pi-agent-core 拿不到「真完成」信号；扩 canonical event schema 反向影响所有 adapter，成本太高
+- **修复**：commit `adae75b` 走 Option B——`refreshFromBackend` 后扫 `deck_chats` 所有 tool 行 content（JSON），凡 `success:true && jobId:string` 且未见过的 jobId 就启 `useGenerateImageJob.start(jobId)`；`trackedImageJobIds` 跨多 turn dedup；`clearHistory` 清空
+- **防再犯**：**已提炼到 CLAUDE.md「前端约定」**——异步工具（jobId-return + worker 异步）必须 frontend 接桥 polling（backend SSE 不延续 turn 边界）；post-turn-refresh + dedup Set + 扫 deck_chats jobId 是 canonical 模式
+
+### 坑 6：模块级 mutable state testing seam 不还原会跨文件污染
+
+- **症状**：完整跑 agent 全套 `pnpm -F @big-ppt/agent test` 偶发 2-9 个 case 失败（routes-auth `login: 成功 → 200` / mcp-server-repo `两个 user list 各自独立` / llm-models `未知 provider → 400` 等），失败 case 在单独跑同文件时全过；DB truncate 后再跑全套又全过——典型 order-dependent flakiness
+- **根因**：`packages/agent/src/crypto/apikey.ts` 的 `_keyGetter` 是 module-level mutable variable；`test/integration/chat-turn.test.ts` `beforeAll(__setMasterKeyGetterForTesting(FIXED_KEY))` 注入后 **无 `afterAll(... null)` 复位**，模块缓存让 FIXED_KEY 漏到后续文件（之前的 routes-auth.test.ts 等也漏复位但碰巧后续不调 decryptApiKey 所以隐式 OK；Phase 12.7 Task F 新加的 chat-turn 是 first new test 用此 seam 让漏洞暴露）
+- **修复**：本 Task H commit 给 chat-turn.test.ts 加 `afterAll(() => __setMasterKeyGetterForTesting(null))`；附带修 `ToolExecutionBlock.vue` `vue/return-in-computed-property` lint 红测
+- **防再犯**：**已提炼到 CLAUDE.md「测试基建」**——任何 `__set*ForTesting` testing seam 用 module-level mutable state 的，使用方**必须**配 afterAll/afterEach 清空回 null（或默认值）；同 Phase 12.5 Task B 教训沿用，这条比 testing seam 设计本身更通用
 
 ---
 
 ## 测试数量落地（关闭后追加）
 
+> 测试运行口径：`pnpm -F @big-ppt/<pkg> test`（不含 smoke）；agent 含 `lumideck_test` 真 MySQL 集成测。
+> **DB 状态前置**：跑前手动 TRUNCATE 7 表（同 `resetDb`），避免之前失败留 stale 行影响（Phase 12.7 Task H 期间踩到 + 提炼到 CLAUDE.md）。
+
 | 指标             | 起点 (Phase 12.5 + UX hotfix 后) | 终点 (Phase 12.7 完) | 增量 |
 | ---------------- | ---- | ---- | ---- |
-| agent unit (含集成) | 811 (~74 files) |  |  |
-| creator unit     | 140 (22 files) |  |  |
-| shared unit      | 3 (1 file) |  |  |
+| agent unit (含集成) | 811 (~74 files) | **878 (76 files, +6 skipped 智谱图像 smoke = 884 total)** | **+67** |
+| creator unit     | 140 (22 files) | **159 (17 files)** | **+19** |
+| shared unit      | 3 (1 file) | 3 (1 file) | 0 |
 | smoke test       | 6 tests (3 files, 默认 skipIf 跳) | 6 tests (3 files) | 0 |
 | coverage lines   | agent 90 / creator 75 | 同 | 维持 |
 | coverage branch  | agent 80 / creator 65 | 同 | 维持 |
-| agent runtime adapter (per-file) | — | ≥ 90/85 | — |
-| frontend useAIChat 行数 | 1011 | ≤ 350 | 瘦身 |
+| agent runtime adapter (per-file) | — | **agent-message / tool-bridge / persistence / translate-events / index ≥ 90 lines / 85 branches**（plan §"验收条件"达成） | — |
+| frontend useAIChat 行数 | 1011 | **322** (Task G 258 → +53 image-gen polling re-wire → +11 code review fix) | 瘦身 -689 |
+
+**agent 测试数 +67 说明**：
+- +15 tool-bridge + agent-message (Task B)
+- +9 agent (sibling __tests__) + 4 agent-persistence (integration) (Task C)
+- +7 translate-events (Task D)
+- +14 settings 单测 + 5 migrate-thinking-level 真 DB 集成 + 2 createAgent legacy compat (Task E fix)
+- +10 chat-turn integration (Task F + Task F-fix 1 + Task H stability fix)
+- +2 retry-from-error path (Task G code-review M-3)
+
+**creator 测试数 +19 说明**：
+- +15 useAIChat thin-consumer (Task G; 删 18 老 tool-loop / canonical-consumer / spec 测)
+- +8 ToolExecutionBlock (Task G)
+- +5 image-gen polling integration (Task G adae75b)
+- +2 SettingsModal advanced thinkingLevel + 2 SettingsModal save (Task E)
+- +6 SettingsModal model dropdown (Task E side-effect, save / provider-switch)
+- −18 删 useAIChat.tool-loop / canonical-consumer / spec (old fixtures retired)
+- net +19
+
+**Phase 12.7 commit chain（17 commits）**：
+
+- spec: `f93c7fb` + plan: `3ab9955`
+- Task A: `79550f1`
+- Task B: `0abaa78` → `e70420e`（code review nits）
+- Task C: `307c0c7` → `f80b8fd`（code review 重要项）
+- Task D: `1b43242` → `4c5b18c`（code review 重要项）
+- Task E: `50d79bc` → `6eeeb76`（UI 补 Gemini/common）→ `a92254f`（createAgent compat fix）
+- Task F: `6ae87c4` → `2656bfb`（code review）
+- Task G: `13f40c3` → `adae75b`（image-gen polling re-wire）→ `3f844bb`（code review）
+- Task H: 本 commit（close-out + 2 个小修：chat-turn afterAll + ToolExecutionBlock switch default）
+
+---
+
+## Dogfood 状态
+
+**自动化已通过**：
+- agent / creator / shared 单测 + 集成测全绿
+- type-check 干净
+- lint 干净
+- build 干净
+- Task F 9 个集成测验过 SSE wire / DB persistence / abort / 503 / 401 / 400 / 404 等契约
+- Task G 28 个新单测覆盖 useAIChat 状态机 13 类 event + image polling dedup
+
+**浏览器手验由用户在合并前完成**，验收脚本：
+
+1. 创建 deck → 「生成 5 页 AI 历史 deck」→ 多 tool 并发（`tail -f logs/server-*.jsonl | grep "tool-call"` 看 parallel）
+2. 切模板 → `rewriteForTemplate` 走非 agent 单轮 LLM call 路径（`POST /api/llm/chat/completions`）仍可用
+3. Settings active provider 切到 Anthropic + 连续 2 轮对话 → 看 `cache.hit` event 出现，UsageStatsHint 显示「缓存命中 X tokens」
+4. Settings advanced thinkingLevel='high' + 复杂问题 → 看 `thinking.delta` 内容充实（vs 'off' 时几乎没有）
+5. 故意触发工具失败（删 deck 后后台改 LLM 设置触发 400）→ 看 ToolExecutionBlock 显示 error state + 红色边框

@@ -12,7 +12,7 @@
  * - clientSignal.abort() 反向传播到 agent.abort() + slot 释放
  * - agent_end subscribe 触发 persistTurnToDeckChats 写真 deck_chats 行(test 9)
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { useTestDb } from '../_setup/test-db.js'
@@ -39,6 +39,13 @@ useTestDb()
 
 beforeAll(() => {
   __setMasterKeyGetterForTesting(() => FIXED_KEY)
+})
+
+afterAll(() => {
+  // 必须复位:_keyGetter 是模块级 mutable state,本文件 beforeAll 注入 FIXED_KEY,
+  // 不在 afterAll 还原会污染后续 test 文件(后续测试用 env APIKEY_MASTER_KEY
+  // 加密但用本文件 FIXED_KEY 解密 → 解密失败 / 行为漂移)。Phase 12.7 Task H 发现。
+  __setMasterKeyGetterForTesting(null)
 })
 
 afterEach(() => {
