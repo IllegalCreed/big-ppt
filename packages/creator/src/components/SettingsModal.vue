@@ -427,7 +427,29 @@ function buildPayload() {
   }
 }
 
-async function saveLlm() {
+/**
+ * 用户反馈:三个 tab 一气配完时,旧版「保存」会关弹窗,得重开三次。
+ * 加 keepOpen 参数:「应用」(保存当前 tab + 不关) / 「保存」(保存 + 关)。
+ * apply 后短暂闪「已应用」提示让用户知道保存成功。
+ */
+const llmApplied = ref(false)
+const imageApplied = ref(false)
+let llmAppliedTimer: ReturnType<typeof setTimeout> | null = null
+let imageAppliedTimer: ReturnType<typeof setTimeout> | null = null
+
+function flashApplied(target: 'llm' | 'image') {
+  if (target === 'llm') {
+    llmApplied.value = true
+    if (llmAppliedTimer) clearTimeout(llmAppliedTimer)
+    llmAppliedTimer = setTimeout(() => { llmApplied.value = false }, 2000)
+  } else {
+    imageApplied.value = true
+    if (imageAppliedTimer) clearTimeout(imageAppliedTimer)
+    imageAppliedTimer = setTimeout(() => { imageApplied.value = false }, 2000)
+  }
+}
+
+async function saveLlm(keepOpen = false): Promise<void> {
   if (saving.value) return
   saveError.value = ''
   // 校验:active provider 必须已配 apiKey(新填的或已存的)
@@ -448,7 +470,8 @@ async function saveLlm() {
         e.apiKey = ''
       }
     }
-    emit('update:open', false)
+    if (keepOpen) flashApplied('llm')
+    else emit('update:open', false)
   } catch (err) {
     saveError.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
   } finally {
@@ -456,7 +479,7 @@ async function saveLlm() {
   }
 }
 
-async function saveImage() {
+async function saveImage(keepOpen = false): Promise<void> {
   if (savingImage.value) return
   imageSaveError.value = ''
   if (!imageSettings.value.apiKey && !hasStoredImageApiKey.value) {
@@ -473,7 +496,8 @@ async function saveImage() {
     })
     hasStoredImageApiKey.value = true
     imageSettings.value.apiKey = ''
-    emit('update:open', false)
+    if (keepOpen) flashApplied('image')
+    else emit('update:open', false)
   } catch (err) {
     imageSaveError.value = err instanceof ApiError ? err.message : String((err as Error).message || err)
   } finally {
@@ -1063,15 +1087,25 @@ onMounted(() => {
           <p v-if="saveError" class="form-error" data-test="save-error">{{ saveError }}</p>
 
           <div class="modal-footer">
+            <span v-if="llmApplied" class="applied-flash" role="status" aria-live="polite">✓ 已应用</span>
             <button type="button" class="btn-secondary" :disabled="saving" @click="close">取消</button>
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="saving"
+              data-test="apply-button"
+              @click="saveLlm(true)"
+            >
+              {{ saving ? '保存中...' : '应用' }}
+            </button>
             <button
               type="button"
               class="btn-primary"
               :disabled="saving"
               data-test="save-button"
-              @click="saveLlm"
+              @click="saveLlm(false)"
             >
-              {{ saving ? '保存中...' : '保存' }}
+              {{ saving ? '保存中...' : '保存并关闭' }}
             </button>
           </div>
         </div>
@@ -1191,11 +1225,20 @@ onMounted(() => {
           <p v-if="imageSaveError" class="form-error">{{ imageSaveError }}</p>
 
           <div class="modal-footer">
+            <span v-if="imageApplied" class="applied-flash" role="status" aria-live="polite">✓ 已应用</span>
             <button type="button" class="btn-secondary" :disabled="savingImage" @click="close">
               取消
             </button>
-            <button type="button" class="btn-primary" :disabled="savingImage" @click="saveImage">
-              {{ savingImage ? '保存中...' : '保存' }}
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="savingImage"
+              @click="saveImage(true)"
+            >
+              {{ savingImage ? '保存中...' : '应用' }}
+            </button>
+            <button type="button" class="btn-primary" :disabled="savingImage" @click="saveImage(false)">
+              {{ savingImage ? '保存中...' : '保存并关闭' }}
             </button>
           </div>
         </div>
@@ -1759,10 +1802,24 @@ onMounted(() => {
 .modal-footer {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: var(--space-2);
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border-subtle);
   margin-top: var(--space-2);
+}
+
+.applied-flash {
+  margin-right: auto;
+  color: var(--color-success, #2a8a3f);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  animation: applied-fade 2s ease-out;
+}
+
+@keyframes applied-fade {
+  0%, 80% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 .btn-secondary {
