@@ -88,6 +88,32 @@ describe('createAgent', () => {
     expect(agent.state.thinkingLevel).toBe('off')
   })
 
+  it('Phase 12.7 Task E (review fix):legacy thinkingEnabled boolean → 兼容期 thinkingLevel="medium"', async () => {
+    // 模拟 migration 跑前的老 DB shape:advanced.anthropic.thinkingEnabled=true
+    // (Phase 12 ↔ Phase 12.7 之间存量数据)。createAgent 走 normalizeThinkingFields
+    // 兜底,转出 thinkingLevel='medium',跟 GET / PUT / parseLlmSettings 三处 compat
+    // 对齐;不补此路径的话老用户在 migration 跑完前 thinking 能力被误判 'off'。
+    const agent = await createAgent({
+      userId: 1,
+      deckId: 1,
+      encryptedSettings: makeSettings({
+        advanced: { anthropic: { thinkingEnabled: true } },
+      }),
+    })
+    expect(agent.state.thinkingLevel).toBe('medium')
+  })
+
+  it('Phase 12.7 Task E (review fix):legacy thinkingEnabled=false → thinkingLevel="off"', async () => {
+    const agent = await createAgent({
+      userId: 1,
+      deckId: 1,
+      encryptedSettings: makeSettings({
+        advanced: { anthropic: { thinkingEnabled: false } },
+      }),
+    })
+    expect(agent.state.thinkingLevel).toBe('off')
+  })
+
   it('activeProvider 未配 apiKey → 抛 "LLM 未配置"', async () => {
     const broken = encryptApiKey(
       JSON.stringify({ activeProvider: 'anthropic', providers: {} }),

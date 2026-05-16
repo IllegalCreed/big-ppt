@@ -5,7 +5,7 @@ import {
   type StreamFn,
 } from '@earendil-works/pi-agent-core'
 import { streamSimple } from '@earendil-works/pi-ai'
-import { getActiveProviderConfig } from '../settings.js'
+import { getActiveProviderConfig, normalizeThinkingFields } from '../settings.js'
 import { decryptApiKey } from '../../crypto/apikey.js'
 import { resolveModelForProvider } from '../adapters/pi-ai-adapter.js'
 import { buildToolsForUser } from './tool-bridge.js'
@@ -29,6 +29,13 @@ export async function createAgent(opts: CreateAgentOpts): Promise<Agent> {
   // schema 当前未把 thinkingLevel 字段落进 zod，但运行时让用户/未来 schema 升级
   // 都能填进去无缝生效。损坏密文走 getActiveProviderConfig 已 catch,这里再 try
   // 一次保 createAgent 不被随机 JSON 错带挂。
+  //
+  // Phase 12.7 Task E (review fix):resolveThinkingLevel 读 raw JSON 不走 zod
+  // schema 入口,因此老 boolean shape(`advanced.<scope>.thinkingEnabled: true`)
+  // 直接喂进来会被当成「无 thinkingLevel 字段」→ fallback 'off',这是 migration
+  // 跑前老用户撞坑的入口。补 normalizeThinkingFields 把 `thinkingEnabled` boolean
+  // 转 `thinkingLevel` enum,跟 parseLlmSettings / GET / PUT 三处 compat 对齐
+  // (避免 grep-readers 漏一处)。
   let rawSettings: Record<string, unknown> = {}
   try {
     const parsed = JSON.parse(decryptApiKey(opts.encryptedSettings))
@@ -36,7 +43,8 @@ export async function createAgent(opts: CreateAgentOpts): Promise<Agent> {
   } catch {
     // ignore；rawSettings 保持 {} → thinkingLevel 走 'off' fallback
   }
-  const thinkingLevel = resolveThinkingLevel(rawSettings, cfg.provider)
+  const normalizedSettings = normalizeThinkingFields(rawSettings) as Record<string, unknown>
+  const thinkingLevel = resolveThinkingLevel(normalizedSettings, cfg.provider)
 
   const model = resolveModelForProvider(cfg.provider, cfg.model, cfg.baseUrl)
   const tools = await buildToolsForUser(opts.userId)
