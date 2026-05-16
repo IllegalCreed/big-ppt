@@ -26,13 +26,6 @@ async function setSelect(el: HTMLElement, value: string): Promise<void> {
   await flushPromises()
 }
 
-async function setCheckbox(el: HTMLElement, checked: boolean): Promise<void> {
-  const input = el as HTMLInputElement
-  input.checked = checked
-  input.dispatchEvent(new Event('change', { bubbles: true }))
-  await flushPromises()
-}
-
 async function click(el: HTMLElement): Promise<void> {
   el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   await flushPromises()
@@ -154,7 +147,7 @@ describe('SettingsModal provider switch (active provider advanced sub-block)', (
 
     expect($('[data-test="anthropic-advanced"]')).not.toBeNull()
     expect($('[data-test="adv-prompt-caching"]')).not.toBeNull()
-    expect($('[data-test="adv-thinking-enabled"]')).not.toBeNull()
+    expect($('[data-test="adv-thinking-level"]')).not.toBeNull()
     expect($('[data-test="adv-thinking-budget"]')).not.toBeNull()
 
     expect($('[data-test="gemini-advanced"]')).toBeNull()
@@ -199,7 +192,7 @@ describe('SettingsModal provider switch (active provider advanced sub-block)', (
     wrapper.unmount()
   })
 
-  it('thinking budget input 在 thinkingEnabled=false 时 disabled', async () => {
+  it('thinking budget input 在 thinkingLevel="off" 时 disabled', async () => {
     const wrapper = mount(SettingsModal, {
       props: { open: true },
       attachTo: document.body,
@@ -209,11 +202,32 @@ describe('SettingsModal provider switch (active provider advanced sub-block)', (
     await setSelect($('.active-provider-select')!, 'anthropic')
 
     const budget = $('[data-test="adv-thinking-budget"]') as HTMLInputElement
+    // 默认 thinkingLevel='off' → budget disabled
     expect(budget.disabled).toBe(true)
 
-    // 勾上 thinkingEnabled,budget 变可写
-    await setCheckbox($('[data-test="adv-thinking-enabled"]')!, true)
+    // 把 thinkingLevel 切到 high,budget 变可写
+    await setSelect($('[data-test="adv-thinking-level"]')!, 'high')
     expect(budget.disabled).toBe(false)
+
+    // 切回 off,budget 重新 disabled
+    await setSelect($('[data-test="adv-thinking-level"]')!, 'off')
+    expect(budget.disabled).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('thinking level select 含 6 个 option(off/minimal/low/medium/high/xhigh)', async () => {
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    await click($('.advanced-toggle')!)
+    await setSelect($('.active-provider-select')!, 'anthropic')
+
+    const select = $('[data-test="adv-thinking-level"]') as HTMLSelectElement
+    const values = Array.from(select.options).map((o) => o.value)
+    expect(values).toEqual(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
 
     wrapper.unmount()
   })

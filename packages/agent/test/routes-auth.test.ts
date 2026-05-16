@@ -433,7 +433,7 @@ describe('routes/auth', () => {
         anthropic: { apiKey: 'sk-ant-1', model: 'claude-sonnet-4-6' },
       },
       advanced: {
-        anthropic: { promptCaching: true, thinkingEnabled: true, thinkingBudgetTokens: 5000 },
+        anthropic: { promptCaching: true, thinkingLevel: 'high', thinkingBudgetTokens: 5000 },
         common: { temperature: 0.7 },
       },
     }
@@ -589,7 +589,7 @@ describe('routes/auth', () => {
           openai: { apiKey: 'sk-openai-1', model: 'gpt-4o' },
         },
         advanced: {
-          anthropic: { promptCaching: true, thinkingEnabled: true, thinkingBudgetTokens: 5000 },
+          anthropic: { promptCaching: true, thinkingLevel: 'high', thinkingBudgetTokens: 5000 },
           common: { temperature: 0.7 },
         },
       }),
@@ -622,7 +622,7 @@ describe('routes/auth', () => {
     // anthropic 子区原样保留(没在 res2 body 里发,但 merge 从 oldSettings 拿)
     expect(decrypted.advanced.anthropic).toEqual({
       promptCaching: true,
-      thinkingEnabled: true,
+      thinkingLevel: 'high',
       thinkingBudgetTokens: 5000,
     })
     // common 走最新值(0.9 覆盖 0.7)

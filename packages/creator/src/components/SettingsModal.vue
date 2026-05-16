@@ -12,8 +12,11 @@
  *   未配 apiKey 的卡片显示"未配置"灰色徽章;active 卡高亮(border + bg)。
  * - **Advanced 折叠区**:default 折叠,展开后:
  *   - common 子区:temperature slider / maxTokens input / topP slider
- *   - 当 active 是 anthropic:promptCaching toggle / thinkingEnabled toggle / thinkingBudgetTokens
+ *   - 当 active 是 anthropic:promptCaching toggle / thinkingLevel 6 档下拉 / thinkingBudgetTokens
  *   - 当 active 是 gemini:jsonMode toggle / longContextStrategy(truncate / segment)
+ *
+ * Phase 12.7 Task E:thinkingEnabled(boolean)替换成 thinkingLevel(6 档 enum:
+ * off / minimal / low / medium / high / xhigh)对齐 pi-agent-core 的 thinkingLevel 概念。
  *
  * 协议:GET / PUT 都用新 shape(backend Task J 同步改);apiKey 空串=保留旧值。
  */
@@ -56,12 +59,14 @@ function emptyEntry(): ProviderFormEntry {
   return { apiKey: '', model: '', baseUrl: '', hasApiKey: false, showApiKey: false }
 }
 
+type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+
 interface AdvancedForm {
   temperature: number | null
   maxTokens: number | null
   topP: number | null
   promptCaching: boolean
-  thinkingEnabled: boolean
+  thinkingLevel: ThinkingLevel
   thinkingBudgetTokens: number | null
   jsonMode: boolean
   longContextStrategy: 'truncate' | 'segment'
@@ -73,7 +78,7 @@ function emptyAdvanced(): AdvancedForm {
     maxTokens: null,
     topP: null,
     promptCaching: false,
-    thinkingEnabled: false,
+    thinkingLevel: 'off',
     thinkingBudgetTokens: 5000,
     jsonMode: false,
     longContextStrategy: 'truncate',
@@ -219,9 +224,25 @@ interface GetLlmSettingsResponse {
   activeProvider: ProviderId | null
   providers: Record<string, { hasApiKey: boolean; model?: string; baseUrl?: string }>
   advanced?: {
-    common?: { temperature?: number; maxTokens?: number; topP?: number; stopSequences?: string[] }
-    anthropic?: { promptCaching?: boolean; thinkingEnabled?: boolean; thinkingBudgetTokens?: number }
-    gemini?: { jsonMode?: boolean; longContextStrategy?: 'truncate' | 'segment' }
+    common?: {
+      temperature?: number
+      maxTokens?: number
+      topP?: number
+      stopSequences?: string[]
+      thinkingLevel?: ThinkingLevel
+    }
+    anthropic?: {
+      promptCaching?: boolean
+      thinkingLevel?: ThinkingLevel
+      // Phase 12.7 Task E 兼容期:GET 仍可能回老 boolean 字段(后端 migration 跑前)
+      thinkingEnabled?: boolean
+      thinkingBudgetTokens?: number
+    }
+    gemini?: {
+      jsonMode?: boolean
+      longContextStrategy?: 'truncate' | 'segment'
+      thinkingLevel?: ThinkingLevel
+    }
   }
 }
 
@@ -250,12 +271,16 @@ async function loadSettings() {
       const cmn = data.advanced.common ?? {}
       const ant = data.advanced.anthropic ?? {}
       const gem = data.advanced.gemini ?? {}
+      // Phase 12.7 Task E 兼容:GET 可能返老 thinkingEnabled(migration 跑前),
+      // 转回新 thinkingLevel 提供 v-model 一致体验
+      const legacyThinkingLevel: ThinkingLevel | undefined =
+        ant.thinkingEnabled === true ? 'medium' : ant.thinkingEnabled === false ? 'off' : undefined
       advanced.value = {
         temperature: cmn.temperature ?? null,
         maxTokens: cmn.maxTokens ?? null,
         topP: cmn.topP ?? null,
         promptCaching: !!ant.promptCaching,
-        thinkingEnabled: !!ant.thinkingEnabled,
+        thinkingLevel: ant.thinkingLevel ?? legacyThinkingLevel ?? 'off',
         thinkingBudgetTokens: ant.thinkingBudgetTokens ?? 5000,
         jsonMode: !!gem.jsonMode,
         longContextStrategy: gem.longContextStrategy ?? 'truncate',
@@ -339,8 +364,9 @@ function buildPayload() {
   if (activeProvider.value === 'anthropic') {
     const ant: NonNullable<NonNullable<GetLlmSettingsResponse['advanced']>['anthropic']> = {}
     if (advanced.value.promptCaching) ant.promptCaching = true
-    if (advanced.value.thinkingEnabled) {
-      ant.thinkingEnabled = true
+    // Phase 12.7 Task E:thinkingLevel != 'off' 才发(buildPayload 跳过 truthy "off" 字段)
+    if (advanced.value.thinkingLevel !== 'off') {
+      ant.thinkingLevel = advanced.value.thinkingLevel
       if (advanced.value.thinkingBudgetTokens != null && advanced.value.thinkingBudgetTokens > 0) {
         ant.thinkingBudgetTokens = advanced.value.thinkingBudgetTokens
       }
@@ -916,14 +942,20 @@ onMounted(() => {
                     data-test="adv-prompt-caching"
                   />
                 </label>
-                <label class="field-row toggle-row">
-                  <span class="field-label">Extended Thinking</span>
-                  <input
-                    v-model="advanced.thinkingEnabled"
-                    type="checkbox"
-                    class="input-toggle"
-                    data-test="adv-thinking-enabled"
-                  />
+                <label class="field-row">
+                  <span class="field-label">Thinking 级别</span>
+                  <select
+                    v-model="advanced.thinkingLevel"
+                    class="input-bare"
+                    data-test="adv-thinking-level"
+                  >
+                    <option value="off">关闭</option>
+                    <option value="minimal">最少</option>
+                    <option value="low">低</option>
+                    <option value="medium">中等</option>
+                    <option value="high">高</option>
+                    <option value="xhigh">极高</option>
+                  </select>
                 </label>
                 <label class="field-row">
                   <span class="field-label">Thinking Budget (tokens)</span>
@@ -931,7 +963,7 @@ onMounted(() => {
                     v-model.number="advanced.thinkingBudgetTokens"
                     type="number"
                     min="0"
-                    :disabled="!advanced.thinkingEnabled"
+                    :disabled="advanced.thinkingLevel === 'off'"
                     class="input-bare"
                     data-test="adv-thinking-budget"
                   />

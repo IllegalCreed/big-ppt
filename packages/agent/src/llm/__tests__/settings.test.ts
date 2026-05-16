@@ -9,8 +9,10 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import {
   LlmSettingsSchema,
+  ThinkingLevelSchema,
   getActiveProviderConfig,
   migrateLegacySettings,
+  normalizeThinkingFields,
   parseLlmSettings,
   type LlmSettings,
 } from '../settings.js'
@@ -30,7 +32,7 @@ describe('parseLlmSettings(zod schema)', () => {
         anthropic: { apiKey: 'sk-anthropic' },
       },
       advanced: {
-        anthropic: { promptCaching: true, thinkingEnabled: true, thinkingBudgetTokens: 4096 },
+        anthropic: { promptCaching: true, thinkingLevel: 'high', thinkingBudgetTokens: 4096 },
         gemini: { jsonMode: true, longContextStrategy: 'segment' },
         common: { temperature: 0.7, maxTokens: 8192, topP: 0.9, stopSequences: ['\n\n'] },
       },
@@ -301,5 +303,131 @@ describe('Phase 12.5: 5 个新 provider id', () => {
       providers: { cohere: { apiKey: 'sk' } },
     })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('Phase 12.7 Task E: ThinkingLevelSchema(6 档 enum)', () => {
+  it.each(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])(
+    `accepts "%s"`,
+    (level) => {
+      expect(ThinkingLevelSchema.safeParse(level).success).toBe(true)
+    },
+  )
+
+  it('rejects unknown string', () => {
+    expect(ThinkingLevelSchema.safeParse('extreme').success).toBe(false)
+  })
+
+  it('rejects boolean true(老 shape 触发)', () => {
+    expect(ThinkingLevelSchema.safeParse(true).success).toBe(false)
+  })
+
+  it('rejects boolean false(老 shape 触发)', () => {
+    expect(ThinkingLevelSchema.safeParse(false).success).toBe(false)
+  })
+
+  it('rejects number', () => {
+    expect(ThinkingLevelSchema.safeParse(5).success).toBe(false)
+  })
+
+  it('LlmSettings advanced.<scope>.thinkingLevel 三个子区各自支持 6 档', () => {
+    for (const level of ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const) {
+      for (const scope of ['anthropic', 'gemini', 'common'] as const) {
+        const result = LlmSettingsSchema.safeParse({
+          activeProvider: 'openai',
+          providers: { openai: { apiKey: 'k' } },
+          advanced: { [scope]: { thinkingLevel: level } },
+        })
+        expect(result.success).toBe(true)
+      }
+    }
+  })
+})
+
+describe('Phase 12.7 Task E: normalizeThinkingFields(boolean → enum 兼容)', () => {
+  it('thinkingEnabled=true → thinkingLevel="medium",字段 drop', () => {
+    const input = {
+      activeProvider: 'anthropic',
+      providers: { anthropic: { apiKey: 'k' } },
+      advanced: { anthropic: { thinkingEnabled: true, thinkingBudgetTokens: 4096 } },
+    }
+    const out = normalizeThinkingFields(input) as typeof input & {
+      advanced: { anthropic: { thinkingLevel?: string; thinkingEnabled?: boolean } }
+    }
+    expect(out.advanced.anthropic.thinkingLevel).toBe('medium')
+    expect(out.advanced.anthropic.thinkingEnabled).toBeUndefined()
+    expect(out.advanced.anthropic.thinkingBudgetTokens).toBe(4096)
+  })
+
+  it('thinkingEnabled=false → thinkingLevel="off",字段 drop', () => {
+    const out = normalizeThinkingFields({
+      activeProvider: 'openai',
+      providers: { openai: { apiKey: 'k' } },
+      advanced: { anthropic: { thinkingEnabled: false } },
+    }) as {
+      advanced: { anthropic: { thinkingLevel?: string; thinkingEnabled?: boolean } }
+    }
+    expect(out.advanced.anthropic.thinkingLevel).toBe('off')
+    expect(out.advanced.anthropic.thinkingEnabled).toBeUndefined()
+  })
+
+  it('已迁移(只有 thinkingLevel,无 thinkingEnabled)→ 原样返回,thinkingLevel 不变', () => {
+    const input = {
+      activeProvider: 'openai',
+      providers: { openai: { apiKey: 'k' } },
+      advanced: { anthropic: { thinkingLevel: 'high' as const } },
+    }
+    const out = normalizeThinkingFields(input)
+    expect(out).toBe(input) // 返回同一引用(no-op)
+  })
+
+  it('无 advanced → 原样', () => {
+    const input = { activeProvider: 'openai', providers: { openai: { apiKey: 'k' } } }
+    expect(normalizeThinkingFields(input)).toBe(input)
+  })
+
+  it('parseLlmSettings 走 normalize 路径:老 thinkingEnabled=true 自动转 medium', () => {
+    const result = parseLlmSettings({
+      activeProvider: 'anthropic',
+      providers: { anthropic: { apiKey: 'k' } },
+      advanced: { anthropic: { thinkingEnabled: true } },
+    })
+    expect(result.advanced?.anthropic?.thinkingLevel).toBe('medium')
+    // 转换后老字段不应该在 parsed 结果里
+    expect((result.advanced?.anthropic as Record<string, unknown>)?.thinkingEnabled).toBeUndefined()
+  })
+
+  it('parseLlmSettings 走 normalize 路径:thinkingEnabled=false 自动转 off', () => {
+    const result = parseLlmSettings({
+      activeProvider: 'anthropic',
+      providers: { anthropic: { apiKey: 'k' } },
+      advanced: { anthropic: { thinkingEnabled: false } },
+    })
+    expect(result.advanced?.anthropic?.thinkingLevel).toBe('off')
+  })
+
+  it('parseLlmSettings:三子区(anthropic/gemini/common)thinkingEnabled 都被转', () => {
+    const result = parseLlmSettings({
+      activeProvider: 'openai',
+      providers: { openai: { apiKey: 'k' } },
+      advanced: {
+        anthropic: { thinkingEnabled: true },
+        gemini: { thinkingEnabled: false },
+        common: { thinkingEnabled: true },
+      },
+    })
+    expect(result.advanced?.anthropic?.thinkingLevel).toBe('medium')
+    expect(result.advanced?.gemini?.thinkingLevel).toBe('off')
+    expect(result.advanced?.common?.thinkingLevel).toBe('medium')
+  })
+
+  it('parseLlmSettings:thinkingEnabled 非 boolean(string)→ 不写 thinkingLevel,zod 不报错', () => {
+    // thinkingLevel optional,转换跳过 → 校验过(thinkingEnabled 字段被 strip)
+    const result = parseLlmSettings({
+      activeProvider: 'openai',
+      providers: { openai: { apiKey: 'k' } },
+      advanced: { anthropic: { thinkingEnabled: 'yes' as unknown as boolean } },
+    })
+    expect(result.advanced?.anthropic?.thinkingLevel).toBeUndefined()
   })
 })

@@ -16,6 +16,7 @@ import {
   getActiveProviderConfig,
   LlmSettingsSchema,
   migrateLegacySettings,
+  normalizeThinkingFields,
   type ActiveProviderId,
   type LlmSettings,
 } from '../llm/settings.js'
@@ -221,7 +222,7 @@ auth.get('/llm-settings', async (c) => {
     })
   }
 
-  const newShape = LlmSettingsSchema.safeParse(raw)
+  const newShape = LlmSettingsSchema.safeParse(normalizeThinkingFields(raw))
   if (newShape.success) {
     const s = newShape.data
     // 把每个 provider entry 转 hasApiKey 视图(永远不回传 apiKey)
@@ -310,7 +311,7 @@ auth.put('/llm-settings', async (c) => {
   if (user.llmSettings) {
     try {
       const oldRaw = JSON.parse(decryptApiKey(user.llmSettings))
-      const oldParsed = LlmSettingsSchema.safeParse(oldRaw)
+      const oldParsed = LlmSettingsSchema.safeParse(normalizeThinkingFields(oldRaw))
       if (oldParsed.success) {
         oldSettings = oldParsed.data
       } else {
@@ -387,11 +388,16 @@ async function saveNewShape(
   // **跨 provider 切换 advanced 不丢失**(Code review fix):body.advanced 是 active provider
   // 视角的 partial 视图(active=openai 时 UI 不发 anthropic / gemini 专有子区),
   // 直接覆盖 oldSettings.advanced 会让另一 provider 之前调好的 promptCaching /
-  // thinkingEnabled 等配置静默丢失。改成「子区粒度 merge 旧+新」,再 prune 全空子区
+  // thinkingLevel 等配置静默丢失。改成「子区粒度 merge 旧+新」,再 prune 全空子区
   // 防 `{anthropic: undefined}` 触发 zod typed-shape 不匹配。
+  //
+  // Phase 12.7 Task E:body 可能来自老 UI 传 thinkingEnabled(boolean),先经
+  // normalizeThinkingFields 转 thinkingLevel(enum)再 merge,避免老 UI 升级前
+  // 提交触发 zod 报错。
+  const normalizedBody = normalizeThinkingFields(body) as LlmSettingsBody
   const incomingAdvanced =
-    body.advanced && typeof body.advanced === 'object'
-      ? (body.advanced as LlmSettings['advanced'])
+    normalizedBody.advanced && typeof normalizedBody.advanced === 'object'
+      ? (normalizedBody.advanced as LlmSettings['advanced'])
       : undefined
   const mergedAdvanced = mergeAdvanced(oldSettings?.advanced, incomingAdvanced)
 

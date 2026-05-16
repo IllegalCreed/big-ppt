@@ -18,7 +18,7 @@
  */
 
 import type { Connection, RowDataPacket } from 'mysql2/promise'
-import { migrateLegacySettings, parseLlmSettings } from './settings.js'
+import { migrateLegacySettings, normalizeThinkingFields, parseLlmSettings } from './settings.js'
 import { legacyRowToCanonical } from './chat-row.js'
 
 export type MigrationStats = {
@@ -200,4 +200,109 @@ export async function migrateDeckChats(
   }
 
   return stats
+}
+
+/**
+ * Phase 12.7 Task E:把 advanced.<scope>.thinkingEnabled(boolean)→ thinkingLevel(enum)。
+ *
+ * 复用 normalizeThinkingFields(单测口径相同),返回新对象不修改原 input。判定原则:
+ * - input 含 thinkingEnabled 字段且 boolean → 转
+ * - 已含 thinkingLevel(无论是否同时有 thinkingEnabled)→ 优先用 thinkingLevel,
+ *   thinkingEnabled 删掉(避免老字段残留 echo 回响应)
+ * - 三个子区都没 thinkingEnabled → 原样返回(脚本 idempotent 跑不动 DB)
+ */
+export function migrateThinkingEnabledToLevel(legacy: unknown): unknown {
+  return normalizeThinkingFields(legacy)
+}
+
+interface ThinkingSettingsRow extends RowDataPacket {
+  id: number
+  email: string
+  llm_settings: string | null
+}
+
+/**
+ * Phase 12.7 Task E:遍历 users.llm_settings,对 advanced.<scope>.thinkingEnabled
+ * 入库的 row → 转 thinkingLevel + 加密回写。
+ *
+ * - 已是新 shape 但无 thinkingEnabled 字段 → skip(noop,DB 不动)
+ * - decrypt / parse 失败 → failed
+ * - 转完跑 parseLlmSettings 验证 → 加密回写
+ *
+ * Idempotent:第二次跑全部 skip,不出错。
+ */
+export async function migrateThinkingLevel(
+  conn: Connection,
+  crypto: CryptoIO,
+): Promise<MigrationStats> {
+  const stats: MigrationStats = { migrated: 0, skipped: 0, failed: [] }
+
+  const [rows] = await conn.execute<ThinkingSettingsRow[]>(
+    'SELECT id, email, llm_settings FROM users WHERE llm_settings IS NOT NULL',
+  )
+
+  for (const u of rows) {
+    try {
+      if (!u.llm_settings) {
+        stats.skipped++
+        continue
+      }
+      const plain = crypto.decrypt(u.llm_settings)
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(plain)
+      } catch (e) {
+        stats.failed.push({
+          id: u.id,
+          reason: `JSON.parse 失败:${(e as Error).message}`,
+          meta: { email: u.email },
+        })
+        continue
+      }
+      // 判断是否需要转:扫 advanced.{anthropic,gemini,common}.thinkingEnabled
+      if (!needsThinkingMigration(parsed)) {
+        stats.skipped++
+        continue
+      }
+      const normalized = migrateThinkingEnabledToLevel(parsed)
+      // 跑 zod 验证(新 shape;若 row 是老 `{provider,apiKey}` shape 这里就拒,
+      // 但这些 row 应该在 migrate-llm-settings 跑过后不存在,真撞到也归 failed)
+      try {
+        parseLlmSettings(normalized)
+      } catch (e) {
+        stats.failed.push({
+          id: u.id,
+          reason: `转换后 zod 校验失败:${(e as Error).message}`,
+          meta: { email: u.email },
+        })
+        continue
+      }
+      const encrypted = crypto.encrypt(JSON.stringify(normalized))
+      await conn.execute('UPDATE users SET llm_settings = ? WHERE id = ?', [encrypted, u.id])
+      stats.migrated++
+    } catch (e) {
+      stats.failed.push({
+        id: u.id,
+        reason: (e as Error).message,
+        meta: { email: u.email },
+      })
+    }
+  }
+
+  return stats
+}
+
+/** 检测 raw settings 是否任一 advanced.<scope> 含 thinkingEnabled 字段。 */
+function needsThinkingMigration(raw: unknown): boolean {
+  if (!raw || typeof raw !== 'object') return false
+  const advanced = (raw as Record<string, unknown>).advanced
+  if (!advanced || typeof advanced !== 'object') return false
+  const advancedObj = advanced as Record<string, unknown>
+  for (const scope of ['anthropic', 'gemini', 'common'] as const) {
+    const sub = advancedObj[scope]
+    if (sub && typeof sub === 'object' && 'thinkingEnabled' in (sub as Record<string, unknown>)) {
+      return true
+    }
+  }
+  return false
 }

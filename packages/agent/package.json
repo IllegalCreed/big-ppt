@@ -24,7 +24,10 @@
     "migrate:llm-settings:prod": "dotenv -e .env.production.local -- node scripts/migrate-llm-settings.mjs",
     "migrate:deck-chats": "dotenv -e .env.development.local -e .env.local -- node scripts/migrate-deck-chats.mjs",
     "migrate:deck-chats:test": "dotenv -e .env.test.local -- node scripts/migrate-deck-chats.mjs",
-    "migrate:deck-chats:prod": "dotenv -e .env.production.local -- node scripts/migrate-deck-chats.mjs"
+    "migrate:deck-chats:prod": "dotenv -e .env.production.local -- node scripts/migrate-deck-chats.mjs",
+    "migrate:thinking-level": "dotenv -e .env.development.local -e .env.local -- node scripts/migrate-thinking-level.mjs",
+    "migrate:thinking-level:test": "dotenv -e .env.test.local -- node scripts/migrate-thinking-level.mjs",
+    "migrate:thinking-level:prod": "dotenv -e .env.production.local -- node scripts/migrate-thinking-level.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",

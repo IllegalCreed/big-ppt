@@ -53,6 +53,18 @@ export const ActiveProviderIdSchema = z.enum([
 
 export type ActiveProviderId = z.infer<typeof ActiveProviderIdSchema>
 
+/**
+ * Phase 12.7 Task E:thinking 级别 6 档 enum,替换 boolean shape。
+ *
+ * 老 shape `thinkingEnabled: boolean` 在兼容期由 `parseLlmSettings` 预处理转换:
+ * - `false` → `'off'`
+ * - `true` → `'medium'`(沿用 pi-agent-core 默认 thinking 强度)
+ *
+ * 6 档对齐 pi-ai 0.74.0 `ThinkingLevel`(off / minimal / low / medium / high / xhigh)。
+ */
+export const ThinkingLevelSchema = z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
+export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>
+
 export const LlmSettingsSchema = z.object({
   activeProvider: ActiveProviderIdSchema,
   providers: z.object({
@@ -74,7 +86,7 @@ export const LlmSettingsSchema = z.object({
       anthropic: z
         .object({
           promptCaching: z.boolean().optional(),
-          thinkingEnabled: z.boolean().optional(),
+          thinkingLevel: ThinkingLevelSchema.optional(),
           thinkingBudgetTokens: z.number().int().positive().optional(),
         })
         .optional(),
@@ -82,6 +94,7 @@ export const LlmSettingsSchema = z.object({
         .object({
           jsonMode: z.boolean().optional(),
           longContextStrategy: z.enum(['truncate', 'segment']).optional(),
+          thinkingLevel: ThinkingLevelSchema.optional(),
         })
         .optional(),
       common: z
@@ -90,6 +103,7 @@ export const LlmSettingsSchema = z.object({
           maxTokens: z.number().int().positive().optional(),
           topP: z.number().min(0).max(1).optional(),
           stopSequences: z.array(z.string()).optional(),
+          thinkingLevel: ThinkingLevelSchema.optional(),
         })
         .optional(),
     })
@@ -106,9 +120,55 @@ export type LlmSettings = z.infer<typeof LlmSettingsSchema>
  * `{provider, apiKey, ...}` shape —— migrateLegacySettings 是专用通道,
  * 老 shape 直接走 parseLlmSettings 会抛"Invalid input"类的 zod 错误(并不漂亮,
  * 但 migration script 跑过后就不会再撞到)。
+ *
+ * Phase 12.7 Task E 兼容预处理:输入 advanced.<scope>.thinkingEnabled(boolean)
+ * 转 thinkingLevel(enum)再 zod。详见 normalizeThinkingFields。
  */
 export function parseLlmSettings(raw: unknown): LlmSettings {
-  return LlmSettingsSchema.parse(raw)
+  return LlmSettingsSchema.parse(normalizeThinkingFields(raw))
+}
+
+/**
+ * Phase 12.7 Task E:兼容期把 advanced.<scope>.thinkingEnabled(boolean)→
+ * thinkingLevel(enum)。export 出去供 routes/auth.ts / routes/llm.ts 直接调
+ * `LlmSettingsSchema.safeParse` 时同样走兼容路径(自身没经过 parseLlmSettings)。
+ *
+ * 触发条件:`advanced.anthropic` / `advanced.gemini` / `advanced.common` 任一
+ * 子区有 `thinkingEnabled` 字段且无 `thinkingLevel` 字段。否则原样返回(不深拷贝
+ * 避免 happy path 性能开销)。映射:`false → 'off'` / `true → 'medium'`。
+ *
+ * 设计取舍:zod preprocess 通用方案是 z.preprocess + transform,但这里 input
+ * shape 是 unknown(可能 null / 字符串等)→ 走手写守护更稳。预处理后老字段被
+ * 显式 delete,避免 zod strict mode 撞 unknown key,也避免 round-trip 把老字段
+ * 再 echo 回 DB / GET 响应。
+ */
+export function normalizeThinkingFields(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw
+  const root = raw as Record<string, unknown>
+  const advanced = root.advanced
+  if (!advanced || typeof advanced !== 'object') return raw
+  const advancedObj = advanced as Record<string, unknown>
+  const scopes = ['anthropic', 'gemini', 'common'] as const
+  let touched = false
+  const nextAdvanced: Record<string, unknown> = { ...advancedObj }
+  for (const scope of scopes) {
+    const sub = advancedObj[scope]
+    if (!sub || typeof sub !== 'object') continue
+    const subObj = sub as Record<string, unknown>
+    if (!('thinkingEnabled' in subObj)) continue
+    const nextSub = { ...subObj }
+    const enabled = subObj.thinkingEnabled
+    delete nextSub.thinkingEnabled
+    if (!('thinkingLevel' in nextSub)) {
+      if (enabled === true) nextSub.thinkingLevel = 'medium'
+      else if (enabled === false) nextSub.thinkingLevel = 'off'
+      // 非 boolean(string / number 等)→ 不写 thinkingLevel,让 zod 拒收原值
+    }
+    nextAdvanced[scope] = nextSub
+    touched = true
+  }
+  if (!touched) return raw
+  return { ...root, advanced: nextAdvanced }
 }
 
 /**
@@ -185,7 +245,7 @@ export function getActiveProviderConfig(encryptedSettings: string): {
 
   // 新 shape:有 activeProvider 字段
   if (typeof obj.activeProvider === 'string') {
-    const result = LlmSettingsSchema.safeParse(raw)
+    const result = LlmSettingsSchema.safeParse(normalizeThinkingFields(raw))
     if (!result.success) return null
     const cfg = result.data.providers[result.data.activeProvider]
     if (!cfg?.apiKey) return null

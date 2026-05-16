@@ -31,7 +31,7 @@ import { acquireLlmSlot, LlmConcurrencyTimeoutError } from '../middleware/llm-se
 import { ProviderRegistry } from '../llm/provider.js'
 import { eventsToSSEStream } from '../llm/canonical-sse.js'
 import { LLMError } from '../llm/errors.js'
-import { LlmSettingsSchema } from '../llm/settings.js'
+import { LlmSettingsSchema, normalizeThinkingFields } from '../llm/settings.js'
 import { logServerEvent } from '../logger/server-log.js'
 import type { CanonicalChatRequest } from '../llm/types.js'
 import { createPiAiAdapter } from '../llm/adapters/pi-ai-adapter.js'
@@ -109,7 +109,7 @@ llm.post('/chat/completions', async (c) => {
       500,
     )
   }
-  const result = LlmSettingsSchema.safeParse(raw)
+  const result = LlmSettingsSchema.safeParse(normalizeThinkingFields(raw))
   if (!result.success) {
     logServerEvent({
       category: 'llm',

@@ -347,6 +347,64 @@ describe('SettingsModal save (PUT new-shape payload)', () => {
     wrapper.unmount()
   })
 
+  it('Phase 12.7 Task E:active=anthropic 改 thinkingLevel=high → payload 含 advanced.anthropic.thinkingLevel', async () => {
+    server.use(
+      ...defaultHandlers('empty'),
+      http.put('/api/auth/llm-settings', async ({ request }) => {
+        capturedPayload = await request.json()
+        return HttpResponse.json({ ok: true })
+      }),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    await expandUnconfigured('anthropic')
+    await setInput($('[data-test="apikey-anthropic"]')!, 'sk-ant-xx')
+    await setSelect($('.active-provider-select')!, 'anthropic')
+
+    await click($('.advanced-toggle')!)
+    await setSelect($('[data-test="adv-thinking-level"]')!, 'high')
+    await click($('[data-test="save-button"]')!)
+
+    const advanced = (capturedPayload as { advanced?: { anthropic?: { thinkingLevel?: string } } })
+      .advanced
+    expect(advanced?.anthropic?.thinkingLevel).toBe('high')
+
+    wrapper.unmount()
+  })
+
+  it('Phase 12.7 Task E:thinkingLevel 保持 off 默认 → payload 不含 advanced.anthropic.thinkingLevel', async () => {
+    server.use(
+      ...defaultHandlers('empty'),
+      http.put('/api/auth/llm-settings', async ({ request }) => {
+        capturedPayload = await request.json()
+        return HttpResponse.json({ ok: true })
+      }),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    await expandUnconfigured('anthropic')
+    await setInput($('[data-test="apikey-anthropic"]')!, 'sk-ant-xx')
+    await setSelect($('.active-provider-select')!, 'anthropic')
+
+    await click($('.advanced-toggle')!)
+    // 不动 thinking level select(默认 off)
+    await click($('[data-test="save-button"]')!)
+
+    const advanced = (capturedPayload as { advanced?: { anthropic?: unknown } }).advanced
+    // 默认 off 时 buildPayload 跳过 anthropic 字段(没有其他 anthropic 配置)
+    expect(advanced?.anthropic).toBeUndefined()
+
+    wrapper.unmount()
+  })
+
   it('保存成功后 hasApiKey 视图态升级:input 清空 + 卡片显示「已配置」', async () => {
     server.use(
       ...defaultHandlers('empty'),
