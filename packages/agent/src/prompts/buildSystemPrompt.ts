@@ -8,6 +8,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { eq } from 'drizzle-orm'
 import type {
   TemplateManifest,
   TemplateManifestLayout,
@@ -16,6 +17,9 @@ import type {
 import { getManifest } from '../templates/registry.js'
 import { getPaths } from '../workspace.js'
 import { getCatalogByCategory, type ComponentEntry } from '@big-ppt/slidev/components-catalog'
+import { getDb } from '../db/client.js'
+import { decks } from '../db/schema.js'
+import { getImageLlmSettings } from '../db/image-llm-settings.js'
 
 export interface BuildSystemPromptOptions {
   templateId: string
@@ -397,4 +401,26 @@ ${
 - 这些工具名带 \`mcp__\` 前缀，参数以收到的 schema 为准
 `
   )
+}
+
+/**
+ * Phase 12.7 Task C: deck-scoped 入口 —— 根据 deckId 查 templateId + 用户 image LLM
+ * 配置,调 buildSystemPrompt 拼完整 prompt。createAgent 复用。
+ */
+export async function buildSystemPromptForDeck(
+  deckId: number,
+  userId: number,
+  mcpBadges?: string[],
+): Promise<string> {
+  const db = getDb()
+  const [deck] = await db
+    .select({ templateId: decks.templateId })
+    .from(decks)
+    .where(eq(decks.id, deckId))
+    .limit(1)
+  if (!deck) {
+    throw new Error(`[buildSystemPromptForDeck] deck ${deckId} 不存在`)
+  }
+  const imageGenEnabled = !!(await getImageLlmSettings(userId))
+  return buildSystemPrompt({ templateId: deck.templateId, mcpBadges, imageGenEnabled })
 }

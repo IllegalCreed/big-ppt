@@ -150,6 +150,29 @@ export function __setModelResolverForTesting(r: ModelResolver | null): void {
 }
 
 /**
+ * Phase 12.7 Task C: 公开 helper 给 createAgent 复用。
+ *
+ * 三件事打包在一起:
+ * 1. 走 `_resolver`(默认 `defaultResolver`,测试期可注入)做 provider/model 解析；
+ *    包含 `PI_AI_PROVIDER_MAP` 翻译 + `getModel` MODELS 表查询 + 找不到时清晰错。
+ * 2. `modelId` 缺省时用 `getDefaultModel(providerId)` 走 12 个 provider 的默认值。
+ * 3. `baseUrl` 不为空时 clone Model 覆盖 baseUrl,让用户配的中转端点
+ *    (duckcoding.ai 等)真正生效——pi-ai 0.74.0 的 `StreamOptions` 没 baseUrl
+ *    字段,必须改 Model 实例自身的 baseUrl。
+ *
+ * createAgent 调用约定:resolveModelForProvider(providerId, cfg.model, cfg.baseUrl)。
+ */
+export function resolveModelForProvider(
+  providerId: string,
+  modelId: string | undefined,
+  baseUrl: string | undefined,
+): PiModel<PiApi> {
+  const effectiveModelId = modelId ?? getDefaultModel(providerId)
+  const baseModel = _resolver(providerId, effectiveModelId)
+  return baseUrl ? { ...baseModel, baseUrl } : baseModel
+}
+
+/**
  * 12 个 provider 公用 factory。家族区分由 pi-ai 内部处理（不同 provider
  * id 对应不同 api，pi-ai 路由到对应 streamXxx 函数）。
  */
