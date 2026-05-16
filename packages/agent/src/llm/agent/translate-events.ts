@@ -1,8 +1,9 @@
 /** Phase 12.7 Task D: pi-agent-core push-based AgentEvent → canonical pull-based async generator. */
 
-import type { Agent, AgentEvent } from '@earendil-works/pi-agent-core'
+import type { Agent, AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessageEvent, AssistantMessage, ToolCall } from '@earendil-works/pi-ai'
 import type { CanonicalEvent, TokenUsage, FinishReason } from '../types.js'
+import { assertNever } from '../types.js'
 
 /**
  * pi-agent-core 用 `agent.subscribe(handler)` 推事件,我们需要 yield 给上游 SSE。
@@ -36,7 +37,7 @@ export async function* translateAgentStream(
     }
   }
 
-  const unsubscribe = agent.subscribe((event) => {
+  const unsubscribe = agent.subscribe((event, _signal) => {
     queue.push(event)
     wakeUp()
   })
@@ -47,8 +48,6 @@ export async function* translateAgentStream(
   })
 
   try {
-    let turnId: string | null = null
-
     while (!ended) {
       if (queue.length === 0) {
         if (errored) throw errored
@@ -60,11 +59,8 @@ export async function* translateAgentStream(
       }
       const event = queue.shift()!
 
-      yield* mapEvent(event, () => turnId)
+      yield* mapEvent(event)
 
-      if (event.type === 'agent_start' && turnId === null) {
-        turnId = generateTurnId()
-      }
       if (event.type === 'agent_end') {
         ended = true
       }
@@ -78,10 +74,7 @@ function generateTurnId(): string {
   return `turn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function* mapEvent(
-  event: AgentEvent,
-  _getTurnId: () => string | null,
-): Generator<CanonicalEvent> {
+function* mapEvent(event: AgentEvent): Generator<CanonicalEvent> {
   switch (event.type) {
     case 'agent_start': {
       yield { type: 'turn.start', turnId: generateTurnId() }
@@ -140,6 +133,10 @@ function* mapEvent(
       }
       return
     }
+
+    default:
+      // pi-agent-core AgentEvent 加新 variant 时编译期 catch(而非运行期 silent drop)。
+      return assertNever(event)
   }
 }
 
@@ -188,6 +185,10 @@ function* mapAssistantEvent(inner: AssistantMessageEvent): Generator<CanonicalEv
       }
       return
     }
+
+    default:
+      // pi-ai AssistantMessageEvent 加新 variant 时编译期 catch。
+      return assertNever(inner)
   }
 }
 
@@ -201,45 +202,43 @@ function extractToolCallAt(
 }
 
 /** 从 agent_end.messages 末尾的 assistant 提取 final usage(已聚合本轮所有 LLM 调用)。 */
-function extractFinalUsage(
-  messages: ReadonlyArray<{ role: string; usage?: { input: number; output: number; cacheRead: number; cost?: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number } } }>,
-): TokenUsage | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.role !== 'assistant' || !m.usage) continue
-    const u = m.usage
-    const out: TokenUsage = { input: u.input, output: u.output }
-    if (u.cacheRead > 0) out.cached = u.cacheRead
-    if (u.cost) {
-      out.cost = {
-        total: u.cost.total,
-        input: u.cost.input,
-        output: u.cost.output,
-        cacheRead: u.cost.cacheRead,
-        cacheWrite: u.cost.cacheWrite,
-      }
+function extractFinalUsage(messages: ReadonlyArray<AgentMessage>): TokenUsage | null {
+  const assistants = messages.filter(
+    (m): m is AssistantMessage => m.role === 'assistant',
+  )
+  const last = assistants.at(-1)
+  if (!last) return null
+  const u = last.usage
+  const out: TokenUsage = { input: u.input, output: u.output }
+  if (u.cacheRead > 0) out.cached = u.cacheRead
+  if (u.cost) {
+    out.cost = {
+      total: u.cost.total,
+      input: u.cost.input,
+      output: u.cost.output,
+      cacheRead: u.cost.cacheRead,
+      cacheWrite: u.cost.cacheWrite,
     }
-    return out
   }
-  return null
+  return out
 }
 
-function extractFinishReason(
-  messages: ReadonlyArray<{ role: string; stopReason?: string }>,
-): FinishReason {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m.role !== 'assistant' || !m.stopReason) continue
-    switch (m.stopReason) {
-      case 'stop':
-        return 'stop'
-      case 'length':
-        return 'length'
-      case 'toolUse':
-        return 'tool_use'
-      default:
-        return 'stop'
-    }
+function extractFinishReason(messages: ReadonlyArray<AgentMessage>): FinishReason {
+  const assistants = messages.filter(
+    (m): m is AssistantMessage => m.role === 'assistant',
+  )
+  const last = assistants.at(-1)
+  if (!last) return 'stop'
+  switch (last.stopReason) {
+    case 'stop':
+      return 'stop'
+    case 'length':
+      return 'length'
+    case 'toolUse':
+      return 'tool_use'
+    default:
+      // 'error' / 'aborted' / 未来扩展 → canonical 没对应位,fallback 'stop'
+      // (error 路径已被 canonical error event 表达)。
+      return 'stop'
   }
-  return 'stop'
 }

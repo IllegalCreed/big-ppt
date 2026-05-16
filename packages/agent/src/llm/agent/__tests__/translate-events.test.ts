@@ -7,16 +7,17 @@ import type { AssistantMessage } from '@earendil-works/pi-ai'
 import type { CanonicalEvent } from '../../types.js'
 
 /**
- * 构造 fake Agent:`subscribe` 注册 handler,`prompt` 被调时按脚本同步推所有
- * events,每条之间 `await Promise.resolve()` 让 generator 有机会 yield。
- *
- * 注:真实 Agent.subscribe 返回 unsubscribe fn 且 listener 可异步;我们 sync
- * 推 + 测试侧 await 完整 collect 就够覆盖映射逻辑。
+ * 构造 fake Agent:`subscribe` 注册 handler(签名跟真 Agent.subscribe 一致:
+ * `(event, signal)`,signal 用 dummy AbortController.signal 占位);`prompt`
+ * 被调时按脚本同步推所有 events,每条之间 `await Promise.resolve()` 让
+ * generator 有机会 yield。
  */
 function fakeAgent(scriptedEvents: AgentEvent[]): Agent {
-  const handlers: Array<(e: AgentEvent) => void> = []
+  type Listener = (event: AgentEvent, signal: AbortSignal) => void | Promise<void>
+  const handlers: Listener[] = []
+  const dummySignal = new AbortController().signal
   return {
-    subscribe(handler: (e: AgentEvent) => void) {
+    subscribe(handler: Listener) {
       handlers.push(handler)
       return () => {
         const i = handlers.indexOf(handler)
@@ -25,7 +26,7 @@ function fakeAgent(scriptedEvents: AgentEvent[]): Agent {
     },
     async prompt() {
       for (const e of scriptedEvents) {
-        for (const h of handlers) h(e)
+        for (const h of handlers) h(e, dummySignal)
         // yield event loop: 让 generator 拉到这条再喂下一条
         await Promise.resolve()
       }
