@@ -79,7 +79,9 @@ chat.post('/turn', async (c) => {
       deckId,
       errorMsg: (e as Error).message,
     })
-    return c.json({ error: { message: (e as Error).message } }, 400)
+    // 不外泄 createAgent 内部错(crypto decipher / SDK init / zod issues 可能含
+    // 实现细节英文);用户友好 message 中文化,详细错文落 server-log 给运营查。
+    return c.json({ error: { message: '创建 AI 会话失败，请检查 LLM 配置' } }, 400)
   }
 
   // 客户端断开(刷新 / 取消 / 关 tab) → c.req.raw.signal abort → agent.abort()。

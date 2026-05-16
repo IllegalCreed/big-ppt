@@ -102,6 +102,9 @@ function assistantMsg(overrides: Partial<AssistantMessage> = {}): AssistantMessa
  * `extraSubscribe`:用于 test 9 —— 让 fake 也注册一份真 persistTurnToDeckChats
  * 监听器,验 agent_end 后能写 DB。route 内 translate 层 + 测试代码同时 subscribe,
  * 都会被 prompt() 内的 for-loop 推送。
+ *
+ * 暴露 `captured.promptDone` Promise:外部可 `await` 它替代 wall-clock sleep,
+ * deterministic 收尾(等所有 subscribe handler 跑完 + DB insert flush)。
  */
 function makeFakeAgent(opts: {
   events: AgentEvent[]
@@ -113,10 +116,15 @@ function makeFakeAgent(opts: {
   type Listener = (event: AgentEvent, signal: AbortSignal) => void | Promise<void>
   const handlers: Listener[] = []
   const abortController = new AbortController()
+  let resolvePromptDone!: () => void
+  const promptDone = new Promise<void>((r) => {
+    resolvePromptDone = r
+  })
   const captured = {
     aborted: false,
     promptCalled: false,
     promptArg: '' as string,
+    promptDone,
   }
 
   const agent = {
@@ -130,27 +138,33 @@ function makeFakeAgent(opts: {
     async prompt(p: string) {
       captured.promptCalled = true
       captured.promptArg = p
-      if (opts.infinite) {
-        let i = 0
-        while (!abortController.signal.aborted) {
-          const e: AgentEvent = {
-            type: 'message_update',
-            message: assistantMsg(),
-            assistantMessageEvent: {
-              type: 'text_delta',
-              contentIndex: 0,
-              delta: `chunk ${++i}`,
-              partial: assistantMsg(),
-            },
+      try {
+        if (opts.infinite) {
+          let i = 0
+          while (!abortController.signal.aborted) {
+            const e: AgentEvent = {
+              type: 'message_update',
+              message: assistantMsg(),
+              assistantMessageEvent: {
+                type: 'text_delta',
+                contentIndex: 0,
+                delta: `chunk ${++i}`,
+                partial: assistantMsg(),
+              },
+            }
+            for (const h of handlers) await h(e, abortController.signal)
+            await new Promise((r) => setTimeout(r, 5))
           }
-          for (const h of handlers) await h(e, abortController.signal)
-          await new Promise((r) => setTimeout(r, 5))
+          return
         }
-        return
-      }
-      for (const e of opts.events) {
-        for (const h of handlers) await h(e, abortController.signal)
-        await Promise.resolve()
+        for (const e of opts.events) {
+          // await 每个 handler 完成 —— 包括 extraSubscribe 里的 persistTurnToDeckChats
+          // (Test 9 依赖这条保证 DB insert 在 promptDone resolve 之前已 flush)
+          for (const h of handlers) await h(e, abortController.signal)
+          await Promise.resolve()
+        }
+      } finally {
+        resolvePromptDone()
       }
     },
     abort() {
@@ -413,7 +427,7 @@ describe('POST /api/chat/turn(pi-agent-core driven)', () => {
         ],
       },
     ]
-    const { agent } = makeFakeAgent({
+    const { agent, captured } = makeFakeAgent({
       events: scripted,
       extraSubscribe: async (event) => {
         if (event.type !== 'agent_end') return
@@ -431,11 +445,11 @@ describe('POST /api/chat/turn(pi-agent-core driven)', () => {
       }),
     )
     expect(res.status).toBe(200)
-    // 消费完 SSE 流让 generator finally + extraSubscribe(异步)跑完
+    // 消费完 SSE 流让 translate generator 跑完
     await collectSSE(res)
-    // pi-agent-core listener 是 await 在 agent_end 内串行的;但 SSE 流闭合
-    // 跟 listener settle 是各自异步,给一个 microtick 让 DB insert flush
-    await new Promise((r) => setTimeout(r, 50))
+    // deterministic 等 prompt() 返(fake 内 for-loop 已 await 每个 handler,
+    // 包括 extraSubscribe 里的 DB insert) —— 取代 setTimeout(50) wall-clock sleep
+    await captured.promptDone
 
     const rows = await getDb()
       .select()
@@ -447,5 +461,34 @@ describe('POST /api/chat/turn(pi-agent-core driven)', () => {
     expect(rows[0]?.content).toContain('hi')
     expect(rows[1]?.role).toBe('assistant')
     expect(rows[1]?.content).toContain('hello from agent')
+  })
+
+  it('createAgent throw → 400 + 中文通用 message;原英文错落 server-log 不外泄', async () => {
+    const { user, cookie } = await createLoggedInUser('create-fail@a.com')
+    await setLlmSettings(user.id)
+    const { deck } = await createDeckDirect(user.id)
+
+    // 模拟 createAgent 内部 throw(crypto decipher 失败 / zod parse 等);
+    // 错文是英文实现细节,不应直接回吐给用户。
+    __setCreateAgentForTesting(async () => {
+      throw new Error('Unsupported state or unable to authenticate data')
+    })
+
+    const res = await buildApp().fetch(
+      new Request('http://x/api/chat/turn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ deckId: deck.id, message: 'hi' }),
+      }),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: { message: string } }
+    // 用户友好中文 message,不含 raw 英文细节
+    expect(body.error.message).toBe('创建 AI 会话失败，请检查 LLM 配置')
+    expect(body.error.message).not.toContain('Unsupported')
+    expect(body.error.message).not.toContain('authenticate')
+
+    // slot 已 release(失败路径里手动 release(),否则后续请求会被 hang)
+    expect(__getLlmSemaphoreStateForTesting(user.id)).toEqual({ active: 0, queueLen: 0 })
   })
 })
