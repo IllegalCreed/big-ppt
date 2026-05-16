@@ -26,6 +26,7 @@ import { lockRoute } from './routes/lock.js'
 import { healthz } from './routes/healthz.js'
 import { imageLlmSettingsRoute } from './routes/image-llm-settings.js'
 import { assetsRoute } from './routes/assets.js'
+import { uploads } from './routes/uploads.js'
 import { imageJobsRoute } from './routes/image-jobs.js'
 import { slidevRestartRoute } from './routes/slidev-restart.js'
 import { authOptional, type AuthVars } from './middleware/auth.js'
@@ -73,5 +74,6 @@ app.route('/api', toolsRoute)
 app.route('/api', mcpRoute)
 app.route('/api', imageLlmSettingsRoute)
 app.route('/api', assetsRoute)
+app.route('/api/uploads', uploads)
 app.route('/api', imageJobsRoute)
 app.route('/api', slidevRestartRoute)
