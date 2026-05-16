@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import { computed, h, ref } from 'vue'
-import { Bubble, Sender, Suggestion, ThoughtChain } from '@antdv-next/x'
+import { Bubble, Sender, Suggestion } from '@antdv-next/x'
 import type { SenderRef } from '@antdv-next/x'
-import type { ToolStep } from '../composables/useAIChat'
 import { useAIChat } from '../composables/useAIChat'
 import { useSlashCommands } from '../composables/useSlashCommands'
 import ThinkingBlock from './ThinkingBlock.vue'
-import UsageStatsHint from './UsageStatsHint.vue'
+import ToolExecutionBlock from './ToolExecutionBlock.vue'
 
 const {
   chatMessages,
   streamingContent,
   thinkingContent,
-  toolSteps,
+  currentToolExecutions,
   status,
   statusText,
   isGenerating,
@@ -34,32 +33,15 @@ function handleSlashSelect(value: string) {
 }
 
 // --- Bubble 列表 ---
-
-function renderToolChain(steps: ToolStep[]) {
-  return h(ThoughtChain, {
-    items: steps.map((s) => ({
-      key: s.key,
-      title: s.label,
-      description: s.argsPreview || undefined,
-      content: s.error
-        ? h(
-            'div',
-            {
-              style: 'color: var(--color-danger); font-size: var(--fs-sm);',
-            },
-            s.error,
-          )
-        : undefined,
-      status: s.status,
-      collapsible: !!s.error,
-    })),
-  })
-}
+//
+// Phase 12.7：删除了「每个历史 bubble 上挂 toolSteps」的 inline 渲染——
+// chatMessages 来自 backend refresh 的 deck_chats（仅 user/assistant text）。
+// 当前轮的工具执行进度走 `currentToolExecutions` Map，作为独立 live bubble 显示。
 
 interface BubbleItem {
   key: string
-  // Phase 12.5 Task D：'ai-cache' → 'ai-usage'（语义从「缓存提示」扩到「缓存 + 成本」）
-  role: 'user' | 'ai' | 'ai-chain' | 'ai-thinking' | 'ai-usage'
+  // 'ai-tools' 是 Phase 12.7 新增：当前轮在跑的 tool_execution 列表
+  role: 'user' | 'ai' | 'ai-thinking' | 'ai-tools'
   content: unknown
   loading?: boolean
 }
@@ -72,37 +54,12 @@ const bubbleItems = computed(() => {
       items.push({ key: `u-${i}`, role: 'user', content: msg.content })
       continue
     }
-    // Phase 12 Task I：thinking 折叠区放在 assistant bubble 上方（先思考后输出，
-    // 符合 LLM 时序），用 ThinkingBlock 组件统一渲染。空字符串不渲染。
-    if (msg.thinking && msg.thinking.length > 0) {
-      items.push({
-        key: `a-${i}-thinking`,
-        role: 'ai-thinking',
-        content: h(ThinkingBlock, { text: msg.thinking }),
-      })
-    }
-    if (msg.toolSteps?.length) {
-      items.push({
-        key: `a-${i}-chain`,
-        role: 'ai-chain',
-        content: renderToolChain(msg.toolSteps),
-      })
-    }
     if (msg.content) {
       items.push({ key: `a-${i}`, role: 'ai', content: msg.content })
     }
-    // Phase 12.5 Task D：usage 提示（缓存命中 + ¥ 成本）放在 assistant bubble 下方。
-    // UsageStatsHint 内部按 cached / cost.total 自行 visible 判断，这里只要有 usage 即可挂上。
-    if (msg.usage) {
-      items.push({
-        key: `a-${i}-usage`,
-        role: 'ai-usage',
-        content: h(UsageStatsHint, { usage: msg.usage }),
-      })
-    }
   }
 
-  // live thinking 也实时渲染（在 live-chain / live-text 之前）
+  // 当前轮的 thinking 实时缓冲
   if (thinkingContent.value) {
     items.push({
       key: 'live-thinking',
@@ -111,17 +68,28 @@ const bubbleItems = computed(() => {
     })
   }
 
-  if (toolSteps.value.length > 0) {
+  // 当前轮的 tool 执行列表（每个 toolCallId 一个 ToolExecutionBlock）
+  if (currentToolExecutions.value.size > 0) {
+    const toolNodes = [...currentToolExecutions.value.entries()].map(([id, st]) =>
+      h(ToolExecutionBlock, {
+        key: id,
+        toolName: st.toolName,
+        state: st.state,
+        argsPreview: st.argsPreview,
+        resultPreview: st.resultPreview,
+      }),
+    )
     items.push({
-      key: 'live-chain',
-      role: 'ai-chain',
-      content: renderToolChain(toolSteps.value),
+      key: 'live-tools',
+      role: 'ai-tools',
+      content: h('div', { class: 'tool-exec-stack' }, toolNodes),
     })
   }
 
+  // 当前轮的 assistant 文字（streaming 缓冲）
   if (streamingContent.value) {
     items.push({ key: 'live-text', role: 'ai', content: streamingContent.value })
-  } else if (status.value === 'thinking') {
+  } else if (status.value === 'sending') {
     items.push({ key: 'live-think', role: 'ai', content: '', loading: true })
   }
 
@@ -139,15 +107,11 @@ const roles = computed(() => ({
     variant: 'outlined' as const,
     shape: 'round' as const,
   },
-  'ai-chain': {
-    placement: 'start' as const,
-    variant: 'borderless' as const,
-  },
   'ai-thinking': {
     placement: 'start' as const,
     variant: 'borderless' as const,
   },
-  'ai-usage': {
+  'ai-tools': {
     placement: 'start' as const,
     variant: 'borderless' as const,
   },
@@ -161,7 +125,7 @@ function handleSubmit(message: string) {
   senderRef.value?.clear()
   // 斜杠指令：直接输完按 enter 没走候选列表的情况，由 composable 处理
   if (slash.handleSlashSubmit(trimmed)) return
-  sendMessage(trimmed)
+  void sendMessage(trimmed)
 }
 
 function handleCancel() {
@@ -272,5 +236,11 @@ function handleCancel() {
 .sender-area {
   padding: var(--space-3) var(--space-5);
   border-top: 1px solid var(--color-border-subtle);
+}
+
+.tool-exec-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 </style>

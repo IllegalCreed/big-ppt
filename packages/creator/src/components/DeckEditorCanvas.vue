@@ -14,6 +14,8 @@ import {
   type DeckVersion,
 } from '../composables/useDecks'
 import { DECK_CHAT_CONTEXT, type DeckChatContext } from '../composables/useAIChat'
+// Phase 12.7：persistChat 删了 —— backend agent loop 写 deck_chats，listChats 由
+// useAIChat 内部 refresh。这里仍 listChats prefill 初始历史给 ChatPanel 挂载用。
 import { useSlideStore } from '../composables/useSlideStore'
 import { useAuth } from '../composables/useAuth'
 import { ApiError } from '../api/client'
@@ -29,7 +31,7 @@ const emit = defineEmits<{
 }>()
 
 const { currentUser, logout } = useAuth()
-const { listChats, appendChat, updateDeck } = useDecks()
+const { listChats, updateDeck } = useDecks()
 const slideStore = useSlideStore()
 
 // ── 标题 inline 编辑 ───────────────────────────────────────────────────────
@@ -105,14 +107,6 @@ const chatCtx: DeckChatContext = {
   deckId: props.deck.id,
   templateId: props.deck.templateId,
   initialHistory: [],
-  persistChat: async (role, content, extras) => {
-    await appendChat(props.deck.id, {
-      role,
-      content,
-      toolCallId: extras?.toolCallId,
-      canonical: extras?.canonical,
-    })
-  },
 }
 provide(DECK_CHAT_CONTEXT, chatCtx)
 

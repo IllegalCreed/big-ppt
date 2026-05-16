@@ -34,7 +34,6 @@ import { PROVIDER_CATALOG, getProviderEntry } from '@big-ppt/shared'
 import { Check, ChevronDown, ChevronRight, Eye, EyeOff, X } from 'lucide-vue-next'
 import { useMCP } from '../composables/useMCP'
 import { useAuth } from '../composables/useAuth'
-import { invalidateLlmSettingsCache } from '../composables/useAIChat'
 import { api, ApiError } from '../api/client'
 import { fetchModels, type ModelInfo } from '../api/llm-models'
 import MCPCatalogItem from './MCPCatalogItem.vue'
@@ -440,7 +439,7 @@ async function saveLlm() {
   saving.value = true
   try {
     await api.put('/api/auth/llm-settings', buildPayload())
-    invalidateLlmSettingsCache()
+    // Phase 12.7：useAIChat 不再缓存 llm-settings（后端 agent loop 自维护），保存后无需 invalidate
     // 保存成功后:把所有刚填入的 apiKey 转成 hasApiKey=true,清空 input
     for (const meta of PROVIDER_CATALOG) {
       const e = providerForms.value[meta.id]
