@@ -57,19 +57,21 @@ describe('GET /api/tools', () => {
     expect(json).toEqual({ success: true, tools: [] })
   })
 
-  it('登录后注册本地工具后返回 11 项（含四件套 + switch_template + generate_slide_image）', async () => {
+  it('登录后注册本地工具后返回 12 项（含四件套 + switch_template + generate_slide_image + Phase 13 list_uploaded_files / read_uploaded_file）', async () => {
     registerLocalTools()
     const { cookie } = await createLoggedInUser()
     const res = await buildApp().request('/api/tools', { headers: { Cookie: cookie } })
     const json = await res.json()
-    expect(json.tools).toHaveLength(10)
+    expect(json.tools).toHaveLength(12)
     expect(json.tools.map((t: any) => t.function.name).sort()).toEqual([
       'create_slide',
       'delete_slide',
       'edit_slides',
       'generate_slide_image',
+      'list_uploaded_files',
       'read_slides',
       'read_template',
+      'read_uploaded_file',
       'reorder_slides',
       'switch_template',
       'update_slide',

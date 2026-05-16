@@ -7,6 +7,7 @@ import { getDb, userAssets } from '../db/index.js'
 import type { AuthVars } from '../middleware/auth.js'
 import { canUpload, getQuotaLimits, getUsedBytes } from '../uploads/quota.js'
 import { deleteAssetBytes, getAssetBytes, putAssetBytes } from '../uploads/storage.js'
+import { enqueueExtraction } from '../uploads/extractor.js'
 
 export const uploads = new Hono<{ Variables: AuthVars }>()
 
@@ -111,8 +112,13 @@ uploads.post('/', async (c) => {
     extractStatus,
   })
 
-  // TODO Task C: 异步触发 extractor worker enqueue(assetId)
-  // 当前 Task B 只写 row,row.extractStatus='pending' 等 Task C worker 起来 poll。
+  // Phase 13 Task G(close-out):非 image 落 'pending' 后丢进 extractor 队列。
+  // 图片类(extractStatus 已 'skipped')无需抽取,跳过。worker 失败/timeout 内部
+  // 自己写 status='failed' + extractErrorMsg,这里 fire-and-forget(同进程 queue,
+  // 不抛错也不阻塞 response)。
+  if (!isImage) {
+    enqueueExtraction({ assetId, userId: user.id, mime: finalMime })
+  }
 
   const uploadedAt = new Date()
   return c.json({

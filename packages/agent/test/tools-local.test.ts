@@ -81,7 +81,7 @@ afterEach(() => {
 })
 
 describe('registerLocalTools', () => {
-  it('注册 10 个本地工具（含四件套 + switch_template + generate_slide_image,Phase 11.6 删 list_templates）', () => {
+  it('注册 12 个本地工具（含四件套 + switch_template + generate_slide_image + Phase 13 list_uploaded_files / read_uploaded_file,Phase 11.6 删 list_templates）', () => {
     expect(hasTool('read_slides')).toBe(true)
     expect(hasTool('write_slides')).toBe(true)
     expect(hasTool('edit_slides')).toBe(true)
@@ -92,9 +92,12 @@ describe('registerLocalTools', () => {
     expect(hasTool('read_template')).toBe(true)
     expect(hasTool('switch_template')).toBe(true)
     expect(hasTool('generate_slide_image')).toBe(true)
+    // Phase 13:用户文件上传 + 引用
+    expect(hasTool('list_uploaded_files')).toBe(true)
+    expect(hasTool('read_uploaded_file')).toBe(true)
     // Phase 11.6 dogfood 后删除:list_templates 跨模板返回触发污染
     expect(hasTool('list_templates')).toBe(false)
-    expect(listTools()).toHaveLength(10)
+    expect(listTools()).toHaveLength(12)
   })
 
   it('read_slides 返回 slides.md 原文', async () => {

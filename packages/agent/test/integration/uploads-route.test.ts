@@ -138,7 +138,10 @@ describe('POST /api/uploads', () => {
       .limit(1)
     expect(row?.filename).toBe('doc.pdf')
     expect(row?.mime).toBe('application/pdf')
-    expect(row?.extractStatus).toBe('pending')
+    // Phase 13 Task G:enqueueExtraction 在 response 写完后异步跑,这里读 DB 时
+    // 可能 status 已经从 pending 走到 failed(stub PDF magic header 字节走不通
+    // pdfjs 解析)或 done。断言 status 在合法值集合内,避免 race
+    expect(['pending', 'running', 'failed', 'done']).toContain(row?.extractStatus)
     expect(row?.sha256).toMatch(/^[0-9a-f]{64}$/)
 
     // fs 字节也写入了

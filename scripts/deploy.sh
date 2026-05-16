@@ -156,6 +156,13 @@ deploy_backend() {
         echo '==> pnpm install --frozen-lockfile'
         pnpm install --frozen-lockfile 2>&1 | tail -8
 
+        echo '==> 确保 Phase 13 用户素材目录存在(LUMIDECK_ASSETS_DIR)'
+        # 默认 /var/lumideck/user-assets;若 .env.production.local 显式 override 路径,
+        # 部署运维需自行处理。此处保证默认路径可写,避免首次启动 enqueueExtraction
+        # 或 putAssetBytes 失败。
+        mkdir -p /var/lumideck/user-assets
+        chmod 755 /var/lumideck /var/lumideck/user-assets || true
+
         echo '==> drizzle-kit push:prod(幂等,无 schema 变化为 no-op)'
         pnpm -F @big-ppt/agent db:push:prod 2>&1 | tail -10 || {
             echo 'WARN: db:push:prod 失败,检查 .env.production.local 与 DB 连通性'
