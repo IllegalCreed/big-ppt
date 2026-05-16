@@ -136,10 +136,19 @@ function handleCancel() {
 <template>
   <div class="chat-panel">
     <!-- 状态栏 -->
-    <div v-if="isGenerating" class="status-bar">
+    <div
+      v-if="isGenerating || status === 'error'"
+      class="status-bar"
+      :class="{ 'status-bar-error': status === 'error' }"
+    >
       <span class="status-dot"></span>
       <span class="status-text">{{ statusText }}</span>
-      <button class="cancel-btn" @click="handleCancel">取消</button>
+      <button v-if="isGenerating" class="cancel-btn" @click="handleCancel">取消</button>
+      <button
+        v-else-if="status === 'error'"
+        class="cancel-btn"
+        @click="retryLastUserMessage"
+      >重试</button>
     </div>
 
     <!-- 消息列表 -->
@@ -184,6 +193,27 @@ function handleCancel() {
   border-bottom: 1px solid var(--color-accent);
   font-size: var(--fs-base);
   color: var(--color-accent-hover);
+}
+
+.status-bar-error {
+  background: var(--color-danger-soft, #fee);
+  border-bottom-color: var(--color-danger, #c33);
+  color: var(--color-danger, #c33);
+}
+
+.status-bar-error .status-dot {
+  background: var(--color-danger, #c33);
+  animation: none;
+}
+
+.status-bar-error .cancel-btn {
+  border-color: var(--color-danger, #c33);
+  color: var(--color-danger, #c33);
+}
+
+.status-bar-error .cancel-btn:hover {
+  background: var(--color-danger, #c33);
+  color: var(--color-bg-surface, #fff);
 }
 
 .status-dot {
