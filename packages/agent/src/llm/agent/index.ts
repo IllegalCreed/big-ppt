@@ -12,7 +12,7 @@ import { buildToolsForUser } from './tool-bridge.js'
 import { persistTurnToDeckChats } from './persistence.js'
 import { agentMessageToCanonical, canonicalToAgentMessage } from './agent-message.js'
 import { loadDeckChatHistory } from './history-loader.js'
-import { buildSystemPromptForDeck } from '../../prompts/buildSystemPrompt.js'
+import { buildSystemPromptForDeck, buildUserAssetsInventory } from '../../prompts/buildSystemPrompt.js'
 import { logServerEvent } from '../../logger/server-log.js'
 
 export interface CreateAgentOpts {
@@ -48,7 +48,10 @@ export async function createAgent(opts: CreateAgentOpts): Promise<Agent> {
 
   const model = resolveModelForProvider(cfg.provider, cfg.model, cfg.baseUrl)
   const tools = await buildToolsForUser(opts.userId)
-  const systemPrompt = await buildSystemPromptForDeck(opts.deckId, opts.userId)
+  const baseSystemPrompt = await buildSystemPromptForDeck(opts.deckId, opts.userId)
+  // Phase 13 Task E: 拼用户素材清单(空则跳过,不附冗余段)
+  const inventory = await buildUserAssetsInventory(opts.userId, cfg.provider, cfg.model)
+  const systemPrompt = inventory ? `${baseSystemPrompt}\n\n${inventory}` : baseSystemPrompt
   const existingCanonical = await loadDeckChatHistory(opts.deckId)
   const existingAgentMessages = existingCanonical.map(canonicalToAgentMessage)
 

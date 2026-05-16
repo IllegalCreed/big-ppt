@@ -11,6 +11,8 @@ vi.mock('../history-loader.js', () => ({
 
 vi.mock('../../../prompts/buildSystemPrompt.js', () => ({
   buildSystemPromptForDeck: vi.fn(async () => 'You are helpful.'),
+  // Phase 13 Task E: 默认返空 → systemPrompt 保持 baseline,后续 case override
+  buildUserAssetsInventory: vi.fn(async () => ''),
 }))
 
 vi.mock('../../adapters/pi-ai-adapter.js', () => ({
@@ -28,6 +30,7 @@ import {
   encryptApiKey,
   __setMasterKeyGetterForTesting,
 } from '../../../crypto/apikey.js'
+import { buildUserAssetsInventory } from '../../../prompts/buildSystemPrompt.js'
 
 function makeSettings(opts: { advanced?: Record<string, unknown>; provider?: string } = {}) {
   const provider = opts.provider ?? 'anthropic'
@@ -125,5 +128,55 @@ describe('createAgent', () => {
         encryptedSettings: broken,
       }),
     ).rejects.toThrow(/LLM 未配置/)
+  })
+
+  describe('Phase 13 Task E: user assets inventory 拼接', () => {
+    const mockedBuildInventory = vi.mocked(buildUserAssetsInventory)
+
+    it('inventory 为空 → systemPrompt 不附额外段', async () => {
+      mockedBuildInventory.mockResolvedValueOnce('')
+      const agent = await createAgent({
+        userId: 99,
+        deckId: 1,
+        encryptedSettings: makeSettings(),
+      })
+      expect(agent.state.systemPrompt).toBe('You are helpful.')
+      expect(agent.state.systemPrompt).not.toContain('用户已上传的参考素材')
+    })
+
+    it('inventory 非空 → 拼到 systemPrompt 末尾(双换行分隔)', async () => {
+      mockedBuildInventory.mockResolvedValueOnce(
+        '\n## 用户已上传的参考素材(共 1 个,总 1.0KB)\n\n- a.pdf (application/pdf, 1.0KB, 已抽 200 字) [id=abc]',
+      )
+      const agent = await createAgent({
+        userId: 1,
+        deckId: 1,
+        encryptedSettings: makeSettings(),
+      })
+      expect(agent.state.systemPrompt).toContain('You are helpful.')
+      expect(agent.state.systemPrompt).toContain('用户已上传的参考素材')
+      expect(agent.state.systemPrompt).toContain('a.pdf')
+      // 双换行分隔 base 与 inventory 段
+      expect(agent.state.systemPrompt.indexOf('You are helpful.')).toBeLessThan(
+        agent.state.systemPrompt.indexOf('用户已上传的参考素材'),
+      )
+    })
+
+    it('调 buildUserAssetsInventory 时传 userId / provider / model', async () => {
+      mockedBuildInventory.mockResolvedValueOnce('')
+      await createAgent({
+        userId: 77,
+        deckId: 3,
+        encryptedSettings: makeSettings({ provider: 'anthropic' }),
+      })
+      // 由 pi-ai-adapter mock 给的 model id 是 'mock-model';真实场景里
+      // createAgent 透传 cfg.model(用户配置的 model)给 inventory,而非 resolveModelForProvider 输出
+      expect(mockedBuildInventory).toHaveBeenCalledTimes(1)
+      const callArgs = mockedBuildInventory.mock.calls[0]
+      expect(callArgs[0]).toBe(77)
+      expect(callArgs[1]).toBe('anthropic')
+      // model 字段 makeSettings 未传 → undefined,确认透传
+      expect(callArgs[2]).toBeUndefined()
+    })
   })
 })

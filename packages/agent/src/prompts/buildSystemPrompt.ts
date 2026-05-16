@@ -8,7 +8,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import type {
   TemplateManifest,
   TemplateManifestLayout,
@@ -18,8 +18,9 @@ import { getManifest } from '../templates/registry.js'
 import { getPaths } from '../workspace.js'
 import { getCatalogByCategory, type ComponentEntry } from '@big-ppt/slidev/components-catalog'
 import { getDb } from '../db/client.js'
-import { decks } from '../db/schema.js'
+import { decks, userAssets } from '../db/schema.js'
 import { getImageLlmSettings } from '../db/image-llm-settings.js'
+import { getSupportedMultiModalHint, isMultiModalLLM } from '../uploads/multi-modal.js'
 
 export interface BuildSystemPromptOptions {
   templateId: string
@@ -420,4 +421,71 @@ export async function buildSystemPromptForDeck(
   }
   const imageGenEnabled = !!(await getImageLlmSettings(userId))
   return buildSystemPrompt({ templateId: deck.templateId, mcpBadges, imageGenEnabled })
+}
+
+const MAX_INVENTORY_ITEMS = 20
+
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
+  return `${(bytes / 1024 / 1024).toFixed(2)}MB`
+}
+
+/** Phase 13 Task E: 当前 user 的素材清单 + 多模态能力提示,createAgent 拼到 system prompt 末尾。 */
+export async function buildUserAssetsInventory(
+  userId: number,
+  provider: string,
+  modelId: string | undefined,
+): Promise<string> {
+  const rows = await getDb()
+    .select()
+    .from(userAssets)
+    .where(eq(userAssets.userId, userId))
+    .orderBy(desc(userAssets.uploadedAt))
+    .limit(MAX_INVENTORY_ITEMS + 1)
+
+  if (rows.length === 0) return ''
+
+  const hasMore = rows.length > MAX_INVENTORY_ITEMS
+  const displayRows = hasMore ? rows.slice(0, MAX_INVENTORY_ITEMS) : rows
+  const totalBytes = rows.reduce((sum, r) => sum + r.sizeBytes, 0)
+  const multiModal = isMultiModalLLM(provider, modelId)
+
+  const lines: string[] = []
+  lines.push('')
+  lines.push(`## 用户已上传的参考素材(共 ${rows.length} 个,总 ${fmtSize(totalBytes)})`)
+  lines.push('')
+  for (const r of displayRows) {
+    let statusHint = ''
+    if (r.extractStatus === 'done') {
+      statusHint = `已抽 ${r.extractedText?.length ?? 0} 字`
+    } else if (r.extractStatus === 'pending' || r.extractStatus === 'running') {
+      statusHint = '抽取中'
+    } else if (r.extractStatus === 'failed') {
+      statusHint = `抽取失败:${r.extractErrorMsg ?? ''}`
+    } else if (r.extractStatus === 'skipped') {
+      statusHint = '图片类,需 multi-modal LLM'
+    }
+    lines.push(
+      `- ${r.filename} (${r.mime}, ${fmtSize(r.sizeBytes)}${statusHint ? `, ${statusHint}` : ''}) [id=${r.id}]`,
+    )
+  }
+  if (hasMore) {
+    lines.push(`- ...+${rows.length - MAX_INVENTORY_ITEMS} more (调 list_uploaded_files 拿全列表)`)
+  }
+  lines.push('')
+  lines.push('可用工具:')
+  lines.push('- `list_uploaded_files()` — 拿全部 asset(无参,inventory 截断时调它)')
+  lines.push(
+    "- `read_uploaded_file(id, mode='text'|'image')` — text 抽取文本(PDF/DOCX/XLSX/MD/TXT/CSV),image 返多模态 ImageBlock",
+  )
+  lines.push('')
+  if (multiModal) {
+    lines.push(`当前主 LLM: ${provider}/${modelId} — ✓ 支持图片,image 类素材可 mode='image' 直传`)
+  } else {
+    lines.push(
+      `当前主 LLM: ${provider}/${modelId ?? '未配置'} — ✗ 不支持图片,image 类素材无法直接读;用户需切到 ${getSupportedMultiModalHint()}`,
+    )
+  }
+  return lines.join('\n')
 }
