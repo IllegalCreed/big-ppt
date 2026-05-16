@@ -223,6 +223,41 @@ export const deckAssets = mysqlTable(
   }),
 )
 
+/**
+ * Phase 13：用户级别上传素材池(PDF/DOCX/XLSX/Image/MD/TXT 等)。
+ *
+ * - 字节落本地 fs `${LUMIDECK_ASSETS_DIR}/<userId>/<assetId>`,本表只存元数据
+ * - per-user / per-file quota 在 `src/uploads/quota.ts` 实现(默认 100MB / 10MB)
+ * - sha256 仅 dedup hint,不强制 unique(同 user 同文件可多次上传保留多份元数据)
+ * - extractedText 由 worker 异步填充,extractStatus 跟踪进度
+ * - onDelete cascade:user 删除时 metadata 自动清,fs 字节由 user-delete 钩子清(后续 Task)
+ */
+export const userAssets = mysqlTable(
+  'user_assets',
+  {
+    id: varchar('id', { length: 36 }).primaryKey(), // crypto.randomUUID()
+    userId: int('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    filename: varchar('filename', { length: 255 }).notNull(),
+    mime: varchar('mime', { length: 100 }).notNull(),
+    sizeBytes: int('size_bytes').notNull(),
+    sha256: varchar('sha256', { length: 64 }).notNull(),
+    /** 相对 LUMIDECK_ASSETS_DIR 的路径,典型为 `${userId}/${assetId}` */
+    storagePath: varchar('storage_path', { length: 500 }).notNull(),
+    extractedText: text('extracted_text'),
+    extractStatus: mysqlEnum('extract_status', ['pending', 'running', 'done', 'failed', 'skipped'])
+      .default('pending')
+      .notNull(),
+    extractErrorMsg: text('extract_error_msg'),
+    uploadedAt: timestamp('uploaded_at').default(NOW).notNull(),
+  },
+  (t) => ({
+    byUser: index('idx_user_assets_user_id').on(t.userId),
+    byUserSha: index('idx_user_assets_user_sha').on(t.userId, t.sha256),
+  }),
+)
+
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
 export type Session = typeof sessions.$inferSelect
@@ -237,3 +272,5 @@ export type UserMcpServer = typeof userMcpServers.$inferSelect
 export type NewUserMcpServer = typeof userMcpServers.$inferInsert
 export type DeckAsset = typeof deckAssets.$inferSelect
 export type NewDeckAsset = typeof deckAssets.$inferInsert
+export type UserAsset = typeof userAssets.$inferSelect
+export type NewUserAsset = typeof userAssets.$inferInsert
