@@ -486,3 +486,198 @@ describe('SettingsModal save (PUT new-shape payload)', () => {
     wrapper.unmount()
   })
 })
+
+/**
+ * Phase 12.7 commit 3f33d76 加的 keepOpen 参数行为:
+ * - saveLlm(true) / saveImage(true) → 不 emit update:open=false + 显「✓ 已应用」flash 2s
+ * - saveLlm(false) / saveImage(false) → 关弹窗(emit update:open=false)+ 无 flash
+ *
+ * 用 fake timers 精准控 2s 自动消失;两次 apply 之间 < 2s 验证 timer 重启不闪烁。
+ */
+describe('SettingsModal save keepOpen (apply button vs save-and-close)', () => {
+  function $all(sel: string): HTMLElement[] {
+    return Array.from(document.body.querySelectorAll(sel)) as HTMLElement[]
+  }
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    document.body.replaceChildren()
+  })
+
+  it('saveLlm(true) 经「应用」按钮 → 不 emit close + 显 .applied-flash「✓ 已应用」 + hasApiKey 视图升级', async () => {
+    server.use(
+      ...defaultHandlers('empty'),
+      http.put('/api/auth/llm-settings', () => HttpResponse.json({ ok: true })),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    await setInput($('[data-test="apikey-zhipu"]')!, 'sk-zhipu-apply')
+    await click($('[data-test="apply-button"]')!)
+    // apply 路径:no close emit + applied-flash 出现
+    expect(wrapper.emitted('update:open')).toBeFalsy()
+    const flash = $('.applied-flash')
+    expect(flash).not.toBeNull()
+    expect(flash!.textContent).toContain('已应用')
+    // apply 也走 hasApiKey 视图升级路径:zhipu card 显示「已配置」徽章
+    const zhipuCard = document.body.querySelector(
+      '[data-provider-id="zhipu"].active',
+    ) as HTMLElement | null
+    expect(zhipuCard!.querySelector('.state-ok')).not.toBeNull()
+    // input 清空(保存成功后 apiKey = '')
+    expect(($('[data-test="apikey-zhipu"]') as HTMLInputElement).value).toBe('')
+
+    wrapper.unmount()
+  })
+
+  it('saveLlm(false) 经「保存并关闭」按钮 → emit close=false + 无 flash', async () => {
+    server.use(
+      ...defaultHandlers('empty'),
+      http.put('/api/auth/llm-settings', () => HttpResponse.json({ ok: true })),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    await setInput($('[data-test="apikey-zhipu"]')!, 'sk-zhipu-save')
+    await click($('[data-test="save-button"]')!)
+    // save-and-close 路径:emit close=false + 无 applied-flash
+    expect(wrapper.emitted('update:open')).toBeTruthy()
+    expect(wrapper.emitted('update:open')?.[0]).toEqual([false])
+    expect($('.applied-flash')).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('saveImage(true) 经「应用」按钮 → 不 emit close + image flash 出现', async () => {
+    server.use(
+      ...defaultHandlers('empty'),
+      http.put('/api/image-llm-settings', () => HttpResponse.json({ ok: true })),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    // 切到 image tab
+    const imageTab = $all('.seg-tab').find((b) => b.textContent?.includes('生图模型'))!
+    await click(imageTab)
+
+    // 填 image apiKey + 点「应用」(image tab 没专门 data-test,按 footer 内文案取)
+    const imageApiKeyInput = $('.input-group__input') as HTMLInputElement
+    await setInput(imageApiKeyInput, 'sk-image-apply')
+    const imageFooterButtons = $all('.modal-footer button')
+    const applyBtn = imageFooterButtons.find((b) => b.textContent?.includes('应用'))!
+    await click(applyBtn)
+
+    expect(wrapper.emitted('update:open')).toBeFalsy()
+    const flash = $('.applied-flash')
+    expect(flash).not.toBeNull()
+    expect(flash!.textContent).toContain('已应用')
+
+    wrapper.unmount()
+  })
+
+  it('saveImage(false) 经「保存并关闭」按钮 → emit close=false + 无 flash', async () => {
+    server.use(
+      ...defaultHandlers('empty'),
+      http.put('/api/image-llm-settings', () => HttpResponse.json({ ok: true })),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const imageTab = $all('.seg-tab').find((b) => b.textContent?.includes('生图模型'))!
+    await click(imageTab)
+    const imageApiKeyInput = $('.input-group__input') as HTMLInputElement
+    await setInput(imageApiKeyInput, 'sk-image-close')
+    const imageFooterButtons = $all('.modal-footer button')
+    const saveBtn = imageFooterButtons.find((b) => b.textContent?.includes('保存并关闭'))!
+    await click(saveBtn)
+
+    expect(wrapper.emitted('update:open')).toBeTruthy()
+    expect(wrapper.emitted('update:open')?.[0]).toEqual([false])
+    expect($('.applied-flash')).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('flash 2s 后自动消失(fake timers + advanceTimersByTime)', async () => {
+    server.use(
+      ...defaultHandlers('empty'),
+      http.put('/api/auth/llm-settings', () => HttpResponse.json({ ok: true })),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    await setInput($('[data-test="apikey-zhipu"]')!, 'sk-zhipu-timer')
+    // 用 fake timers 守 2s setTimeout
+    vi.useFakeTimers()
+    await click($('[data-test="apply-button"]')!)
+    expect($('.applied-flash')).not.toBeNull()
+
+    // 推进 1.9s,flash 仍在
+    vi.advanceTimersByTime(1_900)
+    await flushPromises()
+    expect($('.applied-flash')).not.toBeNull()
+
+    // 再推进 100ms 跨过 2s 边界,flash v-if=false → DOM 移除
+    vi.advanceTimersByTime(101)
+    await flushPromises()
+    expect($('.applied-flash')).toBeNull()
+
+    wrapper.unmount()
+  })
+
+  it('2s 内连续两次 apply → flash 持续可见 + 计时器重启(无闪烁)', async () => {
+    server.use(
+      ...defaultHandlers('empty'),
+      http.put('/api/auth/llm-settings', () => HttpResponse.json({ ok: true })),
+    )
+    const wrapper = mount(SettingsModal, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    await setInput($('[data-test="apikey-zhipu"]')!, 'sk-zhipu-first')
+
+    vi.useFakeTimers()
+    await click($('[data-test="apply-button"]')!)
+    expect($('.applied-flash')).not.toBeNull()
+
+    // 推进 1.5s
+    vi.advanceTimersByTime(1_500)
+    await flushPromises()
+    // 已快接近 2s,flash 还在
+    expect($('.applied-flash')).not.toBeNull()
+
+    // 第二次 apply:flashApplied 会清旧 timer + 起新 2s timer
+    await click($('[data-test="apply-button"]')!)
+    expect($('.applied-flash')).not.toBeNull()
+
+    // 再推进 1s(累计第一次 2.5s),flash 仍在(新 timer 重启)
+    vi.advanceTimersByTime(1_000)
+    await flushPromises()
+    expect($('.applied-flash')).not.toBeNull()
+
+    // 再推进 1.1s(从第二次起 2.1s),新 timer 也过期,flash 消失
+    vi.advanceTimersByTime(1_100)
+    await flushPromises()
+    expect($('.applied-flash')).toBeNull()
+
+    wrapper.unmount()
+  })
+})
