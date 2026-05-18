@@ -19,7 +19,7 @@
   在测试里用 fake timers + advanceTimersByTime 控。
 -->
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import { X, Loader2, Download as DownloadIcon } from 'lucide-vue-next'
 import { useExport, type ExportFormat, type ExportDeckPayload } from '../composables/useExport'
 
@@ -31,6 +31,24 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
 const format = ref<ExportFormat>('pdf')
 const { exporting, error, progress, exportDeck } = useExport()
+
+/**
+ * 成功后 200ms 自动关 modal 的 timer 句柄。CLAUDE.md「前端约定」:
+ * 组件内 setTimeout / setInterval 必须在 onUnmounted 清理,否则用户在 200ms 窗口
+ * 内导航离开会触发 emit-on-unmounted warning;同一 timer 重复触发也清旧的再起新。
+ */
+let autoCloseTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearAutoCloseTimer() {
+  if (autoCloseTimer !== null) {
+    clearTimeout(autoCloseTimer)
+    autoCloseTimer = null
+  }
+}
+
+onUnmounted(() => {
+  clearAutoCloseTimer()
+})
 
 /** 关 modal(loading 期间不允许)*/
 function close() {
@@ -52,9 +70,11 @@ watch(
 async function onConfirm() {
   try {
     await exportDeck(props.deck, format.value)
-    // 成功:200ms 内自动关 modal(让浏览器下载条先出现)
-    setTimeout(() => {
+    // 成功:200ms 内自动关 modal(让浏览器下载条先出现);先清旧 timer 避叠加
+    clearAutoCloseTimer()
+    autoCloseTimer = setTimeout(() => {
       emit('update:open', false)
+      autoCloseTimer = null
     }, 200)
   } catch {
     // useExport 已设 error.value,这里吞掉防 console 红;UI 渲染错误态 + retry

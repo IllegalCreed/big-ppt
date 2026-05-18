@@ -25,6 +25,15 @@ import html2canvas from 'html2canvas'
 import { Buffer } from 'buffer'
 import ExportRenderer from '../components/ExportRenderer.vue'
 import { waitForRenderStable } from './wait-stable'
+// Phase 14 Task C fix(production bug):`createApp(Host)` 起的 Vue app instance
+// **完全独立** 不继承 main app 的 component 注册。DeckRenderer 用
+// `<component :is="slide.layout">` 动态查找 layouts(beitou-cover / jingyeda-*
+// 等),compileBody 的 body markdown 还含 `<TwoCol>` / `<BarChart>` 等公共组件,
+// 全靠 main.ts 调 `registerDeckRendererComponents(app)` 注册到全局。本文件起的
+// 新 app 必须**镜像同样的注册流程**,否则所有 layout / 公共组件全找不到 →
+// 渲染白页 → 导出 PDF/PPTX/ZIP 内容全白(E2E size 阈值检查照过,production 用户
+// 才肉眼发现)。
+import { registerDeckRendererComponents } from '../deck-renderer/register-layouts'
 
 export interface CapturePagesOptions {
   deckId: number
@@ -78,6 +87,9 @@ export async function capturePages(opts: CapturePagesOptions): Promise<Buffer[]>
   const container = document.createElement('div')
   document.body.appendChild(container)
   const app = createApp(Host)
+  // 镜像 main.ts:25 的注册流程 —— 不调这步 layouts + 公共组件全部 unresolved,
+  // DeckRenderer `<component :is>` 渲染空白,导出产物全白。
+  registerDeckRendererComponents(app)
   app.mount(container)
 
   const pngs: Buffer[] = []

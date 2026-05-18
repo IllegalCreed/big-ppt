@@ -58,6 +58,15 @@ vi.mock('../../components/ExportRenderer.vue', () => ({
   }),
 }))
 
+// ---- registerDeckRendererComponents mock ---------------------------------
+// Phase 14 Task C fix:断言 capture-pages 在每次 mount 新 Vue app instance 后
+// 都调用 registerDeckRendererComponents(app) 注册 layouts + 公共组件。
+// 不注册 → DeckRenderer `<component :is>` 全 unresolved → 导出全白页。
+const registerDeckRendererComponentsMock = vi.fn()
+vi.mock('../../deck-renderer/register-layouts', () => ({
+  registerDeckRendererComponents: (app: unknown) => registerDeckRendererComponentsMock(app),
+}))
+
 // ---- import 被测体（static import + mock 已就位） ------------------------
 import { capturePages } from '../capture-pages'
 
@@ -78,6 +87,7 @@ describe('capturePages', () => {
     html2canvasMock.mockResolvedValue(makeFakeCanvas())
     waitForRenderStableMock.mockReset()
     waitForRenderStableMock.mockResolvedValue(undefined)
+    registerDeckRendererComponentsMock.mockReset()
   })
 
   afterEach(() => {
@@ -239,5 +249,42 @@ describe('capturePages', () => {
 
     expect(els).toHaveLength(3)
     els.forEach((el) => expect(el).toBeInstanceOf(HTMLElement))
+  })
+
+  it('mount 新 Vue app 后调 registerDeckRendererComponents(app) — 防导出全白', async () => {
+    // Production bug 回归测:capturePages 起独立 createApp(Host) Vue instance,
+    // 不继承 main app 的全局组件;必须显式调 register 把 layouts + 公共组件
+    // 注册到该 app,否则 DeckRenderer `<component :is="beitou-cover">` 全
+    // unresolved → 渲染白页 → 导出产物全白(E2E size 阈值检查照过,用户视觉才发现)
+    await capturePages({
+      deckId: 1,
+      markdown: '# fake',
+      templateId: 'beitou-standard',
+      totalPages: 1,
+    })
+
+    expect(registerDeckRendererComponentsMock).toHaveBeenCalledTimes(1)
+    // 接收的是 Vue App 实例(有 .mount / .unmount / .component 方法)
+    const arg = registerDeckRendererComponentsMock.mock.calls[0]![0] as Record<string, unknown>
+    expect(arg).toBeDefined()
+    expect(typeof arg.mount).toBe('function')
+    expect(typeof arg.unmount).toBe('function')
+    expect(typeof arg.component).toBe('function')
+  })
+
+  it('每次 capturePages 调用都重新 register(不复用 app instance)', async () => {
+    await capturePages({
+      deckId: 1,
+      markdown: '# fake',
+      templateId: 'beitou-standard',
+      totalPages: 1,
+    })
+    await capturePages({
+      deckId: 2,
+      markdown: '# fake2',
+      templateId: 'jingyeda-standard',
+      totalPages: 2,
+    })
+    expect(registerDeckRendererComponentsMock).toHaveBeenCalledTimes(2)
   })
 })

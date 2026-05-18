@@ -81,7 +81,14 @@ test('导出 PDF → 顶栏按钮 → modal → confirm → 浏览器下载 + si
   // 7. 断文件大小 > 10KB(plan 30 写的低门槛,防 PDF 完全空)
   const path = await download.path()
   expect(path).toBeTruthy()
-  const { statSync } = await import('node:fs')
+  const { statSync, copyFileSync } = await import('node:fs')
   const stat = statSync(path!)
   expect(stat.size).toBeGreaterThan(10_000)
+  // 把 PDF 拷到 /tmp 让本地人眼 / pdftotext 检查内容(Phase 14 验收要求:
+  // 视觉与预览一致,不能全白);此步骤纯诊断用,不影响 CI/绿色
+  try {
+    copyFileSync(path!, '/tmp/lumideck-e2e-export.pdf')
+  } catch {
+    /* ignore: 诊断辅助,失败不应阻塞测试 */
+  }
 })
