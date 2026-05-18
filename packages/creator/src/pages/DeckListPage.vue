@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { FileText, LogOut, Plus, Sparkles, Trash2 } from 'lucide-vue-next'
+import { FileText, LogOut, Plus, Sparkles, Trash2, Upload } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth'
 import { useDecks, type Deck } from '../composables/useDecks'
+import { useImport } from '../composables/useImport'
 import { ApiError } from '../api/client'
 import TemplatePickerModal from '../components/TemplatePickerModal.vue'
 
 const router = useRouter()
 const { currentUser, logout } = useAuth()
 const { listDecks, deleteDeck, updateDeck } = useDecks()
+const { importing, error: importError, importArchive } = useImport()
 
 const decks = ref<Deck[]>([])
 const loading = ref(true)
 const error = ref('')
 const showPicker = ref(false)
+// 隐藏 input ref:点「导入」按钮 → 触发原生 file picker;真实 input 不显示在 UI
+const fileInput = ref<HTMLInputElement | null>(null)
 
 async function refresh() {
   loading.value = true
@@ -30,6 +34,24 @@ async function refresh() {
 
 function onCreate() {
   showPicker.value = true
+}
+
+function onImportClick() {
+  fileInput.value?.click()
+}
+
+async function onFileChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  // 立即清空 input value:允许用户选同一文件再次触发 change(默认浏览器同名文件不再 fire)
+  target.value = ''
+  if (!file) return
+  try {
+    const result = await importArchive(file)
+    await router.push(`/decks/${result.deckId}`)
+  } catch {
+    // useImport 已 set error.value,template 渲染错误文本;不需要重复 alert
+  }
 }
 
 async function onPickerCreated(deck: Deck) {
@@ -99,13 +121,34 @@ onMounted(refresh)
     <main class="content">
       <div class="content-header">
         <h1>我的幻灯片</h1>
-        <button type="button" class="btn-primary" @click="onCreate">
-          <Plus :size="16" :stroke-width="2" />
-          <span>新建 Deck</span>
-        </button>
+        <div class="header-actions">
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="importing"
+            data-test="import-button"
+            @click="onImportClick"
+          >
+            <Upload :size="16" :stroke-width="2" />
+            <span>{{ importing ? '导入中…' : '导入' }}</span>
+          </button>
+          <button type="button" class="btn-primary" @click="onCreate">
+            <Plus :size="16" :stroke-width="2" />
+            <span>新建 Deck</span>
+          </button>
+        </div>
+        <input
+          ref="fileInput"
+          type="file"
+          accept=".lumideck"
+          data-test="import-file-input"
+          style="display: none"
+          @change="onFileChange"
+        />
       </div>
 
       <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="importError" class="error" data-test="import-error">{{ importError }}</p>
 
       <div v-if="loading" class="loading">加载中...</div>
       <div v-else-if="decks.length === 0" class="empty">
@@ -253,6 +296,12 @@ onMounted(refresh)
   margin: 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -275,6 +324,33 @@ onMounted(refresh)
 .btn-primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 38px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border, var(--color-border-subtle));
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-fg-secondary);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 
 .error {
