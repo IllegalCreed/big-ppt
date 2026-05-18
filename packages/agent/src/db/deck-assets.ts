@@ -47,9 +47,30 @@ export async function createAsset(args: CreateAssetArgs): Promise<{ id: string }
   return { id }
 }
 
-export async function getAsset(id: string): Promise<AssetRow | null> {
+/**
+ * 取 asset 行(包含 BLOB)。
+ *
+ * `ownership` 可选:传入则把 `deckId` / `userId` 推进 SQL `WHERE` 复合条件,
+ * 不匹配直接 SELECT 空 → 返 null,**BLOB 永远不会被 load 进进程内存**。
+ *
+ * 不传 ownership 沿用单条件 `WHERE id = ?`,call site 必须自己 object-level 检查
+ * 归属(老 caller / 读 prompt 字段不暴露 BLOB 的场景 OK,但凡是要把 BLOB 喂给
+ * 外部 API 的链路应当显式传 ownership 让 SQL guard 先于内存 load 拒掉)。
+ */
+export async function getAsset(
+  id: string,
+  ownership?: { deckId: number; userId: number },
+): Promise<AssetRow | null> {
   const db = getDb()
-  const [row] = await db.select().from(deckAssets).where(eq(deckAssets.id, id)).limit(1)
+  const conds = [eq(deckAssets.id, id)]
+  if (ownership) {
+    conds.push(eq(deckAssets.deckId, ownership.deckId), eq(deckAssets.userId, ownership.userId))
+  }
+  const [row] = await db
+    .select()
+    .from(deckAssets)
+    .where(conds.length === 1 ? conds[0]! : and(...conds))
+    .limit(1)
   return row ?? null
 }
 

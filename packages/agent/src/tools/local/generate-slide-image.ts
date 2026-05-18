@@ -21,7 +21,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import type { ImageGenStyle } from '@big-ppt/shared'
 import type { ToolDef } from '../registry.js'
-import { getRequestContext, runInRequest } from '../../context.js'
+import { getRequestContext } from '../../context.js'
 import { getDb, decks } from '../../db/index.js'
 import { eq } from 'drizzle-orm'
 import { getManifest } from '../../templates/registry.js'
@@ -289,14 +289,11 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
       )
       if (match) {
         const assetId = match[1]!
-        const asset = await getAsset(assetId)
-        // IDOR guard:asset 必须属于当前 deck + 当前 user(三条件)
-        if (
-          asset &&
-          asset.deckId === deckId &&
-          asset.userId === ctx.userId &&
-          asset.data.length > 0
-        ) {
+        // IDOR guard 推进 SQL:`WHERE id = ? AND deck_id = ? AND user_id = ?`,
+        // 不匹配直接 SELECT 空 → BLOB 永远不进进程内存(老实现先 load 完整行
+        // 再 object-level 检查,即便最终 reject 也已占内存)。
+        const asset = await getAsset(assetId, { deckId, userId: ctx.userId })
+        if (asset && asset.data.length > 0) {
           baseImageBase64 = asset.data.toString('base64')
           baseImageMime = asset.mimeType || 'image/png'
         }
@@ -340,84 +337,75 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
     baseImageMime,
   })
 
-  // 后台跑 worker;捕获顶层 promise 避免 unhandled rejection
+  // 后台跑 worker;捕获顶层 promise 避免 unhandled rejection。
+  // 注意:**不**在此层包 `runInRequest` —— `runImageJob`(image-gen-job.ts)顶层已
+  // 用 job.userId + job.deckId 自带 inner `runInRequest` 重注 ALS。外层若再包一层
+  // 会立即被 inner 覆盖,纯 dead code,且会误导未来 reader 以为 worker 继承当前 turn
+  // 的 turnId(实际 inner 写死 turnId:null,因为 worker 不该跟 LLM turn 合并 version)。
   const userId = ctx.userId
-  const turnId = ctx.turnId
-  const sessionId = ctx.sessionId
   void (async () => {
     try {
-    // worker 跑出请求 context;手动复原让 slides-store/persist 写 deck_versions
-    await runInRequest(
-      {
-        userId,
-        activeDeckId: deckId,
-        sessionId,
-        turnId,
-      },
-      async () => {
-        const settings = imageSettings!
-        // 选 generateImage 实现:override 优先(集成测精确捕获 args),其次 env-gated stub/fallback,
-        // 否则真 OpenAI client。所有分支均把 baseImageBase64/Mime 透传给底层。
-        const pickGenerateImage: GenerateImageFn = generateImageOverride
-          ? generateImageOverride
-          : shouldForceFallback()
-            ? fallbackForcedGenerateImage
-            : shouldUseStub()
-              ? stubGenerateImage
-              : generateImage
-        const deps: RunImageJobDeps = {
-          generateImage: (a) =>
-            pickGenerateImage({
-              prompt: a.prompt,
-              size: a.size,
-              signal: a.signal,
-              apiKey: settings.apiKey,
-              baseUrl: settings.baseUrl,
-              primaryModel: a.model,
-              baseImageBase64: a.baseImageBase64,
-              baseImageMime: a.baseImageMime,
-            }),
-          createAsset: async (args2) => createAsset(args2),
-          updateSlide: async (args2) => {
-            const fm: Record<string, unknown> = {
-              layout: args2.layout,
-              imageSrc: args2.imageSrc,
-            }
-            if (args2.heading) fm.heading = args2.heading
-            const result = await storeUpdateSlide({
-              index: args2.slideIndex,
-              frontmatter: fm,
-              body: '',
-              replaceFrontmatter: true,
-            })
-            if (!result.success) {
-              throw new Error(result.error ?? 'updateSlide 失败')
-            }
-          },
-          // Phase 11.6 graceful-degradation:三件 DI 注入,worker 在出图失败时
-          // 自动调 rewriteSinglePage 用 fallbackSummary + 整 deck 上下文重写为组件版
-          updateSlideRaw: async (args2) => {
-            const result = await storeUpdateSlide({
-              index: args2.slideIndex,
-              frontmatter: args2.frontmatter,
-              body: args2.body,
-              replaceFrontmatter: args2.replaceFrontmatter,
-            })
-            if (!result.success) {
-              throw new Error(result.error ?? 'updateSlideRaw 失败')
-            }
-          },
-          readSlides: () => readSlides(),
-          rewriteSinglePage: rewriteSinglePageToComponents,
-          targetLayout,
-          preservedHeading,
-        }
-        await runImageJob(job.id, deps)
-      },
-    )
+      const settings = imageSettings!
+      // 选 generateImage 实现:override 优先(集成测精确捕获 args),其次 env-gated stub/fallback,
+      // 否则真 OpenAI client。所有分支均把 baseImageBase64/Mime 透传给底层。
+      const pickGenerateImage: GenerateImageFn = generateImageOverride
+        ? generateImageOverride
+        : shouldForceFallback()
+          ? fallbackForcedGenerateImage
+          : shouldUseStub()
+            ? stubGenerateImage
+            : generateImage
+      const deps: RunImageJobDeps = {
+        generateImage: (a) =>
+          pickGenerateImage({
+            prompt: a.prompt,
+            size: a.size,
+            signal: a.signal,
+            apiKey: settings.apiKey,
+            baseUrl: settings.baseUrl,
+            primaryModel: a.model,
+            baseImageBase64: a.baseImageBase64,
+            baseImageMime: a.baseImageMime,
+          }),
+        createAsset: async (args2) => createAsset(args2),
+        updateSlide: async (args2) => {
+          const fm: Record<string, unknown> = {
+            layout: args2.layout,
+            imageSrc: args2.imageSrc,
+          }
+          if (args2.heading) fm.heading = args2.heading
+          const result = await storeUpdateSlide({
+            index: args2.slideIndex,
+            frontmatter: fm,
+            body: '',
+            replaceFrontmatter: true,
+          })
+          if (!result.success) {
+            throw new Error(result.error ?? 'updateSlide 失败')
+          }
+        },
+        // Phase 11.6 graceful-degradation:三件 DI 注入,worker 在出图失败时
+        // 自动调 rewriteSinglePage 用 fallbackSummary + 整 deck 上下文重写为组件版
+        updateSlideRaw: async (args2) => {
+          const result = await storeUpdateSlide({
+            index: args2.slideIndex,
+            frontmatter: args2.frontmatter,
+            body: args2.body,
+            replaceFrontmatter: args2.replaceFrontmatter,
+          })
+          if (!result.success) {
+            throw new Error(result.error ?? 'updateSlideRaw 失败')
+          }
+        },
+        readSlides: () => readSlides(),
+        rewriteSinglePage: rewriteSinglePageToComponents,
+        targetLayout,
+        preservedHeading,
+      }
+      await runImageJob(job.id, deps)
     } catch (err) {
-      // 兜底:任何意外抛错(包括 runInRequest / setImageLlmSettings 解构等同步失败)
-      // 都到 stderr + 持久化日志,避免 unhandled rejection 静默吞错;同时把 job 标 failed。
+      // 兜底:任何意外抛错(包括 setImageLlmSettings 解构等同步失败)都到 stderr +
+      // 持久化日志,避免 unhandled rejection 静默吞错;同时把 job 标 failed。
       const e = err as Error
       console.error(
         `[generate_slide_image worker] unhandled error for job ${job.id.slice(0, 8)}: ${e.name}: ${e.message}\n${e.stack ?? ''}`,

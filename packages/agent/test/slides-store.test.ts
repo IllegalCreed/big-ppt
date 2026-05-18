@@ -576,5 +576,49 @@ describe('slides-store DB-based(P0 fix)', () => {
       expect(pages[0]!.frontmatter.mainTitle).toBe('A-OWN')
       expect(pages[1]!.frontmatter.heading).toBe('A-OWN-2')
     })
+
+    // ─── restoreSlides / redoSlides ─────────────────────────────────────────
+    // 这俩通过 history.ts 的 `loadDeckGuard()` 走 SQL 复合 WHERE 校 (id, userId),
+    // 跟 mutation 套路一样;IDOR fail 应当 currentVersionId 指针不动 → readSlides 仍取
+    // 原内容。下面 4 case 走 hist=[v1, v2] 状态:让 deckA 进 v2 后 IDOR 试图 restore /
+    // 已 restore 到 v1 后 IDOR 试图 redo,校都 throw 且当前内容不变。
+    it('无 ALS → restoreSlides throw NoActiveDeckError', async () => {
+      await expect(restoreSlides()).rejects.toThrow(NoActiveDeckError)
+    })
+
+    it('IDOR:用户 B 用 A 的 deckId 调 restoreSlides → throw,A currentVersion 指针不动', async () => {
+      const a = await createLoggedInUser('a-mut-restore@a.com')
+      const b = await createLoggedInUser('b-mut-restore@a.com')
+      const { deck: deckA } = await createDeckDirect(a.user.id, 'A-restore', 'v1')
+      // 推进到 v2,让 deckA 有可 undo 的 history
+      await inDeck(a.user.id, deckA.id, () => editSlides('v1', 'v2'))
+      expect(await inDeck(a.user.id, deckA.id, () => readSlides())).toBe('v2')
+
+      // B IDOR 试图 restore A → 应 throw,且 A 仍在 v2(指针没 backstep)
+      await expect(inDeck(b.user.id, deckA.id, () => restoreSlides())).rejects.toThrow(
+        NoActiveDeckError,
+      )
+      expect(await inDeck(a.user.id, deckA.id, () => readSlides())).toBe('v2')
+    })
+
+    it('无 ALS → redoSlides throw NoActiveDeckError', async () => {
+      await expect(redoSlides()).rejects.toThrow(NoActiveDeckError)
+    })
+
+    it('IDOR:用户 B 用 A 的 deckId 调 redoSlides → throw,A currentVersion 指针不动', async () => {
+      const a = await createLoggedInUser('a-mut-redo@a.com')
+      const b = await createLoggedInUser('b-mut-redo@a.com')
+      const { deck: deckA } = await createDeckDirect(a.user.id, 'A-redo', 'v1')
+      // 推进到 v2,A 自己 undo 回 v1,留 redo 栈给 B 试探
+      await inDeck(a.user.id, deckA.id, () => editSlides('v1', 'v2'))
+      await inDeck(a.user.id, deckA.id, () => restoreSlides())
+      expect(await inDeck(a.user.id, deckA.id, () => readSlides())).toBe('v1')
+
+      // B IDOR 试图 redo A → 应 throw,且 A 仍在 v1(指针没 forwardstep)
+      await expect(inDeck(b.user.id, deckA.id, () => redoSlides())).rejects.toThrow(
+        NoActiveDeckError,
+      )
+      expect(await inDeck(a.user.id, deckA.id, () => readSlides())).toBe('v1')
+    })
   })
 })

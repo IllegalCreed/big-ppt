@@ -306,11 +306,8 @@ describe('POST /api/call-tool — generate_slide_image hybrid vision-aware (端�
       .update(deckVersions)
       .set({ content })
       .where(eq(deckVersions.id, d.currentVersionId))
-    // 同时写 fs slides.md,让工具的 readSlides 通过(它走 ALS deckId → DB,但
-    // worker 在 fire-and-forget 异步路径也会调 slides-store 写;为 belt-and-suspenders 双写)
-    if (process.env.BIG_PPT_SLIDES_PATH) {
-      fs.writeFileSync(process.env.BIG_PPT_SLIDES_PATH, content, 'utf-8')
-    }
+    // P0 hotfix(eccf1c3)后 worker readSlides 走 ALS+DB,不再读 fs slides.md;
+    // 这里不需要 mirror 到 fs。
   }
 
   const FIXTURE_3_PAGES_NO_IMAGE = `---
