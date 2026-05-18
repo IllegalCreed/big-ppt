@@ -939,30 +939,41 @@
 
 ---
 
-## Phase 15：导入
+## Phase 15:归档数据包 export + import(`.lumideck`)
 
-**目标**：降低新用户冷启动成本——已有 Markdown / PPTX 资料可以一键变 deck。
+> **2026-05-18 重定义**:原 Phase 15「Markdown / PPTX 导入」改为「归档数据包 export + import 双向闭环」。原 Markdown 粘贴导入延 Phase 17+(冷启动诉求弱于备份诉求)。
 
-**交付物**（具体解析链路与候选转换工具见对应 plan）：
+**目标**:让用户能把整个 deck **打包归档**(`.lumideck` zip)→ 跨账号 / 跨 Lumideck 实例 / 本地备份分发,接收方在 deck 列表页一键 import 恢复原 deck(markdown + 所有 AI 生图 + 嵌图 + 模板 + 元数据完整)。跟 [Phase 14 截图分发](#phase-14导出)语义互补:截图给非 Lumideck 用户看,数据包给 Lumideck 用户跨设备复用。
 
-- **Markdown 导入**（优先）：粘贴 / 上传 / URL 拉取均支持
-- 校验语法 + 转新 deck + 初始 version
-- **PPTX 导入**（可选，探索性）：评估几条候选转换路径的质量，效果可接受再做
-- 导入预览页让用户确认后落库
-- 失败场景给出可操作的提示（行号 / 原文保留让用户手动修）
+**交付物**(详见 plan 31 待写):
 
-**验收条件**：
+- **`.lumideck` 数据包格式**(zip,manifest + content.md + assets/ 三件)
+  - `manifest.json`:schemaVersion / deckId / title / templateId / createdAt / exportedAt / lumideckVersion
+  - `content.md`:deck markdown 原文
+  - `assets/<asset_id>.<ext>`:`deck_assets` 表所有 BLOB(AI 生图 / 用户嵌图)
+- **Export**:编辑器顶栏「导出」modal 加第 4 个 radio(.lumideck 归档),后端 `GET /api/decks/:id/export-archive` stream zip 给前端 download(BLOB 直接从 DB 拉,backend 参与;client 不分析 markdown 引用)
+- **Import**:deck 列表页加「导入」按钮 → 选 `.lumideck` 文件上传 → 后端 `POST /api/decks/import` 解析 + schemaVersion 兼容性检查 + 创建新 deck + 还原 deck_assets BLOB + rewrite markdown 内 asset URL 指向新 ID
+- **schemaVersion 兼容表**:代码硬编 `SUPPORTED_SCHEMA_VERSIONS = [1]`,schema 升级时往表里加版本号 + 注释每版差异;不支持的版本 import 时返友好错误「数据包版本 N 不被当前 Lumideck 支持」
 
-- [ ] 粘贴标准 Slidev md 能完整导入，页数准确
-- [ ] 粘贴非 Slidev 标准 md（如普通博客）能"尽力而为"转成 deck，给出警告提示
+**验收条件**:
 
-**状态**：待开始
+- [ ] export `.lumideck` 文件 < 5s 出包(含 N=10 AI 生图 deck)
+- [ ] import 同账号刚 export 的 `.lumideck` → 新 deck 视觉跟原 deck **像素级一致**(包括所有 AI 生图正确显示)
+- [ ] schemaVersion 不在 SUPPORTED_SCHEMA_VERSIONS 时,import 端点返 400 + 友好错误
+- [ ] 跨账号 import 隔离:用户 A 的包用户 B 能 import 成 B 的新 deck,不污染 A
+- [ ] 损坏 zip / 缺 manifest / manifest 字段缺失 → 友好错误不 crash
 
-**依赖**：Phase 14 完成（或与 P14 并行）
+**状态**:待开始
 
-**不做什么**：
+**依赖**:Phase 14 已完成
 
-- ❌ PPTX 导入如效果差（>30% 页面需手动修）则延到 Phase 17+
+**不做什么**:
+
+- ❌ **Markdown 粘贴导入** / 任意 .md 转 deck:延 Phase 17+(冷启动诉求弱于备份诉求,且非 Lumideck 自产 md 可能 frontmatter / layout 不兼容,效果难保证)
+- ❌ **PPTX 导入**:延 Phase 17+(同上,且 PPTX 解析 + layout 映射工作量极大)
+- ❌ **跨 schema version 自动 migration**:不支持的版本直接报错让用户用新版 Lumideck 重导出,不做自动转换
+- ❌ **import 时分支冲突解决**(同名 deck / 同 ID 冲突):一律创建新 deck 不覆盖现有,简化语义
+- ❌ **包内 user_assets**(ChatPanel 上传的 PDF/DOCX 等参考资料):不在 deck 渲染路径,导入后 deck 视觉完整;参考资料用户在新账号重传即可
 
 ---
 
