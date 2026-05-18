@@ -295,6 +295,26 @@ describe('routes/decks-archive — import', () => {
     expect(body.error).toContain('99')
   })
 
+  it('templateId 不在 registry → 400 + code: template-unknown', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser('tpl-bad@a.com')
+    const { deck } = await createDeckDirect(user.id, 'TplTest')
+    const buf = await exportArchiveFor(app, cookie, deck.id)
+
+    // 改 manifest.deck.templateId 为不存在的模板 id
+    const zip = await JSZip.loadAsync(buf)
+    const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'))
+    manifest.deck.templateId = 'non-existent-template'
+    zip.file('manifest.json', JSON.stringify(manifest))
+    const bad = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' })
+
+    const res = await app.fetch(makeImportRequest(cookie, bad))
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: string; code: string }
+    expect(body.code).toBe('template-unknown')
+    expect(body.error).toContain('non-existent-template')
+  })
+
   it('manifest 字段缺 → 400 + code: manifest-invalid', async () => {
     const app = makeApp()
     const { user, cookie } = await createLoggedInUser('manifest-bad@a.com')

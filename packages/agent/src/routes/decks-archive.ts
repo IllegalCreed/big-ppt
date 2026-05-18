@@ -33,6 +33,7 @@ import { parseArchive } from '../archive/parse-archive.js'
 import { rewriteAssetUrls } from '../archive/rewrite-asset-urls.js'
 import { ArchiveError } from '../archive/errors.js'
 import { logServerEvent } from '../logger/server-log.js'
+import { getManifest } from '../templates/registry.js'
 import type { AuthVars } from '../middleware/auth.js'
 
 export const decksArchiveRoute = new Hono<{ Variables: AuthVars }>()
@@ -143,8 +144,31 @@ decksArchiveRoute.post('/decks/import', async (c) => {
     return c.json({ error: '数据包损坏' }, 400)
   }
 
-  // 3. DB transaction:create deck + version + 还原 assets(rewrite URL)
+  // 3. templateId whitelist:跟 routes/decks.ts POST /api/decks 一致(line 92-94),
+  //    防用户拿未来版本 / dev 自定义模板出的包来 import 出 silent dysfunctional deck
+  //    (manifest 找不到 → buildSystemPrompt / generate-slide-image / template-switch
+  //    全走 nil-guard fallback,预览空 / AI 出图崩 / 切模板挂)。明确报错让用户重新导出。
+  const tplId = parsed.manifest.deck.templateId
+  if (!getManifest(tplId)) {
+    logServerEvent({
+      category: 'archive-import',
+      event: 'template-unknown',
+      userId: user.id,
+      templateId: tplId,
+    })
+    return c.json(
+      {
+        error: `数据包引用了当前实例不支持的模板「${tplId}」,请用对应版本 Lumideck 重新导出`,
+        code: 'template-unknown',
+      },
+      400,
+    )
+  }
+
+  // 4. DB transaction:create deck + version + 还原 assets(rewrite URL)
   const db = getDb()
+  // O(1) lookup asset meta(原 .find() O(N) scan,N 张 asset 整体 O(N²))
+  const metaByOldId = new Map(parsed.manifest.assets.map((a) => [a.id, a]))
   let result: { deckId: number; title: string }
   try {
     result = await db.transaction(async (tx) => {
@@ -166,8 +190,7 @@ decksArchiveRoute.post('/decks/import', async (c) => {
       const idMap = new Map<string, string>()
       for (const [oldId, bytes] of parsed.assets.entries()) {
         const newId = randomUUID()
-        const meta = parsed.manifest.assets.find((a) => a.id === oldId)
-        if (!meta) throw new Error(`asset ${oldId} 元数据回查失败`) // parseArchive 已保证,防御性
+        const meta = metaByOldId.get(oldId)!
         await tx.insert(deckAssets).values({
           id: newId,
           deckId: created.id,
