@@ -19,7 +19,7 @@
   在测试里用 fake timers + advanceTimersByTime 控。
 -->
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { X, Loader2, Download as DownloadIcon } from 'lucide-vue-next'
 import { useExport, type ExportFormat, type ExportDeckPayload } from '../composables/useExport'
 
@@ -84,6 +84,20 @@ async function onConfirm() {
 async function onRetry() {
   await onConfirm()
 }
+
+/**
+ * Phase 15 Task D:进度文本根据 format 切换。
+ * - client 截图链路(pdf/pptx/png-zip):后端无 hook,有 done/total → "第 X/Y 页"
+ * - lumideck 后端归档:single shot 无逐页 hook,显示 indeterminate "正在打包..."
+ *
+ * 走 computed 而非 template inline:CLAUDE.md「Vue setup() 内派生对象一律 computed」
+ * + 三态分支放 template 内会让嵌套变重;集中到 setup 便于将来扩格式。
+ */
+const progressText = computed(() => {
+  if (!progress.value) return '正在导出...'
+  if (format.value === 'lumideck') return '正在打包...'
+  return `正在导出 第 ${progress.value.done}/${progress.value.total} 页`
+})
 </script>
 
 <template>
@@ -152,17 +166,26 @@ async function onRetry() {
                   <span class="format-hint">≈ 15 秒 · PowerPoint 文件,每页为背景图(不可编辑)</span>
                 </div>
               </label>
+              <label class="format-option" :class="{ active: format === 'lumideck' }">
+                <input
+                  v-model="format"
+                  type="radio"
+                  name="export-format"
+                  value="lumideck"
+                  :disabled="exporting"
+                  data-test="format-lumideck"
+                />
+                <div class="format-meta">
+                  <span class="format-name">归档包 (.lumideck)</span>
+                  <span class="format-hint">≈ 3 秒 · 给其他 Lumideck 用户导入用</span>
+                </div>
+              </label>
             </div>
           </section>
 
           <div v-if="exporting" class="progress-row" data-test="export-progress">
             <Loader2 class="spinner" :size="16" :stroke-width="2" />
-            <span class="progress-text">
-              <template v-if="progress">
-                正在导出 第 {{ progress.done }}/{{ progress.total }} 页
-              </template>
-              <template v-else>正在导出...</template>
-            </span>
+            <span class="progress-text">{{ progressText }}</span>
           </div>
 
           <div v-if="error && !exporting" class="error-row" data-test="export-error">

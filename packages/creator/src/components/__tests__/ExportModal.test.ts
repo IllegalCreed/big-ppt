@@ -164,9 +164,9 @@ describe('ExportModal', () => {
     expect(($('[data-test="confirm-button"]') as HTMLButtonElement).disabled).toBe(true)
     expect(($('[data-test="cancel-button"]') as HTMLButtonElement).disabled).toBe(true)
     expect(($('.close-btn') as HTMLButtonElement).disabled).toBe(true)
-    // radio 全部 disabled
+    // radio 全部 disabled(Phase 15 Task D 起 4 个 radio)
     const radios = $$('input[type="radio"]')
-    expect(radios.length).toBe(3)
+    expect(radios.length).toBe(4)
     radios.forEach((r) => expect((r as HTMLInputElement).disabled).toBe(true))
 
     // 进度文本含「第 2/5 页」
@@ -254,6 +254,87 @@ describe('ExportModal', () => {
     expect(wrapper.emitted('update:open')).toBeFalsy()
     // 错误态渲染(error 非空 + exporting=false 时)
     expect($('[data-test="export-error"]')).not.toBeNull()
+
+    wrapper.unmount()
+  })
+
+  // ── Phase 15 Task D:.lumideck radio + indeterminate 进度文本 ────────────
+  it('open=true → 渲染 .lumideck radio(第 4 个)', async () => {
+    const wrapper = mount(ExportModal, {
+      props: { open: true, deck: defaultDeck },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const lumideckRadio = $('[data-test="format-lumideck"]') as HTMLInputElement
+    expect(lumideckRadio).not.toBeNull()
+    // 默认仍是 PDF 选中,lumideck 未选
+    expect(lumideckRadio.checked).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  it('切 radio 到 .lumideck → 点确认 → exportDeck 收到 format=lumideck', async () => {
+    const wrapper = mount(ExportModal, {
+      props: { open: true, deck: defaultDeck },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const lumideckRadio = $('[data-test="format-lumideck"]') as HTMLInputElement
+    lumideckRadio.checked = true
+    lumideckRadio.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+
+    await click($('[data-test="confirm-button"]')!)
+
+    expect(exportDeckMock).toHaveBeenCalledTimes(1)
+    expect(exportDeckMock.mock.calls[0]![1]).toBe('lumideck')
+
+    wrapper.unmount()
+  })
+
+  it('lumideck format + exporting=true → 进度文本显示「正在打包...」(非 "第 X/Y 页")', async () => {
+    exportingRef.value = true
+    // indeterminate sentinel,跟 useExport 内一致
+    progressRef.value = { done: 0, total: 1 }
+
+    const wrapper = mount(ExportModal, {
+      props: { open: true, deck: defaultDeck },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    // 切到 lumideck
+    const lumideckRadio = $('[data-test="format-lumideck"]') as HTMLInputElement
+    lumideckRadio.checked = true
+    lumideckRadio.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+
+    const progressText = $('[data-test="export-progress"]')
+    expect(progressText).not.toBeNull()
+    expect(progressText!.textContent).toContain('正在打包')
+    // 不应含逐页文案
+    expect(progressText!.textContent).not.toContain('页')
+
+    wrapper.unmount()
+  })
+
+  it('pdf format + exporting=true → 进度文本仍显示「第 X/Y 页」(回归保护)', async () => {
+    exportingRef.value = true
+    progressRef.value = { done: 3, total: 8 }
+
+    const wrapper = mount(ExportModal, {
+      props: { open: true, deck: defaultDeck },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    // 默认 pdf,不切换
+    const progressText = $('[data-test="export-progress"]')
+    expect(progressText).not.toBeNull()
+    expect(progressText!.textContent).toContain('3/8')
+    expect(progressText!.textContent).toContain('页')
 
     wrapper.unmount()
   })

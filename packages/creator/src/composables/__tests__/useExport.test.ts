@@ -229,4 +229,143 @@ describe('useExport', () => {
     await pending
     expect(exporting.value).toBe(false)
   })
+
+  // ── Phase 15 Task D:lumideck 归档包分支 ────────────────────────────────
+  describe('lumideck format', () => {
+    let fetchMock: ReturnType<typeof vi.fn>
+
+    /**
+     * jsdom 的 Blob 不实现 .stream(),用 `new Response(blob)` 会触发
+     * "object.stream is not a function";改用 duck-typed fake Response,
+     * 只提供 useExport 实际用到的 4 个成员:`ok` / `status` / `statusText`
+     * / `blob()` / `text()`。
+     */
+    function fakeResponse(opts: {
+      ok: boolean
+      status: number
+      statusText?: string
+      blob?: Blob
+      text?: string
+    }): Response {
+      return {
+        ok: opts.ok,
+        status: opts.status,
+        statusText: opts.statusText ?? '',
+        blob: async () => opts.blob ?? new Blob(['fake']),
+        text: async () => opts.text ?? '',
+      } as unknown as Response
+    }
+
+    beforeEach(() => {
+      fetchMock = vi.fn()
+      ;(globalThis as unknown as { fetch: typeof fetch }).fetch =
+        fetchMock as unknown as typeof fetch
+    })
+
+    afterEach(() => {
+      // 复位 fetch:vitest 测试间隔离
+      delete (globalThis as unknown as { fetch?: typeof fetch }).fetch
+    })
+
+    it('lumideck happy path:fetch /api/decks/:id/export-archive → triggerDownload(.lumideck)', async () => {
+      const fakeBlob = new Blob(['fake-archive'], { type: 'application/zip' })
+      fetchMock.mockResolvedValueOnce(fakeResponse({ ok: true, status: 200, blob: fakeBlob }))
+
+      const { exportDeck } = useExport()
+      await exportDeck(makeDeck({ id: 99, title: 'Archive Test' }), 'lumideck')
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const [url, init] = fetchMock.mock.calls[0]!
+      expect(url).toBe('/api/decks/99/export-archive')
+      expect(init).toMatchObject({ credentials: 'include' })
+
+      // capture-pages / converter 不应被调
+      expect(capturePagesMock).not.toHaveBeenCalled()
+      expect(pngsToPdfMock).not.toHaveBeenCalled()
+      expect(pngsToPptxMock).not.toHaveBeenCalled()
+      expect(pngsToZipMock).not.toHaveBeenCalled()
+
+      // triggerDownload 收到 blob + .lumideck filename
+      expect(triggerDownloadMock).toHaveBeenCalledTimes(1)
+      const [blob, filename] = triggerDownloadMock.mock.calls[0]!
+      expect(blob).toBe(fakeBlob)
+      expect(filename).toMatch(/^Archive Test-\d+\.lumideck$/)
+    })
+
+    it('lumideck:totalPages=0 不抛(归档不需要 capture 链路 guard)', async () => {
+      fetchMock.mockResolvedValueOnce(fakeResponse({ ok: true, status: 200 }))
+
+      const { exportDeck, error } = useExport()
+      // 空 deck 仍应成功
+      await exportDeck(makeDeck({ totalPages: 0 }), 'lumideck')
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(triggerDownloadMock).toHaveBeenCalledTimes(1)
+      expect(error.value).toBeNull()
+    })
+
+    it('lumideck:fetch 返 401 → 抛错 + error.value 设值', async () => {
+      fetchMock.mockResolvedValueOnce(
+        fakeResponse({ ok: false, status: 401, statusText: 'Unauthorized', text: 'Unauthorized' }),
+      )
+
+      const { exportDeck, error, exporting } = useExport()
+      await expect(exportDeck(makeDeck(), 'lumideck')).rejects.toThrow(/401/)
+
+      expect(error.value).toMatch(/401/)
+      expect(triggerDownloadMock).not.toHaveBeenCalled()
+      expect(exporting.value).toBe(false) // finally 复位
+    })
+
+    it('lumideck:fetch 返 500 → 抛错', async () => {
+      fetchMock.mockResolvedValueOnce(
+        fakeResponse({
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          text: 'Internal Server Error',
+        }),
+      )
+
+      const { exportDeck, error } = useExport()
+      await expect(exportDeck(makeDeck(), 'lumideck')).rejects.toThrow(/500/)
+      expect(error.value).toMatch(/500/)
+      expect(triggerDownloadMock).not.toHaveBeenCalled()
+    })
+
+    it('lumideck:filename title 走保留字符清洗', async () => {
+      fetchMock.mockResolvedValueOnce(fakeResponse({ ok: true, status: 200 }))
+
+      const { exportDeck } = useExport()
+      await exportDeck(makeDeck({ title: 'a/b:c?' }), 'lumideck')
+
+      const [, filename] = triggerDownloadMock.mock.calls[0]!
+      expect(filename).toMatch(/^a_b_c_-\d+\.lumideck$/)
+    })
+
+    it('lumideck:progress 在 fetch 期间是 indeterminate sentinel {done:0,total:1}', async () => {
+      // 卡住 fetch,检查 progress 状态
+      let release: (resp: Response) => void = () => {}
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((res) => {
+            release = res
+          }),
+      )
+
+      const { exportDeck, progress, exporting } = useExport()
+      const pending = exportDeck(makeDeck(), 'lumideck')
+      await nextTick()
+
+      expect(exporting.value).toBe(true)
+      expect(progress.value).toEqual({ done: 0, total: 1 })
+
+      release(fakeResponse({ ok: true, status: 200 }))
+      await pending
+
+      // 复位
+      expect(exporting.value).toBe(false)
+      expect(progress.value).toBeNull()
+    })
+  })
 })
