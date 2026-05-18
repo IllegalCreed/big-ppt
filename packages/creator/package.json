@@ -24,8 +24,11 @@
     "buffer": "^6.0.3",
     "html2canvas": "^1.4.1",
     "js-yaml": "^4.1.1",
+    "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "lucide-vue-next": "^1.0.0",
     "marked": "^18.0.3",
+    "pptxgenjs": "^4.0.1",
     "vue": "^3.5.33",
     "vue-router": "^5.0.6"
   },
