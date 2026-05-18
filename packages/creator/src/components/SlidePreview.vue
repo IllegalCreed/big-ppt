@@ -2,7 +2,8 @@
   Phase 10.5 落地：编辑器主视图预览。
 
   iframe 时代 → DeckRenderer。结构：
-    - 顶部 toolbar：重启 Slidev 按钮（仅放映场景兜底）/ 导出 .md / 全屏放映
+    - 顶部 toolbar：重启 Slidev 按钮（仅放映场景兜底）/ 全屏放映
+      (Phase 15 落地后导出走顶栏「导出」modal,SlidePreview 不再带 export 按钮)
     - 内容区：<DeckRenderer> 单页模式（currentPage 跟 slideStore 联动）
 
   全屏放映流程（Phase 10.5 新）：
@@ -16,7 +17,7 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
-import { ChevronLeft, ChevronRight, Download, Play, RefreshCw } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Play, RefreshCw } from 'lucide-vue-next'
 import { useSlideStore } from '../composables/useSlideStore'
 import { api, ApiError } from '../api/client'
 import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
@@ -111,10 +112,6 @@ async function restartSlidev() {
   }
 }
 
-function exportFile() {
-  slideStore.exportMarkdown()
-}
-
 /**
  * 全屏放映：先抢 Slidev 锁 + 同步 slides.md，再 window.open 新 tab。
  */
@@ -192,15 +189,6 @@ async function present() {
           @click="restartSlidev"
         >
           <RefreshCw :size="16" :stroke-width="1.8" :class="{ spinning: restarting }" />
-        </button>
-        <button
-          type="button"
-          class="icon-btn"
-          title="导出 .md"
-          aria-label="导出 .md"
-          @click="exportFile"
-        >
-          <Download :size="16" :stroke-width="1.8" />
         </button>
         <button
           type="button"

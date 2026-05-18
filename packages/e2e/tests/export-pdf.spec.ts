@@ -1,7 +1,7 @@
 /**
  * Phase 14 Task C:PDF 导出 happy-path E2E。
  *
- * 走 export-md.spec.ts 同套路:
+ * 走标准 E2E 套路:
  * - 注册 + 自动登录
  * - 创建 deck(beitou-standard,5 页 starter)
  * - 等编辑器加载完(标题可见)

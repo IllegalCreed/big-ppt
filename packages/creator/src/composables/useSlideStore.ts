@@ -42,17 +42,7 @@ export function useSlideStore() {
     }
   }
 
-  function exportMarkdown() {
-    const blob = new Blob([content.value], { type: 'text/markdown;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'slides.md'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  /**
+/**
    * Phase 10.5：进入编辑器时由 SlidePreview / DeckEditorPage 调用，绑定当前 deckId
    * 并把初始内容塞进 content。后续 refresh() 用此 deckId 走 deck-scoped 路径拉新。
    */
@@ -98,7 +88,6 @@ export function useSlideStore() {
     setPage,
     update,
     initDeck,
-    exportMarkdown,
     refresh,
     setAIBusy,
   }
