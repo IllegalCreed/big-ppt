@@ -43,6 +43,24 @@ import { parseSlides } from '../../slides-store/pages.js'
 import { rewriteSinglePageToComponents } from '../../prompts/rewriteSinglePageToComponents.js'
 import { coerceInt } from './utils.js'
 
+/**
+ * Testing seam(2026-05-18 hybrid 集成测加):允许单测注入 fake `generateImage`,
+ * 既能捕获 worker 真实透传给 OpenAI 的 args(尤其 baseImageBase64),又能返合法 b64
+ * 让后续 createAsset / updateSlide / state machine 一路跑完。
+ *
+ * 用法:
+ *   __setGenerateImageForTesting(async (input) => ({ b64: ..., modelUsed: ..., pathTaken: 'A' }))
+ *   afterEach(() => __setGenerateImageForTesting(null))  // 必须复位防跨文件污染
+ *
+ * 优先级:override > stub env > fallback env > 真 generateImage。设置后 stub/fallback env 被忽略,
+ * 让单测能精准控制行为。
+ */
+type GenerateImageFn = (input: ImageGenInput) => Promise<ImageGenOutput>
+let generateImageOverride: GenerateImageFn | null = null
+export function __setGenerateImageForTesting(fn: GenerateImageFn | null): void {
+  generateImageOverride = fn
+}
+
 const PROMPT_MAX = 1000
 
 /** 计算目标 layout 名:templateId 形如 'beitou-standard' / 'jingyeda-standard' → 取首段 */
@@ -338,42 +356,27 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
       },
       async () => {
         const settings = imageSettings!
-        const deps: RunImageJobDeps = {
-          generateImage: shouldForceFallback()
-            ? (a) =>
-                fallbackForcedGenerateImage({
-                  prompt: a.prompt,
-                  size: a.size,
-                  signal: a.signal,
-                  apiKey: settings.apiKey,
-                  baseUrl: settings.baseUrl,
-                  primaryModel: a.model,
-                  baseImageBase64: a.baseImageBase64,
-                  baseImageMime: a.baseImageMime,
-                })
+        // 选 generateImage 实现:override 优先(集成测精确捕获 args),其次 env-gated stub/fallback,
+        // 否则真 OpenAI client。所有分支均把 baseImageBase64/Mime 透传给底层。
+        const pickGenerateImage: GenerateImageFn = generateImageOverride
+          ? generateImageOverride
+          : shouldForceFallback()
+            ? fallbackForcedGenerateImage
             : shouldUseStub()
-              ? (a) =>
-                  stubGenerateImage({
-                    prompt: a.prompt,
-                    size: a.size,
-                    signal: a.signal,
-                    apiKey: settings.apiKey,
-                    baseUrl: settings.baseUrl,
-                    primaryModel: a.model,
-                    baseImageBase64: a.baseImageBase64,
-                    baseImageMime: a.baseImageMime,
-                  })
-              : (a) =>
-                  generateImage({
-                    prompt: a.prompt,
-                    size: a.size,
-                    signal: a.signal,
-                    apiKey: settings.apiKey,
-                    baseUrl: settings.baseUrl,
-                    primaryModel: a.model,
-                    baseImageBase64: a.baseImageBase64,
-                    baseImageMime: a.baseImageMime,
-                  }),
+              ? stubGenerateImage
+              : generateImage
+        const deps: RunImageJobDeps = {
+          generateImage: (a) =>
+            pickGenerateImage({
+              prompt: a.prompt,
+              size: a.size,
+              signal: a.signal,
+              apiKey: settings.apiKey,
+              baseUrl: settings.baseUrl,
+              primaryModel: a.model,
+              baseImageBase64: a.baseImageBase64,
+              baseImageMime: a.baseImageMime,
+            }),
           createAsset: async (args2) => createAsset(args2),
           updateSlide: async (args2) => {
             const fm: Record<string, unknown> = {
