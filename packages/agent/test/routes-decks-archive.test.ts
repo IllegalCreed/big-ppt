@@ -1,26 +1,37 @@
 /**
- * Phase 15 Task 31-B:GET /api/decks/:id/export-archive 集成测。
+ * Phase 15 Task 31-B/C:GET /api/decks/:id/export-archive + POST /api/decks/import 集成测。
  *
- * 走真路由 mount(不直接调 buildArchive)—— 测 ownership 校验 / header 正确 /
- * 通过 jszip 解包内 manifest 链路。
+ * 走真路由 mount(不直接调 buildArchive / parseArchive)—— 测 ownership 校验 / header 正确 /
+ * 通过 jszip 解包内 manifest 链路 / multipart 解析 + DB transaction 端到端。
  *
- * 覆盖:
+ * 覆盖(export):
  * - happy:owner → 200 + 正确 header + 包内 manifest.deck.originalDeckId 对
- * - 401 未登录
- * - 403 跨用户
- * - 404 不存在 deck
- * - 非数字 :id(路由 regex `[0-9]+` 兜底 404)
+ * - 401 未登录 / 403 跨用户 / 404 不存在 deck / 非数字 :id 404
  * - title 含非法文件名字符 → Content-Disposition filename 已清洗
  * - title 含中文 → Content-Disposition filename* UTF-8 percent-encoded + ASCII fallback
+ *
+ * 覆盖(import):
+ * - happy:user A export → user A 携 cookie POST import → 201 + 返 {deckId, title}
+ *   + 新 deck title 含「(导入)」+ currentVersion.content rewrite + asset 行落库
+ * - schemaVersion 不支持 → 400 code: schema-unsupported
+ * - manifest 字段缺 → 400 code: manifest-invalid
+ * - 损坏 zip → 400 code: not-a-zip
+ * - 文件过大 → 413(用 vi.stubEnv 把 max 改小再 unstub)
+ * - 未登录 → 401
+ * - 缺 multipart file 字段 → 400
+ * - 跨账号 import:user A export → user B 携 cookie POST → 201 + 新 deck 归属 user B
+ * - Round-trip:export → 删原 deck → import → 校 title / templateId / asset bytes byte-equal
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import JSZip from 'jszip'
+import { eq } from 'drizzle-orm'
 import { decksArchiveRoute } from '../src/routes/decks-archive.js'
 import { authOptional, type AuthVars } from '../src/middleware/auth.js'
 import { useTestDb } from './_setup/test-db.js'
 import { createLoggedInUser, createDeckDirect } from './_setup/factories.js'
 import { createAsset } from '../src/db/deck-assets.js'
+import { getDb, decks, deckVersions, deckAssets } from '../src/db/index.js'
 
 useTestDb()
 
@@ -161,5 +172,329 @@ describe('routes/decks-archive — export', () => {
     }
     expect(fallback).toContain('Q1 ____')
     expect(fallback.endsWith('.lumideck')).toBe(true)
+  })
+})
+
+// ─── import 部分 ──────────────────────────────────────────────────────────
+
+/** 给 user 出一个真 .lumideck Buffer(含 N 张 asset),用于后续 import 测试。 */
+async function exportArchiveFor(
+  app: Hono<{ Variables: AuthVars }>,
+  cookie: string,
+  deckId: number,
+): Promise<Buffer> {
+  const res = await app.request(`/api/decks/${deckId}/export-archive`, {
+    headers: { Cookie: cookie },
+  })
+  expect(res.status).toBe(200)
+  return Buffer.from(await res.arrayBuffer())
+}
+
+/** 构造 multipart Request(file 字段 = .lumideck 字节)。 */
+function makeImportRequest(cookie: string | null, bytes: Buffer): Request {
+  const fd = new FormData()
+  fd.append('file', new Blob([bytes], { type: 'application/zip' }), 'archive.lumideck')
+  const headers: Record<string, string> = {}
+  if (cookie) headers.Cookie = cookie
+  return new Request('http://x/api/decks/import', { method: 'POST', headers, body: fd })
+}
+
+describe('routes/decks-archive — import', () => {
+  afterEach(() => {
+    // CLAUDE.md「testing seam afterEach 复位」:vi.stubEnv 必须显式 unstub
+    // 避免「文件过大」case 改的 LUMIDECK_IMPORT_MAX_BYTES 跨用例污染
+    vi.unstubAllEnvs()
+  })
+
+  it('happy:user A export → user A import → 201 + 新 deck + assets 落库 + content rewrite', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser('import-ok@a.com')
+    // 用真 asset id 嵌入 content,验证 rewrite
+    const { deck } = await createDeckDirect(user.id, 'Import Deck', '# placeholder')
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    const { id: oldAssetId } = await createAsset({
+      deckId: deck.id,
+      userId: user.id,
+      mimeType: 'image/png',
+      data: png,
+    })
+    // update content 用真 asset id 引用,以验证 rewrite
+    const realContent = `# slide 1\n\n![img](/api/assets/${oldAssetId})`
+    await getDb().insert(deckVersions).values({
+      deckId: deck.id,
+      content: realContent,
+      message: 'with-asset',
+      authorId: user.id,
+    })
+    // 取最新 version(MAX id)指给 currentVersionId,确保 buildArchive 拿到 realContent
+    const allVers = await getDb()
+      .select({ id: deckVersions.id })
+      .from(deckVersions)
+      .where(eq(deckVersions.deckId, deck.id))
+    const maxVerId = Math.max(...allVers.map((v) => v.id))
+    await getDb().update(decks).set({ currentVersionId: maxVerId }).where(eq(decks.id, deck.id))
+
+    // export
+    const buf = await exportArchiveFor(app, cookie, deck.id)
+
+    // import 走同一 user
+    const res = await app.fetch(makeImportRequest(cookie, buf))
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as { deckId: number; title: string }
+    expect(typeof body.deckId).toBe('number')
+    expect(body.deckId).not.toBe(deck.id)
+    expect(body.title).toBe('Import Deck(导入)')
+
+    // 校 DB:新 deck 归属 user A,templateId 一致
+    const [newDeck] = await getDb().select().from(decks).where(eq(decks.id, body.deckId)).limit(1)
+    expect(newDeck).toBeDefined()
+    expect(newDeck!.userId).toBe(user.id)
+    expect(newDeck!.templateId).toBe(deck.templateId)
+    expect(newDeck!.currentVersionId).not.toBeNull()
+
+    // 新 currentVersion.content 内 asset url 已 rewrite 成新 uuid(不再是 oldAssetId)
+    const [newVer] = await getDb()
+      .select()
+      .from(deckVersions)
+      .where(eq(deckVersions.id, newDeck!.currentVersionId!))
+      .limit(1)
+    expect(newVer!.content).toContain('/api/assets/')
+    expect(newVer!.content).not.toContain(oldAssetId)
+    expect(newVer!.content).toContain('# slide 1')
+
+    // 新 deck 下有 1 个 asset,bytes byte-equal 原图
+    const newAssets = await getDb().select().from(deckAssets).where(eq(deckAssets.deckId, body.deckId))
+    expect(newAssets).toHaveLength(1)
+    const newAsset = newAssets[0]!
+    expect(newAsset.id).not.toBe(oldAssetId)
+    expect(newAsset.userId).toBe(user.id)
+    expect(newAsset.mimeType).toBe('image/png')
+    expect(newAsset.bytesSize).toBe(png.length)
+    expect(Buffer.from(newAsset.data).equals(png)).toBe(true)
+    // rewrite 后的新 url 真指向新 asset id
+    expect(newVer!.content).toContain(`/api/assets/${newAsset.id}`)
+  })
+
+  it('schemaVersion 不支持 → 400 + code: schema-unsupported', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser('schema-bad@a.com')
+    const { deck } = await createDeckDirect(user.id, 'X')
+    const buf = await exportArchiveFor(app, cookie, deck.id)
+
+    // 改 schemaVersion 为 99
+    const zip = await JSZip.loadAsync(buf)
+    const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'))
+    manifest.schemaVersion = 99
+    zip.file('manifest.json', JSON.stringify(manifest))
+    const bad = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' })
+
+    const res = await app.fetch(makeImportRequest(cookie, bad))
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: string; code: string }
+    expect(body.code).toBe('schema-unsupported')
+    expect(body.error).toContain('99')
+  })
+
+  it('manifest 字段缺 → 400 + code: manifest-invalid', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser('manifest-bad@a.com')
+    const { deck } = await createDeckDirect(user.id, 'X')
+    const buf = await exportArchiveFor(app, cookie, deck.id)
+
+    const zip = await JSZip.loadAsync(buf)
+    const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'))
+    delete manifest.deck.title
+    zip.file('manifest.json', JSON.stringify(manifest))
+    const bad = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' })
+
+    const res = await app.fetch(makeImportRequest(cookie, bad))
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { code: string }
+    expect(body.code).toBe('manifest-invalid')
+  })
+
+  it('损坏 zip → 400 + code: not-a-zip', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser('bad-zip@a.com')
+    const garbage = Buffer.alloc(64, 0xff)
+
+    const res = await app.fetch(makeImportRequest(cookie, garbage))
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { code: string }
+    expect(body.code).toBe('not-a-zip')
+  })
+
+  it('文件过大 → 413(stubEnv 把 max 改成 100 字节)', async () => {
+    vi.stubEnv('LUMIDECK_IMPORT_MAX_BYTES', '100')
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser('big@a.com')
+    const { deck } = await createDeckDirect(user.id, 'Big')
+    // 即便不带 asset,buildArchive 出包 > 100 字节(manifest JSON 本身就远超)
+    const buf = await exportArchiveFor(app, cookie, deck.id)
+    expect(buf.length).toBeGreaterThan(100)
+
+    const res = await app.fetch(makeImportRequest(cookie, buf))
+    expect(res.status).toBe(413)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toContain('上限')
+  })
+
+  it('未登录 → 401', async () => {
+    const app = makeApp()
+    const garbage = Buffer.alloc(64, 0xff)
+    const res = await app.fetch(makeImportRequest(null, garbage))
+    expect(res.status).toBe(401)
+  })
+
+  it('缺 multipart file 字段 → 400', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser('nofile@a.com')
+    const fd = new FormData()
+    fd.append('notfile', 'oops')
+    const res = await app.fetch(
+      new Request('http://x/api/decks/import', {
+        method: 'POST',
+        headers: { Cookie: cookie },
+        body: fd,
+      }),
+    )
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toContain('请上传 .lumideck 文件')
+  })
+
+  it('跨账号 import:user A export → user B 携 cookie POST → 201 + 新 deck 属于 user B', async () => {
+    const app = makeApp()
+    const { user: userA, cookie: aCookie } = await createLoggedInUser('crossA@a.com')
+    const { deck: deckA } = await createDeckDirect(userA.id, 'A original', '# from A')
+    await createAsset({
+      deckId: deckA.id,
+      userId: userA.id,
+      mimeType: 'image/png',
+      data: Buffer.from([1, 2, 3, 4]),
+    })
+    const buf = await exportArchiveFor(app, aCookie, deckA.id)
+
+    const { user: userB, cookie: bCookie } = await createLoggedInUser('crossB@a.com')
+    const res = await app.fetch(makeImportRequest(bCookie, buf))
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as { deckId: number; title: string }
+
+    const [newDeck] = await getDb().select().from(decks).where(eq(decks.id, body.deckId)).limit(1)
+    expect(newDeck).toBeDefined()
+    expect(newDeck!.userId).toBe(userB.id) // 关键:归属 user B,不是 user A
+    expect(newDeck!.userId).not.toBe(userA.id)
+
+    // asset 也归属 user B
+    const newAssets = await getDb()
+      .select()
+      .from(deckAssets)
+      .where(eq(deckAssets.deckId, body.deckId))
+    expect(newAssets).toHaveLength(1)
+    expect(newAssets[0]!.userId).toBe(userB.id)
+  })
+
+  it('Round-trip:export → 删原 deck → import → title/templateId 还原 + assets byte-equal', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser('roundtrip@a.com')
+
+    // 2 张不同 mime 的 asset
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02, 0x03])
+    const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46])
+    const { deck: original } = await createDeckDirect(user.id, 'RT Original', '# placeholder')
+    const { id: pngId } = await createAsset({
+      deckId: original.id,
+      userId: user.id,
+      mimeType: 'image/png',
+      data: png,
+      prompt: 'roundtrip png',
+      model: 'gpt-image-1',
+    })
+    const { id: jpgId } = await createAsset({
+      deckId: original.id,
+      userId: user.id,
+      mimeType: 'image/jpeg',
+      data: jpg,
+    })
+    // 更新 content 引用 2 张 asset
+    const originalContent = `# Slide A\n\n![png](/api/assets/${pngId})\n\n---\n\n# Slide B\n\n![jpg](/api/assets/${jpgId})`
+    await getDb().insert(deckVersions).values({
+      deckId: original.id,
+      content: originalContent,
+      message: 'roundtrip',
+      authorId: user.id,
+    })
+    // 取最新 version(MAX id)指给 currentVersionId,确保 buildArchive 拿到 realContent
+    const allVers = await getDb()
+      .select({ id: deckVersions.id })
+      .from(deckVersions)
+      .where(eq(deckVersions.deckId, original.id))
+    const maxVerId = Math.max(...allVers.map((v) => v.id))
+    await getDb().update(decks).set({ currentVersionId: maxVerId }).where(eq(decks.id, original.id))
+
+    const originalTitle = original.title
+    const originalTemplateId = original.templateId
+    const originalId = original.id
+
+    // export
+    const buf = await exportArchiveFor(app, cookie, original.id)
+
+    // 删原 deck(及关联 versions/assets;FK cascade 会处理)
+    // schema 用 onDelete: 'cascade',这里硬 DELETE 不走 soft-delete 路径
+    await getDb().delete(decks).where(eq(decks.id, original.id))
+    const [shouldBeGone] = await getDb()
+      .select()
+      .from(decks)
+      .where(eq(decks.id, original.id))
+      .limit(1)
+    expect(shouldBeGone).toBeUndefined()
+
+    // import 同 user
+    const res = await app.fetch(makeImportRequest(cookie, buf))
+    expect(res.status).toBe(201)
+    const body = (await res.json()) as { deckId: number; title: string }
+    expect(body.deckId).not.toBe(originalId)
+    expect(body.title).toBe(`${originalTitle}(导入)`)
+
+    // 新 deck 字段断言
+    const [newDeck] = await getDb().select().from(decks).where(eq(decks.id, body.deckId)).limit(1)
+    expect(newDeck).toBeDefined()
+    expect(newDeck!.userId).toBe(user.id)
+    expect(newDeck!.templateId).toBe(originalTemplateId)
+    expect(newDeck!.title).toBe(`${originalTitle}(导入)`)
+
+    // 新 currentVersion content:asset url 已 rewrite,旧 id 不再出现
+    const [newVer] = await getDb()
+      .select()
+      .from(deckVersions)
+      .where(eq(deckVersions.id, newDeck!.currentVersionId!))
+      .limit(1)
+    expect(newVer!.content).not.toContain(pngId)
+    expect(newVer!.content).not.toContain(jpgId)
+    // non-url 部分 byte-equal:把 url 替换掉再比
+    const stripUrls = (s: string) => s.replace(/\/api\/assets\/[0-9a-f-]{36}/g, '/api/assets/XXX')
+    expect(stripUrls(newVer!.content)).toBe(stripUrls(originalContent))
+
+    // 新 deck 下 2 张 asset bytes byte-equal 原图
+    const newAssets = await getDb().select().from(deckAssets).where(eq(deckAssets.deckId, body.deckId))
+    expect(newAssets).toHaveLength(2)
+    const byMime = new Map(newAssets.map((a) => [a.mimeType, a]))
+    const newPng = byMime.get('image/png')!
+    const newJpg = byMime.get('image/jpeg')!
+    expect(newPng).toBeDefined()
+    expect(newJpg).toBeDefined()
+    expect(newPng.bytesSize).toBe(png.length)
+    expect(newJpg.bytesSize).toBe(jpg.length)
+    expect(Buffer.from(newPng.data).equals(png)).toBe(true)
+    expect(Buffer.from(newJpg.data).equals(jpg)).toBe(true)
+    // prompt / model 也跟着 manifest 还原
+    expect(newPng.prompt).toBe('roundtrip png')
+    expect(newPng.model).toBe('gpt-image-1')
+    expect(newJpg.prompt).toBeNull()
+    expect(newJpg.model).toBeNull()
+    expect(newPng.userId).toBe(user.id)
+    // rewrite 后的 content 确实指向新 asset id
+    expect(newVer!.content).toContain(`/api/assets/${newPng.id}`)
+    expect(newVer!.content).toContain(`/api/assets/${newJpg.id}`)
   })
 })
