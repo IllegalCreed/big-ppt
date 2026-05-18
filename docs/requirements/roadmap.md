@@ -963,7 +963,7 @@
 - [ ] 跨账号 import 隔离:用户 A 的包用户 B 能 import 成 B 的新 deck,不污染 A
 - [ ] 损坏 zip / 缺 manifest / manifest 字段缺失 → 友好错误不 crash
 
-**状态**:待开始
+**状态**:**已完成**(2026-05-18,plan 31)
 
 **依赖**:Phase 14 已完成
 
