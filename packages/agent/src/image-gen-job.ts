@@ -46,6 +46,18 @@ export interface ImageJobInput {
   heading?: string
   /** Phase 11.6:deck.templateId,用于 fallback 重写时构造 OFF 分支 system prompt */
   templateId?: string
+  /**
+   * Hybrid vision-aware 模式(2026-05-18):当前 slide 已有 imageSrc 时,
+   * 工具同步入口读 deck_assets BLOB → base64 透传到此字段。worker 调
+   * deps.generateImage 时传给路 A(/v1/responses + gpt-5.5),让 vision 模型
+   * 看原图后再调 image_generation tool 生成新版,改 X 局部细节风格 / 构图更贴近原图。
+   *
+   * 路 B(/v1/images/generations + gpt-image-2)不接受 image input,
+   * 有 baseImage 时路 A 失败不降级路 B,直接走 fallback-rewrote 兜底重写。
+   */
+  baseImageBase64?: string
+  /** 配套 mime type(如 image/png / image/jpeg),拼 data URI 用 */
+  baseImageMime?: string
 }
 
 export interface ImageJob extends ImageJobInput {
@@ -141,6 +153,9 @@ export interface RunImageJobDeps {
     size: ImageJobInput['size']
     signal: AbortSignal
     model?: string
+    /** Hybrid vision-aware:有原图时透传给路 A,让 gpt-5.5 看图后生成新版 */
+    baseImageBase64?: string
+    baseImageMime?: string
   }) => Promise<{ b64: string; modelUsed: string; pathTaken: 'A' | 'B' }>
   createAsset: (args: {
     deckId: number
@@ -247,16 +262,24 @@ async function _runImageJobInner(jobId: string, deps: RunImageJobDeps): Promise<
       slideIndex: job.slideIndex,
       templateId: job.templateId,
     }
+    const hybridMode = !!(job.baseImageBase64 && job.baseImageMime)
     console.log(
-      `[image-gen-job ${jobId.slice(0, 8)}] running: deck=${job.deckId} slide=${job.slideIndex} model=${job.model ?? 'default'}`,
+      `[image-gen-job ${jobId.slice(0, 8)}] running: deck=${job.deckId} slide=${job.slideIndex} model=${job.model ?? 'default'} hybrid=${hybridMode}`,
     )
-    logServerEvent({ ...baseFields, event: 'running', model: job.model ?? 'default' })
+    logServerEvent({
+      ...baseFields,
+      event: 'running',
+      model: job.model ?? 'default',
+      hybrid: hybridMode,
+    })
 
     const gen = await deps.generateImage({
       prompt: job.prompt,
       size: job.size,
       signal: job.controller.signal,
       model: job.model,
+      baseImageBase64: job.baseImageBase64,
+      baseImageMime: job.baseImageMime,
     })
     console.log(
       `[image-gen-job ${jobId.slice(0, 8)}] gen ok: model=${gen.modelUsed} pathTaken=${gen.pathTaken} bytes=${gen.b64.length}`,

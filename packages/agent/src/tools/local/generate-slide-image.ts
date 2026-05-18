@@ -37,7 +37,7 @@ import {
   type ImageGenInput,
   type ImageGenOutput,
 } from '../../llm/openai-image.js'
-import { createAsset } from '../../db/deck-assets.js'
+import { createAsset, getAsset } from '../../db/deck-assets.js'
 import { updateSlide as storeUpdateSlide, readSlides } from '../../slides-store/index.js'
 import { parseSlides } from '../../slides-store/pages.js'
 import { rewriteSinglePageToComponents } from '../../prompts/rewriteSinglePageToComponents.js'
@@ -236,6 +236,20 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   }
 
   let preservedHeading: string | undefined
+  /**
+   * Hybrid vision-aware 模式(2026-05-18):同步入口检测当前 slide 是否已有 imageSrc。
+   * 字段名 `imageSrc` 与 layouts/<template>/<template>-image-content.vue 的 defineProps 一致,
+   * 与 templates/<id>/manifest.json 的 frontmatterSchema 也一致(已 grep 确认)。
+   *
+   * 仅当值是合法 `/api/assets/<uuid>` 时,SQL 读 deck_assets BLOB(三条件 IDOR guard:
+   * id + deck_id + user_id 全匹配)→ base64 → 透传给 createImageJob → worker。
+   *
+   * 边界:
+   * - 字段值不是 /api/assets/<uuid>(用户手贴野 url / 字段名拼错):静默走原 text-only 路径
+   * - asset 行不存在 / 跨 deck / 跨 user:静默走原 text-only 路径(不漏数据 / 不抛错)
+   */
+  let baseImageBase64: string | undefined
+  let baseImageMime: string | undefined
   try {
     const parsed = parseSlides(await readSlides())
     if (slideIndex > parsed.pages.length) {
@@ -248,6 +262,27 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
     const fmHeading = target?.frontmatter?.heading
     if (typeof fmHeading === 'string' && fmHeading.trim()) {
       preservedHeading = fmHeading
+    }
+    const fmImageSrc = target?.frontmatter?.imageSrc
+    if (typeof fmImageSrc === 'string' && fmImageSrc.trim()) {
+      // 严格匹配 `/api/assets/<uuid v4>` 格式,容错(末尾斜杠 / query string 等)
+      const match = fmImageSrc.match(
+        /^\/api\/assets\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+      )
+      if (match) {
+        const assetId = match[1]!
+        const asset = await getAsset(assetId)
+        // IDOR guard:asset 必须属于当前 deck + 当前 user(三条件)
+        if (
+          asset &&
+          asset.deckId === deckId &&
+          asset.userId === ctx.userId &&
+          asset.data.length > 0
+        ) {
+          baseImageBase64 = asset.data.toString('base64')
+          baseImageMime = asset.mimeType || 'image/png'
+        }
+      }
     }
   } catch (err) {
     return JSON.stringify({
@@ -283,6 +318,8 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
     fallbackSummary,
     heading: preservedHeading,
     templateId: deck.templateId,
+    baseImageBase64,
+    baseImageMime,
   })
 
   // 后台跑 worker;捕获顶层 promise 避免 unhandled rejection
@@ -311,6 +348,8 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
                   apiKey: settings.apiKey,
                   baseUrl: settings.baseUrl,
                   primaryModel: a.model,
+                  baseImageBase64: a.baseImageBase64,
+                  baseImageMime: a.baseImageMime,
                 })
             : shouldUseStub()
               ? (a) =>
@@ -321,6 +360,8 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
                     apiKey: settings.apiKey,
                     baseUrl: settings.baseUrl,
                     primaryModel: a.model,
+                    baseImageBase64: a.baseImageBase64,
+                    baseImageMime: a.baseImageMime,
                   })
               : (a) =>
                   generateImage({
@@ -330,6 +371,8 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
                     apiKey: settings.apiKey,
                     baseUrl: settings.baseUrl,
                     primaryModel: a.model,
+                    baseImageBase64: a.baseImageBase64,
+                    baseImageMime: a.baseImageMime,
                   }),
           createAsset: async (args2) => createAsset(args2),
           updateSlide: async (args2) => {

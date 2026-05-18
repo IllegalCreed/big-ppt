@@ -199,6 +199,57 @@ describe('image-gen-job 状态机', () => {
     expect(getImageJob(job.id)?.state).toBe('cancelled')
   })
 
+  it('hybrid vision-aware:job.baseImageBase64/baseImageMime 透传到 deps.generateImage', async () => {
+    const job = createImageJob({
+      deckId: 1,
+      userId: 1,
+      slideIndex: 2,
+      prompt: 'add a cat',
+      size: '1536x720',
+      baseImageBase64: 'AAAA',
+      baseImageMime: 'image/png',
+    })
+    const generateImage = vi.fn(async () => ({
+      b64: FAKE_B64,
+      modelUsed: 'gpt-5.5',
+      pathTaken: 'A' as const,
+    }))
+    const deps = makeDeps({ generateImage })
+    await runImageJob(job.id, deps)
+    expect(generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: 'add a cat',
+        size: '1536x720',
+        baseImageBase64: 'AAAA',
+        baseImageMime: 'image/png',
+      }),
+    )
+    expect(getImageJob(job.id)?.state).toBe('done')
+  })
+
+  it('hybrid vision-aware:job 无 baseImage 字段 → deps.generateImage 拿到 undefined(向后兼容)', async () => {
+    const job = createImageJob({
+      deckId: 1,
+      userId: 1,
+      slideIndex: 2,
+      prompt: 'a city',
+      size: '1536x720',
+    })
+    const generateImage = vi.fn(async () => ({
+      b64: FAKE_B64,
+      modelUsed: 'gpt-5.5',
+      pathTaken: 'A' as const,
+    }))
+    const deps = makeDeps({ generateImage })
+    await runImageJob(job.id, deps)
+    const arg = generateImage.mock.calls[0]![0] as {
+      baseImageBase64?: string
+      baseImageMime?: string
+    }
+    expect(arg.baseImageBase64).toBeUndefined()
+    expect(arg.baseImageMime).toBeUndefined()
+  })
+
   it('__resetImageJobsForTesting:清光所有 job', () => {
     createImageJob({ deckId: 1, userId: 1, slideIndex: 1, prompt: 'x', size: '1280x720' })
     createImageJob({ deckId: 1, userId: 1, slideIndex: 2, prompt: 'x', size: '1280x720' })

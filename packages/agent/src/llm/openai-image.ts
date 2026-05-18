@@ -31,6 +31,16 @@ export interface ImageGenInput {
   baseUrl?: string
   primaryModel?: string
   fallbackModel?: string
+  /**
+   * Hybrid vision-aware 模式(2026-05-18):当前 slide 已有图时透传 base64 给路 A,
+   * 让 gpt-5.5 看原图后再调 image_generation 工具生成新版本,改 X 局部细节时
+   * 风格 / 构图比纯 text-to-image 更贴近原图。
+   *
+   * **路 B(images/generations)不接受 image input** — 有 baseImage 时若路 A 失败,
+   * 不降级路 B,直接抛错让 worker 走 fallback-rewrote 兜底重写。
+   */
+  baseImageBase64?: string
+  baseImageMime?: string
 }
 
 export interface ImageGenOutput {
@@ -81,8 +91,11 @@ export async function generateImage(input: ImageGenInput): Promise<ImageGenOutpu
   const baseUrl = (input.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
   const primaryModel = input.primaryModel ?? DEFAULT_PRIMARY_MODEL
   const fallbackModel = input.fallbackModel ?? DEFAULT_FALLBACK_MODEL
+  const hasBaseImage = !!input.baseImageBase64 && !!input.baseImageMime
 
   // 强制走路 B 的特殊情况:用户在 settings 显式选 gpt-image-* 模型
+  // hybrid 模式下 baseImage 无法走路 B(images/generations 不接受 image input),
+  // 此时直接忽略 baseImage,按纯 text-to-image 走路 B(降级行为)。
   if (primaryModel.startsWith('gpt-image')) {
     const b64 = await callImagesApi({
       baseUrl,
@@ -104,6 +117,8 @@ export async function generateImage(input: ImageGenInput): Promise<ImageGenOutpu
       size: input.size,
       apiKey: input.apiKey,
       signal: input.signal,
+      baseImageBase64: input.baseImageBase64,
+      baseImageMime: input.baseImageMime,
     })
     return { b64, modelUsed: primaryModel, pathTaken: 'A' }
   } catch (err) {
@@ -113,6 +128,15 @@ export async function generateImage(input: ImageGenInput): Promise<ImageGenOutpu
     // 返含糊 401 "Invalid token",但 /v1/images/generations + gpt-image-2
     // 一般都通。fallback 失败再用最后一个错误抛(优先抛路 B 错,带 ImageAuthError 标识)。
     pathAError = err as Error
+  }
+
+  // Hybrid vision-aware 关键决策:有 baseImage 时**不降级路 B**。
+  // 路 B(/v1/images/generations + gpt-image-2)是纯 text-to-image,不接受 image input,
+  // 降级会丢失"基于原图改"的语义,生成的新图跟用户期望偏差更大。
+  // 直接抛路 A 错,worker catch 后走 fallback-rewrote 兜底(LLM 重写为组件版),
+  // 这样用户至少能看到一个对得上 fallbackSummary 内容的页面,而不是被静默换成无关新图。
+  if (hasBaseImage) {
+    throw pathAError ?? new Error('path A failed (hasBaseImage, refuse path B downgrade)')
   }
 
   try {
@@ -143,9 +167,27 @@ interface CallArgs {
   size: ImageSize
   apiKey: string
   signal: AbortSignal
+  /** 仅路 A 用:hybrid 模式透传原图 base64 让 gpt-5.5 vision 理解上下文 */
+  baseImageBase64?: string
+  baseImageMime?: string
 }
 
 async function callResponsesApi(args: CallArgs): Promise<string> {
+  // OpenAI Responses API content block format:
+  // - text-only:input 可以是 string,也可是 [{role,content:string}]
+  // - multimodal:input 必须是 [{role:'user', content:[{type:'input_text',...},{type:'input_image',...}]}]
+  // hybrid 模式有 baseImage 时走 content-block array,让 gpt-5.5 vision 看到原图。
+  const userContent =
+    args.baseImageBase64 && args.baseImageMime
+      ? [
+          { type: 'input_text', text: args.prompt },
+          {
+            type: 'input_image',
+            image_url: `data:${args.baseImageMime};base64,${args.baseImageBase64}`,
+          },
+        ]
+      : args.prompt
+
   let res: Response
   try {
     res = await fetch(`${args.baseUrl}/responses`, {
@@ -157,7 +199,7 @@ async function callResponsesApi(args: CallArgs): Promise<string> {
       },
       body: JSON.stringify({
         model: args.model,
-        input: [{ role: 'user', content: args.prompt }],
+        input: [{ role: 'user', content: userContent }],
         tools: [{ type: 'image_generation', size: args.size }],
         tool_choice: { type: 'image_generation' },
       }),

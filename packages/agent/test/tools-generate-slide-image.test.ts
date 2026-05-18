@@ -21,7 +21,7 @@ import { __resetImageJobsForTesting, getImageJob } from '../src/image-gen-job.js
 import { generateSlideImageTool } from '../src/tools/local/generate-slide-image.js'
 import { runInRequest } from '../src/context.js'
 import { setImageLlmSettings } from '../src/db/image-llm-settings.js'
-import { listAssetIdsByDeck, getAsset } from '../src/db/deck-assets.js'
+import { listAssetIdsByDeck, getAsset, createAsset } from '../src/db/deck-assets.js'
 
 useTestDb()
 
@@ -282,4 +282,202 @@ describe('generate_slide_image 工具', () => {
 
   // caption 字段已从工具/layout 中删除(图片纯净充满 header 下方,
   // 不再叠加文字标注;LLM 也不会主动给图加文字标题)
+
+  // Hybrid vision-aware(2026-05-18):同步入口检测当前 slide 是否已有 imageSrc。
+  it('hybrid:slide 已有 imageSrc(/api/assets/<uuid>)→ 读 DB BLOB,job 带 baseImageBase64/baseImageMime', async () => {
+    const { user } = await createLoggedInUser('hybrid-has-image@a.com')
+    // 先建 deck + asset,再用带 imageSrc 的 slides content 重建 deck
+    const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
+    const asset = await createAsset({
+      deckId: deck.id,
+      userId: user.id,
+      mimeType: 'image/png',
+      data: Buffer.from([0x89, 0x50, 0x4e, 0x47]), // 4 bytes PNG magic 够测断言
+      prompt: 'seed',
+      model: 'test',
+    })
+
+    // 把 slide 2 改成 *-image-content + imageSrc 指向刚建的 asset
+    const slidesWithImage = `---
+layout: beitou-cover
+mainTitle: T
+---
+
+---
+layout: beitou-image-content
+heading: 第二页标题
+imageSrc: /api/assets/${asset.id}
+---
+
+---
+layout: beitou-content
+heading: 第三页标题
+---
+
+正文 B
+`
+    // 写到 fs slides.md(slides-store 读 DB 时仍走 deck content;但要让 deck.currentVersion
+    // 拿到带 imageSrc 的版本,得 update deck_versions.content 或重建 deck)
+    const { getDb, deckVersions, decks } = await import('../src/db/index.js')
+    const { eq } = await import('drizzle-orm')
+    const db = getDb()
+    const [updatedDeck] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
+    await db
+      .update(deckVersions)
+      .set({ content: slidesWithImage })
+      .where(eq(deckVersions.id, updatedDeck!.currentVersionId!))
+    fs.writeFileSync(slidesFile, slidesWithImage, 'utf-8')
+
+    await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
+
+    const result = await runInRequest(
+      { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
+      () =>
+        runTool({
+          slideIndex: 2,
+          prompt: 'modify the rooftop',
+          fallbackSummary: '调整屋顶细节',
+        }),
+    )
+    const json = JSON.parse(result)
+    expect(json.success).toBe(true)
+    expect(json.jobId).toMatch(/^[0-9a-f-]{36}$/)
+
+    // 关键:job 的 baseImageBase64/baseImageMime 透传
+    const job = getImageJob(json.jobId)
+    expect(job).not.toBeNull()
+    expect(job!.baseImageBase64).toBe(Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64'))
+    expect(job!.baseImageMime).toBe('image/png')
+  })
+
+  it('hybrid:slide 无 imageSrc → job.baseImageBase64 / baseImageMime 都是 undefined', async () => {
+    const { user } = await createLoggedInUser('hybrid-no-image@a.com')
+    const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
+    await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
+
+    const result = await runInRequest(
+      { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
+      () =>
+        runTool({
+          slideIndex: 2,
+          prompt: 'a futuristic city',
+          fallbackSummary: '某段中文兜底摘要',
+        }),
+    )
+    const json = JSON.parse(result)
+    expect(json.success).toBe(true)
+    const job = getImageJob(json.jobId)
+    expect(job!.baseImageBase64).toBeUndefined()
+    expect(job!.baseImageMime).toBeUndefined()
+  })
+
+  it('hybrid:slide.imageSrc 是野 url(非 /api/assets/<uuid>)→ 静默走 text-only,job 无 baseImage', async () => {
+    const { user } = await createLoggedInUser('hybrid-bad-url@a.com')
+    const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
+    const slidesBad = `---
+layout: beitou-cover
+mainTitle: T
+---
+
+---
+layout: beitou-image-content
+heading: 第二页标题
+imageSrc: https://example.com/foo.png
+---
+
+---
+layout: beitou-content
+heading: 第三页标题
+---
+
+正文 B
+`
+    const { getDb, deckVersions, decks } = await import('../src/db/index.js')
+    const { eq } = await import('drizzle-orm')
+    const db = getDb()
+    const [updatedDeck] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
+    await db
+      .update(deckVersions)
+      .set({ content: slidesBad })
+      .where(eq(deckVersions.id, updatedDeck!.currentVersionId!))
+    fs.writeFileSync(slidesFile, slidesBad, 'utf-8')
+
+    await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
+    const result = await runInRequest(
+      { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
+      () =>
+        runTool({
+          slideIndex: 2,
+          prompt: 'p',
+          fallbackSummary: 's',
+        }),
+    )
+    const json = JSON.parse(result)
+    expect(json.success).toBe(true)
+    const job = getImageJob(json.jobId)
+    expect(job!.baseImageBase64).toBeUndefined()
+    expect(job!.baseImageMime).toBeUndefined()
+  })
+
+  it('hybrid IDOR guard:imageSrc 指向别家 user 的 asset → 静默走 text-only,不漏数据', async () => {
+    // user A 拥有 asset,user B 的 slide 把 imageSrc 拼成 A 的 asset uuid(横向越权尝试)
+    const { user: a } = await createLoggedInUser('hybrid-idor-a@a.com')
+    const { deck: deckA } = await createDeckDirect(a.id, 'A', FIXTURE_SLIDES)
+    const assetA = await createAsset({
+      deckId: deckA.id,
+      userId: a.id,
+      mimeType: 'image/png',
+      data: Buffer.from('secret'),
+      prompt: 'secret',
+      model: 'test',
+    })
+
+    const { user: b } = await createLoggedInUser('hybrid-idor-b@a.com')
+    const { deck: deckB } = await createDeckDirect(b.id, 'B', FIXTURE_SLIDES)
+    const slidesB = `---
+layout: beitou-cover
+mainTitle: T
+---
+
+---
+layout: beitou-image-content
+heading: 第二页标题
+imageSrc: /api/assets/${assetA.id}
+---
+
+---
+layout: beitou-content
+heading: 第三页标题
+---
+
+正文 B
+`
+    const { getDb, deckVersions, decks } = await import('../src/db/index.js')
+    const { eq } = await import('drizzle-orm')
+    const db = getDb()
+    const [updatedDeckB] = await db.select().from(decks).where(eq(decks.id, deckB.id)).limit(1)
+    await db
+      .update(deckVersions)
+      .set({ content: slidesB })
+      .where(eq(deckVersions.id, updatedDeckB!.currentVersionId!))
+    fs.writeFileSync(slidesFile, slidesB, 'utf-8')
+
+    await setImageLlmSettings(b.id, { provider: 'openai', apiKey: 'sk-x' })
+
+    const result = await runInRequest(
+      { userId: b.id, sessionId: null, activeDeckId: deckB.id, turnId: null },
+      () =>
+        runTool({
+          slideIndex: 2,
+          prompt: 'p',
+          fallbackSummary: 's',
+        }),
+    )
+    const json = JSON.parse(result)
+    expect(json.success).toBe(true)
+    const job = getImageJob(json.jobId)
+    // 关键:B 拿不到 A 的 asset(deckId / userId 都不匹配),静默走 text-only
+    expect(job!.baseImageBase64).toBeUndefined()
+    expect(job!.baseImageMime).toBeUndefined()
+  })
 })

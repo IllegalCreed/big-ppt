@@ -207,6 +207,131 @@ describe('llm/openai-image generateImage', () => {
     expect(out.modelUsed).toBe('gpt-image-2')
   })
 
+  it('hybrid vision-aware:有 baseImageBase64 → 路 A payload input 是 content array 含 input_image', async () => {
+    let capturedBody: { input?: Array<Record<string, unknown>> } | null = null
+    mockFetch(async (url, init) => {
+      expect(url).toBe(`${TEST_BASE}/responses`)
+      capturedBody = JSON.parse((init?.body as string) ?? '{}')
+      return jsonResponse({
+        output: [{ type: 'image_generation_call', result: FAKE_B64 }],
+      })
+    })
+    const out = await generateImage({
+      prompt: 'add a cat on the rooftop',
+      size: '1536x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+      baseImageBase64: 'AAAA',
+      baseImageMime: 'image/png',
+    })
+    expect(out.pathTaken).toBe('A')
+
+    // Type-narrowing: vitest mocked closure 已经赋值,直接 non-null assert
+    const body = capturedBody as { input: Array<{ role: string; content: unknown }> } | null
+    expect(body).not.toBeNull()
+    expect(body!.input).toHaveLength(1)
+    const msg = body!.input[0]!
+    expect(msg.role).toBe('user')
+    expect(Array.isArray(msg.content)).toBe(true)
+    const blocks = msg.content as Array<Record<string, unknown>>
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]).toEqual({ type: 'input_text', text: 'add a cat on the rooftop' })
+    expect(blocks[1]).toEqual({
+      type: 'input_image',
+      image_url: 'data:image/png;base64,AAAA',
+    })
+  })
+
+  it('hybrid vision-aware:无 baseImage → 路 A payload input.content 仍是 string(向后兼容)', async () => {
+    let capturedBody: { input?: Array<Record<string, unknown>> } | null = null
+    mockFetch(async (_url, init) => {
+      capturedBody = JSON.parse((init?.body as string) ?? '{}')
+      return jsonResponse({
+        output: [{ type: 'image_generation_call', result: FAKE_B64 }],
+      })
+    })
+    await generateImage({
+      prompt: 'a city',
+      size: '1280x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+    })
+    const body = capturedBody as { input: Array<{ role: string; content: unknown }> } | null
+    expect(body).not.toBeNull()
+    expect(body!.input[0]!.content).toBe('a city')
+  })
+
+  it('hybrid vision-aware:有 baseImage + 路 A 5xx → 不降级路 B,直接抛错(只调一次 fetch)', async () => {
+    let callCount = 0
+    mockFetch(async (url) => {
+      callCount++
+      if (url.endsWith('/responses')) return new Response('boom', { status: 503 })
+      // 防御性:这里要是被调到,断言会失败
+      return jsonResponse({ data: [{ b64_json: FAKE_B64 }] })
+    })
+    await expect(
+      generateImage({
+        prompt: 'add a cat',
+        size: '1536x720',
+        signal: new AbortController().signal,
+        apiKey: 'sk',
+        baseUrl: TEST_BASE,
+        baseImageBase64: 'AAAA',
+        baseImageMime: 'image/png',
+      }),
+    ).rejects.toThrow()
+    expect(callCount).toBe(1) // 只调路 A,不调路 B
+  })
+
+  it('hybrid vision-aware:有 baseImage + 路 A 401 → 不降级路 B(虽然原本无 baseImage 时会降)', async () => {
+    let callCount = 0
+    mockFetch(async (url) => {
+      callCount++
+      if (url.endsWith('/responses')) {
+        return jsonResponse({ error: { message: 'Invalid API key' } }, { status: 401 })
+      }
+      return jsonResponse({ data: [{ b64_json: FAKE_B64 }] })
+    })
+    await expect(
+      generateImage({
+        prompt: 'add a cat',
+        size: '1536x720',
+        signal: new AbortController().signal,
+        apiKey: 'sk',
+        baseUrl: TEST_BASE,
+        baseImageBase64: 'AAAA',
+        baseImageMime: 'image/png',
+      }),
+    ).rejects.toThrow()
+    expect(callCount).toBe(1)
+  })
+
+  it('hybrid vision-aware:有 baseImage + primaryModel=gpt-image-2 → 走路 B(纯 text-to-image,忽略 baseImage)', async () => {
+    // gpt-image-* 强制走路 B,路 B 不支持 image input;此时降级为 text-only
+    let callCount = 0
+    let lastUrl = ''
+    mockFetch(async (url) => {
+      callCount++
+      lastUrl = url
+      return jsonResponse({ data: [{ b64_json: FAKE_B64 }] })
+    })
+    const out = await generateImage({
+      prompt: 'a city',
+      size: '1536x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+      primaryModel: 'gpt-image-2',
+      baseImageBase64: 'AAAA',
+      baseImageMime: 'image/png',
+    })
+    expect(callCount).toBe(1)
+    expect(lastUrl).toBe(`${TEST_BASE}/images/generations`)
+    expect(out.pathTaken).toBe('B')
+  })
+
   it('baseUrl 末尾斜杠 trim:不重复 //', async () => {
     let captured = ''
     mockFetch(async (url) => {
