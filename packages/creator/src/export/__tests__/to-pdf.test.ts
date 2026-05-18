@@ -42,9 +42,20 @@ describe('pngsToPdf', () => {
     expect(bytes[4]).toBe(0x2d)
   })
 
-  it('N=5 页 → 内部 page count = 5（用单独 jsPDF 流程交叉验证）', async () => {
-    // 不能从 pngsToPdf 返的 Blob 反向解析 pdf，所以构造同样 sequence 用 jsPDF
-    // 直接验证 getNumberOfPages 计数逻辑：第一页随构造而生，后续 addPage 各加一
+  it('N=5 页 → pngsToPdf 产物 PDF 内含 5 个 page object', async () => {
+    // 真调 pngsToPdf，然后扫产物 PDF 文本数 page object 个数。
+    // PDF 内部每页是一个独立 `/Type /Page` object，根目录是 `/Type /Pages`；
+    // 用 `/Type\s*/Page[^s]` 正则避开 match `/Pages`，count 即页数。
+    // （已在 node REPL + getNumberOfPages 交叉验证过：5 页时正则 = 5，/Pages = 1）
+    const pngs = Array.from({ length: 5 }, () => makeFakePng())
+    const blob = await pngsToPdf(pngs)
+    const text = await blob.text()
+    const pageMatches = text.match(/\/Type\s*\/Page[^s]/g) ?? []
+    expect(pageMatches.length).toBe(5)
+  })
+
+  it('jsPDF API 契约：addImage + addPage 计数 = 5（独立 cross-check）', () => {
+    // 单独验证 jsPDF API 行为符合预期（防 SDK 升级 addPage 行为漂移）
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [960, 540] })
     const png = makeFakePng()
     const dataUrl = `data:image/png;base64,${png.toString('base64')}`

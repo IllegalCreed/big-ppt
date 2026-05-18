@@ -45,15 +45,25 @@ describe('pngsToPptx', () => {
     expect(zip.file('ppt/slides/slide2.xml')).toBeNull()
   })
 
-  it('每页背景嵌入一张图片资源（ppt/media/ 下应有 PNG）', async () => {
+  it('N=2 页：2 张独立 PNG media（pptxgenjs 背景图不 dedup，命名 Slide-N-image-1.png）', async () => {
+    // 实测 pptxgenjs 4.x 即便输入相同 PNG buffer 也每页一个独立 media entry
+    // （命名 `ppt/media/Slide-N-image-1.png`），所以 N 页 = N 张 media PNG。
+    // 严格 === N 防 single-slide bug（少 push 一张）被 lenient `>= 1` 漏掉。
     const blob = await pngsToPptx([makeFakePng(), makeFakePng()])
     const zip = await JSZip.loadAsync(await blob.arrayBuffer())
-    // ppt/media/ 下应有 PNG 资源；pptxgenjs 命名为 imageN.png（dedup 时会复用）
     const mediaFiles = Object.keys(zip.files).filter(
       (name) => name.startsWith('ppt/media/') && name.endsWith('.png'),
     )
-    // 至少 1 个图片资源（背景图）
-    expect(mediaFiles.length).toBeGreaterThanOrEqual(1)
+    expect(mediaFiles.length).toBe(2)
+  })
+
+  it('N=3 页：3 张独立 PNG media', async () => {
+    const blob = await pngsToPptx([makeFakePng(), makeFakePng(), makeFakePng()])
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer())
+    const mediaFiles = Object.keys(zip.files).filter(
+      (name) => name.startsWith('ppt/media/') && name.endsWith('.png'),
+    )
+    expect(mediaFiles.length).toBe(3)
   })
 
   it('zip Content-Types.xml 声明 PPTX type（结构合法性兜底）', async () => {

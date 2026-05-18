@@ -13,6 +13,8 @@
  *   注意：BackgroundProps.data 是 base64 字符串带 mime prefix（types/index.d.ts L893 example）
  * - `pres.write({ outputType: 'blob' })` 浏览器 / jsdom 下返 Blob，jsdom 单测可直接 await
  *   实测 pptxgenjs 不依赖真浏览器 DOM API（写 zip 用 JSZip 内部），jsdom env 跑得通
+ *   但 SDK 声明的 return 是 union（Promise<string | ArrayBuffer | Blob | Uint8Array>），
+ *   await 后必须 runtime guard 防生产环境意外（virtualized polyfill / SDK 升级行为漂移等）
  */
 import pptxgen from 'pptxgenjs'
 import type { Buffer } from 'buffer'
@@ -36,7 +38,14 @@ export async function pngsToPptx(pngs: Buffer[]): Promise<Blob> {
     }
   }
 
-  // write({ outputType: 'blob' }) 返回 Promise<Blob>（types overload 用 union 类型，
-  // 显式 cast 为 Blob）
-  return pres.write({ outputType: 'blob' }) as Promise<Blob>
+  // write({ outputType: 'blob' }) 在浏览器 / jsdom 下返 Blob，但 SDK 的 return 是
+  // union（Promise<string | ArrayBuffer | Blob | Uint8Array | ...>），await 后做
+  // instanceof runtime guard 保 type 安全，并对生产环境意外给出明确错信号
+  const result = await pres.write({ outputType: 'blob' })
+  if (!(result instanceof Blob)) {
+    throw new Error(
+      `pngsToPptx: pptxgenjs.write 未返回 Blob（实际 ${typeof result}）；浏览器环境异常`,
+    )
+  }
+  return result
 }
