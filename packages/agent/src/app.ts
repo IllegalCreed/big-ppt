@@ -22,6 +22,7 @@ import { tools as toolsRoute } from './routes/tools.js'
 import { mcp as mcpRoute } from './routes/mcp.js'
 import { auth } from './routes/auth.js'
 import { decksRoute } from './routes/decks.js'
+import { decksArchiveRoute } from './routes/decks-archive.js'
 import { lockRoute } from './routes/lock.js'
 import { healthz } from './routes/healthz.js'
 import { imageLlmSettingsRoute } from './routes/image-llm-settings.js'
@@ -55,6 +56,9 @@ app.route('/api/healthz', healthz)
 // 业务路由：挂载到 /api 前缀下
 app.route('/api/auth', auth)
 app.route('/api', decksRoute)
+// Phase 15 Task 31-B:.lumideck 归档导出。独立子路由文件,避免改已 800+ 行的 decks.ts,
+// 也方便 Task C 扩 import 路由时单点 mount。
+app.route('/api', decksArchiveRoute)
 app.route('/api', lockRoute)
 app.route('/api/llm', llm)
 // Phase 12.5 Task D：model dropdown 调它拿 pi-ai 内置的 model 列表。
