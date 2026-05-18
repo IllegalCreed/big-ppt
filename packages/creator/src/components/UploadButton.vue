@@ -80,7 +80,9 @@ function onDragOver(e: DragEvent) {
   width: 32px;
   height: 32px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  /* 跟 Sender 内置的 send 按钮(antd-x ant-btn-primary,border-radius: 50%)同款圆形,
+     视觉上左右两侧 32x32 圆按钮对称,而非"一圆一方"破坏对称 */
+  border-radius: 50%;
   background: transparent;
   color: var(--color-fg-tertiary);
   cursor: pointer;

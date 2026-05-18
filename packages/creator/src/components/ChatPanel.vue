@@ -377,9 +377,11 @@ async function onSenderDrop(e: DragEvent) {
 
 .sender-upload-btn {
   flex-shrink: 0;
-  /* 跟 Sender 文本框底部对齐 */
+  /* 跟 Sender 内置的 send 按钮(antd-x .ant-btn-primary,位于输入框右下角)底边对齐。
+     Sender 内部有 padding,文本框底边比 send 按钮底边低 9px(2026-05-18 实测);
+     这里让 paperclip 向上挪让两侧 32×32 圆按钮 baseline 一致,视觉上左右对称呼应。*/
   align-self: flex-end;
-  margin-bottom: 4px;
+  margin-bottom: 13px;
 }
 
 .sender-input-wrap {
