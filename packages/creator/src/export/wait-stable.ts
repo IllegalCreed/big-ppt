@@ -22,9 +22,17 @@ export async function waitForRenderStable(el: HTMLElement): Promise<void> {
       img.complete && img.naturalWidth > 0
         ? null
         : new Promise<void>((res) => {
-            img.addEventListener('load', () => res(), { once: true })
-            img.addEventListener('error', () => res(), { once: true }) // 失败也放行
-            setTimeout(() => res(), 10_000) // 单图 10s 兜底
+            // Critical fix（code review）：load/error 提前触发后必须 clearTimeout，
+            // 否则 10s 兜底 timer 残留 → N 张图 = N 个 dangling timer，
+            // vitest 报 "open handles" + 生产期间资源漏。
+            // setTimeout 必须先建（拿到 timerId），done 闭包再引用。
+            const timerId: ReturnType<typeof setTimeout> = setTimeout(() => res(), 10_000) // 单图 10s 兜底
+            const done = (): void => {
+              clearTimeout(timerId)
+              res()
+            }
+            img.addEventListener('load', done, { once: true })
+            img.addEventListener('error', done, { once: true }) // 失败也放行
           }),
     ),
   )

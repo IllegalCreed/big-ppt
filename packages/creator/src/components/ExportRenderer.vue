@@ -54,4 +54,16 @@ defineExpose({ rootRef })
   box-shadow: none;
   aspect-ratio: 16 / 9;
 }
+/*
+ * Critical fix（code review）：DeckRenderer 内部 `frameWidth = Math.min(available, 960)`
+ * 永远 ≤ 960 → scale = frameWidth/960 ≤ 1.0；即便我们把 slide-frame 撑到 1920，
+ * .slide-canvas 仍是 960×540 + transform: scale(1) + transform-origin: top left，
+ * 导致 html2canvas 截到的 1920×1080 区域里内容只占左上 1/4，其余 3/4 是白底。
+ * 强制 1920×1080 + scale(1)，绕过 DeckRenderer 自带的等比缩放算法。
+ */
+.export-renderer :deep(.slide-canvas) {
+  width: 1920px;
+  height: 1080px;
+  transform: scale(1);
+}
 </style>

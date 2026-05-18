@@ -11,6 +11,13 @@
  * dynamic import 的 vi.mock 拦截不稳定，必须顶层 factory + static import 才稳。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// Important fix（code review）：vi.mock factory 必须**同步**，且 Vue API 走顶层
+// static import 才能在 factory closure 里安全用 —— CLAUDE.md 测试基建已知坑:
+// "Vitest 4 起 vi.mock 对 dynamic import 拦截不稳定...改用 static import +
+//  顶层 vi.mock factory `() => ({ ... })` 才稳定"。
+// vi.mock 被 hoist 到所有 import 之上，但**非 mocked** 包（vue）的 static import
+// 不受 hoist 影响，可以在 factory closure 里照常引用。
+import { defineComponent, h, onMounted, ref } from 'vue'
 
 // ---- html2canvas mock ----------------------------------------------------
 // Fake canvas：toBlob 返一个 1 字节 Blob（arrayBuffer 返 Uint8Array([0x89])，
@@ -31,28 +38,25 @@ vi.mock('../wait-stable', () => ({
 // jsdom 下真 mount DeckRenderer 会撞 unplugin-vue-components 没跑（layouts 找不到）。
 // mock 成最简 stub 组件，只暴露一个固定 rootRef = 真 DOM div（让 html2canvas 接收
 // 到 truthy element）。
-vi.mock('../../components/ExportRenderer.vue', async () => {
-  const { defineComponent, ref, h, onMounted } = await import('vue')
-  return {
-    default: defineComponent({
-      name: 'ExportRendererStub',
-      props: ['deckId', 'pageIndex', 'markdown', 'templateId'],
-      setup() {
-        const rootRef = ref<HTMLElement | null>(null)
-        onMounted(() => {
-          // mount 后给 rootRef 赋值真 DOM 元素，模拟 ref 行为
-          rootRef.value = document.createElement('div')
-        })
-        return { rootRef }
-      },
-      render() {
-        // 用 h() 创建 DOM 元素，render 后 mount 时 ref binding 会触发
-        // 这里返回根节点；setup return 的 rootRef 在 onMounted 拿到 vnode el
-        return h('div', { class: 'export-renderer-stub' })
-      },
-    }),
-  }
-})
+vi.mock('../../components/ExportRenderer.vue', () => ({
+  default: defineComponent({
+    name: 'ExportRendererStub',
+    props: ['deckId', 'pageIndex', 'markdown', 'templateId'],
+    setup() {
+      const rootRef = ref<HTMLElement | null>(null)
+      onMounted(() => {
+        // mount 后给 rootRef 赋值真 DOM 元素，模拟 ref 行为
+        rootRef.value = document.createElement('div')
+      })
+      return { rootRef }
+    },
+    render() {
+      // 用 h() 创建 DOM 元素，render 后 mount 时 ref binding 会触发
+      // 这里返回根节点；setup return 的 rootRef 在 onMounted 拿到 vnode el
+      return h('div', { class: 'export-renderer-stub' })
+    },
+  }),
+}))
 
 // ---- import 被测体（static import + mock 已就位） ------------------------
 import { capturePages } from '../capture-pages'

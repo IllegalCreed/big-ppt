@@ -34,14 +34,9 @@ describe('waitForRenderStable', () => {
   let originalGetAnimations: typeof Element.prototype.getAnimations | undefined
 
   beforeEach(() => {
-    // 默认让 document.fonts.ready 立即 resolve（个别 test 单独覆盖）
-    if (typeof document !== 'undefined' && !document.fonts) {
-      Object.defineProperty(document, 'fonts', {
-        value: { ready: Promise.resolve() },
-        writable: true,
-        configurable: true,
-      })
-    }
+    // Important fix（code review）：删 dead if 块 —— jsdom 29 原生带
+    // document.fonts: FontFaceSet，`!document.fonts` 永假。只保留 getAnimations
+    // 现场备份（test 内可能覆盖），不再触碰 document.fonts。
     originalGetAnimations = Element.prototype.getAnimations
   })
 
@@ -156,5 +151,44 @@ describe('waitForRenderStable', () => {
     img.dispatchEvent(new Event('error'))
 
     await expect(p).resolves.toBeUndefined()
+  }, 10_000)
+
+  it('Critical fix 回归：img.load 提前触发 → 10s 兜底 setTimeout 被 clearTimeout（无 dangling timer）', async () => {
+    // spy 全局 setTimeout / clearTimeout，但只关注 wait-stable 里那个 10_000 ms 的 timer 调用
+    const setSpy = vi.spyOn(globalThis, 'setTimeout')
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout')
+
+    try {
+      const img = makeImg({ complete: false, naturalWidth: 0 })
+      const el = makeContainer([img])
+
+      const p = waitForRenderStable(el)
+
+      // 等 wait-stable 注册 listener + 启动 10s timer
+      await new Promise((r) => setTimeout(r, 10))
+
+      // 找出 wait-stable 注册的那个 10_000ms 兜底 timer 的 id（spy 拿到 return value）
+      const timerCall = setSpy.mock.results.find(
+        (r, i) => setSpy.mock.calls[i]?.[1] === 10_000,
+      )
+      expect(timerCall, '应该有一个 10_000ms 的 setTimeout 兜底').toBeDefined()
+      const bufId = timerCall!.value
+
+      // 触发 load → done() 应该 clearTimeout(bufId)
+      img.dispatchEvent(new Event('load'))
+
+      // 让 microtask flush
+      await new Promise((r) => setTimeout(r, 5))
+
+      // 断言 clearTimeout 被调到那个 10_000ms timer id 上
+      const cleared = clearSpy.mock.calls.some((call) => call[0] === bufId)
+      expect(cleared, 'load 后该 10_000ms timer id 应被 clearTimeout 清掉').toBe(true)
+
+      // wait-stable 仍正常 resolve（500ms settle 之后）
+      await expect(p).resolves.toBeUndefined()
+    } finally {
+      setSpy.mockRestore()
+      clearSpy.mockRestore()
+    }
   }, 10_000)
 })
