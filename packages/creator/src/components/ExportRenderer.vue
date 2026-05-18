@@ -55,15 +55,20 @@ defineExpose({ rootRef })
   aspect-ratio: 16 / 9;
 }
 /*
- * Critical fix（code review）：DeckRenderer 内部 `frameWidth = Math.min(available, 960)`
- * 永远 ≤ 960 → scale = frameWidth/960 ≤ 1.0；即便我们把 slide-frame 撑到 1920，
- * .slide-canvas 仍是 960×540 + transform: scale(1) + transform-origin: top left，
- * 导致 html2canvas 截到的 1920×1080 区域里内容只占左上 1/4，其余 3/4 是白底。
- * 强制 1920×1080 + scale(1)，绕过 DeckRenderer 自带的等比缩放算法。
+ * Slidev 标准做法 + Phase 14 修正:.slide-canvas **保持 960×540 固定设计尺寸**
+ * (layouts / 字号 / chart 全按这个绝对尺寸画,任何内部 box 拉伸都会破坏比例),
+ * 通过 `transform: scale(2)` **等比缩放**到 1920×1080。transform-origin: top left
+ * 让缩放从左上角展开,正好填满 ExportRenderer 容器。
+ *
+ * !important 覆盖 DeckRenderer 内置的 `transform: scale(var(--slide-scale,1))` —
+ * DeckRenderer 内部 ResizeObserver 算 frameWidth = min(available, 960) / 960,
+ * 永远 ≤ 1.0,即便容器 1920px 也只 scale=1,canvas 仅占左上 1/4。
+ *
+ * (前一版用 `width:1920;height:1080;transform:scale(1)` 强行拉 box,破坏所有内部
+ *  比例,导出 PNG 字号 / 元素位置全错。已修正为 transform-only 等比缩放。)
  */
 .export-renderer :deep(.slide-canvas) {
-  width: 1920px;
-  height: 1080px;
-  transform: scale(1);
+  transform: scale(2) !important;
+  transform-origin: top left !important;
 }
 </style>
