@@ -33,23 +33,10 @@ const FIXED_KEY = Buffer.alloc(32, 0x4f)
 let tmpRoot: string
 let slidesFile: string
 
-beforeAll(() => {
-  __setMasterKeyGetterForTesting(() => FIXED_KEY)
-  process.env.BIG_PPT_TEST_IMAGE_MODE = 'stub'
-})
-
-afterAll(() => {
-  delete process.env.BIG_PPT_TEST_IMAGE_MODE
-})
-
-beforeEach(() => {
-  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-image-tool-'))
-  const slidevDir = path.join(tmpRoot, 'packages/slidev')
-  fs.mkdirSync(slidevDir, { recursive: true })
-  slidesFile = path.join(slidevDir, 'slides.md')
-  fs.writeFileSync(
-    slidesFile,
-    `---
+// P0 fix(2026-05-18):slides-store DB-based;tool 读 deck DB content,不读全局 slides.md。
+// 测试 fixture content 同时灌入 slides.md(legacy mirror,跟 generate-slide-image 工具
+// 调 readSlides 的 deck content 必须一致)和 createDeckDirect 让 deck 有 ≥3 页可被 slideIndex=2/99 引用。
+const FIXTURE_SLIDES = `---
 layout: beitou-cover
 mainTitle: T
 ---
@@ -67,9 +54,23 @@ heading: 第三页标题
 ---
 
 正文 B
-`,
-    'utf-8',
-  )
+`
+
+beforeAll(() => {
+  __setMasterKeyGetterForTesting(() => FIXED_KEY)
+  process.env.BIG_PPT_TEST_IMAGE_MODE = 'stub'
+})
+
+afterAll(() => {
+  delete process.env.BIG_PPT_TEST_IMAGE_MODE
+})
+
+beforeEach(() => {
+  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-image-tool-'))
+  const slidevDir = path.join(tmpRoot, 'packages/slidev')
+  fs.mkdirSync(slidevDir, { recursive: true })
+  slidesFile = path.join(slidevDir, 'slides.md')
+  fs.writeFileSync(slidesFile, FIXTURE_SLIDES, 'utf-8')
   process.env.BIG_PPT_SLIDES_PATH = slidesFile
   process.env.BIG_PPT_HISTORY_DIR = path.join(tmpRoot, 'history')
   __resetPathsForTesting()
@@ -126,7 +127,7 @@ describe('generate_slide_image 工具', () => {
 
   it('slideIndex 不是整数 → 失败', async () => {
     const { user } = await createLoggedInUser('e1@a.com')
-    const { deck } = await createDeckDirect(user.id)
+    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const result = await runInRequest(
@@ -140,7 +141,7 @@ describe('generate_slide_image 工具', () => {
 
   it('prompt 缺失 → 失败', async () => {
     const { user } = await createLoggedInUser('e2@a.com')
-    const { deck } = await createDeckDirect(user.id)
+    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const result = await runInRequest(
@@ -154,7 +155,7 @@ describe('generate_slide_image 工具', () => {
 
   it('slideIndex 超过页数 → 失败 + slides.md 不变', async () => {
     const { user } = await createLoggedInUser('e3@a.com')
-    const { deck } = await createDeckDirect(user.id)
+    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const before = fs.readFileSync(slidesFile, 'utf-8')
@@ -169,7 +170,7 @@ describe('generate_slide_image 工具', () => {
 
   it('跨用户 deck → 失败', async () => {
     const { user: a } = await createLoggedInUser('owner@a.com')
-    const { deck } = await createDeckDirect(a.id)
+    const { deck } = await createDeckDirect(a.id, "D", FIXTURE_SLIDES)
     const { user: b } = await createLoggedInUser('intruder@a.com')
     await setImageLlmSettings(b.id, { provider: 'openai', apiKey: 'sk-x' })
 
@@ -186,7 +187,7 @@ describe('generate_slide_image 工具', () => {
     delete process.env.BIG_PPT_TEST_IMAGE_MODE
     try {
       const { user } = await createLoggedInUser('nokey@a.com')
-      const { deck } = await createDeckDirect(user.id)
+      const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
       const result = await runInRequest(
         { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
         () => runTool({ slideIndex: 2, prompt: 'p', fallbackSummary: 's' }),
@@ -201,7 +202,7 @@ describe('generate_slide_image 工具', () => {
 
   it('Phase 11.6 dogfood 后:fallbackSummary 缺失 → 工具拒收', async () => {
     const { user } = await createLoggedInUser('nofallback@a.com')
-    const { deck } = await createDeckDirect(user.id)
+    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const result = await runInRequest(
@@ -215,7 +216,7 @@ describe('generate_slide_image 工具', () => {
 
   it('Phase 11.6 dogfood 后:fallbackSummary 全空白字符串 → 工具拒收(trim 后非空才算)', async () => {
     const { user } = await createLoggedInUser('emptyfb@a.com')
-    const { deck } = await createDeckDirect(user.id)
+    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const result = await runInRequest(
@@ -229,7 +230,7 @@ describe('generate_slide_image 工具', () => {
 
   it('happy path:同步立返 jobId 且 slides.md/DB 暂未变;stub 跑完后 DB+slides.md 都更新', async () => {
     const { user } = await createLoggedInUser('happy@a.com')
-    const { deck } = await createDeckDirect(user.id)
+    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const before = fs.readFileSync(slidesFile, 'utf-8')
@@ -261,7 +262,18 @@ describe('generate_slide_image 工具', () => {
     expect(asset?.mimeType).toBe('image/png')
     expect(asset?.bytesSize).toBeGreaterThan(0)
 
-    const after = fs.readFileSync(slidesFile, 'utf-8')
+    // P0 fix(2026-05-18):slides-store DB-based,worker 写入直接走 deck_versions;
+    // 读取从 DB 拿 currentVersion.content 而非 fs slides.md。
+    const { getDb, decks, deckVersions } = await import('../src/db/index.js')
+    const { eq } = await import('drizzle-orm')
+    const db = getDb()
+    const [updatedDeck] = await db.select().from(decks).where(eq(decks.id, deck.id)).limit(1)
+    const [currentVersion] = await db
+      .select({ content: deckVersions.content })
+      .from(deckVersions)
+      .where(eq(deckVersions.id, updatedDeck!.currentVersionId!))
+      .limit(1)
+    const after = currentVersion!.content
     expect(after).toContain('layout: beitou-image-content')
     expect(after).toContain(`/api/assets/${final!.assetId}`)
     // heading 保留

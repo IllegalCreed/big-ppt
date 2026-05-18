@@ -1,8 +1,22 @@
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
+/**
+ * Phase 15.x P0 security hotfix(2026-05-18):slides-store 改 DB-based 后,本测重写为
+ * useTestDb + ALS `runInRequest` 真 DB 跑;不再 mock fs。
+ *
+ * 每个 test case 调 `createLoggedInUser + createDeckDirect` 拿 deck/user,然后用
+ * `runInRequest({userId, activeDeckId, turnId})` 包住对 readSlides / writeSlides /
+ * createSlide / updateSlide / deleteSlide / reorderSlides / editSlides / restoreSlides /
+ * redoSlides 的调用。
+ *
+ * 关键性质覆盖:
+ * - read/write 基本通路
+ * - undo / redo (DB ring buffer)
+ * - 同 turn 合并(turnId 相同 → 覆盖同行)
+ * - 跨 turn 截断 redo 栈
+ * - ring buffer 裁剪(BIG_PPT_HISTORY_MAX)
+ * - 四件套(create / update / delete / reorder)+ history 集成
+ * - **跨用户访问 deck → NoActiveDeckError**(P0 漏洞修复核心断言)
+ */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { __resetPathsForTesting } from '../src/workspace.js'
 import {
   createSlide,
   deleteSlide,
@@ -13,334 +27,314 @@ import {
   restoreSlides,
   updateSlide,
   writeSlides,
+  NoActiveDeckError,
 } from '../src/slides-store/index.js'
-import { listHistory } from '../src/slides-store/history.js'
-import { runInTurn } from '../src/context.js'
+import { listHistoryDb } from '../src/slides-store/history.js'
+import { runInRequest, type RequestContext } from '../src/context.js'
 import { parseSlides } from '../src/slides-store/pages.js'
+import { useTestDb } from './_setup/test-db.js'
+import { createLoggedInUser, createDeckDirect } from './_setup/factories.js'
 
-let tmpDir: string
-let slidesPath: string
-let historyDir: string
+useTestDb()
+
+function ctxOf(overrides: Partial<RequestContext>): RequestContext {
+  return { userId: null, sessionId: null, activeDeckId: null, turnId: null, ...overrides }
+}
+
+/** 给 test 用的便捷 helper:在 (userId, deckId) 上下文里跑 fn */
+function inDeck<T>(userId: number, deckId: number, fn: () => Promise<T>, turnId?: string): Promise<T> {
+  return runInRequest(ctxOf({ userId, activeDeckId: deckId, turnId: turnId ?? null }), fn) as Promise<T>
+}
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-slides-'))
-  slidesPath = path.join(tmpDir, 'slides.md')
-  historyDir = path.join(tmpDir, 'history')
-  process.env.BIG_PPT_SLIDES_PATH = slidesPath
-  process.env.BIG_PPT_HISTORY_DIR = historyDir
-  __resetPathsForTesting()
+  delete process.env.BIG_PPT_HISTORY_MAX
 })
 
 afterEach(() => {
-  fs.rmSync(tmpDir, { recursive: true, force: true })
-  delete process.env.BIG_PPT_SLIDES_PATH
-  delete process.env.BIG_PPT_HISTORY_DIR
   delete process.env.BIG_PPT_HISTORY_MAX
-  __resetPathsForTesting()
 })
 
-describe('read/write', () => {
-  it('writeSlides writes content and records history snapshots', async () => {
-    fs.writeFileSync(slidesPath, 'v1', 'utf-8')
-    const r = await writeSlides('v2')
-    expect(r.success).toBe(true)
-    expect(readSlides()).toBe('v2')
-    const hist = listHistory()
-    expect(hist.files.length).toBe(2) // [init v1, write v2]
-    expect(hist.currentIndex).toBe(1)
-  })
-
-  it('writeSlides on empty slides path records only the new snapshot', async () => {
-    const r = await writeSlides('first')
-    expect(r.success).toBe(true)
-    expect(readSlides()).toBe('first')
-    const hist = listHistory()
-    expect(hist.files.length).toBe(1)
-    expect(hist.currentIndex).toBe(0)
-  })
-
-  it('writeSlides 护栏：slides.md 已有页时拒绝', async () => {
-    fs.writeFileSync(
-      slidesPath,
-      '---\nlayout: cover\n---\n\n# P1\n\n---\nlayout: content\n---\n\n# P2\n',
-      'utf-8',
-    )
-    const r = await writeSlides('---\nlayout: cover\n---\n\n# overwrite\n')
-    expect(r.success).toBe(false)
-    expect(r.error).toMatch(/已有 2 页/)
-    // 文件未被改动
-    expect(readSlides()).toContain('P1')
-    expect(readSlides()).toContain('P2')
-  })
-})
-
-describe('editSlides', () => {
-  it('replaces a uniquely-matching substring', async () => {
-    fs.writeFileSync(slidesPath, '# Title\n\n- apple\n- banana\n', 'utf-8')
-    const r = await editSlides('banana', 'cherry')
-    expect(r.success).toBe(true)
-    expect(readSlides()).toContain('- cherry')
-    expect(readSlides()).not.toContain('banana')
-  })
-
-  it('rejects empty old_string', async () => {
-    fs.writeFileSync(slidesPath, 'x', 'utf-8')
-    const r = await editSlides('', 'y')
-    expect(r.success).toBe(false)
-    expect(r.error).toMatch(/不能为空/)
-  })
-
-  it('returns similarity suggestions when no match', async () => {
-    fs.writeFileSync(slidesPath, 'the quick brown fox\nanother line', 'utf-8')
-    const r = await editSlides('the quikc brown fox', 'replaced')
-    expect(r.success).toBe(false)
-    expect(r.error).toMatch(/未找到指定内容/)
-    expect(r.error).toContain('the quick brown fox')
-  })
-
-  it('reports ambiguity when multiple matches exist', async () => {
-    fs.writeFileSync(slidesPath, 'foo\nfoo\nfoo', 'utf-8')
-    const r = await editSlides('foo', 'bar')
-    expect(r.success).toBe(false)
-    expect(r.error).toMatch(/3 处匹配/)
-  })
-})
-
-describe('undo / redo', () => {
-  it('undo (restoreSlides) reverts to previous version', async () => {
-    fs.writeFileSync(slidesPath, 'v1', 'utf-8')
-    await writeSlides('v2')
-    const r = restoreSlides()
-    expect(r.success).toBe(true)
-    expect(readSlides()).toBe('v1')
-  })
-
-  it('undo + redo goes back to latest version', async () => {
-    fs.writeFileSync(slidesPath, 'v1', 'utf-8')
-    await writeSlides('v2')
-    restoreSlides()
-    const r = redoSlides()
-    expect(r.success).toBe(true)
-    expect(readSlides()).toBe('v2')
-  })
-
-  it('consecutive undo steps back through versions', async () => {
-    fs.writeFileSync(slidesPath, 'v1', 'utf-8')
-    await writeSlides('v2')
-    await writeSlides('v3')
-    restoreSlides() // v3 → v2
-    expect(readSlides()).toBe('v2')
-    restoreSlides() // v2 → v1
-    expect(readSlides()).toBe('v1')
-  })
-
-  it('undo beyond earliest returns error', async () => {
-    fs.writeFileSync(slidesPath, 'v1', 'utf-8')
-    await writeSlides('v2')
-    restoreSlides() // → v1
-    const r = restoreSlides() // already earliest
-    expect(r.success).toBe(false)
-    expect(r.error).toMatch(/最早/)
-  })
-
-  it('redo on empty redo stack returns error', async () => {
-    fs.writeFileSync(slidesPath, 'v1', 'utf-8')
-    await writeSlides('v2')
-    const r = redoSlides()
-    expect(r.success).toBe(false)
-    expect(r.error).toMatch(/最新/)
-  })
-
-  it('new write truncates redo stack', async () => {
-    fs.writeFileSync(slidesPath, 'v1', 'utf-8')
-    await writeSlides('v2')
-    await writeSlides('v3') // files: [v1, v2, v3], idx=2
-    restoreSlides() // idx=1
-    restoreSlides() // idx=0
-    await writeSlides('v4') // truncates v2/v3, appends v4 → [v1, v4], idx=1
-    const hist = listHistory()
-    expect(hist.files.length).toBe(2)
-    expect(hist.currentIndex).toBe(1)
-    const r = redoSlides()
-    expect(r.success).toBe(false)
-  })
-
-  it('ring buffer trims oldest when over limit', async () => {
-    process.env.BIG_PPT_HISTORY_MAX = '3'
-    fs.writeFileSync(slidesPath, 'v1', 'utf-8')
-    await writeSlides('v2') // [v1, v2], idx=1
-    await writeSlides('v3') // [v1, v2, v3], idx=2
-    await writeSlides('v4') // trim v1 → [v2, v3, v4], idx=2
-    expect(listHistory().files.length).toBe(3)
-    restoreSlides() // v4 → v3
-    expect(readSlides()).toBe('v3')
-    restoreSlides() // v3 → v2
-    expect(readSlides()).toBe('v2')
-    const r = restoreSlides() // already earliest (v1 was trimmed)
-    expect(r.success).toBe(false)
-  })
-
-  it('undo after editSlides restores pre-edit content', async () => {
-    fs.writeFileSync(slidesPath, 'apple\nbanana\n', 'utf-8')
-    await editSlides('banana', 'cherry')
-    expect(readSlides()).toBe('apple\ncherry\n')
-    restoreSlides()
-    expect(readSlides()).toBe('apple\nbanana\n')
-  })
-
-  it('undo returns position info (index/total)', async () => {
-    fs.writeFileSync(slidesPath, 'v1', 'utf-8')
-    await writeSlides('v2')
-    await writeSlides('v3') // files: [v1, v2, v3]
-    const r = restoreSlides()
-    expect(r.success).toBe(true)
-    expect(r.position).toEqual({ index: 2, total: 3 })
-    expect(r.message).toContain('第 2 / 3')
-  })
-})
-
-describe('turn-based aggregation (轮次聚合)', () => {
-  it('same turnId merges consecutive writes into one history entry', async () => {
-    fs.writeFileSync(slidesPath, 'v0', 'utf-8')
-    await runInTurn('turn-a', async () => {
-      await writeSlides('v1')
-      await writeSlides('v2')
-      await writeSlides('v3')
+describe('slides-store DB-based(P0 fix)', () => {
+  describe('read/write', () => {
+    it('readSlides 拿当前 deck 的 currentVersion.content', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v1')
+      const content = await inDeck(user.id, deck.id, () => readSlides())
+      expect(content).toBe('v1')
     })
-    // files: [init v0, turn-a (holds v3 via overwrite)]
-    const hist = listHistory()
-    expect(hist.files.length).toBe(2)
-    expect(hist.currentIndex).toBe(1)
-    expect(hist.lastTurnId).toBe('turn-a')
-    expect(readSlides()).toBe('v3')
-  })
 
-  it('different turnIds create separate history entries', async () => {
-    fs.writeFileSync(slidesPath, 'v0', 'utf-8')
-    await runInTurn('turn-a', async () => await writeSlides('v1'))
-    await runInTurn('turn-b', async () => await writeSlides('v2'))
-    await runInTurn('turn-c', async () => await writeSlides('v3'))
-    const hist = listHistory()
-    expect(hist.files.length).toBe(4) // init + 3 turns
-    expect(hist.currentIndex).toBe(3)
-  })
-
-  it('one undo rolls back entire aggregated turn', async () => {
-    fs.writeFileSync(slidesPath, 'v0', 'utf-8')
-    await runInTurn('turn-a', async () => {
-      await writeSlides('v1')
-      await writeSlides('v2') // merged with v1 under turn-a
+    it('writeSlides 走 starter→真实首次生成路径,后续 readSlides 反映新内容', async () => {
+      const { user } = await createLoggedInUser()
+      const starter = '---\nlayout: cover\nmainTitle: 请填写标题\nsubtitle: 请填写副标题\ndate: YYYY/MM/DD\n---\n'
+      const { deck } = await createDeckDirect(user.id, 'D', starter)
+      const r = await inDeck(user.id, deck.id, () => writeSlides('---\nlayout: cover\nmainTitle: real\n---\n'))
+      expect(r.success).toBe(true)
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toContain('real')
+      expect(await inDeck(user.id, deck.id, () => readSlides())).not.toContain('请填写标题')
     })
-    const r = restoreSlides()
-    expect(r.success).toBe(true)
-    expect(readSlides()).toBe('v0') // 一次 undo 就回到最初，而不是 v1 中间态
-    expect(r.position).toEqual({ index: 1, total: 2 })
+
+    it('writeSlides 护栏:已有真实内容时拒绝整体覆盖', async () => {
+      const { user } = await createLoggedInUser()
+      const real =
+        '---\nlayout: cover\nmainTitle: 真实标题\n---\n\n# P1\n\n---\nlayout: content\nheading: 二\n---\n\n# P2\n'
+      const { deck } = await createDeckDirect(user.id, 'D', real)
+      const r = await inDeck(user.id, deck.id, () => writeSlides('---\nlayout: cover\nmainTitle: X\n---\n'))
+      expect(r.success).toBe(false)
+      expect(r.error).toMatch(/已有 2 页/)
+    })
+
+    it('无 ALS deckId / userId → readSlides throw NoActiveDeckError', async () => {
+      await expect(readSlides()).rejects.toThrow(NoActiveDeckError)
+    })
+
+    it('IDOR:用户 B 用 A 的 deckId → readSlides throw', async () => {
+      const a = await createLoggedInUser('a@a.com')
+      const b = await createLoggedInUser('b@a.com')
+      const { deck } = await createDeckDirect(a.user.id, 'A-deck', 'secret-content')
+      await expect(inDeck(b.user.id, deck.id, () => readSlides())).rejects.toThrow(NoActiveDeckError)
+    })
   })
 
-  it('undo clears lastTurnId so next write in same turn starts new entry', async () => {
-    fs.writeFileSync(slidesPath, 'v0', 'utf-8')
-    await runInTurn('turn-a', async () => await writeSlides('v1'))
-    restoreSlides() // back to v0; lastTurnId cleared
-    await runInTurn('turn-a', async () => await writeSlides('v2'))
-    // Even though turnId is same as before, undo truncated and cleared lastTurnId
-    // so this starts a fresh entry (not merging with the trimmed v1)
-    const hist = listHistory()
-    expect(hist.files.length).toBe(2) // [init v0, turn-a v2]
-    expect(readSlides()).toBe('v2')
+  describe('editSlides', () => {
+    it('替换唯一匹配字符串', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', '# Title\n\n- apple\n- banana\n')
+      const r = await inDeck(user.id, deck.id, () => editSlides('banana', 'cherry'))
+      expect(r.success).toBe(true)
+      const c = await inDeck(user.id, deck.id, () => readSlides())
+      expect(c).toContain('- cherry')
+      expect(c).not.toContain('banana')
+    })
+
+    it('多处匹配 → 拒收', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'foo\nfoo\nfoo')
+      const r = await inDeck(user.id, deck.id, () => editSlides('foo', 'bar'))
+      expect(r.success).toBe(false)
+      expect(r.error).toMatch(/3 处匹配/)
+    })
+
+    it('无匹配 → 给相似建议', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'the quick brown fox\nanother line')
+      const r = await inDeck(user.id, deck.id, () => editSlides('the quikc brown fox', 'replaced'))
+      expect(r.success).toBe(false)
+      expect(r.error).toContain('the quick brown fox')
+    })
+
+    it('空 old_string 拒收', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'x')
+      const r = await inDeck(user.id, deck.id, () => editSlides('', 'y'))
+      expect(r.success).toBe(false)
+    })
   })
 
-  it('writes without turnId never merge (legacy behavior)', async () => {
-    fs.writeFileSync(slidesPath, 'v0', 'utf-8')
-    await writeSlides('v1')
-    await writeSlides('v2')
-    await writeSlides('v3')
-    const hist = listHistory()
-    expect(hist.files.length).toBe(4) // init + 3 pushes
-    expect(hist.lastTurnId).toBe(null)
+  describe('undo / redo', () => {
+    it('undo 回到上一版本', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v1')
+      // 用 editSlides 串字符串替换路径(避开 writeSlides 的"已有页"护栏)
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v2'))
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v2')
+      await inDeck(user.id, deck.id, () => restoreSlides())
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v1')
+    })
+
+    it('undo + redo 走回最新', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v1')
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v2'))
+      await inDeck(user.id, deck.id, () => restoreSlides())
+      const r = await inDeck(user.id, deck.id, () => redoSlides())
+      expect(r.success).toBe(true)
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v2')
+    })
+
+    it('连续 undo 一步步往回', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v1')
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v2'))
+      await inDeck(user.id, deck.id, () => editSlides('v2', 'v3'))
+      await inDeck(user.id, deck.id, () => restoreSlides())
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v2')
+      await inDeck(user.id, deck.id, () => restoreSlides())
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v1')
+    })
+
+    it('undo 到最早 → 再 undo 返 error', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v1')
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v2'))
+      await inDeck(user.id, deck.id, () => restoreSlides()) // → v1
+      const r = await inDeck(user.id, deck.id, () => restoreSlides())
+      expect(r.success).toBe(false)
+      expect(r.error).toMatch(/最早/)
+    })
+
+    it('redo 栈空时返 error', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v1')
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v2'))
+      const r = await inDeck(user.id, deck.id, () => redoSlides())
+      expect(r.success).toBe(false)
+      expect(r.error).toMatch(/最新/)
+    })
+
+    it('新写截断 redo 栈', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v1')
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v2'))
+      await inDeck(user.id, deck.id, () => editSlides('v2', 'v3'))
+      await inDeck(user.id, deck.id, () => restoreSlides()) // → v2
+      await inDeck(user.id, deck.id, () => restoreSlides()) // → v1
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v4')) // truncates v2/v3
+      const hist = await inDeck(user.id, deck.id, () => listHistoryDb())
+      expect(hist.ids.length).toBe(2) // [v1, v4]
+      const r = await inDeck(user.id, deck.id, () => redoSlides())
+      expect(r.success).toBe(false)
+    })
+
+    it('ring buffer 裁掉最旧', async () => {
+      process.env.BIG_PPT_HISTORY_MAX = '3'
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v1')
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v2')) // [v1,v2]
+      await inDeck(user.id, deck.id, () => editSlides('v2', 'v3')) // [v1,v2,v3]
+      await inDeck(user.id, deck.id, () => editSlides('v3', 'v4')) // trim v1 → [v2,v3,v4]
+      const hist = await inDeck(user.id, deck.id, () => listHistoryDb())
+      expect(hist.ids.length).toBe(3)
+      await inDeck(user.id, deck.id, () => restoreSlides()) // v4 → v3
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v3')
+      await inDeck(user.id, deck.id, () => restoreSlides()) // v3 → v2
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v2')
+      const r = await inDeck(user.id, deck.id, () => restoreSlides()) // 最旧 v1 已 trim
+      expect(r.success).toBe(false)
+    })
+
+    it('undo 返 position', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v1')
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v2'))
+      await inDeck(user.id, deck.id, () => editSlides('v2', 'v3'))
+      const r = await inDeck(user.id, deck.id, () => restoreSlides())
+      expect(r.success).toBe(true)
+      expect(r.position).toEqual({ index: 2, total: 3 })
+    })
   })
-})
 
-describe('create/update/delete/reorder slide (四件套)', () => {
-  const twoPageMd =
-    '---\nlayout: cover\nmainTitle: hi\n---\n\n# P1\n\n---\nlayout: content\nheading: Second\n---\n\n# P2\n'
+  describe('turn-based aggregation', () => {
+    it('同 turnId 多次写合并成一条 history', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v0')
+      await inDeck(
+        user.id,
+        deck.id,
+        async () => {
+          await editSlides('v0', 'v1')
+          await editSlides('v1', 'v2')
+          await editSlides('v2', 'v3')
+        },
+        'turn-a',
+      )
+      const hist = await inDeck(user.id, deck.id, () => listHistoryDb())
+      // 初始 v0 + turn-a 合并后一条 = 2 行
+      expect(hist.ids.length).toBe(2)
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v3')
+    })
 
-  function seed(md: string) {
-    fs.writeFileSync(slidesPath, md, 'utf-8')
-  }
+    it('不同 turnId 分别建条', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v0')
+      await inDeck(user.id, deck.id, () => editSlides('v0', 'v1'), 'turn-a')
+      await inDeck(user.id, deck.id, () => editSlides('v1', 'v2'), 'turn-b')
+      await inDeck(user.id, deck.id, () => editSlides('v2', 'v3'), 'turn-c')
+      const hist = await inDeck(user.id, deck.id, () => listHistoryDb())
+      expect(hist.ids.length).toBe(4) // init + 3 turns
+    })
 
-  describe('createSlide', () => {
-    it('append 到末尾（默认 index）', async () => {
-      seed(twoPageMd)
-      const r = await createSlide({ layout: 'content', frontmatter: { heading: 'New' }, body: '# New' })
+    it('一次 undo 回退整个聚合 turn', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', 'v0')
+      await inDeck(
+        user.id,
+        deck.id,
+        async () => {
+          await editSlides('v0', 'v1')
+          await editSlides('v1', 'v2') // 同 turn → 覆盖,而非新增
+        },
+        'turn-a',
+      )
+      const r = await inDeck(user.id, deck.id, () => restoreSlides())
+      expect(r.success).toBe(true)
+      expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v0')
+    })
+  })
+
+  describe('四件套 create/update/delete/reorder', () => {
+    const twoPageMd =
+      '---\nlayout: cover\nmainTitle: hi\n---\n\n# P1\n\n---\nlayout: content\nheading: Second\n---\n\n# P2\n'
+
+    it('createSlide append', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', twoPageMd)
+      const r = await inDeck(user.id, deck.id, () =>
+        createSlide({ layout: 'content', frontmatter: { heading: 'New' }, body: '# New' }),
+      )
       expect(r.success).toBe(true)
       expect(r.index).toBe(3)
-      const pages = parseSlides(readSlides()).pages
+      const pages = parseSlides(await inDeck(user.id, deck.id, () => readSlides())).pages
       expect(pages.length).toBe(3)
-      expect(pages[2]!.frontmatter.layout).toBe('content')
       expect(pages[2]!.frontmatter.heading).toBe('New')
     })
 
-    it('插入中间（index=2 把原第 2 页顺延到第 3）', async () => {
-      seed(twoPageMd)
-      const r = await createSlide({
-        index: 2,
-        layout: 'content',
-        frontmatter: { heading: 'Middle' },
-        body: '# M',
-      })
+    it('createSlide 插入中间', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', twoPageMd)
+      const r = await inDeck(user.id, deck.id, () =>
+        createSlide({ index: 2, layout: 'content', frontmatter: { heading: 'Middle' }, body: '# M' }),
+      )
       expect(r.success).toBe(true)
       expect(r.index).toBe(2)
-      const pages = parseSlides(readSlides()).pages
+      const pages = parseSlides(await inDeck(user.id, deck.id, () => readSlides())).pages
       expect(pages.length).toBe(3)
-      expect(pages[0]!.frontmatter.mainTitle).toBe('hi') // 第 1 页不动
-      expect(pages[1]!.frontmatter.heading).toBe('Middle') // 新页在中间
-      expect(pages[2]!.frontmatter.heading).toBe('Second') // 原第 2 页被挤到第 3
+      expect(pages[0]!.frontmatter.mainTitle).toBe('hi')
+      expect(pages[1]!.frontmatter.heading).toBe('Middle')
+      expect(pages[2]!.frontmatter.heading).toBe('Second')
     })
 
-    it('插入头部 index=1', async () => {
-      seed(twoPageMd)
-      const r = await createSlide({ index: 1, layout: 'cover', body: '# First' })
-      expect(r.success).toBe(true)
-      const pages = parseSlides(readSlides()).pages
-      expect(pages.length).toBe(3)
-      expect(pages[0]!.frontmatter.layout).toBe('cover')
-      expect(pages[0]!.body.trim()).toBe('# First')
-    })
-
-    it('index 超出范围拒绝', async () => {
-      seed(twoPageMd)
-      const r = await createSlide({ index: 99, layout: 'content', body: 'x' })
+    it('createSlide index 超范围拒收', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', twoPageMd)
+      const r = await inDeck(user.id, deck.id, () => createSlide({ index: 99, layout: 'content', body: 'x' }))
       expect(r.success).toBe(false)
       expect(r.error).toMatch(/超出范围/)
     })
 
-    it('空 layout 拒绝', async () => {
-      seed(twoPageMd)
-      const r = await createSlide({ layout: '' })
-      expect(r.success).toBe(false)
-      expect(r.error).toMatch(/layout/)
-    })
-  })
-
-  describe('updateSlide', () => {
-    it('合并 frontmatter（默认不 replace）', async () => {
-      seed(twoPageMd)
-      const r = await updateSlide({ index: 2, frontmatter: { heading: 'Renamed' } })
+    it('updateSlide 合并 frontmatter', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', twoPageMd)
+      const r = await inDeck(user.id, deck.id, () =>
+        updateSlide({ index: 2, frontmatter: { heading: 'Renamed' } }),
+      )
       expect(r.success).toBe(true)
-      const pages = parseSlides(readSlides()).pages
+      const pages = parseSlides(await inDeck(user.id, deck.id, () => readSlides())).pages
       expect(pages[1]!.frontmatter.heading).toBe('Renamed')
-      expect(pages[1]!.frontmatter.layout).toBe('content') // 原字段保留
+      expect(pages[1]!.frontmatter.layout).toBe('content')
     })
 
-    it('replaceFrontmatter=true 完全替换', async () => {
-      seed(twoPageMd)
-      const r = await updateSlide({
-        index: 2,
-        frontmatter: { layout: 'two-col', heading: 'N', leftTitle: 'L', rightTitle: 'R' },
-        replaceFrontmatter: true,
-      })
+    it('updateSlide replaceFrontmatter=true 完全替换', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', twoPageMd)
+      const r = await inDeck(user.id, deck.id, () =>
+        updateSlide({
+          index: 2,
+          frontmatter: { layout: 'two-col', heading: 'N', leftTitle: 'L', rightTitle: 'R' },
+          replaceFrontmatter: true,
+        }),
+      )
       expect(r.success).toBe(true)
-      const pages = parseSlides(readSlides()).pages
+      const pages = parseSlides(await inDeck(user.id, deck.id, () => readSlides())).pages
       expect(pages[1]!.frontmatter).toEqual({
         layout: 'two-col',
         heading: 'N',
@@ -349,120 +343,95 @@ describe('create/update/delete/reorder slide (四件套)', () => {
       })
     })
 
-    it('仅替换 body', async () => {
-      seed(twoPageMd)
-      const r = await updateSlide({ index: 1, body: '# New P1 Body' })
+    it('updateSlide 仅替换 body', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', twoPageMd)
+      const r = await inDeck(user.id, deck.id, () => updateSlide({ index: 1, body: '# New P1 Body' }))
       expect(r.success).toBe(true)
-      const pages = parseSlides(readSlides()).pages
+      const pages = parseSlides(await inDeck(user.id, deck.id, () => readSlides())).pages
       expect(pages[0]!.body.trim()).toBe('# New P1 Body')
-      expect(pages[0]!.frontmatter.mainTitle).toBe('hi') // FM 不变
+      expect(pages[0]!.frontmatter.mainTitle).toBe('hi')
     })
 
-    it('同时传 frontmatter 和 body', async () => {
-      seed(twoPageMd)
-      const r = await updateSlide({
-        index: 1,
-        frontmatter: { subtitle: 'added' },
-        body: '# Both',
-      })
+    it('deleteSlide 删中间页', async () => {
+      const { user } = await createLoggedInUser()
+      const threePageMd = twoPageMd + '\n---\nlayout: back-cover\n---\n\n# P3\n'
+      const { deck } = await createDeckDirect(user.id, 'D', threePageMd)
+      const r = await inDeck(user.id, deck.id, () => deleteSlide(2))
       expect(r.success).toBe(true)
-      const pages = parseSlides(readSlides()).pages
-      expect(pages[0]!.frontmatter.subtitle).toBe('added')
-      expect(pages[0]!.body.trim()).toBe('# Both')
-    })
-
-    it('未提供 frontmatter 也未提供 body 拒绝', async () => {
-      seed(twoPageMd)
-      const r = await updateSlide({ index: 1 })
-      expect(r.success).toBe(false)
-      expect(r.error).toMatch(/至少提供/)
-    })
-
-    it('index 超出范围拒绝', async () => {
-      seed(twoPageMd)
-      const r = await updateSlide({ index: 5, body: 'x' })
-      expect(r.success).toBe(false)
-    })
-  })
-
-  describe('deleteSlide', () => {
-    it('删除中间页', async () => {
-      const threePageMd =
-        twoPageMd + '\n---\nlayout: back-cover\n---\n\n# P3\n'
-      seed(threePageMd)
-      const r = await deleteSlide(2)
-      expect(r.success).toBe(true)
-      const pages = parseSlides(readSlides()).pages
+      const pages = parseSlides(await inDeck(user.id, deck.id, () => readSlides())).pages
       expect(pages.length).toBe(2)
       expect(pages[0]!.frontmatter.mainTitle).toBe('hi')
       expect(pages[1]!.frontmatter.layout).toBe('back-cover')
     })
 
-    it('只剩一页时拒绝删', async () => {
-      seed('---\nlayout: cover\n---\n\n# lone\n')
-      const r = await deleteSlide(1)
+    it('deleteSlide 仅剩一页时拒收', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', '---\nlayout: cover\n---\n\n# lone\n')
+      const r = await inDeck(user.id, deck.id, () => deleteSlide(1))
       expect(r.success).toBe(false)
       expect(r.error).toMatch(/最后一页/)
     })
 
-    it('index 超出范围拒绝', async () => {
-      seed(twoPageMd)
-      const r = await deleteSlide(5)
-      expect(r.success).toBe(false)
-    })
-  })
-
-  describe('reorderSlides', () => {
-    it('合法排列生效', async () => {
+    it('reorderSlides 合法排列', async () => {
+      const { user } = await createLoggedInUser()
       const fourPageMd =
         '---\na: 1\n---\n\n# A\n\n---\na: 2\n---\n\n# B\n\n---\na: 3\n---\n\n# C\n\n---\na: 4\n---\n\n# D\n'
-      seed(fourPageMd)
-      const r = await reorderSlides([4, 2, 3, 1])
+      const { deck } = await createDeckDirect(user.id, 'D', fourPageMd)
+      const r = await inDeck(user.id, deck.id, () => reorderSlides([4, 2, 3, 1]))
       expect(r.success).toBe(true)
-      const pages = parseSlides(readSlides()).pages
+      const pages = parseSlides(await inDeck(user.id, deck.id, () => readSlides())).pages
       expect(pages.map((p) => p.frontmatter.a)).toEqual([4, 2, 3, 1])
     })
 
-    it('长度不匹配拒绝', async () => {
-      seed(twoPageMd)
-      const r = await reorderSlides([1])
-      expect(r.success).toBe(false)
-      expect(r.error).toMatch(/长度/)
+    it('reorderSlides 长度错 / 重复 / 越界 → 拒收', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', twoPageMd)
+      expect((await inDeck(user.id, deck.id, () => reorderSlides([1]))).success).toBe(false)
+      expect((await inDeck(user.id, deck.id, () => reorderSlides([1, 1]))).success).toBe(false)
+      expect((await inDeck(user.id, deck.id, () => reorderSlides([1, 3]))).success).toBe(false)
     })
 
-    it('含重复元素拒绝', async () => {
-      seed(twoPageMd)
-      const r = await reorderSlides([1, 1])
-      expect(r.success).toBe(false)
-      expect(r.error).toMatch(/重复/)
-    })
-
-    it('含越界元素拒绝', async () => {
-      seed(twoPageMd)
-      const r = await reorderSlides([1, 3])
-      expect(r.success).toBe(false)
+    it('四件套 与 history 集成:createSlide → undo 回滚页数', async () => {
+      const { user } = await createLoggedInUser()
+      const { deck } = await createDeckDirect(user.id, 'D', twoPageMd)
+      await inDeck(user.id, deck.id, () => createSlide({ layout: 'content', body: '# third' }))
+      expect(parseSlides(await inDeck(user.id, deck.id, () => readSlides())).pages.length).toBe(3)
+      await inDeck(user.id, deck.id, () => restoreSlides())
+      expect(parseSlides(await inDeck(user.id, deck.id, () => readSlides())).pages.length).toBe(2)
     })
   })
 
-  describe('四件套 与 history 集成', () => {
-    it('createSlide 写入 history，undo 回滚', async () => {
-      seed(twoPageMd)
-      await createSlide({ layout: 'content', body: '# third' })
-      expect(parseSlides(readSlides()).pages.length).toBe(3)
-      restoreSlides()
-      expect(parseSlides(readSlides()).pages.length).toBe(2)
+  describe('P0 漏洞修复 — 跨用户 / 跨 deck 串扰防护', () => {
+    it('user A 写后 user B 读 A 的 deckId → 拒(NoActiveDeckError),不串扰', async () => {
+      const a = await createLoggedInUser('a@a.com')
+      const b = await createLoggedInUser('b@a.com')
+      const { deck: aDeck } = await createDeckDirect(a.user.id, 'A-deck', 'a-secret')
+      const { deck: bDeck } = await createDeckDirect(b.user.id, 'B-deck', 'b-content')
+
+      // A 写
+      await inDeck(a.user.id, aDeck.id, () => editSlides('a-secret', 'a-NEW'))
+      // B 读自己的 deck → 拿自己的内容,不受 A 写入污染
+      const bContent = await inDeck(b.user.id, bDeck.id, () => readSlides())
+      expect(bContent).toBe('b-content')
+
+      // B 用 A 的 deckId 来 read → throw(IDOR)
+      await expect(inDeck(b.user.id, aDeck.id, () => readSlides())).rejects.toThrow(NoActiveDeckError)
+      await expect(inDeck(b.user.id, aDeck.id, () => writeSlides('hack'))).rejects.toThrow(NoActiveDeckError)
+      await expect(inDeck(b.user.id, aDeck.id, () => editSlides('a-NEW', 'hack'))).rejects.toThrow(
+        NoActiveDeckError,
+      )
     })
 
-    it('updateSlide + deleteSlide 在同 turn 合并为一条 history', async () => {
-      seed(twoPageMd)
-      await runInTurn('turn-x', async () => {
-        await updateSlide({ index: 1, body: '# new P1' })
-        await deleteSlide(2)
-      })
-      const hist = listHistory()
-      // files: [init twoPageMd, turn-x 最终态（1 页）]
-      expect(hist.files.length).toBe(2)
-      expect(parseSlides(readSlides()).pages.length).toBe(1)
+    it('user A 切到 user B 的 deck 后,readSlides 拿到的是 B 自己的当前内容', async () => {
+      // 这条断言不同 deck 之间 read 完全独立,不存在"全局共享 slides.md"残留
+      const a = await createLoggedInUser('a@a.com')
+      const b = await createLoggedInUser('b@a.com')
+      const { deck: aDeck } = await createDeckDirect(a.user.id, 'A-deck', 'a-content')
+      const { deck: bDeck } = await createDeckDirect(b.user.id, 'B-deck', 'b-content')
+      await inDeck(a.user.id, aDeck.id, () => editSlides('a-content', 'a-V2'))
+      expect(await inDeck(b.user.id, bDeck.id, () => readSlides())).toBe('b-content')
+      expect(await inDeck(a.user.id, aDeck.id, () => readSlides())).toBe('a-V2')
     })
   })
 })

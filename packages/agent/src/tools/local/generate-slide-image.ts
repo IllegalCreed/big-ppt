@@ -237,7 +237,7 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
 
   let preservedHeading: string | undefined
   try {
-    const parsed = parseSlides(readSlides())
+    const parsed = parseSlides(await readSlides())
     if (slideIndex > parsed.pages.length) {
       return JSON.stringify({
         success: false,

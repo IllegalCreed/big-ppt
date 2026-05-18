@@ -1,6 +1,6 @@
 import type { ToolDef } from '../registry.js'
 import { reorderSlides } from '../../slides-store/index.js'
-import { coerceIntArray } from './utils.js'
+import { coerceIntArray, withSlidesStoreGuard } from './utils.js'
 
 export const reorderSlidesTool: ToolDef = {
   name: 'reorder_slides',
@@ -23,7 +23,7 @@ export const reorderSlidesTool: ToolDef = {
     if (order === null) {
       return JSON.stringify({ success: false, error: 'order 必须是整数数组' })
     }
-    const result = await reorderSlides(order)
+    const result = await withSlidesStoreGuard(() => reorderSlides(order))
     return JSON.stringify(result)
   },
 }

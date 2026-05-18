@@ -1,7 +1,7 @@
 import type { ToolDef } from '../registry.js'
 import { updateSlide } from '../../slides-store/index.js'
 import { validateFrontmatterAgainstManifest } from '../../templates/validate-frontmatter.js'
-import { coerceInt } from './utils.js'
+import { coerceInt, withSlidesStoreGuard } from './utils.js'
 
 export const updateSlideTool: ToolDef = {
   name: 'update_slide',
@@ -56,7 +56,9 @@ export const updateSlideTool: ToolDef = {
       }
     }
 
-    const result = await updateSlide({ index, frontmatter, body, replaceFrontmatter })
+    const result = await withSlidesStoreGuard(() =>
+      updateSlide({ index, frontmatter, body, replaceFrontmatter }),
+    )
     return JSON.stringify(result)
   },
 }

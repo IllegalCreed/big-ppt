@@ -1,7 +1,7 @@
 import type { ToolDef } from '../registry.js'
 import { createSlide } from '../../slides-store/index.js'
 import { validateFrontmatterAgainstManifest } from '../../templates/validate-frontmatter.js'
-import { coerceIndex } from './utils.js'
+import { coerceIndex, withSlidesStoreGuard } from './utils.js'
 
 export const createSlideTool: ToolDef = {
   name: 'create_slide',
@@ -49,7 +49,9 @@ export const createSlideTool: ToolDef = {
       return JSON.stringify({ success: false, error: validationErr.message })
     }
     const body = typeof args.body === 'string' ? args.body : ''
-    const result = await createSlide({ index, layout, frontmatter, body })
+    const result = await withSlidesStoreGuard(() =>
+      createSlide({ index, layout, frontmatter, body }),
+    )
     return JSON.stringify(result)
   },
 }

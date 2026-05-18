@@ -31,3 +31,24 @@ export function coerceIntArray(raw: unknown): number[] | null {
   }
   return out
 }
+
+/**
+ * 包 slides-store 调用:把 NoActiveDeckError 转成 LLM 友好的 {success:false,error} JSON。
+ * 其他错误向上抛。
+ *
+ * P0 security fix(2026-05-18):slides-store DB-based 后,无 ALS activeDeckId / userId
+ * 时 throw NoActiveDeckError,工具不应 propagate 给 LLM 一个 stack trace。
+ */
+export async function withSlidesStoreGuard<T>(
+  action: () => Promise<T>,
+): Promise<T | { success: false; error: string }> {
+  try {
+    return await action()
+  } catch (err) {
+    const e = err as Error
+    if (e.name === 'NoActiveDeckError') {
+      return { success: false, error: e.message }
+    }
+    throw err
+  }
+}

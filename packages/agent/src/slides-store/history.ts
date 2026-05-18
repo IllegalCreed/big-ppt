@@ -1,181 +1,33 @@
-import crypto from 'node:crypto'
-import fs from 'node:fs'
-import path from 'node:path'
-import type { HistoryPosition } from '@big-ppt/shared'
-import { getPaths } from '../workspace.js'
-import { getRequestContext } from '../context.js'
-
 /**
- * 线性版本栈模型：
- * - `files` 按时间序存快照文件名 [oldest, ..., newest]
- * - `currentIndex` 指向 "当前 slides.md 应该等于 files[currentIndex] 的内容"（0-based；-1 表空栈）
- * - 写操作：截断 redo 栈（currentIndex 之后的快照）→ append 新快照 → currentIndex 前进
- * - 轮次聚合：若当前 turnId 等于 pointer.lastTurnId，则覆盖 files[currentIndex] 的快照而不是 push
- * - 环形裁剪：files.length 超过 MAX 时 shift 最旧的，currentIndex 同步 -1
+ * Phase 15.x P0 security hotfix(2026-05-18):history undo/redo 改为纯 DB,基于 deck_versions
+ * append-only 表 + decks.currentVersionId 指针,删旧 fs ring buffer。
  *
- * 仅供 /undo /redo 斜杠指令用作工具级临时栈。Phase 5 deck_versions 表会取代它。
+ * 旧版(Phase 4)用 fs ring buffer(`data/slides-history/<sha1(slidesPath)>/`),全局共享
+ * 跟 slides.md 一样存在跨账号/跨 deck 漏洞。新版每个 deck 自己一条版本链:
+ *
+ * - 写入:同 turnId 覆盖最末版本;新 turn append + 截断 `id > currentVersionId` 的 future 版本
+ *   + 环形裁剪(最早行 DELETE,保留 MAX 条)。
+ * - undo:在 deck 的 versions 里找 `id < currentVersionId` ORDER BY id DESC LIMIT 1。
+ * - redo:在 deck 的 versions 里找 `id > currentVersionId` ORDER BY id ASC LIMIT 1。
+ * - 位置:`{index: K, total: N}` where total = count by deck, K = rank-by-id-asc of currentVersionId。
+ *
+ * 设计选择:
+ * - 不要 ON DELETE CASCADE 的反方向 — current_version_id 是 nullable;删 versions 后 deck 行
+ *   保留(`currentVersionId` 可指向新的 latest 或 NULL)。
+ * - "未访问过 deck"(currentVersionId NULL)→ undo / redo 都返 success:false。
+ * - 没 ALS userId / activeDeckId → `NoActiveDeckError`,上游友好返错给 LLM。
+ *
+ * 仍保留 `BIG_PPT_HISTORY_MAX` env(默认 20),按"该 deck 总 version 行数"裁剪最早。
  */
-
-interface Pointer {
-  currentIndex: number
-  files: string[]
-  /** 最近一次 push 时的 turnId。同 turn 后续 appendHistory 会合并到 files[currentIndex] */
-  lastTurnId: string | null
-}
-
-function getCurrentTurnId(): string | null {
-  return getRequestContext().turnId
-}
+import { and, asc, count, desc, eq, gt, lt, sql } from 'drizzle-orm'
+import type { HistoryPosition } from '@big-ppt/shared'
+import { getDb, decks, deckVersions } from '../db/index.js'
+import { getRequestContext } from '../context.js'
+import { NoActiveDeckError } from './errors.js'
 
 function getMaxHistory(): number {
   const n = Number(process.env.BIG_PPT_HISTORY_MAX)
   return Number.isFinite(n) && n >= 2 ? n : 20
-}
-
-function getSlidesHash(): string {
-  const { slidesPath } = getPaths()
-  return crypto.createHash('sha1').update(slidesPath).digest('hex').slice(0, 8)
-}
-
-function getHistoryRoot(): string {
-  const { historyDir } = getPaths()
-  return path.join(historyDir, getSlidesHash())
-}
-
-function getPointerPath(): string {
-  return path.join(getHistoryRoot(), 'pointer.json')
-}
-
-function readPointer(): Pointer {
-  const p = getPointerPath()
-  if (!fs.existsSync(p)) return { currentIndex: -1, files: [], lastTurnId: null }
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(p, 'utf-8'))
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      'currentIndex' in parsed &&
-      'files' in parsed &&
-      typeof (parsed as Pointer).currentIndex === 'number' &&
-      Array.isArray((parsed as Pointer).files)
-    ) {
-      const p = parsed as Partial<Pointer> & { currentIndex: number; files: string[] }
-      return {
-        currentIndex: p.currentIndex,
-        files: p.files,
-        lastTurnId: typeof p.lastTurnId === 'string' ? p.lastTurnId : null,
-      }
-    }
-  } catch {
-    /* fall through */
-  }
-  return { currentIndex: -1, files: [], lastTurnId: null }
-}
-
-function writePointer(ptr: Pointer): void {
-  const p = getPointerPath()
-  try {
-    fs.mkdirSync(path.dirname(p), { recursive: true })
-    fs.writeFileSync(p, JSON.stringify(ptr, null, 2), 'utf-8')
-  } catch {
-    // 写 pointer 失败不致命：下一次 appendHistory 会重建
-  }
-}
-
-function writeSnapshot(op: string, content: string): string {
-  const root = getHistoryRoot()
-  fs.mkdirSync(root, { recursive: true })
-  const filename = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}-${op}.md`
-  fs.writeFileSync(path.join(root, filename), content, 'utf-8')
-  return filename
-}
-
-function overwriteSnapshot(filename: string, content: string): void {
-  const root = getHistoryRoot()
-  fs.mkdirSync(root, { recursive: true })
-  fs.writeFileSync(path.join(root, filename), content, 'utf-8')
-}
-
-function readSnapshot(filename: string): string {
-  return fs.readFileSync(path.join(getHistoryRoot(), filename), 'utf-8')
-}
-
-function removeSnapshot(filename: string): void {
-  try {
-    fs.unlinkSync(path.join(getHistoryRoot(), filename))
-  } catch {
-    /* ignore */
-  }
-}
-
-function toPosition(ptr: Pointer): HistoryPosition | undefined {
-  if (ptr.currentIndex < 0 || ptr.files.length === 0) return undefined
-  return { index: ptr.currentIndex + 1, total: ptr.files.length }
-}
-
-/**
- * 记录一次即将发生的写操作的快照。
- *
- * 调用时机：**先调本函数，再写 slides.md**。
- *
- * 行为：
- * 1. 首次调用且 slides.md 已有内容：先把 pre-write 内容作为 list[0]（op=`init`）。
- * 2. 轮次聚合：若 `getCurrentTurnId() === pointer.lastTurnId`（同一个用户轮次内的第 N 次写），
- *    **覆盖** files[currentIndex] 的 snapshot 文件，保持 history 条数不变。
- * 3. 跨轮次 / 无 turn 上下文：截断 redo 栈 → append 新快照 → currentIndex 前进；
- *    超过 MAX 时 shift 最旧的。
- */
-export function appendHistory(op: string, newContent: string): void {
-  const { slidesPath } = getPaths()
-  const ptr = readPointer()
-  const currentTurnId = getCurrentTurnId()
-
-  // 首次：snapshot pre-write
-  if (ptr.files.length === 0 && fs.existsSync(slidesPath)) {
-    try {
-      const preContent = fs.readFileSync(slidesPath, 'utf-8')
-      const preFile = writeSnapshot('init', preContent)
-      ptr.files.push(preFile)
-      ptr.currentIndex = 0
-    } catch {
-      /* 读不了 pre-write 内容跳过，不致命 */
-    }
-  }
-
-  // 轮次合并：同一 turn 的后续写，覆盖末端快照，不 push
-  if (
-    currentTurnId &&
-    ptr.lastTurnId === currentTurnId &&
-    ptr.currentIndex === ptr.files.length - 1 &&
-    ptr.currentIndex >= 0
-  ) {
-    const last = ptr.files[ptr.currentIndex]!
-    overwriteSnapshot(last, newContent)
-    writePointer(ptr)
-    return
-  }
-
-  // 截断 redo 栈
-  if (ptr.currentIndex >= 0 && ptr.currentIndex < ptr.files.length - 1) {
-    const discarded = ptr.files.splice(ptr.currentIndex + 1)
-    for (const f of discarded) removeSnapshot(f)
-  }
-
-  // push 新快照
-  const newFile = writeSnapshot(op, newContent)
-  ptr.files.push(newFile)
-  ptr.currentIndex = ptr.files.length - 1
-  ptr.lastTurnId = currentTurnId
-
-  // 环形裁剪（保留 MAX 个）
-  const max = getMaxHistory()
-  while (ptr.files.length > max) {
-    const oldest = ptr.files.shift()
-    if (oldest) removeSnapshot(oldest)
-    ptr.currentIndex--
-  }
-
-  writePointer(ptr)
 }
 
 export interface HistoryActionResult {
@@ -185,19 +37,178 @@ export interface HistoryActionResult {
   error?: string
 }
 
-export function undo(): HistoryActionResult {
-  const ptr = readPointer()
-  if (ptr.currentIndex <= 0) {
+interface DeckGuard {
+  id: number
+  templateId: string
+  currentVersionId: number | null
+}
+
+/** 从 ALS 拿 (userId, activeDeckId) + 校归属;失败抛 NoActiveDeckError。 */
+async function loadDeckGuard(): Promise<DeckGuard> {
+  const rc = getRequestContext()
+  if (!rc.userId || !rc.activeDeckId) {
+    throw new NoActiveDeckError()
+  }
+  const db = getDb()
+  const [deck] = await db
+    .select({
+      id: decks.id,
+      templateId: decks.templateId,
+      currentVersionId: decks.currentVersionId,
+    })
+    .from(decks)
+    .where(and(eq(decks.id, rc.activeDeckId), eq(decks.userId, rc.userId)))
+    .limit(1)
+  if (!deck) {
+    throw new NoActiveDeckError('当前 deck 不存在或无权访问')
+  }
+  return deck
+}
+
+async function getVersionPosition(deckId: number, versionId: number): Promise<HistoryPosition | undefined> {
+  const db = getDb()
+  const [{ total }] = (await db
+    .select({ total: count() })
+    .from(deckVersions)
+    .where(eq(deckVersions.deckId, deckId))) as [{ total: number }]
+  if (total === 0) return undefined
+  const [{ rank }] = (await db
+    .select({ rank: count() })
+    .from(deckVersions)
+    .where(and(eq(deckVersions.deckId, deckId), lt(deckVersions.id, versionId)))) as [{ rank: number }]
+  return { index: rank + 1, total }
+}
+
+/**
+ * 写入一份新内容到当前 deck 的 deck_versions,同步推进 currentVersionId。
+ *
+ * 行为:
+ * 1. 校 ALS userId / activeDeckId(NoActiveDeckError 在 throw)
+ * 2. 同内容短路:与 currentVersionId 指向的 row 内容一致 → no-op
+ * 3. 同 turn 合并:current version 的 turnId === ALS turnId,且 currentVersionId 是 max(id)
+ *    → 直接 UPDATE 该 row 的 content / message / templateId,currentVersionId 不变
+ * 4. 跨 turn:先 DELETE 所有 id > currentVersionId 的 future 行(redo 栈截断),
+ *    再 INSERT 新行 + 推进 currentVersionId
+ * 5. 环形裁剪:INSERT 完成后,若该 deck 的总 version 数 > MAX,按 id ASC 删最早的若干行
+ *    (但绝不删 currentVersionId 指向的 row,避免悬空)
+ */
+export async function appendHistoryDb(content: string, op: string): Promise<void> {
+  const deck = await loadDeckGuard()
+  const rc = getRequestContext()
+  const db = getDb()
+
+  // 取 current version 的 turnId / content,用于"同内容短路"与"同 turn 合并"判断
+  let curTurnId: string | null = null
+  let curContent: string | null = null
+  if (deck.currentVersionId) {
+    const [cur] = await db
+      .select({ turnId: deckVersions.turnId, content: deckVersions.content })
+      .from(deckVersions)
+      .where(eq(deckVersions.id, deck.currentVersionId))
+      .limit(1)
+    curTurnId = cur?.turnId ?? null
+    curContent = cur?.content ?? null
+  }
+
+  // 同内容短路
+  if (curContent === content) return
+
+  // 同 turn 合并:current 必须是 max(id) 的"最新"版本(否则 undo 后位于中间,新写应起新行)
+  if (
+    rc.turnId &&
+    curTurnId === rc.turnId &&
+    deck.currentVersionId !== null
+  ) {
+    const [{ futureCount }] = (await db
+      .select({ futureCount: count() })
+      .from(deckVersions)
+      .where(and(eq(deckVersions.deckId, deck.id), gt(deckVersions.id, deck.currentVersionId)))) as [
+      { futureCount: number },
+    ]
+    if (futureCount === 0) {
+      await db
+        .update(deckVersions)
+        .set({ content, message: op, templateId: deck.templateId })
+        .where(eq(deckVersions.id, deck.currentVersionId))
+      return
+    }
+  }
+
+  // 跨 turn:先截断 redo 栈
+  if (deck.currentVersionId !== null) {
+    await db
+      .delete(deckVersions)
+      .where(and(eq(deckVersions.deckId, deck.id), gt(deckVersions.id, deck.currentVersionId)))
+  }
+
+  // append + 推进 currentVersionId
+  await db.insert(deckVersions).values({
+    deckId: deck.id,
+    content,
+    message: op,
+    turnId: rc.turnId,
+    templateId: deck.templateId,
+    authorId: rc.userId,
+  })
+  const [newVersion] = await db
+    .select({ id: deckVersions.id })
+    .from(deckVersions)
+    .where(eq(deckVersions.deckId, deck.id))
+    .orderBy(desc(deckVersions.id))
+    .limit(1)
+  if (!newVersion) return
+  await db.update(decks).set({ currentVersionId: newVersion.id }).where(eq(decks.id, deck.id))
+
+  // ring buffer 裁剪:保留最近 MAX 行,但绝不删 currentVersionId 指向的行
+  const max = getMaxHistory()
+  const [{ total }] = (await db
+    .select({ total: count() })
+    .from(deckVersions)
+    .where(eq(deckVersions.deckId, deck.id))) as [{ total: number }]
+  if (total > max) {
+    // LIMIT 走字符串拼,因为 mysql2 prepared-statement LIMIT ? 在某些 RDS 上 ER_PARSE_ERROR
+    // (CLAUDE.md 已记录过这个坑)。trimCount 是 server 内部算的数字,无 SQL injection 风险。
+    const trimCount = Math.max(0, Math.floor(total - max))
+    if (trimCount > 0) {
+      const oldest = await db
+        .select({ id: deckVersions.id })
+        .from(deckVersions)
+        .where(eq(deckVersions.deckId, deck.id))
+        .orderBy(asc(deckVersions.id))
+        .limit(trimCount)
+      const ids = oldest.map((r) => r.id).filter((id) => id !== newVersion.id)
+      if (ids.length > 0) {
+        await db.delete(deckVersions).where(sql`id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`)
+      }
+    }
+  }
+}
+
+export async function undoDb(): Promise<HistoryActionResult> {
+  const deck = await loadDeckGuard()
+  if (deck.currentVersionId === null) {
     return { success: false, error: '已到最早的历史，无法继续撤销' }
   }
-  ptr.currentIndex--
-  const content = readSnapshot(ptr.files[ptr.currentIndex]!)
-  const { slidesPath } = getPaths()
-  fs.writeFileSync(slidesPath, content, 'utf-8')
-  // undo 动作本身不属于任何 turn —— 下次 appendHistory 会以新 turn push 新条目（或截断）
-  ptr.lastTurnId = null
-  writePointer(ptr)
-  const pos = toPosition(ptr)
+  const db = getDb()
+  const [prev] = await db
+    .select({ id: deckVersions.id, templateId: deckVersions.templateId })
+    .from(deckVersions)
+    .where(and(eq(deckVersions.deckId, deck.id), lt(deckVersions.id, deck.currentVersionId)))
+    .orderBy(desc(deckVersions.id))
+    .limit(1)
+  if (!prev) {
+    return { success: false, error: '已到最早的历史，无法继续撤销' }
+  }
+  // 把 currentVersionId 回退到 prev;templateId 同步以支持"切模板可回滚"语义(Phase 7D)
+  await db
+    .update(decks)
+    .set({
+      currentVersionId: prev.id,
+      ...(prev.templateId ? { templateId: prev.templateId } : {}),
+    })
+    .where(eq(decks.id, deck.id))
+
+  const pos = await getVersionPosition(deck.id, prev.id)
   return {
     success: true,
     message: pos ? `已撤销到第 ${pos.index} / ${pos.total} 版` : '已撤销到上一个版本',
@@ -205,18 +216,30 @@ export function undo(): HistoryActionResult {
   }
 }
 
-export function redo(): HistoryActionResult {
-  const ptr = readPointer()
-  if (ptr.currentIndex < 0 || ptr.currentIndex >= ptr.files.length - 1) {
+export async function redoDb(): Promise<HistoryActionResult> {
+  const deck = await loadDeckGuard()
+  if (deck.currentVersionId === null) {
     return { success: false, error: '已到最新版本，无可重做' }
   }
-  ptr.currentIndex++
-  const content = readSnapshot(ptr.files[ptr.currentIndex]!)
-  const { slidesPath } = getPaths()
-  fs.writeFileSync(slidesPath, content, 'utf-8')
-  ptr.lastTurnId = null
-  writePointer(ptr)
-  const pos = toPosition(ptr)
+  const db = getDb()
+  const [next] = await db
+    .select({ id: deckVersions.id, templateId: deckVersions.templateId })
+    .from(deckVersions)
+    .where(and(eq(deckVersions.deckId, deck.id), gt(deckVersions.id, deck.currentVersionId)))
+    .orderBy(asc(deckVersions.id))
+    .limit(1)
+  if (!next) {
+    return { success: false, error: '已到最新版本，无可重做' }
+  }
+  await db
+    .update(decks)
+    .set({
+      currentVersionId: next.id,
+      ...(next.templateId ? { templateId: next.templateId } : {}),
+    })
+    .where(eq(decks.id, deck.id))
+
+  const pos = await getVersionPosition(deck.id, next.id)
   return {
     success: true,
     message: pos ? `已重做到第 ${pos.index} / ${pos.total} 版` : '已重做到下一个版本',
@@ -224,11 +247,23 @@ export function redo(): HistoryActionResult {
   }
 }
 
-export function listHistory(): {
-  files: string[]
+/**
+ * 测试 / debug 用:返回当前 deck 的版本列表(by id asc)。
+ * 注意:必须在已 runInRequest 的上下文里调,否则 throw NoActiveDeckError。
+ */
+export async function listHistoryDb(): Promise<{
+  ids: number[]
   currentIndex: number
-  lastTurnId: string | null
-} {
-  const ptr = readPointer()
-  return { files: [...ptr.files], currentIndex: ptr.currentIndex, lastTurnId: ptr.lastTurnId }
+  currentVersionId: number | null
+}> {
+  const deck = await loadDeckGuard()
+  const db = getDb()
+  const rows = await db
+    .select({ id: deckVersions.id })
+    .from(deckVersions)
+    .where(eq(deckVersions.deckId, deck.id))
+    .orderBy(asc(deckVersions.id))
+  const ids = rows.map((r) => r.id)
+  const currentIndex = deck.currentVersionId === null ? -1 : ids.indexOf(deck.currentVersionId)
+  return { ids, currentIndex, currentVersionId: deck.currentVersionId }
 }

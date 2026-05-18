@@ -10,7 +10,7 @@ import { __resetRegistry, register } from '../src/tools/registry.js'
 import { registerLocalTools } from '../src/tools/local/index.js'
 import { __resetPathsForTesting } from '../src/workspace.js'
 import { useTestDb } from './_setup/test-db.js'
-import { createLoggedInUser } from './_setup/factories.js'
+import { createLoggedInUser, createDeckDirect } from './_setup/factories.js'
 
 useTestDb()
 
@@ -112,12 +112,14 @@ describe('POST /api/call-tool', () => {
     expect(res.status).toBe(400)
   })
 
-  it('登录后调用本地 read_slides 返回 result 字符串', async () => {
+  it('登录后调用本地 read_slides 返回 result 字符串 (走 ALS deckId)', async () => {
+    // P0 fix(2026-05-18):read_slides 从 DB 读 currentVersion.content,需 X-Deck-Id header
     registerLocalTools()
-    const { cookie } = await createLoggedInUser()
+    const { user, cookie } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id, 'D', '# t\n')
     const res = await buildApp().request('/api/call-tool', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      headers: { 'Content-Type': 'application/json', Cookie: cookie, 'X-Deck-Id': String(deck.id) },
       body: JSON.stringify({ name: 'read_slides', args: {} }),
     })
     expect(res.status).toBe(200)

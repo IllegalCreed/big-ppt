@@ -1,5 +1,6 @@
 import type { ToolDef } from '../registry.js'
 import { editSlides } from '../../slides-store/index.js'
+import { withSlidesStoreGuard } from './utils.js'
 
 /**
  * Phase 11.6 dogfood 后:edit_slides 加 old_string 长度上限,防 LLM 误用它改整段 / 多页内容。
@@ -37,7 +38,7 @@ export const editSlidesTool: ToolDef = {
         error: `old_string 长度 ${oldString.length} > ${OLD_STRING_MAX} char。edit_slides 仅用于"改一个词 / 数字 / 短短语"等页内小改;改整段或换 layout 请用 update_slide(index, frontmatter, body, replaceFrontmatter: true)。`,
       })
     }
-    const result = await editSlides(oldString, newString)
+    const result = await withSlidesStoreGuard(() => editSlides(oldString, newString))
     return JSON.stringify(result)
   },
 }

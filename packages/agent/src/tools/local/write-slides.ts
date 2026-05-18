@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer'
 import type { ToolDef } from '../registry.js'
 import { writeSlides } from '../../slides-store/index.js'
+import { withSlidesStoreGuard } from './utils.js'
 import type { WriteSlidesResponse } from '@big-ppt/shared'
 
 export const writeSlidesTool: ToolDef = {
@@ -23,7 +24,7 @@ export const writeSlidesTool: ToolDef = {
       const resp: WriteSlidesResponse = { success: false, error: 'content 不能为空' }
       return JSON.stringify(resp)
     }
-    const result = await writeSlides(content)
+    const result = await withSlidesStoreGuard(() => writeSlides(content))
     const resp: WriteSlidesResponse = result.success
       ? { success: true, bytes: Buffer.byteLength(content, 'utf-8') }
       : { success: false, error: result.error }

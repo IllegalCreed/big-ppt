@@ -1,14 +1,71 @@
-import fs from 'node:fs'
-import { getPaths } from '../workspace.js'
+/**
+ * Phase 15.x P0 security hotfix(2026-05-18):slides-store 不再读写共享 `packages/slidev/slides.md`。
+ *
+ * 历史漏洞:所有 7 个工具(read_slides / write_slides / create_slide / update_slide /
+ * delete_slide / reorder_slides / edit_slides)都走全局 `slides.md`,导致用户 A 写完后
+ * 用户 B 在另一个 deck 调 read_slides 读到 A 的内容,LLM 把 A 的内容当 "current deck"
+ * 在 B 的回复里 echo,造成跨用户跨 deck 数据泄漏。
+ *
+ * 修复:所有读写都从 ALS `RequestContext` 拿 (userId, activeDeckId),走
+ * `deck_versions.content` + `decks.currentVersionId`。`slides.md` 只在 `POST /api/present/:id`
+ * 抢锁时由 `mirror.ts` 单文件 mirror(给 Slidev SPA 放映 tab 用),slides-store 本身完全脱钩。
+ *
+ * 没有 ALS activeDeckId / userId → throw `NoActiveDeckError`,工具层 catch 后友好返错给 LLM,
+ * 不再静默 fallback 读全局 slides.md。
+ */
+import { and, eq } from 'drizzle-orm'
+import { getDb, decks, deckVersions } from '../db/index.js'
+import { getRequestContext } from '../context.js'
 import { similarity } from '../utils/similarity.js'
-import { appendHistory, redo, undo, type HistoryActionResult } from './history.js'
 import { fixOrphanedFrontmatter } from './fixer.js'
 import { parseSlides, serializeSlides, type SlidePage } from './pages.js'
-import { persistVersionIfActive } from './persist.js'
+import {
+  appendHistoryDb,
+  redoDb,
+  undoDb,
+  type HistoryActionResult,
+} from './history.js'
+import { NoActiveDeckError } from './errors.js'
 
-export function readSlides(): string {
-  const { slidesPath } = getPaths()
-  return fs.readFileSync(slidesPath, 'utf-8')
+export { NoActiveDeckError } from './errors.js'
+
+/**
+ * 从 ALS 拿 (userId, activeDeckId),verify 归属,返回当前 version content。
+ *
+ * - 缺 userId / activeDeckId → throw NoActiveDeckError(不静默拿"全局"内容)
+ * - deck 存在但不属于当前 user → throw(403 等价的 IDOR 保护;persist 层也有同样 guard)
+ * - 没有 currentVersionId(新建 deck 还没写过)→ 返空串 ''
+ */
+async function getCurrentDeckContent(): Promise<string> {
+  const rc = getRequestContext()
+  if (!rc.userId || !rc.activeDeckId) {
+    throw new NoActiveDeckError()
+  }
+  const db = getDb()
+  const [deck] = await db
+    .select({
+      id: decks.id,
+      userId: decks.userId,
+      currentVersionId: decks.currentVersionId,
+    })
+    .from(decks)
+    .where(and(eq(decks.id, rc.activeDeckId), eq(decks.userId, rc.userId)))
+    .limit(1)
+  if (!deck) {
+    throw new NoActiveDeckError('当前 deck 不存在或无权访问')
+  }
+  if (!deck.currentVersionId) return ''
+  const [version] = await db
+    .select({ content: deckVersions.content })
+    .from(deckVersions)
+    .where(eq(deckVersions.id, deck.currentVersionId))
+    .limit(1)
+  return version?.content ?? ''
+}
+
+/** 异步版本，给 tool callback 用。 */
+export async function readSlides(): Promise<string> {
+  return getCurrentDeckContent()
 }
 
 export interface MutationResult {
@@ -21,32 +78,40 @@ export interface CreateSlideResult extends MutationResult {
   index?: number
 }
 
-/** 读取当前 slides.md，若不存在或解析失败返回空 pages */
-function readParsed(): SlidePage[] {
-  const { slidesPath } = getPaths()
-  if (!fs.existsSync(slidesPath)) return []
+/** 读取当前 deck content,若解析失败返空 pages */
+async function readParsed(): Promise<SlidePage[]> {
   try {
-    return parseSlides(fs.readFileSync(slidesPath, 'utf-8')).pages
-  } catch {
+    const content = await getCurrentDeckContent()
+    if (!content) return []
+    return parseSlides(content).pages
+  } catch (err) {
+    if (err instanceof NoActiveDeckError) throw err
     return []
   }
 }
 
 async function writeParsed(pages: SlidePage[], op: string): Promise<void> {
-  const { slidesPath } = getPaths()
   const out = serializeSlides({ pages })
-  appendHistory(op, out) // Phase 4 ring buffer（/undo /redo）
-  fs.writeFileSync(slidesPath, out, 'utf-8')
-  await persistVersionIfActive(out, op) // Phase 5 deck_versions（audit + 回滚）
+  await persistAndRecord(out, op)
+}
+
+/**
+ * 写一份新内容到 DB(deck_versions append + decks.currentVersionId 前移),
+ * 同时维护轮次合并 / undo 重做栈截断 / ring buffer 裁剪。
+ *
+ * 没 ALS activeDeckId / userId → throw NoActiveDeckError(由 appendHistoryDb 内部抛)。
+ */
+async function persistAndRecord(content: string, op: string): Promise<void> {
+  await appendHistoryDb(content, op)
 }
 
 /**
  * 整文件覆写。**仅**用于首次生成 / 模板重置场景。
  *
- * 护栏：如果 slides.md 已含真实用户内容(≥1 页且非默认 starter 占位骨架),拒绝执行并引导
+ * 护栏：如果当前 deck 已含真实用户内容(≥1 页且非默认 starter 占位骨架),拒绝执行并引导
  * 使用四件套。首次生成场景:
- *   1. slides.md 不存在 / 空壳(无分页)→ 允许 write_slides
- *   2. slides.md 含模板默认 starter 占位骨架(mainTitle: "请填写标题" + date: "YYYY/MM/DD" 等)
+ *   1. deck 内容空(无分页)→ 允许 write_slides
+ *   2. deck 含模板默认 starter 占位骨架(mainTitle: "请填写标题" + date: "YYYY/MM/DD" 等)
  *      → **也允许** write_slides 整体覆盖。每个新建 deck 默认填了 starter,LLM 看到 starter
  *      非空就走逐页 update_slide 路径而不是 write_slides 整体生成,严重退化首次生成体验。
  *      检测启发式:'YYYY/MM/DD' 占位串只会出现在 starter 里,真用户填了具体日期就替换掉。
@@ -63,24 +128,27 @@ function isDefaultStarterContent(content: string): boolean {
 }
 
 export async function writeSlides(content: string): Promise<MutationResult> {
-  const pages = readParsed()
-  if (pages.length > 0) {
-    const currentContent = readSlides()
-    if (!isDefaultStarterContent(currentContent)) {
+  const currentContent = await getCurrentDeckContent()
+  if (currentContent) {
+    // parseSlides 在非合法 frontmatter 文本上会 throw(如初始测试 fixture "v1" / "# hello\n");
+    // 此处 try/catch 沿用历史 readParsed 的语义:解析失败视作 0 页,允许首次生成路径覆盖。
+    let pages: SlidePage[] = []
+    try {
+      pages = parseSlides(currentContent).pages
+    } catch {
+      /* 当作 0 页 */
+    }
+    if (pages.length > 0 && !isDefaultStarterContent(currentContent)) {
       return {
         success: false,
         error: `已有 ${pages.length} 页幻灯片。write_slides 仅用于首次生成；修改请用 create_slide / update_slide / delete_slide / reorder_slides 四件套工具。`,
       }
     }
-    // 占位 starter 骨架 → 允许整体重写(首次生成场景:用户输入需求,LLM 用 write_slides 替换 starter)
   }
   // LLM 偶尔写漏 slide 间空 body 分隔符,导致后续 frontmatter 被吞、用 default 主题。
-  // 落盘 + 持久化 DB 之前规范化,确保 slides.md 与 deck_versions 都是修过的版本。
+  // 落盘 + 持久化 DB 之前规范化。
   const { fixed: sanitized } = fixOrphanedFrontmatter(content)
-  const { slidesPath } = getPaths()
-  appendHistory('write', sanitized)
-  fs.writeFileSync(slidesPath, sanitized, 'utf-8')
-  await persistVersionIfActive(sanitized, 'write')
+  await persistAndRecord(sanitized, 'write')
   return { success: true }
 }
 
@@ -92,8 +160,7 @@ export interface EditResult {
 /** 精确替换：old_string 在文件中必须唯一匹配。建议用于"页内改一个词 / 数字"场景。 */
 export async function editSlides(oldString: string, newString: string): Promise<EditResult> {
   if (!oldString) return { success: false, error: 'old_string 不能为空' }
-  const { slidesPath } = getPaths()
-  const content = fs.readFileSync(slidesPath, 'utf-8')
+  const content = await getCurrentDeckContent()
   const count = content.split(oldString).length - 1
 
   if (count === 0) {
@@ -122,9 +189,7 @@ export async function editSlides(oldString: string, newString: string): Promise<
   }
 
   const newContent = content.replace(oldString, newString)
-  appendHistory('edit', newContent)
-  fs.writeFileSync(slidesPath, newContent, 'utf-8')
-  await persistVersionIfActive(newContent, 'edit')
+  await persistAndRecord(newContent, 'edit')
   return { success: true }
 }
 
@@ -144,7 +209,7 @@ export async function createSlide(opts: {
   if (!opts.layout || typeof opts.layout !== 'string') {
     return { success: false, error: 'layout 不能为空' }
   }
-  const pages = readParsed()
+  const pages = await readParsed()
   const frontmatter = { layout: opts.layout, ...(opts.frontmatter ?? {}) }
   const body = opts.body ?? ''
 
@@ -184,7 +249,7 @@ export async function updateSlide(opts: {
   body?: string
   replaceFrontmatter?: boolean
 }): Promise<MutationResult> {
-  const pages = readParsed()
+  const pages = await readParsed()
   if (!Number.isInteger(opts.index) || opts.index < 1 || opts.index > pages.length) {
     return {
       success: false,
@@ -208,7 +273,7 @@ export async function updateSlide(opts: {
 }
 
 export async function deleteSlide(index: number): Promise<MutationResult> {
-  const pages = readParsed()
+  const pages = await readParsed()
   if (!Number.isInteger(index) || index < 1 || index > pages.length) {
     return { success: false, error: `index 超出范围：应为 1..${pages.length}，收到 ${index}` }
   }
@@ -226,7 +291,7 @@ export async function deleteSlide(index: number): Promise<MutationResult> {
  * @param order 长度等于当前页数的数组，每个元素是 1..N 的排列（无重复、无缺失）
  */
 export async function reorderSlides(order: number[]): Promise<MutationResult> {
-  const pages = readParsed()
+  const pages = await readParsed()
   if (!Array.isArray(order)) {
     return { success: false, error: 'order 必须是数组' }
   }
@@ -253,11 +318,13 @@ export async function reorderSlides(order: number[]): Promise<MutationResult> {
 }
 
 /** /undo 斜杠指令：回到上一个历史版本 */
-export function restoreSlides(): HistoryActionResult {
-  return undo()
+export async function restoreSlides(): Promise<HistoryActionResult> {
+  return undoDb()
 }
 
 /** /redo 斜杠指令：前进到下一个历史版本 */
-export function redoSlides(): HistoryActionResult {
-  return redo()
+export async function redoSlides(): Promise<HistoryActionResult> {
+  return redoDb()
 }
+
+export type { HistoryActionResult } from './history.js'

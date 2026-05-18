@@ -170,7 +170,7 @@ export interface RunImageJobDeps {
     replaceFrontmatter: boolean
   }) => Promise<void>
   /** Phase 11.6:失败兜底专用——拿当前 slides.md 内容给 LLM 当上下文 */
-  readSlides?: () => string
+  readSlides?: () => string | Promise<string>
   /** Phase 11.6:失败兜底专用——单页重写为 *-content + 组件版 */
   rewriteSinglePage?: (args: {
     currentSlidesContent: string
@@ -353,7 +353,7 @@ export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise
     }
 
     try {
-      const slidesContent = deps.readSlides!()
+      const slidesContent = await deps.readSlides!()
       const rewritten = await deps.rewriteSinglePage!({
         currentSlidesContent: slidesContent,
         slideIndex: job.slideIndex,

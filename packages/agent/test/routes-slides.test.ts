@@ -1,7 +1,7 @@
 /**
- * Phase 9-B：/read-slides + /restore-slides + /redo-slides 加 requireAuth + 持锁守卫。
- *
- * 之前公开端点 → A01 漏洞（任意人可读 lock holder 的 slides.md / 触发 undo/redo）。
+ * Phase 9-B:/read-slides + /restore-slides + /redo-slides 加 requireAuth + 持锁守卫。
+ * P0 fix(2026-05-18):底层 slides-store 改 DB-based;/read-slides 仍读 slides.md 文件 mirror
+ * (给 Slidev SPA 用),/restore-slides + /redo-slides 走 DB-based undo/redo,deckId 从锁拿。
  *
  * 守卫策略：
  *   - 未登录 → 401
@@ -19,7 +19,7 @@ import { requestContextMiddleware } from '../src/middleware/request-context.js'
 import { __resetPathsForTesting } from '../src/workspace.js'
 import { forceRelease, tryAcquire } from '../src/slidev-lock.js'
 import { useTestDb } from './_setup/test-db.js'
-import { createLoggedInUser } from './_setup/factories.js'
+import { createLoggedInUser, createDeckDirect } from './_setup/factories.js'
 
 useTestDb()
 
@@ -37,16 +37,14 @@ beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-routes-slides-'))
   const slidevDir = path.join(tmpRoot, 'packages/slidev')
   fs.mkdirSync(slidevDir, { recursive: true })
-  fs.writeFileSync(path.join(slidevDir, 'slides.md'), '# locked content\n')
+  fs.writeFileSync(path.join(slidevDir, 'slides.md'), '# locked mirror content\n')
   process.env.BIG_PPT_SLIDES_PATH = path.join(slidevDir, 'slides.md')
-  process.env.BIG_PPT_HISTORY_DIR = path.join(tmpRoot, 'slides-history')
   __resetPathsForTesting()
   forceRelease()
 })
 
 afterEach(() => {
   delete process.env.BIG_PPT_SLIDES_PATH
-  delete process.env.BIG_PPT_HISTORY_DIR
   __resetPathsForTesting()
   forceRelease()
   fs.rmSync(tmpRoot, { recursive: true, force: true })
@@ -80,26 +78,27 @@ describe('routes/slides 持锁守卫', () => {
     expect(res.status).toBe(403)
   })
 
-  it('登录且持锁 GET /read-slides → 200 + slides.md 原文', async () => {
+  it('登录且持锁 GET /read-slides → 200 + slides.md mirror 原文', async () => {
     const { user, sid, cookie } = await createLoggedInUser()
     const acq = tryAcquire({ sessionId: sid, userId: user.id, userEmail: user.email, deckId: 1, deckTitle: 't' })
     expect(acq.ok).toBe(true)
     const res = await makeApp().request('/api/read-slides', { headers: { Cookie: cookie } })
     expect(res.status).toBe(200)
-    expect(await res.text()).toBe('# locked content\n')
+    expect(await res.text()).toBe('# locked mirror content\n')
   })
 
-  it('登录且持锁 POST /restore-slides → 走 slides-store（无历史时 404）', async () => {
+  it('登录且持锁 POST /restore-slides → 无历史时 404', async () => {
     const { user, sid, cookie } = await createLoggedInUser()
-    tryAcquire({ sessionId: sid, userId: user.id, userEmail: user.email, deckId: 1, deckTitle: 't' })
+    const { deck } = await createDeckDirect(user.id, 'D', 'only-version')
+    tryAcquire({ sessionId: sid, userId: user.id, userEmail: user.email, deckId: deck.id, deckTitle: 't' })
     const res = await makeApp().request('/api/restore-slides', { method: 'POST', headers: { Cookie: cookie } })
-    // 没历史 → restoreSlides 返 404
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(404) // 只有 initial version,无可 undo
   })
 
-  it('登录且持锁 POST /redo-slides → 走 slides-store（无历史时 404）', async () => {
+  it('登录且持锁 POST /redo-slides → 无 redo 栈时 404', async () => {
     const { user, sid, cookie } = await createLoggedInUser()
-    tryAcquire({ sessionId: sid, userId: user.id, userEmail: user.email, deckId: 1, deckTitle: 't' })
+    const { deck } = await createDeckDirect(user.id, 'D', 'only-version')
+    tryAcquire({ sessionId: sid, userId: user.id, userEmail: user.email, deckId: deck.id, deckTitle: 't' })
     const res = await makeApp().request('/api/redo-slides', { method: 'POST', headers: { Cookie: cookie } })
     expect(res.status).toBe(404)
   })

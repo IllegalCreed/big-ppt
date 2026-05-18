@@ -1,6 +1,6 @@
 import type { ToolDef } from '../registry.js'
 import { deleteSlide } from '../../slides-store/index.js'
-import { coerceInt } from './utils.js'
+import { coerceInt, withSlidesStoreGuard } from './utils.js'
 
 export const deleteSlideTool: ToolDef = {
   name: 'delete_slide',
@@ -22,7 +22,7 @@ export const deleteSlideTool: ToolDef = {
     if (index === null) {
       return JSON.stringify({ success: false, error: 'index 必须是整数' })
     }
-    const result = await deleteSlide(index)
+    const result = await withSlidesStoreGuard(() => deleteSlide(index))
     return JSON.stringify(result)
   },
 }
