@@ -19,10 +19,12 @@ export class ArchiveError extends Error {
   constructor(
     public code: ArchiveErrorCode,
     public userMessage: string,
-    cause?: unknown,
+    // ES2022 起 Error 自带 `cause: unknown`,显式 override 用 readonly 锁定且
+    // 让类型签名公开;tsconfig.base.json `noImplicitOverride: true` 要求 modifier。
+    // 与 LLMError(src/llm/errors.ts)写法一致。
+    override readonly cause?: unknown,
   ) {
     super(userMessage)
     this.name = 'ArchiveError'
-    if (cause !== undefined) (this as { cause?: unknown }).cause = cause
   }
 }
