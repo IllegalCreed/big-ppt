@@ -32,3 +32,15 @@ export interface ArchiveManifest {
   deck: ArchiveDeckMeta
   assets: ArchiveAssetEntry[]
 }
+
+/**
+ * POST /api/decks/import 响应体。前后端共享避免类型 drift
+ * (字段改名 / 加字段时 TS 跨包 catch)。
+ *
+ * - `deckId`: 新建 deck 主键(非源 deck id)
+ * - `title`: 还原后的 title(后端自动加「(导入)」后缀)
+ */
+export interface ImportArchiveResponse {
+  deckId: number
+  title: string
+}

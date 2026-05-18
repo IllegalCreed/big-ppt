@@ -35,6 +35,7 @@ import { ArchiveError } from '../archive/errors.js'
 import { logServerEvent } from '../logger/server-log.js'
 import { getManifest } from '../templates/registry.js'
 import type { AuthVars } from '../middleware/auth.js'
+import type { ImportArchiveResponse } from '@big-ppt/shared'
 
 export const decksArchiveRoute = new Hono<{ Variables: AuthVars }>()
 
@@ -169,7 +170,7 @@ decksArchiveRoute.post('/decks/import', async (c) => {
   const db = getDb()
   // O(1) lookup asset meta(原 .find() O(N) scan,N 张 asset 整体 O(N²))
   const metaByOldId = new Map(parsed.manifest.assets.map((a) => [a.id, a]))
-  let result: { deckId: number; title: string }
+  let result: ImportArchiveResponse
   try {
     result = await db.transaction(async (tx) => {
       const newTitle = `${parsed.manifest.deck.title}(导入)`

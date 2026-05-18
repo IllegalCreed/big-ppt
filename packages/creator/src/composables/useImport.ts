@@ -18,17 +18,13 @@
  *   activeDeckId context;ALS / X-Deck-Id 只对 deck-scoped 工具调用相关。
  */
 import { ref } from 'vue'
-
-export interface ImportResult {
-  deckId: number
-  title: string
-}
+import type { ImportArchiveResponse } from '@big-ppt/shared'
 
 export function useImport() {
   const importing = ref(false)
   const error = ref<string | null>(null)
 
-  async function importArchive(file: File): Promise<ImportResult> {
+  async function importArchive(file: File): Promise<ImportArchiveResponse> {
     importing.value = true
     error.value = null
     try {
@@ -47,7 +43,7 @@ export function useImport() {
         error.value = msg
         throw new Error(msg)
       }
-      return (await resp.json()) as ImportResult
+      return (await resp.json()) as ImportArchiveResponse
     } finally {
       importing.value = false
     }
