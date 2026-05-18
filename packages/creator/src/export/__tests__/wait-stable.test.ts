@@ -32,18 +32,29 @@ function makeImg(opts: { complete: boolean; naturalWidth?: number }): HTMLImageE
 
 describe('waitForRenderStable', () => {
   let originalGetAnimations: typeof Element.prototype.getAnimations | undefined
+  // Phase 14 final audit:case 3 用 Object.defineProperty 替换 document.fonts
+  // 跟原 FontFaceSet 完全不同形状(只带 ready 字段),不在 afterEach 还原会让真
+  // FontFaceSet 永久污染本文件后续 case。CLAUDE.md「testing seam afterAll 复位」
+  // 明确禁止 module-level 状态 mutation 不还原。
+  let originalFonts: FontFaceSet | undefined
 
   beforeEach(() => {
-    // Important fix（code review）：删 dead if 块 —— jsdom 29 原生带
-    // document.fonts: FontFaceSet，`!document.fonts` 永假。只保留 getAnimations
-    // 现场备份（test 内可能覆盖），不再触碰 document.fonts。
     originalGetAnimations = Element.prototype.getAnimations
+    originalFonts = document.fonts
   })
 
   afterEach(() => {
     // 恢复原始 getAnimations（test 内可能覆盖）
     if (originalGetAnimations) {
       Element.prototype.getAnimations = originalGetAnimations
+    }
+    // 恢复 document.fonts(case 3 Object.defineProperty 替换过)
+    if (originalFonts !== undefined) {
+      Object.defineProperty(document, 'fonts', {
+        value: originalFonts,
+        writable: true,
+        configurable: true,
+      })
     }
     document.body.replaceChildren()
   })
