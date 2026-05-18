@@ -48,6 +48,12 @@ decksArchiveRoute.get('/decks/:id{[0-9]+}/export-archive', async (c) => {
     // 文件名:safe(title) + 时间戳防覆盖。`.lumideck` 是 .zip 别名,内容是合法 zip。
     const safeName = deck.title.replace(/[\\/:*?"<>|]/g, '_')
     const filename = `${safeName}-${Date.now()}.lumideck`
+    // RFC 6266 + RFC 8187:HTTP header value 不允许非 ASCII 字符,中文 / emoji
+    // title 走原始 filename= 会导致 Chrome 下载乱码、跨浏览器行为不一致。
+    // 双 filename 写法:filename* 是 modern client 优先读的 UTF-8 percent-encoded
+    // 版本,filename= ASCII fallback 留给古早 client(把非 ASCII 全替成 _)。
+    const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_')
+    const encodedFilename = encodeURIComponent(filename)
 
     // Node Buffer 的 underlying ArrayBufferLike 在新 TS 下不兼容 BodyInit 期望的
     // ArrayBuffer,复制到全新 ArrayBuffer-backed Uint8Array(跟 routes/assets.ts 同套路)。
@@ -58,7 +64,7 @@ decksArchiveRoute.get('/decks/:id{[0-9]+}/export-archive', async (c) => {
       headers: {
         'Content-Type': 'application/zip',
         'Content-Length': String(buf.length),
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`,
         'X-Content-Type-Options': 'nosniff',
       },
     })

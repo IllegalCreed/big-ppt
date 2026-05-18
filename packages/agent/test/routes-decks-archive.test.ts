@@ -11,6 +11,7 @@
  * - 404 不存在 deck
  * - 非数字 :id(路由 regex `[0-9]+` 兜底 404)
  * - title 含非法文件名字符 → Content-Disposition filename 已清洗
+ * - title 含中文 → Content-Disposition filename* UTF-8 percent-encoded + ASCII fallback
  */
 import { describe, expect, it } from 'vitest'
 import { Hono } from 'hono'
@@ -124,5 +125,41 @@ describe('routes/decks-archive — export', () => {
     expect(fname).not.toMatch(/[\\/:*?"<>|]/)
     expect(fname).toContain('a_b_c_d_e_f_g_h_i')
     expect(fname.endsWith('.lumideck')).toBe(true)
+  })
+
+  it('中文 title → RFC 6266 filename* UTF-8 percent-encoded + filename= ASCII fallback', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser('zh@a.com')
+    // 'Q1 业务汇报' —— 用 codepoint 拼避免源码字符渲染歧义
+    const zhTitle = `Q1 ${String.fromCodePoint(0x4e1a, 0x52a1, 0x6c47, 0x62a5)}`
+    const { deck } = await createDeckDirect(user.id, zhTitle)
+    const res = await app.request(`/api/decks/${deck.id}/export-archive`, {
+      headers: { Cookie: cookie },
+    })
+    expect(res.status).toBe(200)
+    const cd = res.headers.get('content-disposition') ?? ''
+
+    // filename*=UTF-8''<percent-encoded>:断 precise encoding
+    // 'Q1 业务汇报' UTF-8 字节 → 'Q1%20%E4%B8%9A%E5%8A%A1%E6%B1%87%E6%8A%A5'
+    const star = cd.match(/filename\*=UTF-8''([^;]+)/)
+    expect(star).not.toBeNull()
+    const encoded = star![1]
+    expect(encoded).toContain('Q1%20%E4%B8%9A%E5%8A%A1%E6%B1%87%E6%8A%A5')
+    expect(encoded.endsWith('.lumideck')).toBe(true)
+    // decode 回原 title 字符串(带时间戳后缀)
+    const decoded = decodeURIComponent(encoded)
+    expect(decoded.startsWith(`${zhTitle}-`)).toBe(true)
+    expect(decoded.endsWith('.lumideck')).toBe(true)
+
+    // ASCII fallback (filename=) 不含非 ASCII —— 中文已替成 _
+    const m = cd.match(/filename="([^"]+)"/)
+    expect(m).not.toBeNull()
+    const fallback = m![1]
+    // 用 code point 校:每个 char 必须落 0x00-0x7F(ASCII range)
+    for (const ch of fallback) {
+      expect(ch.codePointAt(0)!).toBeLessThanOrEqual(0x7f)
+    }
+    expect(fallback).toContain('Q1 ____')
+    expect(fallback.endsWith('.lumideck')).toBe(true)
   })
 })
