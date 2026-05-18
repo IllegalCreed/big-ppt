@@ -904,29 +904,38 @@
 
 ## Phase 14：导出
 
-**目标**：让用户把 deck 带离系统——离线演示、归档、发给不登录的人看。
+**目标**:让用户把 deck 带离系统——离线演示、归档、发给不登录的人看。**完全 client-side(浏览器内)** 实现,**后端零改动**(用户浏览器已在跑 DeckRenderer,不必 server 端再 spin up 一个 chromium);**显式规避 Slidev 自带 export 的 image-onload race bug**(用户 2026-05-18 反馈:Slidev export 经常截到加载一半的图)。
 
-**交付物**（具体导出工具链与表结构见对应 plan）：
+**交付物**(详见 [plan 30](../plans/30-phase14-export.md)):
 
-- **PDF 导出**（优先）：后端触发任务，产物归档，前端下载
-- **图片序列导出**（PNG 每页一张）
-- **PPTX 导出**（可选，探索性）：评估几条候选实现路径，成本可控再做
-- 导出历史：可查看 / 重新下载
-- 前端编辑页加"导出"入口
+- **PDF 导出**:浏览器内 html2canvas 截 DeckRenderer 静态视图 → jsPDF 拼页
+- **PNG 序列导出**(zip):同截图链路 → jszip 打包
+- **PPTX 导出**:同截图链路 → pptxgenjs(browser bundle)每页 PNG 全幅嵌入(文本不可编辑,够分发用)
+- 前端编辑器顶栏「导出」按钮 → modal 让选格式 + 时间预估提示 + 进度条 + 同步触发 blob 下载
+- 隐藏 ExportRenderer 实例 mount 在 `position:fixed;left:-10000px`,iterate `currentPage` 截每页
+- `waitForRenderStable(el)` 截图前等 `img.complete && naturalWidth>0` + `document.fonts.ready` + `el.getAnimations().finished` + 2×rAF + 500ms settle
 
-**验收条件**：
+**验收条件**:
 
-- [ ] PDF 导出耗时 < 20 秒，视觉与预览一致
-- [ ] 导出页可查看历史导出记录，可重新下载
-- [ ] 导出进程隔离于编辑实例，不影响正在编辑的用户
+- [ ] PDF 导出耗时 < 20 秒,视觉与预览一致(导出在用户浏览器内跑,所见即所得)
+- [ ] **AI 出图页(`image-content` layout / OSS 大图)截图必须等 img onload 完整,不能截到加载一半的图**
+- [ ] 三种格式(PDF / PNG 序列 / PPTX)均能产生 blob 并触发浏览器 download
+- [ ] 编辑器顶栏「导出」按钮存在,modal 内三选一 radio + 进度条 + 错误兜底 retry
 
-**状态**：待开始
+**状态**:**已完成**(2026-05-18,plan 30)
 
-**依赖**：Phase 13 完成（Phase 13.5 MCP catalog 与 Phase 14 可并行）
+**依赖**:Phase 13 完成(Phase 13.5 MCP catalog 已暂搁置 — 见 memory `phase13.5-mcp-catalog-deferred`)
 
-**不做什么**：
+**不做什么**(简化版砍掉,留 Phase 17+):
 
-- ❌ PPTX 导出如成本过高（>5 天工时）则延到 Phase 17+
+- ❌ **server-side puppeteer / chromium**(不装 / 不部署 / 不占服务器内存)
+- ❌ backend 加新 route / db schema 变更(本 Phase 完全 client-side)
+- ❌ 导出历史记录表 + 重新下载
+- ❌ 异步任务队列 / jobId polling
+- ❌ 导出进程隔离(独立 worker process / 容器)
+- ❌ PPTX 内文本可编辑 / layout-aware 转换
+- ❌ 像素级视觉 diff E2E(本 Phase 靠人眼 + size 兜底)
+- ❌ 自定义导出比例 / 单页导出 / 范围导出
 
 ---
 

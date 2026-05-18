@@ -1,6 +1,15 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
-import { ArrowLeft, FolderOpen, History, Layers, LogOut, Settings, Sparkles } from 'lucide-vue-next'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import {
+  ArrowLeft,
+  Download,
+  FolderOpen,
+  History,
+  Layers,
+  LogOut,
+  Settings,
+  Sparkles,
+} from 'lucide-vue-next'
 import ChatPanel from './ChatPanel.vue'
 import SlidePreview from './SlidePreview.vue'
 import SettingsModal from './SettingsModal.vue'
@@ -8,6 +17,7 @@ import TemplatePickerModal from './TemplatePickerModal.vue'
 import UndoToast from './UndoToast.vue'
 import VersionTimeline from './VersionTimeline.vue'
 import AssetManagerPanel from './AssetManagerPanel.vue'
+import ExportModal from './ExportModal.vue'
 import {
   useDecks,
   type Deck,
@@ -160,6 +170,18 @@ const showSettings = ref(false)
 const showTimeline = ref(false)
 const showTemplatePicker = ref(false)
 const showAssetsPanel = ref(false)
+const showExport = ref(false)
+
+// Phase 14:Export 弹窗 payload。用 computed 包,避免 template inline 对象
+// 每次 render 重建的反模式;ExportModal 内 onConfirm 点击时读到的就是当下最新的
+// slideStore.content / totalPages(slideStore 是模块作用域单例,响应式自然透传)。
+const exportDeckPayload = computed(() => ({
+  id: props.deck.id,
+  title: props.deck.title,
+  markdown: slideStore.content.value,
+  templateId: props.deck.templateId,
+  totalPages: slideStore.totalPages.value,
+}))
 
 // ── UndoToast + VersionTimeline 高亮 ──────────────────────────────────────
 const undoToast = ref<{ visible: boolean; templateName: string; snapshotVersionId: number | null }>({
@@ -305,6 +327,15 @@ onUnmounted(() => {
         <button
           type="button"
           class="icon-btn"
+          title="导出"
+          aria-label="导出"
+          @click="showExport = true"
+        >
+          <Download :size="18" :stroke-width="1.8" />
+        </button>
+        <button
+          type="button"
+          class="icon-btn"
           title="设置"
           aria-label="设置"
           @click="showSettings = true"
@@ -342,6 +373,7 @@ onUnmounted(() => {
 
     <SettingsModal v-model:open="showSettings" />
     <AssetManagerPanel v-model:open="showAssetsPanel" />
+    <ExportModal v-model:open="showExport" :deck="exportDeckPayload" />
     <TemplatePickerModal
       v-model:open="showTemplatePicker"
       mode="switch"
