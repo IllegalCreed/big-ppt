@@ -1,14 +1,22 @@
 <!--
-  Phase 14 Task A：ExportRenderer 简化版 DeckRenderer wrapper。
+  Phase 14 Task A:ExportRenderer 简化版 DeckRenderer wrapper(2026-05-18 重构)。
 
-  仅为离线截图存在：position: fixed; left: -10000px 移出视区，但 DOM 仍正常
-  reflow / 字体度量 / ResizeObserver 可触发（不能用 display: none —— html2canvas
-  截 0×0 元素）。
+  仅为离线截图存在:position: fixed; left: -10000px 移出视区,但 DOM 仍正常
+  reflow / 字体度量 / ResizeObserver 可触发(不能用 display: none — html2canvas
+  截 0×0 元素)。
 
-  容器固定 1920×1080（2× DESIGN_WIDTH / DESIGN_HEIGHT），让 :deep 的 .slide-frame
-  也撑到 1920×1080。配 html2canvas scale: 2 出 3840×2160 PNG，打印质量。
+  **设计原则:容器 = DESIGN_WIDTH × DESIGN_HEIGHT(960×540),零 override**:
+  - DeckRenderer 内部 ResizeObserver 看到容器 960 → 算 scale = 960/960 = 1.0
+  - slide-frame width:100% max-width:960 aspect 16/9 → 960×540 正好撑满
+  - slide-canvas 960×540 + transform: scale(1) → 渲染设计稿原始尺寸
+  - html2canvas `scale: 2` 自动出 1920×1080 PNG(打印质量),完全等比放大,
+    内容比例 = 设计稿,跟 Slidev 标准 100% 对齐
 
-  Props 跟 DeckRenderer 1:1 透传（除 currentPage 强制 required → pageIndex）。
+  唯一 :deep override:strip .deck-renderer 容器的 flex / padding / gap,
+  防止 padding-top:16 让 slide-frame 偏移出 540 高 viewport(html2canvas 会
+  丢掉超出区域,造成内容截断)。
+
+  Props 跟 DeckRenderer 1:1 透传(除 currentPage 强制 required → pageIndex)。
   暴露 `rootRef` 给 capturePages 拿根 DOM 元素调 html2canvas。
 -->
 <script setup lang="ts">
@@ -40,35 +48,28 @@ defineExpose({ rootRef })
   position: fixed;
   left: -10000px;
   top: 0;
-  width: 1920px;
-  height: 1080px;
+  /* 设计尺寸 — DeckRenderer 内部 ResizeObserver 看到 960 → scale = 1.0 → slide-canvas
+     按原始 960×540 像素渲染。html2canvas `scale: 2` 选项自动出 1920×1080 PNG。 */
+  width: 960px;
+  height: 540px;
   background: #fff;
   z-index: -9999;
   pointer-events: none;
 }
-/* 让 DeckRenderer 内的 slide-frame 撑到 1920×1080（覆盖默认 max-width: 960 + 16:9 等比） */
-.export-renderer :deep(.slide-frame) {
-  max-width: none;
-  width: 1920px;
-  height: 1080px;
-  box-shadow: none;
-  aspect-ratio: 16 / 9;
-}
 /*
- * Slidev 标准做法 + Phase 14 修正:.slide-canvas **保持 960×540 固定设计尺寸**
- * (layouts / 字号 / chart 全按这个绝对尺寸画,任何内部 box 拉伸都会破坏比例),
- * 通过 `transform: scale(2)` **等比缩放**到 1920×1080。transform-origin: top left
- * 让缩放从左上角展开,正好填满 ExportRenderer 容器。
- *
- * !important 覆盖 DeckRenderer 内置的 `transform: scale(var(--slide-scale,1))` —
- * DeckRenderer 内部 ResizeObserver 算 frameWidth = min(available, 960) / 960,
- * 永远 ≤ 1.0,即便容器 1920px 也只 scale=1,canvas 仅占左上 1/4。
- *
- * (前一版用 `width:1920;height:1080;transform:scale(1)` 强行拉 box,破坏所有内部
- *  比例,导出 PNG 字号 / 元素位置全错。已修正为 transform-only 等比缩放。)
+ * 唯一 override:strip .deck-renderer 容器的 flex / padding / gap。
+ * DeckRenderer 默认 flex column center + padding:16px 0 让 slide-frame 在 vertical
+ * 居中 + 顶部偏移 16px,导致 frame 下 16px 溢出 540 高 viewport 被 html2canvas 截掉。
+ * 改 display:block padding:0 让 frame 从 (0,0) 起精确铺满 960×540 容器。
  */
-.export-renderer :deep(.slide-canvas) {
-  transform: scale(2) !important;
-  transform-origin: top left !important;
+.export-renderer :deep(.deck-renderer) {
+  display: block;
+  padding: 0;
+  gap: 0;
+  min-height: 0;
+}
+/* slide-frame box-shadow 在截图边缘留灰边,清掉(导出场景不需要) */
+.export-renderer :deep(.slide-frame) {
+  box-shadow: none;
 }
 </style>

@@ -212,7 +212,11 @@ describe('capturePages', () => {
     ).rejects.toThrow(/toBlob 返 null.*page 1/)
   })
 
-  it('html2canvas 收到 1920×1080 + scale 2 + backgroundColor white（截图参数契约）', async () => {
+  it('html2canvas 收到 960×540 (DESIGN_*) + scale 2 + backgroundColor white(截图参数契约)', async () => {
+    // 2026-05-18 修:rootEl 是 ExportRenderer 容器 960×540(设计尺寸,零 transform
+    // override),html2canvas scale: 2 自动出 1920×1080 PNG。原 width:1920 height:1080
+    // 那版用 transform: scale(2) 破坏 layouts 内部比例,改回 Slidev 标准设计尺寸渲染 +
+    // html2canvas 2x DPR 等比放大。
     await capturePages({
       deckId: 1,
       markdown: '# fake',
@@ -225,8 +229,8 @@ describe('capturePages', () => {
     expect(call).toBeDefined()
     const opts = call![1] as Record<string, unknown>
     expect(opts).toMatchObject({
-      width: 1920,
-      height: 1080,
+      width: 960,
+      height: 540,
       scale: 2,
       backgroundColor: '#fff',
       logging: false,

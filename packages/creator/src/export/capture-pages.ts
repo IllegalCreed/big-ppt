@@ -120,10 +120,12 @@ export async function capturePages(opts: CapturePagesOptions): Promise<Buffer[]>
       // 不走 useCORS：项目所有图片同源 `<img src="/api/assets/...">`，
       // 默认就能 toBlob 不 tainted（plan 30 抉择 #7）
       const canvas = await html2canvas(rootEl, {
-        scale: 2, // 2× DPR：1920×1080 → 3840×2160，打印质量
+        // 2× DPR:rootEl 是 ExportRenderer 容器(960×540 设计尺寸)→ scale 2 出
+        // 1920×1080 PNG,打印质量。完全等比放大,内容比例 = Slidev 设计稿。
+        scale: 2,
         backgroundColor: '#fff',
-        width: 1920,
-        height: 1080,
+        width: 960,
+        height: 540,
         logging: false,
       })
 
