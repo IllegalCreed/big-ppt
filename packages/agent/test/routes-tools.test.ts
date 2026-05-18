@@ -158,6 +158,66 @@ describe('POST /api/call-tool', () => {
     expect(json.success).toBe(false)
     expect(json.error).toBe('oops')
   })
+
+  /**
+   * 路由层 IDOR(P0 漏洞修复回归保护,Phase 15.x):
+   * 用户 B 携自身 cookie + 伪造的 `X-Deck-Id=<userA-deck>` 调 write_slides。
+   *
+   * Middleware (request-context) 会把 header 里 deckId 注入 ALS,但 slides-store
+   * `getCurrentDeckContent` 用 `(decks.id=X AND decks.userId=B)` 复合 where 查不到 →
+   * 抛 NoActiveDeckError → tools/local/utils.ts 的 `withSlidesStoreGuard` catch 后
+   * 返 `{success:false, error: NoActiveDeckError.message}`。
+   *
+   * HTTP 层语义:
+   * - 状态码 200(call-tool 自身没失败,工具内部错误用 inner success 表达)
+   * - body.success = true(工具被调度成功)
+   * - body.result = "JSON string,parse 后 inner.success === false"
+   *
+   * 防回归:未来若误把 slides-store 的 ALS guard 拆掉/弱化(只查 deckId 不查 userId),
+   * write_slides 会落盘到 A 的 deck → 本 case 即刻红。
+   */
+  it('IDOR:用户 B 携 X-Deck-Id=deckA 调 write_slides → tool 内 inner.success=false,A 的 deck 内容零副作用', async () => {
+    registerLocalTools()
+    // user A 持有 deckA,starter 内容
+    const { user: userA } = await createLoggedInUser('idor-route-a@a.com')
+    const A_STARTER =
+      '---\nlayout: cover\nmainTitle: 请填写标题\nsubtitle: 请填写副标题\ndate: YYYY/MM/DD\n---\n'
+    const { deck: deckA } = await createDeckDirect(userA.id, 'A-deck', A_STARTER)
+    // user B
+    const { cookie: cookieB } = await createLoggedInUser('idor-route-b@a.com')
+
+    const hackPayload = '---\nlayout: cover\nmainTitle: HACKED-BY-B\n---\n'
+    const res = await buildApp().request('/api/call-tool', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: cookieB,
+        'X-Deck-Id': String(deckA.id),
+      },
+      body: JSON.stringify({ name: 'write_slides', args: { content: hackPayload } }),
+    })
+    // call-tool 本身 200(工具调度成功),inner.success=false 表达 IDOR 被守住
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.success).toBe(true)
+    expect(typeof body.result).toBe('string')
+    const inner = JSON.parse(body.result as string)
+    expect(inner.success).toBe(false)
+    expect(typeof inner.error).toBe('string')
+    expect(inner.error.length).toBeGreaterThan(0)
+
+    // 副作用 0:deckA.currentVersion.content 没被改成 HACKED
+    const db = getDb()
+    const [d] = await db.select().from(decks).where(eq(decks.id, deckA.id)).limit(1)
+    expect(d).toBeTruthy()
+    const [v] = await db
+      .select({ content: deckVersions.content })
+      .from(deckVersions)
+      .where(eq(deckVersions.id, d!.currentVersionId!))
+      .limit(1)
+    expect(v!.content).toBe(A_STARTER)
+    expect(v!.content).not.toContain('HACKED-BY-B')
+  })
 })
 
 /**

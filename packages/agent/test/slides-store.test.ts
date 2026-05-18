@@ -434,4 +434,147 @@ describe('slides-store DB-based(P0 fix)', () => {
       expect(await inDeck(a.user.id, aDeck.id, () => readSlides())).toBe('a-V2')
     })
   })
+
+  /**
+   * 7 个对外函数 × (NoActiveDeck guard + IDOR guard) = 完整覆盖矩阵。
+   * `readSlides` 已在 read/write describe 内有 2 case;这里补 6 个 mutation 的 12 case。
+   *
+   * 每个 case 套路一致:
+   *   1) 无 ALS deckId / userId → throw NoActiveDeckError(getCurrentDeckContent 内 guard 触发)
+   *   2) IDOR:用户 B 携自身 ALS 但用 A 的 deckId → throw(deck.userId != B → DB SELECT 空 → 抛)
+   *      + 同时校 deckA 内容真没被改(side-effect 0,确保 throw 路径 short-circuit 落盘前)
+   *
+   * 重点是验 ALS guard + IDOR throw,不是验 mutation 业务正确性(那块上面已覆盖)。
+   *
+   * P0 hotfix(eccf1c3)改造后,即使未来某个 PR 误把 `getCurrentDeckContent` 的 (userId, deckId)
+   * 复合 where 拆成只查 deckId,这组 case 会即刻红 → 单测层防 IDOR 回归。
+   */
+  describe('mutation 函数 NoActiveDeck / IDOR 全覆盖', () => {
+    // 给 A 起的 "原始" deck 内容,所有 IDOR side-effect 校验后必须保持不变
+    const A_ORIGINAL = '---\nlayout: cover\nmainTitle: A-OWN\n---\n\n# A-P1\n'
+    const HACK_BODY = '---\nlayout: cover\nmainTitle: hacked\n---\n'
+
+    async function makeAandB(): Promise<{
+      userA: { id: number }
+      userB: { id: number }
+      deckA: { id: number }
+    }> {
+      const a = await createLoggedInUser('a-mut@a.com')
+      const b = await createLoggedInUser('b-mut@a.com')
+      const { deck } = await createDeckDirect(a.user.id, 'A-deck', A_ORIGINAL)
+      return { userA: a.user, userB: b.user, deckA: deck }
+    }
+
+    // ─── writeSlides ────────────────────────────────────────────────────────
+    it('无 ALS → writeSlides throw NoActiveDeckError', async () => {
+      await expect(writeSlides(HACK_BODY)).rejects.toThrow(NoActiveDeckError)
+    })
+
+    it('IDOR:用户 B 用 A 的 deckId 调 writeSlides → throw,A 内容零副作用', async () => {
+      const { userA, userB, deckA } = await makeAandB()
+      await expect(inDeck(userB.id, deckA.id, () => writeSlides(HACK_BODY))).rejects.toThrow(
+        NoActiveDeckError,
+      )
+      const still = await inDeck(userA.id, deckA.id, () => readSlides())
+      expect(still).toBe(A_ORIGINAL)
+      expect(still).not.toContain('hacked')
+    })
+
+    // ─── editSlides ─────────────────────────────────────────────────────────
+    it('无 ALS → editSlides throw NoActiveDeckError', async () => {
+      await expect(editSlides('A-OWN', 'hacked')).rejects.toThrow(NoActiveDeckError)
+    })
+
+    it('IDOR:用户 B 用 A 的 deckId 调 editSlides → throw,A 内容零副作用', async () => {
+      const { userA, userB, deckA } = await makeAandB()
+      await expect(
+        inDeck(userB.id, deckA.id, () => editSlides('A-OWN', 'hacked')),
+      ).rejects.toThrow(NoActiveDeckError)
+      const still = await inDeck(userA.id, deckA.id, () => readSlides())
+      expect(still).toBe(A_ORIGINAL)
+      expect(still).not.toContain('hacked')
+    })
+
+    // ─── createSlide ────────────────────────────────────────────────────────
+    it('无 ALS → createSlide throw NoActiveDeckError', async () => {
+      await expect(
+        createSlide({ layout: 'content', body: '# hack', frontmatter: { heading: 'hack' } }),
+      ).rejects.toThrow(NoActiveDeckError)
+    })
+
+    it('IDOR:用户 B 用 A 的 deckId 调 createSlide → throw,A 内容零副作用', async () => {
+      const { userA, userB, deckA } = await makeAandB()
+      await expect(
+        inDeck(userB.id, deckA.id, () =>
+          createSlide({ layout: 'content', body: '# hack', frontmatter: { heading: 'hack' } }),
+        ),
+      ).rejects.toThrow(NoActiveDeckError)
+      const still = await inDeck(userA.id, deckA.id, () => readSlides())
+      expect(still).toBe(A_ORIGINAL)
+      // 校页数没被注入新页
+      const pages = parseSlides(still).pages
+      expect(pages.length).toBe(1)
+    })
+
+    // ─── updateSlide ────────────────────────────────────────────────────────
+    it('无 ALS → updateSlide throw NoActiveDeckError', async () => {
+      await expect(
+        updateSlide({ index: 1, frontmatter: { mainTitle: 'hacked' } }),
+      ).rejects.toThrow(NoActiveDeckError)
+    })
+
+    it('IDOR:用户 B 用 A 的 deckId 调 updateSlide → throw,A 内容零副作用', async () => {
+      const { userA, userB, deckA } = await makeAandB()
+      await expect(
+        inDeck(userB.id, deckA.id, () =>
+          updateSlide({ index: 1, frontmatter: { mainTitle: 'hacked' } }),
+        ),
+      ).rejects.toThrow(NoActiveDeckError)
+      const still = await inDeck(userA.id, deckA.id, () => readSlides())
+      expect(still).toBe(A_ORIGINAL)
+      expect(still).not.toContain('hacked')
+    })
+
+    // ─── deleteSlide ────────────────────────────────────────────────────────
+    it('无 ALS → deleteSlide throw NoActiveDeckError', async () => {
+      await expect(deleteSlide(1)).rejects.toThrow(NoActiveDeckError)
+    })
+
+    it('IDOR:用户 B 用 A 的 deckId 调 deleteSlide → throw,A 内容零副作用', async () => {
+      // 用 2 页 fixture 避开 "最后一页不能删" 提前 short-circuit;只 IDOR guard 要先于业务校验生效
+      const twoPage =
+        '---\nlayout: cover\nmainTitle: A-OWN\n---\n\n# P1\n\n---\nlayout: content\nheading: A-OWN-2\n---\n\n# P2\n'
+      const a = await createLoggedInUser('a-mut-del@a.com')
+      const b = await createLoggedInUser('b-mut-del@a.com')
+      const { deck: deckA } = await createDeckDirect(a.user.id, 'A-del', twoPage)
+      await expect(inDeck(b.user.id, deckA.id, () => deleteSlide(2))).rejects.toThrow(
+        NoActiveDeckError,
+      )
+      const still = await inDeck(a.user.id, deckA.id, () => readSlides())
+      expect(still).toBe(twoPage)
+      expect(parseSlides(still).pages.length).toBe(2)
+    })
+
+    // ─── reorderSlides ──────────────────────────────────────────────────────
+    it('无 ALS → reorderSlides throw NoActiveDeckError', async () => {
+      await expect(reorderSlides([1])).rejects.toThrow(NoActiveDeckError)
+    })
+
+    it('IDOR:用户 B 用 A 的 deckId 调 reorderSlides → throw,A 内容零副作用', async () => {
+      const twoPage =
+        '---\nlayout: cover\nmainTitle: A-OWN\n---\n\n# P1\n\n---\nlayout: content\nheading: A-OWN-2\n---\n\n# P2\n'
+      const a = await createLoggedInUser('a-mut-reorder@a.com')
+      const b = await createLoggedInUser('b-mut-reorder@a.com')
+      const { deck: deckA } = await createDeckDirect(a.user.id, 'A-reorder', twoPage)
+      await expect(inDeck(b.user.id, deckA.id, () => reorderSlides([2, 1]))).rejects.toThrow(
+        NoActiveDeckError,
+      )
+      const still = await inDeck(a.user.id, deckA.id, () => readSlides())
+      expect(still).toBe(twoPage)
+      // 校顺序没被反过来
+      const pages = parseSlides(still).pages
+      expect(pages[0]!.frontmatter.mainTitle).toBe('A-OWN')
+      expect(pages[1]!.frontmatter.heading).toBe('A-OWN-2')
+    })
+  })
 })
