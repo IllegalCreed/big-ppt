@@ -18,6 +18,7 @@
 import { randomUUID } from 'node:crypto'
 import { acquireImageSlot } from './middleware/image-semaphore.js'
 import { logServerEvent } from './logger/server-log.js'
+import { runInRequest } from './context.js'
 
 export type ImageJobState =
   | 'pending'
@@ -183,6 +184,21 @@ export interface RunImageJobDeps {
 }
 
 export async function runImageJob(jobId: string, deps: RunImageJobDeps): Promise<void> {
+  const job = jobs.get(jobId)
+  if (!job) return
+  // ALS 重注:image worker 是 fire-and-forget(generate-slide-image.ts await runImageJob 同步
+  // 立即 return,worker 在 Promise microtask 异步跑),HTTP request ALS 上下文已丢。
+  // deps.readSlides / deps.updateSlide / deps.updateSlideRaw 内部走 slides-store(P0 hotfix
+  // eccf1c3 后改 ALS-gated DB 查询),不重注 ALS 会 throw NoActiveDeckError → worker 第一调
+  // updateSlide 就死,job 永远卡 'pending'(2026-05-18 部署后用户实测踩)。
+  // 从 job 自带的 userId + deckId 重注 ALS,worker body 内所有 slides-store 调用恢复正常。
+  return runInRequest(
+    { userId: job.userId, activeDeckId: job.deckId, sessionId: null, turnId: null },
+    () => _runImageJobInner(jobId, deps),
+  )
+}
+
+async function _runImageJobInner(jobId: string, deps: RunImageJobDeps): Promise<void> {
   const job = jobs.get(jobId)
   if (!job) return
   if (job.state !== 'pending') return // 防重入
