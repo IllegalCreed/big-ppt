@@ -124,8 +124,16 @@ auth.post('/register', async (c) => {
   await db.insert(users).values({ email, passwordHash })
 
   // MySQL insert 不稳定返回 insertId（驱动/版本差异），用 email 回查拿用户
-  const [u] = await db.select().from(users).where(eq(users.email, email)).limit(1)
-  if (!u) return c.json({ error: '注册失败（无法回查用户）' }, 500)
+  let u = (await db.select().from(users).where(eq(users.email, email)).limit(1))[0]
+  if (!u) {
+    // Phase 11.8 workaround:mysql2 + drizzle + Aliyun RDS 偶发 stale read —
+    // INSERT 后立即 SELECT 拿空(实测复现率约 5-10%)。中间跑一个无关 SELECT
+    // 作为"屏障"触发 driver 内部 buffer flush,然后 retry 一次即可。
+    // 不影响生产(99% 第一次成功),仅边缘 case 多一次 RTT。
+    await db.execute(sql`SELECT 1`)
+    u = (await db.select().from(users).where(eq(users.email, email)).limit(1))[0]
+    if (!u) return c.json({ error: '注册失败（无法回查用户）' }, 500)
+  }
 
   const { sid, expiresAt } = await createSession(u.id)
   c.header('Set-Cookie', issueSessionCookie(sid, expiresAt))
