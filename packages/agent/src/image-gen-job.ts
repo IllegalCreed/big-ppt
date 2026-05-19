@@ -291,6 +291,16 @@ async function _runImageJobInner(jobId: string, deps: RunImageJobDeps): Promise<
       pathTaken: gen.pathTaken,
       bytesB64: gen.b64.length,
     })
+    // Phase 11.8: 落特殊事件标记"hybrid 失败降级到路 B"——有 baseImage 但实际走了路 B,
+    // 说明路 A 失败被三级降级捕获。dogfood 时 grep 此事件能定位哪些页 anchor 风格丢失。
+    if (job.baseImageBase64 && gen.pathTaken === 'B') {
+      logServerEvent({
+        ...baseFields,
+        event: 'hybrid-path-b-fallback',
+        modelUsed: gen.modelUsed,
+        note: 'hybrid 路 A 失败,降级路 B 纯 text + palette 约束,本页 anchor 风格未被 vision encoder 采样',
+      })
+    }
 
     if (job.controller.signal.aborted) {
       mutate(jobId, { state: 'cancelled', finishedAt: new Date() })

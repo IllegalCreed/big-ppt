@@ -91,8 +91,6 @@ export async function generateImage(input: ImageGenInput): Promise<ImageGenOutpu
   const baseUrl = (input.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
   const primaryModel = input.primaryModel ?? DEFAULT_PRIMARY_MODEL
   const fallbackModel = input.fallbackModel ?? DEFAULT_FALLBACK_MODEL
-  const hasBaseImage = !!input.baseImageBase64 && !!input.baseImageMime
-
   // 强制走路 B 的特殊情况:用户在 settings 显式选 gpt-image-* 模型
   // hybrid 模式下 baseImage 无法走路 B(images/generations 不接受 image input),
   // 此时直接忽略 baseImage,按纯 text-to-image 走路 B(降级行为)。
@@ -130,15 +128,17 @@ export async function generateImage(input: ImageGenInput): Promise<ImageGenOutpu
     pathAError = err as Error
   }
 
-  // Hybrid vision-aware 关键决策:有 baseImage 时**不降级路 B**。
-  // 路 B(/v1/images/generations + gpt-image-2)是纯 text-to-image,不接受 image input,
-  // 降级会丢失"基于原图改"的语义,生成的新图跟用户期望偏差更大。
-  // 直接抛路 A 错,worker catch 后走 fallback-rewrote 兜底(LLM 重写为组件版),
-  // 这样用户至少能看到一个对得上 fallbackSummary 内容的页面,而不是被静默换成无关新图。
-  if (hasBaseImage) {
-    throw pathAError ?? new Error('path A failed (hasBaseImage, refuse path B downgrade)')
-  }
-
+  // Phase 11.8 (2026-05-19):hybrid 失败三级降级。
+  // 原 Phase 11.6 设计:hasBaseImage 路 A 失败直接抛 → worker 走 fallback-rewrote
+  // 重写组件版。锚图模式落地后 22 页里任何一页 vision 抖一下就丢图,不可接受。
+  // **新降级链**:
+  //   路 A + image_input(hybrid 带 anchor)─ 风格对齐
+  //     ↓ 失败
+  //   路 B + 纯 text(buildStructuredImagePrompt 带 palette 约束)─ palette 维度仍对齐
+  //     ↓ 失败
+  //   抛错 → worker 走 fallback-rewrote 组件版兜底
+  // 路 B 不接 image input,降级时丢失 anchor 风格,但 palette 约束仍跨调用一致,
+  // 比直接换组件版好得多。
   try {
     const b64 = await callImagesApi({
       baseUrl,

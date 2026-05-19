@@ -263,29 +263,31 @@ describe('llm/openai-image generateImage', () => {
     expect(body!.input[0]!.content).toBe('a city')
   })
 
-  it('hybrid vision-aware:有 baseImage + 路 A 5xx → 不降级路 B,直接抛错(只调一次 fetch)', async () => {
+  // Phase 11.8 (2026-05-19):hybrid 失败三级降级 — 路 A 失败时降级路 B + palette,
+  // 路 B 失败才抛错走 fallback-rewrote。锚图模式落地后任一 vision 抖动也要保住
+  // image 模式(palette 维度仍对齐),不能直接换组件版。
+  it('hybrid 三级降级:有 baseImage + 路 A 5xx → 降级路 B 成功 → pathTaken=B', async () => {
     let callCount = 0
     mockFetch(async (url) => {
       callCount++
       if (url.endsWith('/responses')) return new Response('boom', { status: 503 })
-      // 防御性:这里要是被调到,断言会失败
       return jsonResponse({ data: [{ b64_json: FAKE_B64 }] })
     })
-    await expect(
-      generateImage({
-        prompt: 'add a cat',
-        size: '1536x720',
-        signal: new AbortController().signal,
-        apiKey: 'sk',
-        baseUrl: TEST_BASE,
-        baseImageBase64: 'AAAA',
-        baseImageMime: 'image/png',
-      }),
-    ).rejects.toThrow()
-    expect(callCount).toBe(1) // 只调路 A,不调路 B
+    const out = await generateImage({
+      prompt: 'add a cat',
+      size: '1536x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+      baseImageBase64: 'AAAA',
+      baseImageMime: 'image/png',
+    })
+    expect(out.pathTaken).toBe('B')
+    expect(out.b64).toBe(FAKE_B64)
+    expect(callCount).toBe(2) // 路 A + 路 B
   })
 
-  it('hybrid vision-aware:有 baseImage + 路 A 401 → 不降级路 B(虽然原本无 baseImage 时会降)', async () => {
+  it('hybrid 三级降级:有 baseImage + 路 A 401 + 路 B 成功 → pathTaken=B', async () => {
     let callCount = 0
     mockFetch(async (url) => {
       callCount++
@@ -294,6 +296,26 @@ describe('llm/openai-image generateImage', () => {
       }
       return jsonResponse({ data: [{ b64_json: FAKE_B64 }] })
     })
+    const out = await generateImage({
+      prompt: 'add a cat',
+      size: '1536x720',
+      signal: new AbortController().signal,
+      apiKey: 'sk',
+      baseUrl: TEST_BASE,
+      baseImageBase64: 'AAAA',
+      baseImageMime: 'image/png',
+    })
+    expect(out.pathTaken).toBe('B')
+    expect(callCount).toBe(2)
+  })
+
+  it('hybrid 三级降级:有 baseImage + 路 A 失败 + 路 B 也失败 → 抛错(走 fallback-rewrote)', async () => {
+    let callCount = 0
+    mockFetch(async (url) => {
+      callCount++
+      if (url.endsWith('/responses')) return new Response('boom', { status: 503 })
+      return new Response('also boom', { status: 500 })
+    })
     await expect(
       generateImage({
         prompt: 'add a cat',
@@ -305,7 +327,7 @@ describe('llm/openai-image generateImage', () => {
         baseImageMime: 'image/png',
       }),
     ).rejects.toThrow()
-    expect(callCount).toBe(1)
+    expect(callCount).toBe(2) // 路 A + 路 B 都试过
   })
 
   it('hybrid vision-aware:有 baseImage + primaryModel=gpt-image-2 → 走路 B(纯 text-to-image,忽略 baseImage)', async () => {
