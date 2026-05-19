@@ -148,14 +148,20 @@ function buildStructuredImagePrompt(
   ]
 
   if (hasAnchor) {
-    // 有 anchor:**强制复制 reference 视觉技法**,不要让 gpt-5.5 自己决定 medium
+    // 有 anchor:**默认**复制 reference 视觉技法,但用户在 Primary request 里
+    // 明确指定风格时,该轮 override anchor(per-call escape hatch,不需要让用户先
+    // 取消 anchor 再重试)。优先级判定交给 gpt-5.5 reasoning,它擅长识别意图。
     lines.push(
-      `**Visual style — MUST replicate the attached reference image exactly:**`,
-      `- Match the reference image's rendering technique (isometric / flat / watercolor / hand-drawn / ink-wash / 3D / line-art / whichever it actually is — look at it and copy that exact medium)`,
-      `- Match the reference's palette, lighting, level of detail, line weight, brush / shading style`,
-      `- The NEW image should look like a sibling page from the same deck as the reference — same hand, same medium, same mood`,
-      `- Do NOT default to "flat infographic" or "modern corporate illustration" unless the reference itself is that style`,
-      `- The subject described in "Primary request" is different from the reference, but the LOOK must be identical`,
+      `**Visual style — priority rules:**`,
+      ``,
+      `1. **If the user's "Primary request" above explicitly specifies a visual style** (mentions a concrete medium / rendering technique / aesthetic, e.g. "用水彩画", "render as 3D isometric", "手绘草图风", "blueprint schematic", "Bauhaus geometric") → **the user's specified style takes priority, IGNORE the reference image's style for this call.** Still aim for palette cohesion via the brand colors below.`,
+      ``,
+      `2. **Otherwise** (the user's request describes only the SUBJECT / content with no style words) → **replicate the attached reference image's visual style EXACTLY:**`,
+      `   - Match the reference's rendering technique (isometric / flat / watercolor / hand-drawn / ink-wash / 3D / line-art / whichever it actually is — look at it and copy that exact medium)`,
+      `   - Match the reference's palette, lighting, level of detail, line weight, brush / shading style`,
+      `   - The new image should look like a sibling page from the same deck as the reference — same hand, same medium, same mood`,
+      `   - Do NOT default to "flat infographic" or "modern corporate illustration" unless the reference itself is that style`,
+      `   - The subject is different but the LOOK must be identical`,
     )
   } else {
     // 没 anchor:走老路,模板 manifest 的 styleHint 控制风格
