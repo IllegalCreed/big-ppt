@@ -150,21 +150,22 @@ describe('ImageJobsPanel · 渲染细节', () => {
   it('stage→label 全 7 态映射矩阵(7 个 state 全覆盖,防未来漏改)', () => {
     // 7 个 state(ImageJobState union):pending / running / done / failed / cancelled /
     //   fallback-rewrote / fallback-failed —— ImageJobsPanel.stageLabel switch 必须完全覆盖
+    // Phase 11.8 dogfood:fallback-rewrote / fallback-failed 归 warning(黄色降级),不再
+    //   伪装成 done/failed;label 改成"出图失败,已降级为组件版"等让用户立刻知道哪页有问题
     const cases: Array<{ stage: ImageJobState; expectedDetail: string; expectedVariant: string }> = [
       { stage: 'pending', expectedDetail: '排队中', expectedVariant: 'pending' },
       { stage: 'running', expectedDetail: '生成中 0%', expectedVariant: 'running' },
       { stage: 'done', expectedDetail: '完成', expectedVariant: 'done' },
-      // fallback-rewrote 归入 done variant(已成功兜底重写,UI 也该提示「完成」)
       {
         stage: 'fallback-rewrote',
-        expectedDetail: '完成（兜底重写）',
-        expectedVariant: 'done',
+        expectedDetail: '出图失败,已降级为组件版',
+        expectedVariant: 'warning',
       },
       { stage: 'failed', expectedDetail: '失败', expectedVariant: 'failed' },
       {
         stage: 'fallback-failed',
-        expectedDetail: '失败（兜底也失败）',
-        expectedVariant: 'failed',
+        expectedDetail: '失败(兜底重写也失败)',
+        expectedVariant: 'warning',
       },
       { stage: 'cancelled', expectedDetail: '已取消', expectedVariant: 'failed' },
     ]
@@ -193,16 +194,29 @@ describe('ImageJobsPanel · 渲染细节', () => {
     expect(barStyle).toMatch(/width: (89|90)%/)
   })
 
-  it('header counts 边界:全 done 不显示 failed-count', () => {
+  it('header counts 边界:全 done(无 fallback)不显示 failed-count', () => {
+    // Phase 11.8 dogfood:fallback-rewrote 不再算 done,要单独 warning 让用户看到。
+    // 本 case 只覆盖纯 done 场景;fallback-rewrote 单独 case 见下条
+    const jobs = mkMap([
+      mkJob({ jobId: 'a', slideIndex: 1, stage: 'done', progressRatio: 1 }),
+      mkJob({ jobId: 'b', slideIndex: 2, stage: 'done', progressRatio: 1 }),
+      mkJob({ jobId: 'c', slideIndex: 3, stage: 'done', progressRatio: 1 }),
+    ])
+    const wrapper = mount(ImageJobsPanel, { props: { jobs } })
+    expect(wrapper.find('.counts').text()).toContain('3 / 3')
+    expect(wrapper.find('.failed-count').exists()).toBe(false)
+  })
+
+  it('header counts 边界:fallback-rewrote 计入失败桶(让用户立刻知道有 N 页降级)', () => {
     const jobs = mkMap([
       mkJob({ jobId: 'a', slideIndex: 1, stage: 'done', progressRatio: 1 }),
       mkJob({ jobId: 'b', slideIndex: 2, stage: 'done', progressRatio: 1 }),
       mkJob({ jobId: 'c', slideIndex: 3, stage: 'fallback-rewrote', progressRatio: 1 }),
     ])
     const wrapper = mount(ImageJobsPanel, { props: { jobs } })
-    expect(wrapper.find('.counts').text()).toContain('3 / 3')
-    // fallback-rewrote 计入 done 桶,不计 failed
-    expect(wrapper.find('.failed-count').exists()).toBe(false)
+    // done 桶 = 纯 done 2 张(fallback-rewrote 不算 done)
+    expect(wrapper.find('.counts').text()).toContain('2 / 3')
+    expect(wrapper.find('.failed-count').text()).toContain('失败 1')
   })
 
   it('header counts 边界:全 failed → 「0 / N · 失败 N」', () => {
@@ -251,6 +265,30 @@ describe('ImageJobsPanel · 渲染细节', () => {
       expect(wrapper.find('[data-cancel-job-id="d"]').exists()).toBe(false)
       expect(wrapper.find('[data-cancel-job-id="f"]').exists()).toBe(false)
       expect(wrapper.find('[data-cancel-job-id="c"]').exists()).toBe(false)
+    })
+
+    it('warning / failed 行显示 dismiss ✕ 按钮(让用户主动关掉降级提示)', () => {
+      const jobs = mkMap([
+        mkJob({ jobId: 'w', slideIndex: 1, stage: 'fallback-rewrote' }),
+        mkJob({ jobId: 'f', slideIndex: 2, stage: 'failed', errorMsg: 'e' }),
+        mkJob({ jobId: 'c', slideIndex: 3, stage: 'cancelled' }),
+        // done 不显示 dismiss(走 5s 自动 prune)
+        mkJob({ jobId: 'd', slideIndex: 4, stage: 'done', progressRatio: 1 }),
+      ])
+      const wrapper = mount(ImageJobsPanel, { props: { jobs } })
+      expect(wrapper.find('[data-dismiss-job-id="w"]').exists()).toBe(true)
+      expect(wrapper.find('[data-dismiss-job-id="f"]').exists()).toBe(true)
+      expect(wrapper.find('[data-dismiss-job-id="c"]').exists()).toBe(true)
+      expect(wrapper.find('[data-dismiss-job-id="d"]').exists()).toBe(false)
+    })
+
+    it('点 dismiss ✕ → emit("dismiss", jobId) 给父组件清 Map', async () => {
+      const job = mkJob({ jobId: 'fb', slideIndex: 4, stage: 'fallback-rewrote' })
+      const wrapper = mount(ImageJobsPanel, { props: { jobs: mkMap([job]) } })
+      await wrapper.find('[data-dismiss-job-id="fb"]').trigger('click')
+      const emitted = wrapper.emitted('dismiss')
+      expect(emitted).toBeTruthy()
+      expect(emitted![0]).toEqual(['fb'])
     })
 
     it('点 ✕ → 调 tracking.instance.cancel() + 按钮立即 disabled 防双击', async () => {

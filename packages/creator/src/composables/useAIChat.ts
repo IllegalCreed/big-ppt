@@ -84,6 +84,11 @@ export interface UseAIChatReturn {
   clearHistory: () => void
   appendLocalMessage: (content: string) => void
   retryLastUserMessage: () => void
+  /**
+   * Phase 11.8 dogfood:用户主动 dismiss 一行 image-job(只对 terminal 态有意义)。
+   * fallback-rewrote / failed 等不自动 prune,要靠用户点 ✕。
+   */
+  dismissImageJob: (jobId: string) => void
 }
 
 const IMAGE_JOB_TERMINAL_STATES = new Set<ImageJobState>([
@@ -94,7 +99,18 @@ const IMAGE_JOB_TERMINAL_STATES = new Set<ImageJobState>([
   'fallback-failed',
 ])
 
-/** terminal 后 UI 保留几秒让用户看到终态再 prune,避免「啪一下消失」。 */
+/**
+ * 仅 'done' 完整成功的状态走 5s 自动 prune("啪一下消失"避免)。
+ * 其他终态(failed / cancelled / fallback-rewrote / fallback-failed)**不**自动
+ * prune,留着等用户主动 ✕ dismiss —— 这样:
+ *   - fallback-rewrote 是降级(图出不来改组件版),用户需要看到第 N 页被降级了
+ *     才能决定要不要让 AI 重出
+ *   - failed / fallback-failed / cancelled 是真失败,用户需要知道
+ *
+ * Phase 11.8 dogfood 修(2026-05-19):之前所有 terminal 都 5s prune,降级页
+ * 用户根本错过。
+ */
+const IMAGE_JOB_AUTO_PRUNE_STATES = new Set<ImageJobState>(['done'])
 const IMAGE_JOB_PRUNE_AFTER_TERMINAL_MS = 5_000
 
 /**
@@ -231,9 +247,12 @@ export function useAIChat(): UseAIChatReturn {
         imageJobs.value = m
 
         if (IMAGE_JOB_TERMINAL_STATES.has(stage)) {
-          // 已 terminal:停止 watch + 排 5s 后 prune,避免无效 watcher 持有 + 给
-          // 用户看到「✅ 完成 / ❌ 失败」终态再退场。
+          // 已 terminal:停止 watch + 视 stage 决定是否 5s 自动 prune。
+          //   - 'done' 完整成功 → 5s 后自动消失("啪一下"避免)
+          //   - 其他(failed / cancelled / fallback-rewrote / fallback-failed)→ 留着等用户
+          //     ✕ dismiss,因为用户需要知道哪页降级了 / 失败了才好决定重出与否
           stopWatch()
+          if (!IMAGE_JOB_AUTO_PRUNE_STATES.has(stage)) return
           if (imageJobPruneTimers.has(jobId)) return
           const timer = setTimeout(() => {
             imageJobPruneTimers.delete(jobId)
@@ -412,6 +431,23 @@ export function useAIChat(): UseAIChatReturn {
     void sendMessage(lastUser.content)
   }
 
+  /**
+   * Phase 11.8 dogfood:用户主动 dismiss 一行 image-job(点 ✕)。
+   * 只对 terminal 态(failed / cancelled / fallback-rewrote / fallback-failed)有意义;
+   * running / pending 行用 cancel 不是 dismiss。本函数只清 Map + timer,不调 backend。
+   */
+  function dismissImageJob(jobId: string): void {
+    const timer = imageJobPruneTimers.get(jobId)
+    if (timer) {
+      clearTimeout(timer)
+      imageJobPruneTimers.delete(jobId)
+    }
+    if (!imageJobs.value.has(jobId)) return
+    const next = new Map(imageJobs.value)
+    next.delete(jobId)
+    imageJobs.value = next
+  }
+
   return {
     chatMessages,
     streamingContent,
@@ -428,5 +464,6 @@ export function useAIChat(): UseAIChatReturn {
     clearHistory,
     appendLocalMessage,
     retryLastUserMessage,
+    dismissImageJob,
   }
 }

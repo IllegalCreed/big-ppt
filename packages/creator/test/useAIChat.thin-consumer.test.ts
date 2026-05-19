@@ -769,7 +769,7 @@ describe('useAIChat (thin consumer)', () => {
     vi.useRealTimers()
   })
 
-  it('imageJobs:failed 终态 errorMsg 写进 Map,5s 后 prune', async () => {
+  it('imageJobs:failed 终态 errorMsg 写进 Map,**不**自动 prune(留着等用户主动 dismiss)', async () => {
     chatTurnMock.mockResolvedValueOnce(
       makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
     )
@@ -802,9 +802,13 @@ describe('useAIChat (thin consumer)', () => {
     expect(r.stage).toBe('failed')
     expect(r.errorMsg).toBe('quota exceeded')
 
-    // 5s 后 prune
-    vi.advanceTimersByTime(5_001)
+    // Phase 11.8 dogfood:failed 不自动 prune,让用户能看到第几页失败
+    vi.advanceTimersByTime(10_000)
     await flushPromises()
+    expect(chat.imageJobs.value.has('job-fail')).toBe(true)
+
+    // 用户主动 dismiss 才清掉
+    chat.dismissImageJob('job-fail')
     expect(chat.imageJobs.value.has('job-fail')).toBe(false)
 
     vi.useRealTimers()

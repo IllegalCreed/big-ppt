@@ -126,31 +126,31 @@ describe('ImageJobsPanel', () => {
     expect(wrapper.find('.failed-count').text()).toContain('失败 1')
   })
 
-  it('fallback-rewrote:计入 done 桶,label 「完成(兜底重写)」', () => {
+  it('fallback-rewrote:Phase 11.8 dogfood 归 warning(降级,而非完成),计入失败桶', () => {
     const jobs = mkMap([
       mkJob({ jobId: 'fb', slideIndex: 4, stage: 'fallback-rewrote', progressRatio: 1 }),
     ])
     const wrapper = mount(ImageJobsPanel, { props: { jobs } })
     const row = wrapper.find('.row')
-    expect(row.classes()).toContain('row-done')
-    expect(row.find('.detail').text()).toBe('完成（兜底重写）')
-    // header 1 / 1 完成(没 failed)
-    expect(wrapper.find('.counts').text()).toContain('1 / 1')
-    expect(wrapper.find('.failed-count').exists()).toBe(false)
+    expect(row.classes()).toContain('row-warning')
+    expect(row.find('.detail').text()).toBe('出图失败,已降级为组件版')
+    // done=0 / total=1,fallback-rewrote 计入失败桶让用户看见(之前归 done 被错过)
+    expect(wrapper.find('.counts').text()).toContain('0 / 1')
+    expect(wrapper.find('.failed-count').text()).toContain('失败 1')
   })
 
-  it('fallback-failed / cancelled:计入 failed 桶 label 各异', () => {
+  it('fallback-failed / cancelled:fallback-failed 归 warning,cancelled 归 failed', () => {
     const jobs = mkMap([
       mkJob({ jobId: 'ff', slideIndex: 5, stage: 'fallback-failed', errorMsg: '兜底也崩' }),
       mkJob({ jobId: 'c', slideIndex: 6, stage: 'cancelled' }),
     ])
     const wrapper = mount(ImageJobsPanel, { props: { jobs } })
     const rows = wrapper.findAll('.row')
-    expect(rows[0]!.classes()).toContain('row-failed')
-    expect(rows[0]!.find('.detail').text()).toBe('失败（兜底也失败）')
+    expect(rows[0]!.classes()).toContain('row-warning')
+    expect(rows[0]!.find('.detail').text()).toBe('失败(兜底重写也失败)')
     expect(rows[1]!.classes()).toContain('row-failed')
     expect(rows[1]!.find('.detail').text()).toBe('已取消')
-    // counts 「0 / 2」+ 失败 2
+    // counts 「0 / 2」+ 失败 2(warning + failed 都计入失败桶)
     expect(wrapper.find('.counts').text()).toContain('0 / 2')
     expect(wrapper.find('.failed-count').text()).toContain('失败 2')
   })

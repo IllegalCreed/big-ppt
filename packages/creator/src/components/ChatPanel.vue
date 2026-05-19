@@ -26,6 +26,7 @@ const {
   clearHistory,
   appendLocalMessage,
   retryLastUserMessage,
+  dismissImageJob,
 } = useAIChat()
 
 const senderRef = ref<SenderRef | null>(null)
@@ -244,7 +245,7 @@ async function onSenderDrop(e: DragEvent) {
 
     <!-- Phase 12.7 dogfood:image-gen 实时进度面板,sticky 在 sender 上方,
          跨 turn / 跨 bubble 汇总所有图片任务,4 状态 chip + 进度条。 -->
-    <ImageJobsPanel :jobs="imageJobs" />
+    <ImageJobsPanel :jobs="imageJobs" @dismiss="dismissImageJob" />
 
     <!-- 输入框（包 Suggestion 做斜杠指令自动补全）+ Phase 13 文件上传 chip + paperclip -->
     <div class="sender-area" @dragover="onSenderDragOver" @drop="onSenderDrop">

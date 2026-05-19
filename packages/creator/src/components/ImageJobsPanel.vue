@@ -20,17 +20,30 @@ const props = defineProps<{
   jobs: Map<string, ImageJobTracking>
 }>()
 
+const emit = defineEmits<{
+  /** Phase 11.8 dogfood:用户主动 dismiss 一行 terminal 状态(failed / fallback-* / cancelled) */
+  (e: 'dismiss', jobId: string): void
+}>()
+
 interface RowVm {
   jobId: string
   slideIndex: number | undefined
   stage: ImageJobState
   progressPct: number
   errorMsg: string | undefined
-  variant: 'pending' | 'running' | 'done' | 'failed'
+  /**
+   * Phase 11.8 dogfood:加 'warning' variant 区分降级 / 兜底失败(之前都被归到 done/failed)。
+   *   - 'done' 完整成功(绿勾)
+   *   - 'warning' 降级(黄色感叹号):fallback-rewrote / fallback-failed
+   *   - 'failed' 真失败(红叉):failed / cancelled
+   */
+  variant: 'pending' | 'running' | 'done' | 'warning' | 'failed'
   label: string
   detail: string
   /** 是否还能 cancel(running / pending 时显示 ✕ 按钮) */
   canCancel: boolean
+  /** 是否能 dismiss(terminal 非 done 时显示 ✕ 按钮让用户主动关) */
+  canDismiss: boolean
 }
 
 /**
@@ -63,7 +76,9 @@ async function onCancel(jobId: string): Promise<void> {
 function classifyVariant(stage: ImageJobState): RowVm['variant'] {
   if (stage === 'pending') return 'pending'
   if (stage === 'running') return 'running'
-  if (stage === 'done' || stage === 'fallback-rewrote') return 'done'
+  if (stage === 'done') return 'done'
+  // Phase 11.8 dogfood:fallback-rewrote / fallback-failed 是降级,跟"完整成功"区分开
+  if (stage === 'fallback-rewrote' || stage === 'fallback-failed') return 'warning'
   return 'failed'
 }
 
@@ -76,11 +91,12 @@ function stageLabel(stage: ImageJobState, ratio: number): string {
     case 'done':
       return '完成'
     case 'fallback-rewrote':
-      return '完成（兜底重写）'
+      // Phase 11.8 dogfood:这是降级,不是"完成"。文案要让用户知道图没出来,降级为组件版了
+      return '出图失败,已降级为组件版'
     case 'failed':
       return '失败'
     case 'fallback-failed':
-      return '失败（兜底也失败）'
+      return '失败(兜底重写也失败)'
     case 'cancelled':
       return '已取消'
   }
@@ -101,6 +117,7 @@ const rows = computed<RowVm[]>(() => {
       label: j.slideIndex !== undefined ? `第 ${j.slideIndex} 页` : '排队中…',
       detail: stageLabel(j.stage, j.progressRatio),
       canCancel: variant === 'running' || variant === 'pending',
+      canDismiss: variant === 'warning' || variant === 'failed',
     }
   })
   list.sort((a, b) => {
@@ -114,7 +131,11 @@ const rows = computed<RowVm[]>(() => {
 
 const totalCount = computed(() => rows.value.length)
 const doneCount = computed(() => rows.value.filter((r) => r.variant === 'done').length)
-const failedCount = computed(() => rows.value.filter((r) => r.variant === 'failed').length)
+// Phase 11.8 dogfood:counts 把 warning(fallback-rewrote / fallback-failed)也算进失败
+// 桶,header 显示「失败 N」让用户一眼知道有 N 页没出来真图(组件版兜底)
+const failedCount = computed(
+  () => rows.value.filter((r) => r.variant === 'failed' || r.variant === 'warning').length,
+)
 </script>
 
 <template>
@@ -129,6 +150,7 @@ const failedCount = computed(() => rows.value.filter((r) => r.variant === 'faile
           <template v-if="row.variant === 'pending'">⏳</template>
           <template v-else-if="row.variant === 'running'">●</template>
           <template v-else-if="row.variant === 'done'">✓</template>
+          <template v-else-if="row.variant === 'warning'">⚠</template>
           <template v-else>✕</template>
         </span>
         <span class="label">{{ row.label }}</span>
@@ -146,6 +168,17 @@ const failedCount = computed(() => rows.value.filter((r) => r.variant === 'faile
           :aria-label="`取消第 ${row.slideIndex ?? '?'} 页生图`"
           :data-cancel-job-id="row.jobId"
           @click="onCancel(row.jobId)"
+        >
+          <X :size="12" :stroke-width="2" />
+        </button>
+        <button
+          v-else-if="row.canDismiss"
+          type="button"
+          class="dismiss-btn"
+          :title="row.errorMsg || '知道了,关闭这条提示'"
+          :aria-label="`关闭第 ${row.slideIndex ?? '?'} 页提示`"
+          :data-dismiss-job-id="row.jobId"
+          @click="emit('dismiss', row.jobId)"
         >
           <X :size="12" :stroke-width="2" />
         </button>
@@ -245,6 +278,30 @@ const failedCount = computed(() => rows.value.filter((r) => r.variant === 'faile
   opacity: 0.4 !important;
 }
 
+/* Phase 11.8 dogfood:dismiss 按钮(terminal 非 done 时,用户主动关) */
+.dismiss-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-text-muted, #6f6a60);
+  cursor: pointer;
+  /* dismiss 默认就显示(跟 cancel 的 hover-only 不同),因为用户要主动看到+关 */
+  opacity: 0.7;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.dismiss-btn:hover {
+  opacity: 1;
+  background: var(--color-bg-hover, #efeae0);
+  color: var(--color-text-default, #2a261f);
+}
+
 .icon {
   display: inline-flex;
   width: 18px;
@@ -268,8 +325,16 @@ const failedCount = computed(() => rows.value.filter((r) => r.variant === 'faile
   color: var(--color-success, #2a8a3f);
 }
 
+.row-warning .icon {
+  color: var(--color-warning, #c08416);
+}
+
 .row-failed .icon {
   color: var(--color-danger, #c33);
+}
+
+.row-warning .detail {
+  color: var(--color-warning, #c08416);
 }
 
 .label {
