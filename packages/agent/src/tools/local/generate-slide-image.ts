@@ -299,6 +299,22 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
         }
       }
     }
+    /**
+     * Phase 11.8: 优先级 frontmatter imageSrc > deck.anchor_asset_id > none。
+     * slide 没图但 deck 配了 anchor → 用 anchor 做 baseImage,vision encoder 看
+     * 锚图风格生成新页跨 slide 对齐。Anchor IDOR guard 跟 imageSrc 同款 SQL 三条件,
+     * BLOB 不进内存到再 reject。
+     */
+    if (!baseImageBase64 && deck.anchorAssetId) {
+      const anchor = await getAsset(deck.anchorAssetId, {
+        deckId,
+        userId: ctx.userId,
+      })
+      if (anchor && anchor.data.length > 0) {
+        baseImageBase64 = anchor.data.toString('base64')
+        baseImageMime = anchor.mimeType || 'image/png'
+      }
+    }
   } catch (err) {
     return JSON.stringify({
       success: false,
