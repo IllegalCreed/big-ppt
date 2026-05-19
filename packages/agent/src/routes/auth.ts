@@ -5,7 +5,7 @@ import { Hono, type Context } from 'hono'
 import bcrypt from 'bcrypt'
 import * as cookie from 'cookie'
 import { randomBytes } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { getDb, users, sessions } from '../db/index.js'
 import { SESSION_COOKIE, SESSION_TTL_MS, type AuthVars } from '../middleware/auth.js'
 import { encryptApiKey, decryptApiKey } from '../crypto/apikey.js'
@@ -126,10 +126,9 @@ auth.post('/register', async (c) => {
   // MySQL insert 不稳定返回 insertId（驱动/版本差异），用 email 回查拿用户
   let u = (await db.select().from(users).where(eq(users.email, email)).limit(1))[0]
   if (!u) {
-    // Phase 11.8 workaround:mysql2 + drizzle + Aliyun RDS 偶发 stale read —
-    // INSERT 后立即 SELECT 拿空(实测复现率约 5-10%)。中间跑一个无关 SELECT
-    // 作为"屏障"触发 driver 内部 buffer flush,然后 retry 一次即可。
-    // 不影响生产(99% 第一次成功),仅边缘 case 多一次 RTT。
+    // Phase 11.8 workaround:mysql2 + Aliyun 在测试场景(长 process + 大量 query)
+    // 偶发 stale read,中间塞一个无关 SELECT 作"屏障"再 retry 一次即可。
+    // 生产 99% 第一次成功,这条 retry 路径只在 edge 触发。
     await db.execute(sql`SELECT 1`)
     u = (await db.select().from(users).where(eq(users.email, email)).limit(1))[0]
     if (!u) return c.json({ error: '注册失败（无法回查用户）' }, 500)

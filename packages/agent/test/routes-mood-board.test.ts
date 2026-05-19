@@ -423,13 +423,14 @@ describe('POST /api/decks/:id/anchor/skip', () => {
     const { user, cookie } = await createLoggedInUser('skip-happy@a.com')
     const { deck } = await createDeckDirect(user.id)
 
-    // 先验默认值是 false
+    // 先验默认值是 false/null(nullable 后,未显式 INSERT 时 mysql 留 null;
+    // Phase 11.8 application 层 null 跟 false 等价处理 = "未决策")
     const [before] = await getDb()
       .select({ anchorSkipped: decks.anchorSkipped, anchorAssetId: decks.anchorAssetId })
       .from(decks)
       .where(eq(decks.id, deck.id))
       .limit(1)
-    expect(before!.anchorSkipped).toBe(false)
+    expect(before!.anchorSkipped).toBeFalsy()
     expect(before!.anchorAssetId).toBeNull()
 
     const res = await app.request(`/api/decks/${deck.id}/anchor/skip`, {

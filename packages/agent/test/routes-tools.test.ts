@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -17,13 +17,25 @@ import {
   getImageJob,
   type ImageJob,
 } from '../src/image-gen-job.js'
-import { __setGenerateImageForTesting } from '../src/tools/local/generate-slide-image.js'
+import {
+  __setGenerateImageForTesting,
+  __setAnchorPollingForTesting,
+} from '../src/tools/local/generate-slide-image.js'
 import type { ImageGenInput, ImageGenOutput } from '../src/llm/openai-image.js'
 import { setImageLlmSettings } from '../src/db/image-llm-settings.js'
 import { createAsset, listAssetIdsByDeck, getAsset } from '../src/db/deck-assets.js'
 import { getDb, decks, deckVersions } from '../src/db/index.js'
 
 useTestDb()
+
+// Phase 11.8 真阻塞:工具入口默认 polling 等用户选 anchor / skip。hybrid 测试
+// 不测 anchor 流程,disable 让工具直接放行(否则 5s vitest timeout 必撞)。
+beforeAll(() => {
+  __setAnchorPollingForTesting(false)
+})
+afterAll(() => {
+  __setAnchorPollingForTesting(true)
+})
 
 function buildApp() {
   const app = new Hono<{ Variables: AuthVars }>()
