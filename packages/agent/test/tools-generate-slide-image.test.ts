@@ -22,6 +22,7 @@ import { generateSlideImageTool } from '../src/tools/local/generate-slide-image.
 import { runInRequest } from '../src/context.js'
 import { setImageLlmSettings } from '../src/db/image-llm-settings.js'
 import { listAssetIdsByDeck, getAsset, createAsset } from '../src/db/deck-assets.js'
+import { __setAnchorPollingForTesting } from '../src/tools/local/generate-slide-image.js'
 
 useTestDb()
 
@@ -59,10 +60,14 @@ heading: 第三页标题
 beforeAll(() => {
   __setMasterKeyGetterForTesting(() => FIXED_KEY)
   process.env.BIG_PPT_TEST_IMAGE_MODE = 'stub'
+  // Phase 11.8: 全局跳过 anchor polling block,让现有 happy path 测试不被 3 分钟超时卡死。
+  // 新加的 anchor 阻塞流程测试(如有)可在 case 内 __setAnchorPollingForTesting(true) 再 disable 回来。
+  __setAnchorPollingForTesting(false)
 })
 
 afterAll(() => {
   delete process.env.BIG_PPT_TEST_IMAGE_MODE
+  __setAnchorPollingForTesting(true)
 })
 
 beforeEach(() => {
@@ -611,6 +616,45 @@ heading: 第三页标题
       expect(job!.baseImageBase64).toBeUndefined()
       expect(job!.baseImageMime).toBeUndefined()
     })
+
+    it('Phase 11.8 真阻塞:配 image LLM + anchor=null + anchorSkipped=false → 工具入口轮询等', async () => {
+      const { user } = await createLoggedInUser('anchor-block@a.com')
+      const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
+      await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
+
+      // 启回 anchor polling(默认 beforeAll 关了,这条 case 显式开)
+      __setAnchorPollingForTesting(true)
+      try {
+        // 起一个 promise — 工具会卡 polling;500ms 后从外部 set anchorSkipped=true 解锁
+        const toolPromise = runInRequest(
+          { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
+          () =>
+            runTool({
+              slideIndex: 2,
+              prompt: 'a blocked test',
+              fallbackSummary: '阻塞测试占位',
+            }),
+        )
+        // 起一个延后 unlock
+        const unlockPromise = (async () => {
+          await new Promise((r) => setTimeout(r, 500))
+          const { getDb, decks } = await import('../src/db/index.js')
+          const { eq } = await import('drizzle-orm')
+          await getDb()
+            .update(decks)
+            .set({ anchorSkipped: true })
+            .where(eq(decks.id, deck.id))
+        })()
+        await unlockPromise
+        // 此后工具下一轮 polling(每 1.5s)会发现 anchorSkipped=true → break → 继续派 job
+        const result = await toolPromise
+        const json = JSON.parse(result)
+        expect(json.success).toBe(true)
+        expect(json.jobId).toMatch(/^[0-9a-f-]{36}$/)
+      } finally {
+        __setAnchorPollingForTesting(false) // 复位防污染其它 case
+      }
+    }, 30_000)
 
     it('deck.anchor_asset_id 指向跨 user asset → IDOR guard 拦,静默走 text-only', async () => {
       // 用户 A 拥有 asset,但 user B 的 deck 字面 anchorAssetId 指向 A 的 asset uuid。

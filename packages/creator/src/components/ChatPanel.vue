@@ -3,6 +3,7 @@ import { computed, h, ref } from 'vue'
 import { Bubble, Sender, Suggestion } from '@antdv-next/x'
 import type { SenderRef } from '@antdv-next/x'
 import { useAIChat } from '../composables/useAIChat'
+import { useMoodBoardPicker } from '../composables/useMoodBoardPicker'
 import { useSlashCommands } from '../composables/useSlashCommands'
 import { useUploads } from '../composables/useUploads'
 import ThinkingBlock from './ThinkingBlock.vue'
@@ -28,6 +29,17 @@ const {
 } = useAIChat()
 
 const senderRef = ref<SenderRef | null>(null)
+
+// Phase 11.8 真阻塞:anchor picker modal 打开期间禁用输入框,确保用户必须先选定 anchor
+// 或显式跳过才能发 prompt 触发 LLM。否则 LLM 立即派发 generate_slide_image,头几张图
+// 拿不到 anchor,跨 slide 风格对齐失效。
+const moodBoardPicker = useMoodBoardPicker()
+const inputDisabled = computed(() => moodBoardPicker.open.value)
+const inputPlaceholder = computed(() =>
+  moodBoardPicker.open.value
+    ? '请先选定 AI 生图风格(或点跳过)再继续 →'
+    : '描述你想要的幻灯片，或输入 / 查看指令...',
+)
 
 // 斜杠指令（/clear / /retry / /undo / /redo / /log / /help）
 const slash = useSlashCommands({ clearHistory, appendLocalMessage, retryLastUserMessage })
@@ -127,6 +139,9 @@ const roles = computed(() => ({
 function handleSubmit(message: string) {
   const trimmed = message.trim()
   if (!trimmed) return
+  // Phase 11.8 真阻塞:modal 打开时 Sender 已 disabled,但防御性短路防键盘 enter
+  // 提交穿透(Sender 内部 submit 事件可能不严格遵守 disabled)
+  if (inputDisabled.value) return
   senderRef.value?.clear()
   // 斜杠指令：直接输完按 enter 没走候选列表的情况，由 composable 处理
   if (slash.handleSlashSubmit(trimmed)) return
@@ -255,7 +270,8 @@ async function onSenderDrop(e: DragEvent) {
               <Sender
                 ref="senderRef"
                 :loading="isGenerating"
-                placeholder="描述你想要的幻灯片，或输入 / 查看指令..."
+                :disabled="inputDisabled"
+                :placeholder="inputPlaceholder"
                 :submit-type="'enter'"
                 :on-key-down="onKeyDown"
                 @change="(val: string) => slash.handleSenderChange(val, onTrigger)"

@@ -341,7 +341,7 @@ describe('POST /api/decks/:id/anchor', () => {
     expect(json.error).toMatch(/候选/)
   })
 
-  it('happy path:candidate → anchor + decks.anchor_asset_id 写入', async () => {
+  it('happy path:candidate → anchor + decks.anchor_asset_id 写入 + anchor_skipped 同步置 true', async () => {
     const app = makeApp()
     const { user, cookie } = await createLoggedInUser('ax-happy@a.com')
     const { deck } = await createDeckDirect(user.id)
@@ -367,13 +367,14 @@ describe('POST /api/decks/:id/anchor', () => {
     const json = await res.json()
     expect(json).toEqual({ ok: true, anchorAssetId: target.id })
 
-    // decks.anchor_asset_id 写入
+    // decks.anchor_asset_id 写入 + anchorSkipped 同步置 true(已决策)
     const [d] = await getDb()
-      .select({ anchorAssetId: decks.anchorAssetId })
+      .select({ anchorAssetId: decks.anchorAssetId, anchorSkipped: decks.anchorSkipped })
       .from(decks)
       .where(eq(decks.id, deck.id))
       .limit(1)
     expect(d!.anchorAssetId).toBe(target.id)
+    expect(d!.anchorSkipped).toBe(true)
 
     // 目标 asset purpose=anchor,其它两个 discarded
     const rows = await getDb()
@@ -385,5 +386,67 @@ describe('POST /api/decks/:id/anchor', () => {
     candidates
       .filter((c) => c.id !== target.id)
       .forEach((c) => expect(map[c.id]).toBe('mood-board-discarded'))
+  })
+})
+
+describe('POST /api/decks/:id/anchor/skip', () => {
+  it('未登录 → 401', async () => {
+    const app = makeApp()
+    const res = await app.request('/api/decks/1/anchor/skip', { method: 'POST' })
+    expect(res.status).toBe(401)
+  })
+
+  it('deck 不存在 → 404', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser('skip-404@a.com')
+    const res = await app.request('/api/decks/99999/anchor/skip', {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('跨 user deck → 403', async () => {
+    const app = makeApp()
+    const { user: owner } = await createLoggedInUser('skip-owner@a.com')
+    const { deck } = await createDeckDirect(owner.id, 'OwnedByOther')
+    const { cookie: intruderCookie } = await createLoggedInUser('skip-intruder@a.com')
+    const res = await app.request(`/api/decks/${deck.id}/anchor/skip`, {
+      method: 'POST',
+      headers: { Cookie: intruderCookie },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('happy path → 200 + decks.anchor_skipped 写 true(anchor_asset_id 不变)', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser('skip-happy@a.com')
+    const { deck } = await createDeckDirect(user.id)
+
+    // 先验默认值是 false
+    const [before] = await getDb()
+      .select({ anchorSkipped: decks.anchorSkipped, anchorAssetId: decks.anchorAssetId })
+      .from(decks)
+      .where(eq(decks.id, deck.id))
+      .limit(1)
+    expect(before!.anchorSkipped).toBe(false)
+    expect(before!.anchorAssetId).toBeNull()
+
+    const res = await app.request(`/api/decks/${deck.id}/anchor/skip`, {
+      method: 'POST',
+      headers: { Cookie: cookie },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toEqual({ ok: true, anchorSkipped: true })
+
+    // DB 验:anchor_skipped=true,anchor_asset_id 仍 null(不改 anchor 本身)
+    const [after] = await getDb()
+      .select({ anchorSkipped: decks.anchorSkipped, anchorAssetId: decks.anchorAssetId })
+      .from(decks)
+      .where(eq(decks.id, deck.id))
+      .limit(1)
+    expect(after!.anchorSkipped).toBe(true)
+    expect(after!.anchorAssetId).toBeNull()
   })
 })

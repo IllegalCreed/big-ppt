@@ -61,6 +61,24 @@ export function __setGenerateImageForTesting(fn: GenerateImageFn | null): void {
   generateImageOverride = fn
 }
 
+/**
+ * Phase 11.8 testing seam:跳过 anchor polling block。
+ * 默认开启(prod 行为);老 happy-path 测试在 beforeAll 调 `false` 让工具立即放行
+ * 不等 anchor 决策(避免 3 分钟超时卡死)。新加的 anchor 阻塞流程测试反向再 enable。
+ *
+ * env BIG_PPT_TEST_DISABLE_ANCHOR_POLL=1 也能 disable(给 e2e webServer 启动时 disable
+ * 用,所有不测 anchor 流程的 spec 不需要逐个调 /anchor/skip);anchor-image-flow.spec.ts
+ * 在 test 内 fetch /skip 走真路径仍能 verify anchor 决策语义。
+ */
+let anchorPollingEnabled =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.BIG_PPT_TEST_DISABLE_ANCHOR_POLL === '1'
+    ? false
+    : true
+export function __setAnchorPollingForTesting(enabled: boolean): void {
+  anchorPollingEnabled = enabled
+}
+
 const PROMPT_MAX = 1000
 
 /** 计算目标 layout 名:templateId 形如 'beitou-standard' / 'jingyeda-standard' → 取首段 */
@@ -235,10 +253,54 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   }
 
   const db = getDb()
-  const [deck] = await db.select().from(decks).where(eq(decks.id, deckId)).limit(1)
+  let [deck] = await db.select().from(decks).where(eq(decks.id, deckId)).limit(1)
   if (!deck) return JSON.stringify({ success: false, error: 'deck 不存在' })
   if (deck.userId !== ctx.userId) {
     return JSON.stringify({ success: false, error: '无权访问该 deck' })
+  }
+
+  /**
+   * Phase 11.8 真阻塞:用户配过 image LLM + deck 还没决策 anchor 时,工具入口
+   * **同步 polling 等用户操作**(选定 anchor 或显式跳过)。期间 LLM 在 pi-agent-core
+   * await tool result,真阻塞不派发下一个工具调用。
+   *
+   * 条件:
+   *   - 用户配过 image LLM (image LLM 没配整个 image-gen 路径不该启,无需阻塞)
+   *   - deck.anchorAssetId === null AND deck.anchorSkipped === false
+   * 解锁条件(任一):
+   *   - deck.anchorAssetId 写入(用户选定) → 用 anchor 跑 hybrid
+   *   - deck.anchorSkipped 转 true(用户跳过) → 走 text-only 老路径
+   * 超时(POLL_TIMEOUT_MS):返 friendly error 给 LLM,LLM 自决策(通常 stop turn)。
+   */
+  const POLL_TIMEOUT_MS = 180_000 // 3 分钟
+  const POLL_INTERVAL_MS = 1_500
+  if (anchorPollingEnabled) {
+    const imageSettings = await getImageLlmSettings(ctx.userId)
+    if (imageSettings && deck.anchorAssetId === null && deck.anchorSkipped === false) {
+      const startedAt = Date.now()
+      while (true) {
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+          return JSON.stringify({
+            success: false,
+            error:
+              '用户尚未选择 AI 生图风格(超时 3 分钟)。请提示用户去编辑器顶栏「调色板」按钮选风格,或点 modal 内"跳过本次"按钮后重试。本轮 turn 建议停止派发更多 generate_slide_image。',
+          })
+        }
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+        const [refreshed] = await db
+          .select()
+          .from(decks)
+          .where(eq(decks.id, deckId))
+          .limit(1)
+        if (!refreshed) {
+          return JSON.stringify({ success: false, error: 'deck 已被删除' })
+        }
+        deck = refreshed
+        if (refreshed.anchorAssetId !== null || refreshed.anchorSkipped) {
+          break
+        }
+      }
+    }
   }
 
   const targetLayout = deriveImageLayoutName(deck.templateId)

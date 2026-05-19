@@ -220,9 +220,16 @@ export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise
       .limit(1)
     if (!newest) throw new Error('new version 回查失败')
 
+    // Phase 11.8: 切模板成功 → 同时 reset anchorSkipped=false 让下次走 image-gen 前
+    // 重新走 mood-board 流程(新模板的色板 / 风格调性可能不一样,用户应该重选 anchor)
     await db
       .update(decks)
-      .set({ templateId: job.to, currentVersionId: newest.id, anchorAssetId: null })
+      .set({
+        templateId: job.to,
+        currentVersionId: newest.id,
+        anchorAssetId: null,
+        anchorSkipped: false,
+      })
       .where(eq(decks.id, job.deckId))
 
     // Phase 7D fix（2026-04-25）：DB 改完同步 mirror 到 packages/slidev/slides.md，

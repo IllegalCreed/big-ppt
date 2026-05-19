@@ -68,6 +68,11 @@ export default defineConfig({
         // 个差异化 sample。配 BIG_PPT_TEST_IMAGE_MODE=stub 一起用,anchor 选样 E2E
         // 全不烧 token。
         BIG_PPT_TEST_MOOD_BOARD_MODE: 'stub',
+        // Phase 11.8 真阻塞:generate_slide_image 工具入口默认 polling 等用户选 anchor / skip;
+        // 但 image-content / image-gen-fallback / image-gen-smoke / deck-delete-cascade 等
+        // 老 spec 不测 anchor 流程,polling 会让它们 30s timeout。全局 disable 让老 spec 自然
+        // 跑;anchor-image-flow.spec.ts 自己测真 POST /anchor /skip 路由不依赖 polling 行为。
+        BIG_PPT_TEST_DISABLE_ANCHOR_POLL: '1',
         // 让 e2e 的 mirror 写到 tmp 而非 packages/slidev/slides.md，
         // 避免你 dev 跑着的 :3031 slidev HMR 被 e2e 切模板搞乱（root cause：
         // 大改 frontmatter 触发 slidev cli full reload，dev iframe 闪/状态错乱）。

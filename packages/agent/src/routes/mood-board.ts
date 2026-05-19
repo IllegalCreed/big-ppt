@@ -160,6 +160,9 @@ moodBoardRoute.post('/decks/:id{[0-9]+}/anchor', async (c) => {
   }
 
   await markAsAnchor(deckId, assetId)
+  // Phase 11.8 真阻塞:选定 anchor 也算"已决策",set anchorSkipped=true,工具入口
+  // polling block 就能解锁(它检测 anchor_asset_id 写入或 anchorSkipped=true 任一即放行)。
+  await db.update(decks).set({ anchorSkipped: true }).where(eq(decks.id, deckId))
 
   logServerEvent({
     category: 'mood-board',
@@ -170,4 +173,31 @@ moodBoardRoute.post('/decks/:id{[0-9]+}/anchor', async (c) => {
   })
 
   return c.json({ ok: true, anchorAssetId: assetId })
+})
+
+/**
+ * Phase 11.8 真阻塞:用户显式跳过 anchor 选样。
+ * set decks.anchor_skipped = true → generate_slide_image 工具入口 polling block 解锁,
+ * 允许无 anchor 生图(走 Phase 11.6 老路径)。
+ *
+ * 切模板时此字段会被 reset 为 false,触发下次走 image-gen 前重新走 modal 流程。
+ */
+moodBoardRoute.post('/decks/:id{[0-9]+}/anchor/skip', async (c) => {
+  const user = c.get('user')
+  if (!user) return c.json({ error: 'unauthorized' }, 401)
+  const deckId = Number(c.req.param('id'))
+  const check = await getOwnedDeck(user.id, deckId)
+  if (!check.ok) return c.json({ error: check.error }, check.status)
+
+  const db = getDb()
+  await db.update(decks).set({ anchorSkipped: true }).where(eq(decks.id, deckId))
+
+  logServerEvent({
+    category: 'mood-board',
+    event: 'anchor-skipped',
+    deckId,
+    userId: user.id,
+  })
+
+  return c.json({ ok: true, anchorSkipped: true })
 })

@@ -285,8 +285,9 @@ watch(
 onMounted(async () => {
   void loadInitialChats()
   await probeLlmSettings()
-  // 自动弹一次(仅当配过 image+main LLM 且 deck 还没 anchor)
-  if (canPickAnchor.value && !props.deck.anchorAssetId) {
+  // 自动弹一次:配过 image+main LLM + deck 既没 anchor 也没显式跳过(anchorSkipped=false)
+  // 才弹。已跳过的 deck 不打扰,用户主动点顶栏「调色板」按钮才重开。
+  if (canPickAnchor.value && !props.deck.anchorAssetId && !props.deck.anchorSkipped) {
     void openAnchorPicker()
   }
 })

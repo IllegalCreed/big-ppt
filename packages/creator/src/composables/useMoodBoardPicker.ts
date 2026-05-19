@@ -112,15 +112,27 @@ async function selectAnchor(assetId: string): Promise<void> {
   }
 }
 
-/** 用户跳过本次,modal 关闭 + 外部 useAIChat 继续(不写 anchor) */
-function skip(): void {
+/**
+ * 用户跳过本次,modal 关闭 + 调 backend set decks.anchor_skipped=true。
+ * 这步是 Phase 11.8 真阻塞的关键:不写 backend,generate_slide_image 工具入口
+ * 会一直 polling 等 anchor/skip 决策,LLM 卡在 tool result 等待中。
+ */
+async function skip(): Promise<void> {
+  // 先 close modal 让 UI 不挂,backend 调用即使失败也不阻塞用户
   skipped.value = true
   open.value = false
+  if (!deckId.value) return
+  try {
+    await api.post(`/api/decks/${deckId.value}/anchor/skip`)
+  } catch (err) {
+    // 失败时 modal 已关,但 backend 仍 polling — 提示 error 让用户重试
+    error.value = `跳过失败:${err instanceof Error ? err.message : String(err)}。LLM 可能仍在等待,请重试。`
+  }
 }
 
-/** 强制关闭 modal(ESC / 点遮罩,跟 skip 语义一致) */
-function closePicker(): void {
-  skip()
+/** 强制关闭 modal(ESC / 点遮罩,跟 skip 语义一致 — 都通知 backend "已决策跳过") */
+async function closePicker(): Promise<void> {
+  await skip()
 }
 
 export function useMoodBoardPicker() {

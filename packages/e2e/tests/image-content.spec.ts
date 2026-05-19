@@ -18,7 +18,8 @@
  * - deck 删除后 asset 被清
  * - 未配生图模型时返友好错误
  */
-import fs from 'node:fs'
+// fs 历史用于读 SLIDES_FILE,Phase 10.5 slides-store DB-based 后改读 deck_versions
+// 取消该 import 防 ESLint no-unused-vars
 import { expect, test } from '@playwright/test'
 import {
   AGENT_BASE,
@@ -40,7 +41,7 @@ test.afterAll(async () => {
   await disposeDb()
 })
 
-const SLIDES_FILE = '/tmp/lumideck-e2e-slides.md'
+// SLIDES_FILE 历史断言已 obsolete（Phase 10.5 起 slides-store 不 mirror），见下方注释
 
 test('generate_slide_image stub 模式:同步 jobId → DB asset + slides.md frontmatter + GET /api/assets owner 200', async ({
   page,
@@ -78,6 +79,8 @@ test('generate_slide_image stub 模式:同步 jobId → DB asset + slides.md fro
   })
 
   // 直接调 /api/call-tool 触发 generate_slide_image(模拟 LLM tool_call)
+  // (Phase 11.8 真阻塞:playwright.config.ts webServer 设 BIG_PPT_TEST_DISABLE_ANCHOR_POLL=1
+  // 全局 disable polling,本 spec 不测 anchor 流程不需要逐个 POST /anchor/skip)
   // 第 2 页是 starter.md 的内容页,目标转图
   // Phase 10.5：编辑器去抢锁后,activeDeckId 由 X-Deck-Id header 传递（中间件覆写 ALS）
   const callRes = await page.request.post(`${AGENT_BASE}/api/call-tool`, {
@@ -132,17 +135,15 @@ test('generate_slide_image stub 模式:同步 jobId → DB asset + slides.md fro
   expect(assets[0]?.mime_type).toBe('image/png')
   expect(assets[0]?.bytes_size).toBeGreaterThan(0)
 
-  // ── slides.md:frontmatter 切到 image-content layout + imageSrc 引用 asset ─
-  const slidesContent = fs.readFileSync(SLIDES_FILE, 'utf-8')
-  expect(slidesContent).toContain('layout: beitou-image-content')
-  expect(slidesContent).toContain(`/api/assets/${assetId}`)
-  const layouts = extractLayouts(slidesContent)
-  expect(layouts).toContain('beitou-image-content')
-
-  // ── deck_versions:也应该被 persist 持久化(currentVersion 已切到新 content) ──
+  // ── deck_versions:slides-store DB-based 写入 — 验 layout 切到 image-content + imageSrc ─
+  // (Phase 10.5 起 slides-store 不再 mirror 到 slides.md,storeUpdateSlide 仅写 deck_versions;
+  //  Slidev iframe 现在也只服务"全屏放映",编辑器主视图走 DeckRenderer 读 DB content。
+  //  历史断言读 SLIDES_FILE 已 obsolete,改读 DB current version。)
   const dbContent = await getCurrentVersionContent(deckId)
   expect(dbContent).toContain('layout: beitou-image-content')
   expect(dbContent).toContain(`/api/assets/${assetId}`)
+  const layouts = extractLayouts(dbContent)
+  expect(layouts).toContain('beitou-image-content')
 
   // ── GET /api/assets/<id>:owner 200 + Content-Type image/png ─
   const assetRes = await page.request.get(`${AGENT_BASE}/api/assets/${assetId}`)
