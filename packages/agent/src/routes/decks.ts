@@ -276,6 +276,13 @@ decksRoute.post('/decks/:id{[0-9]+}/restore/:vid{[0-9]+}', async (c) => {
 
   // Phase 7D：版本携带 templateId 时同步回写 decks.template_id（实现切模板可逆）；
   // 旧版本 templateId 为 NULL 时保持原行为不动 decks.template_id（向前兼容）
+  // Phase 11.8: 同样套路对 anchorAssetId — version 携带 anchor_asset_id(NULL 或 uuid)
+  // 时同步回写 decks.anchor_asset_id,实现切模板可逆时 anchor 一并恢复。
+  // 旧版本 anchorAssetId 为 NULL 视为"无 anchor"语义(本来 11.8 之前也没 anchor),
+  // 跟切模板成功 version 的语义一致都是 NULL,所以总是同步写,不需要 if guard。
+  // 安全:若 anchorAssetId 指向已不存在的 asset(被 GC / cross-deck),restoreDeckAnchor
+  // 会校验后静默置 NULL,不会留脏指针。
+  const { restoreDeckAnchor } = await import('../db/deck-assets.js')
   if (version.templateId != null) {
     await db
       .update(decks)
@@ -284,6 +291,7 @@ decksRoute.post('/decks/:id{[0-9]+}/restore/:vid{[0-9]+}', async (c) => {
   } else {
     await db.update(decks).set({ currentVersionId: versionId }).where(eq(decks.id, deckId))
   }
+  await restoreDeckAnchor(deckId, version.anchorAssetId ?? null)
 
   // 若当前 session 正占用该 deck，mirror 到 fs，让 Slidev 热重载
   const session = c.get('session')

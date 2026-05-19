@@ -6,9 +6,18 @@
  * 整 deck 删除时 cascade 自动清(但因为 decks 是 soft delete,需在路由层显式调 deleteAssetsByDeck)。
  */
 import { randomUUID } from 'node:crypto'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { getDb } from './client.js'
-import { deckAssets } from './schema.js'
+import { deckAssets, decks } from './schema.js'
+
+/**
+ * Phase 11.8: asset 用途枚举(schema 上是 nullable varchar(32),为类型安全在 TS 层窄化)。
+ * - null/undefined: 默认/历史/普通 generate_slide_image 产物
+ * - 'anchor': 当前选定锚图(被 decks.anchor_asset_id 引用)
+ * - 'mood-board-candidate': 候选未选中
+ * - 'mood-board-discarded': 历史"换一批"丢弃 / 未中选
+ */
+export type AssetPurpose = 'anchor' | 'mood-board-candidate' | 'mood-board-discarded'
 
 export interface CreateAssetArgs {
   deckId: number
@@ -17,6 +26,8 @@ export interface CreateAssetArgs {
   data: Buffer
   prompt?: string
   model?: string
+  /** Phase 11.8: 默认 null(普通生图产物);mood-board / anchor 用法显式传 */
+  purpose?: AssetPurpose
 }
 
 export interface AssetRow {
@@ -28,6 +39,7 @@ export interface AssetRow {
   data: Buffer
   prompt: string | null
   model: string | null
+  purpose: string | null
   createdAt: Date
 }
 
@@ -43,6 +55,7 @@ export async function createAsset(args: CreateAssetArgs): Promise<{ id: string }
     data: args.data,
     prompt: args.prompt,
     model: args.model,
+    purpose: args.purpose,
   })
   return { id }
 }
@@ -101,4 +114,130 @@ export async function deleteAsset(id: string, userId: number): Promise<boolean> 
   const db = getDb()
   await db.delete(deckAssets).where(and(eq(deckAssets.id, id), eq(deckAssets.userId, userId)))
   return true
+}
+
+/**
+ * Phase 11.8: 列出某 deck 的 mood-board 候选(purpose='mood-board-candidate')。
+ * 给前端 modal 加载缩略图用,不返 BLOB(轻查询)。
+ */
+export async function listMoodBoardCandidates(
+  deckId: number,
+): Promise<Array<Pick<AssetRow, 'id' | 'mimeType' | 'prompt' | 'createdAt'>>> {
+  const db = getDb()
+  return db
+    .select({
+      id: deckAssets.id,
+      mimeType: deckAssets.mimeType,
+      prompt: deckAssets.prompt,
+      createdAt: deckAssets.createdAt,
+    })
+    .from(deckAssets)
+    .where(and(eq(deckAssets.deckId, deckId), eq(deckAssets.purpose, 'mood-board-candidate')))
+}
+
+/**
+ * Phase 11.8: 选定某个 candidate 作为 anchor。
+ * - 把目标 asset.purpose 从 candidate 改 anchor
+ * - 同 deck 其它 candidate 改 discarded
+ * - decks.anchor_asset_id 写入(若 deck 已有旧 anchor,旧 asset.purpose 也改 discarded)
+ *
+ * IDOR guard 由 caller 在 routes 层保证(asset.deckId === deckId + asset.userId === user.id)。
+ * 本函数只做事务一致性,不重复校验。
+ */
+export async function markAsAnchor(deckId: number, assetId: string): Promise<void> {
+  const db = getDb()
+  // 1) 读现 deck.anchor_asset_id(若存在,旧 anchor 也要降级为 discarded)
+  const [deck] = await db
+    .select({ anchorAssetId: decks.anchorAssetId })
+    .from(decks)
+    .where(eq(decks.id, deckId))
+    .limit(1)
+  const prevAnchorId = deck?.anchorAssetId ?? null
+
+  // 2) 把同 deck 所有 candidate 改 discarded(将选中的那个 candidate 排除,稍后单独标 anchor)
+  await db
+    .update(deckAssets)
+    .set({ purpose: 'mood-board-discarded' })
+    .where(and(eq(deckAssets.deckId, deckId), eq(deckAssets.purpose, 'mood-board-candidate')))
+
+  // 3) 旧 anchor 降级为 discarded(若有)
+  if (prevAnchorId && prevAnchorId !== assetId) {
+    await db
+      .update(deckAssets)
+      .set({ purpose: 'mood-board-discarded' })
+      .where(and(eq(deckAssets.id, prevAnchorId), eq(deckAssets.deckId, deckId)))
+  }
+
+  // 4) 目标 asset 设为 anchor
+  await db
+    .update(deckAssets)
+    .set({ purpose: 'anchor' })
+    .where(and(eq(deckAssets.id, assetId), eq(deckAssets.deckId, deckId)))
+
+  // 5) decks.anchor_asset_id 写入
+  await db.update(decks).set({ anchorAssetId: assetId }).where(eq(decks.id, deckId))
+}
+
+/**
+ * Phase 11.8: 清空 deck 的 anchor(切模板时调用)。
+ * - decks.anchor_asset_id 置 NULL
+ * - 当前 anchor asset 改 discarded
+ * - candidate 不动(理论不存在;defensive)
+ */
+export async function clearDeckAnchor(deckId: number): Promise<void> {
+  const db = getDb()
+  const [deck] = await db
+    .select({ anchorAssetId: decks.anchorAssetId })
+    .from(decks)
+    .where(eq(decks.id, deckId))
+    .limit(1)
+  const prevAnchorId = deck?.anchorAssetId ?? null
+  if (prevAnchorId) {
+    await db
+      .update(deckAssets)
+      .set({ purpose: 'mood-board-discarded' })
+      .where(and(eq(deckAssets.id, prevAnchorId), eq(deckAssets.deckId, deckId)))
+  }
+  await db.update(decks).set({ anchorAssetId: null }).where(eq(decks.id, deckId))
+}
+
+/**
+ * Phase 11.8: 在 restore 切模板版本时,把 deck 的 anchor 恢复到指定 asset id(或 null)。
+ * 跟 setAnchor 不同:本函数不动 purpose 状态机(避免乱了 candidate/discarded 流转),
+ * 只写 decks.anchor_asset_id;asset.purpose='anchor' 由 markAsAnchor 时保证,restore 视为
+ * 重新指向某个历史 asset。
+ *
+ * 校验:若 anchorAssetId 非 null,必须确实属于该 deck(防 cross-deck 注入)。
+ */
+export async function restoreDeckAnchor(
+  deckId: number,
+  anchorAssetId: string | null,
+): Promise<void> {
+  const db = getDb()
+  if (anchorAssetId) {
+    const [asset] = await db
+      .select({ id: deckAssets.id })
+      .from(deckAssets)
+      .where(and(eq(deckAssets.id, anchorAssetId), eq(deckAssets.deckId, deckId)))
+      .limit(1)
+    if (!asset) {
+      // 历史 anchor 已不存在(被 GC / 跨 deck 错乱),静默清空避免脏指针
+      await db.update(decks).set({ anchorAssetId: null }).where(eq(decks.id, deckId))
+      return
+    }
+  }
+  await db.update(decks).set({ anchorAssetId }).where(eq(decks.id, deckId))
+}
+
+/**
+ * Phase 11.8 debug helper: 强制把多个 asset 改 discarded(失败兜底时用)。
+ * caller 必须自己保证 ownership。
+ */
+export async function discardAssets(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const db = getDb()
+  await db
+    .update(deckAssets)
+    .set({ purpose: 'mood-board-discarded' })
+    .where(inArray(deckAssets.id, ids))
 }

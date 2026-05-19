@@ -159,11 +159,13 @@ export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise
     }
 
     // 插 snapshot version（current_version_id 暂不动，作为可回滚锚点）
+    // Phase 11.8: snapshot 也带 anchor_asset_id,让 restore 时能恢复切模板前的 anchor
     await db.insert(deckVersions).values({
       deckId: job.deckId,
       content: currentContent,
       message: `切换模板前快照 (${job.from} → ${job.to})`,
       templateId: job.from,
+      anchorAssetId: deck.anchorAssetId,
       authorId: job.userId,
     })
     const [snapshot] = await db
@@ -199,11 +201,15 @@ export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise
     }
 
     // 插切换后 version + 更新 decks.template_id / current_version_id
+    // Phase 11.8: 切模板成功 → 新 version 的 anchor_asset_id = NULL(语义:切模板就是想换风格,
+    // anchor 跟旧模板色板一脉相承,保留反而冲突);decks.anchor_asset_id 一并清空,让用户
+    // 下次走 image-gen 前重新选 anchor。undo 切模板时 restore 端点能从 snapshot version 恢复。
     await db.insert(deckVersions).values({
       deckId: job.deckId,
       content: rewritten,
       message: `切换到模板 ${job.to}`,
       templateId: job.to,
+      anchorAssetId: null,
       authorId: job.userId,
     })
     const [newest] = await db
@@ -216,7 +222,7 @@ export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise
 
     await db
       .update(decks)
-      .set({ templateId: job.to, currentVersionId: newest.id })
+      .set({ templateId: job.to, currentVersionId: newest.id, anchorAssetId: null })
       .where(eq(decks.id, job.deckId))
 
     // Phase 7D fix（2026-04-25）：DB 改完同步 mirror 到 packages/slidev/slides.md，

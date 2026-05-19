@@ -88,6 +88,13 @@ export const decks = mysqlTable(
       .notNull(),
     /** 指向当前激活的 version；删除 version 时置 NULL（循环 FK，建表时必须可空） */
     currentVersionId: int('current_version_id'),
+    /**
+     * Phase 11.8: 选定的视觉锚图 asset id,生图时自动注入 baseImage 跨 slide 对齐风格。
+     * - nullable: 未配 image LLM / 用户跳过选样 / 切模板清空时为 NULL
+     * - 循环 FK 不显式声明（沿用 currentVersionId 套路）；application-level 保证一致性
+     * - asset 被显式删除时由 routes/deck-assets 显式 set NULL，避免循环 FK 引入 drizzle-kit push 失败
+     */
+    anchorAssetId: varchar('anchor_asset_id', { length: 36 }),
     status: mysqlEnum('status', ['active', 'archived', 'deleted']).default('active').notNull(),
     createdAt: timestamp('created_at').default(NOW).notNull(),
     updatedAt: timestamp('updated_at').default(NOW_ON_UPDATE).notNull(),
@@ -116,6 +123,12 @@ export const deckVersions = mysqlTable(
      * restore 时 fallback 同步 decks.template_id 实现切模板可逆；NULL 视为旧数据保持原行为。
      */
     templateId: varchar('template_id', { length: 64 }),
+    /**
+     * Phase 11.8: 写入此 version 时所属的 anchor asset id（snapshot 用 from / 新版本用 to）。
+     * restore 时 fallback 同步 decks.anchor_asset_id 实现切模板可逆 anchor 恢复;NULL 视为旧数据保持原行为。
+     * 跟 templateId 同源套路。
+     */
+    anchorAssetId: varchar('anchor_asset_id', { length: 36 }),
     authorId: int('author_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at').default(NOW).notNull(),
   },
@@ -215,6 +228,14 @@ export const deckAssets = mysqlTable(
     prompt: text('prompt'),
     /** 出图模型,如 'gpt-5.5' / 'gpt-image-2',用于成本核算 */
     model: varchar('model', { length: 50 }),
+    /**
+     * Phase 11.8: asset 用途分类。
+     * - null: 默认/历史/普通 generate_slide_image 产物(slide imageSrc 指向用)
+     * - 'anchor': 当前选定锚图(被 decks.anchor_asset_id 引用)
+     * - 'mood-board-candidate': 候选未选中(用户可能挑选 / 换批)
+     * - 'mood-board-discarded': 历史"换一批"丢弃 / 未中选(留待 Phase 17+ GC 清)
+     */
+    purpose: varchar('purpose', { length: 32 }),
     createdAt: timestamp('created_at').default(NOW).notNull(),
   },
   (t) => ({
