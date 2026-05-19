@@ -12,6 +12,9 @@ packages/slidev/components/_catalog/*.js.map
 packages/slidev/components/**/*.meta.js
 packages/slidev/components/**/*.meta.js.map
 
+# Smoke 脚本输出(图片对比 / 临时 PNG)
+scripts/smoke-output/
+
 # Logs
 logs
 *.log
