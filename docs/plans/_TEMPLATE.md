@@ -95,6 +95,25 @@
 
 ---
 
+## 跨用户/跨 deck 隔离 risk audit（HARD,强制章节）
+
+> 2026-05-18 P0 教训补充。每个 Phase plan 必须显式回答以下问题,reviewer 必查。
+> 详细漏洞模式见 [retrospective](../retrospectives/2026-05-18-cross-user-leak-audit.md)。
+
+1. **本 Phase 引入的进程级 state**(fs path / module-level `Map<>` / 全局 cache)是否 per-user/deck 隔离?
+   - 列出所有新加的:`<file:line>` — 隔离方式(per-user key / per-deck path / SQL-scoped)
+   - 如果共享:**说明为什么共享是 OK 的**(单 active session / lock-gated 等)
+2. **新增 agent tool / async worker** 是否走 ALS `getRequestContext().userId + activeDeckId`?
+   - 同步路径直接读 ALS
+   - 异步 worker(fire-and-forget Promise / setTimeout / setInterval)必须 `runInRequest({userId: job.userId, activeDeckId: job.deckId, ...}, ...)` 重注 ALS
+3. **新增 SQL query** 涉及 user-owned 资源(decks / deck_versions / deck_assets / user_assets)是否带复合 WHERE `id = ? AND user_id = ?`?
+   - 不能 post-fetch object-level check(BLOB 先 load 进内存才 reject 是 minor 安全风险)
+4. **测试覆盖**:每个新 deck-scoped endpoint / tool 是否有 cross-user IDOR case?
+   - case 模板:user B 用 A 的 deckId → throw + A 的 state 零副作用
+   - 参考 `slides-store.test.ts:mutation 函数 NoActiveDeck / IDOR 全覆盖` 13 case 套路
+
+---
+
 ## 不做什么（范围围栏）
 
 - ❌ <用户明确说不做的事>

@@ -318,6 +318,7 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 
 - **MCP server headers / API key 等用户凭据必须 AES-256-GCM 加密落 disk**（[plan 07](docs/plans/07-mcp-integration.md) 踩坑 1）
 - **所有"返回用户敏感数据"的路由默认 `requireAuth`**，再按需放开（[plan 07](docs/plans/07-mcp-integration.md) 踩坑 2）
+- **任何 backend 进程级 state(fs path / module-level `Map<>` / 全局 cache)必须 per-user/deck 隔离**:跨账号串扰漏洞模式 — user A 写共享 state,user B 读到 A 的内容。Phase 10.5 漏改 backend slides-store(7 个 agent tools 仍走全局 `slides.md` 文件),造成 P0 数据泄漏(2026-05-18 用户报),hotfix `eccf1c3` 改 DB-based + ALS guard。**通用规则**:agent tools / async worker / cache key 全部走 `getRequestContext().userId + activeDeckId`,SQL query 必带复合 `WHERE id = ? AND user_id = ?`;fs path 加 user/deck suffix 或干脆走 DB。**async worker(fire-and-forget Promise)必须用 `runInRequest` 从 job 字段重注 ALS**(image-gen worker `9e1d196`),否则异步上下文丢 ALS → ALS-gated DB query throw → worker crash。**测试模板**:每个新 deck-scoped 路径必有 cross-user IDOR case(user B 用 A 的 deckId → throw + A 的 state 零副作用),参考 `slides-store.test.ts:mutation 函数 NoActiveDeck / IDOR 全覆盖` 13 case 套路。**plan 模板**强制章节「跨用户/跨 deck 隔离 risk audit」回答:本 Phase 引入的 fs path / module-level Map / 全局 cache,是否 per-user/deck 隔离?详见 [retrospective](docs/retrospectives/2026-05-18-cross-user-leak-audit.md)
 
 ### 跨模板共享组件
 
