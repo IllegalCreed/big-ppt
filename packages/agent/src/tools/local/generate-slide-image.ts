@@ -164,9 +164,14 @@ function buildStructuredImagePrompt(
       `   - The subject is different but the LOOK must be identical`,
     )
   } else {
-    // 没 anchor:走老路,模板 manifest 的 styleHint 控制风格
+    // 没 anchor:统一优先级语义 —— 用户 prompt 明确指定风格 > 扁平默认。
+    // 之前硬编死 "clean modern flat infographic..." 会跟用户 prompt 风格词冲突。
     lines.push(
-      `Style/medium: clean modern flat infographic / business diagram illustration with subtle gradients and soft shadows. ${style.styleHint}. **Apply this consistent aesthetic across ALL images in this deck — deck-wide invariant, do not drift between flat / 3D / photo / cartoon / line-art per page.**`,
+      `**Visual style — priority rules:**`,
+      ``,
+      `1. **If the user's "Primary request" above explicitly specifies a visual style** (mentions a concrete medium / rendering technique / aesthetic, e.g. "用水彩画", "render as 3D isometric", "手绘草图风") → **follow the user's style.**`,
+      ``,
+      `2. **Otherwise** → default to clean modern flat infographic / business diagram illustration with subtle gradients and soft shadows. ${style.styleHint}. **Apply this consistent aesthetic across ALL images in this deck — deck-wide invariant, do not drift between flat / 3D / photo / cartoon / line-art per page.**`,
     )
   }
 
