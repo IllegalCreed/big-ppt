@@ -29,6 +29,7 @@ import { imageLlmSettingsRoute } from './routes/image-llm-settings.js'
 import { assetsRoute } from './routes/assets.js'
 import { uploads } from './routes/uploads.js'
 import { imageJobsRoute } from './routes/image-jobs.js'
+import { moodBoardRoute } from './routes/mood-board.js'
 import { slidevRestartRoute } from './routes/slidev-restart.js'
 import { authOptional, type AuthVars } from './middleware/auth.js'
 import { requestContextMiddleware } from './middleware/request-context.js'
@@ -80,4 +81,6 @@ app.route('/api', imageLlmSettingsRoute)
 app.route('/api', assetsRoute)
 app.route('/api/uploads', uploads)
 app.route('/api', imageJobsRoute)
+// Phase 11.8: mood-board / anchor 两端点。显式 path 不带 wildcard mw,沿用 imageJobsRoute 套路
+app.route('/api', moodBoardRoute)
 app.route('/api', slidevRestartRoute)
