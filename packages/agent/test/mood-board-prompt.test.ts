@@ -15,12 +15,22 @@ import {
 } from '../src/mood-board/prompt.js'
 
 describe('MOOD_BOARD_SYSTEM_PROMPT', () => {
-  it('含 3 条 / CLEARLY DIFFERENT / 严格 JSON 三个核心约束(防未来误改弱化)', () => {
-    expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/3 different image prompts/)
-    expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/CLEARLY DIFFERENT visual style/)
+  it('含 3 条 / 严格 JSON / Subject-first 核心约束(防未来误改弱化)', () => {
+    expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/3 image prompts/)
     expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/STRICT JSON/i)
     expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/no markdown fence/)
     expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/"samples":/)
+  })
+
+  it('2026-05-19 dogfood:Subject-first 约束 + BAD/GOOD example(防 LLM 出业务无关的抽象图)', () => {
+    // 核心修复:必须强约束 LLM 围绕 deck 业务出图,不能照抄风格列表
+    expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/CORE BUSINESS SUBJECT/)
+    expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/Subject-first/)
+    expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/Same subject, different styles/)
+    expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/BAD examples/)
+    expect(MOOD_BOARD_SYSTEM_PROMPT).toMatch(/GOOD example/)
+    // 防回归:不允许再列固定 style 关键词清单让 LLM 照抄
+    expect(MOOD_BOARD_SYSTEM_PROMPT).not.toMatch(/Style examples \(NOT exhaustive/)
   })
 
   it('不喂模板色板 hint(plan 32 抉择 7:让用户挑调性不被锁死)', () => {

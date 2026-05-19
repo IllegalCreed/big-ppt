@@ -9,29 +9,51 @@
 
 /**
  * 主 LLM 调用的 system prompt。
- * 强约束三件:(1) 输出 3 条 / (2) 视觉风格明显不同 / (3) 严格 JSON。
+ * 强约束四件:
+ *   (1) 输出 3 条
+ *   (2) **每条 prompt 必须围绕本 deck 的核心业务主题** —— 重点,不是泛泛风格图
+ *   (3) 3 张视觉风格明显不同
+ *   (4) 严格 JSON
+ *
  * 不喂模板色板(让用户挑"调性",样张阶段不被锁死,见 plan 32 抉择 7)。
+ *
+ * 2026-05-19 dogfood 重写:之前 LLM 直接从 "Style examples" 列表里照抄 3 个标签
+ * (isometric tech / blueprint schematic / gradient mesh abstract),根本没看 deck
+ * 业务内容,生成的样张跟用户的"项目进度汇报"业务完全无关。修复方向:
+ *   - 删 style examples 列表(防 LLM 照抄)
+ *   - 加强约束:必须先 identify deck 的具体业务主题,再围绕它出 3 种视觉表达
+ *   - 给 NEGATIVE example:不要返回抽象 / 通用装饰图
  *
  * 字符串 inline snapshot 锁在 mood-board-prompt.test.ts,防未来误改让样张漂。
  */
 export const MOOD_BOARD_SYSTEM_PROMPT = `You are helping a user choose a visual style for an AI-generated presentation deck.
 
-Look at the deck outline below. Generate 3 different image prompts that capture this deck's theme.
+Read the deck outline below carefully. First identify the deck's CORE BUSINESS SUBJECT (e.g. "Q1 project progress review", "RAG system architecture", "annual sales OKR report"). Then generate 3 image prompts that ALL depict this exact same subject, each in a DIFFERENT visual style.
 
 CRITICAL RULES:
-1. Each prompt MUST use a CLEARLY DIFFERENT visual style. Pick whichever 3 directions you think best match the content.
-2. Do NOT default all 3 to "flat infographic", "realistic photo", or any single style.
-3. Style examples (NOT exhaustive — pick what fits the deck): isometric tech, hand-drawn doodle, watercolor wash, Bauhaus geometric, ukiyo-e woodblock, art deco, cyberpunk neon, minimalist line art, low-poly 3D, paper cutout, oil painting, blueprint schematic, retro 8-bit, brush calligraphy, gradient mesh abstract, etc.
-4. Each prompt must be a complete English image-generation prompt (1-3 sentences), describing both subject and visual style.
+1. **Subject-first, style-second.** Every one of the 3 prompts MUST visually convey the deck's actual business subject — not a generic abstract decoration. If the deck is about "project progress", the image should show a project timeline / milestone visualization / team-delivering-features scene; NOT a random "blueprint of a building" or "gradient abstract wave".
+2. **Same subject, different styles.** All 3 prompts share the same business subject. They differ only in visual rendering (isometric vs. flat vs. hand-drawn vs. watercolor vs. minimalist line, etc.).
+3. **Do not pull style keywords from any external list.** Pick 3 distinct rendering directions that genuinely fit the deck's tone (a corporate quarterly report and a startup product launch deserve different style choices). Avoid defaulting to "isometric tech / blueprint schematic / gradient mesh" unless they truly fit the content.
+4. Each prompt must be a complete English image-generation prompt (1-3 sentences). It must explicitly mention the deck's subject (or its key entities) AND the chosen visual style.
 5. Each "style" label is a SHORT (2-5 words) human-readable tag for the visual direction.
+
+BAD examples (these would NOT be acceptable for a "project progress" deck):
+- "An isometric illustration of a construction site with cranes." (off-topic: project ≠ construction)
+- "A blueprint schematic of a building." (off-topic + generic)
+- "A gradient mesh abstract background with blue waves." (no subject at all)
+
+GOOD example structure (for "Q1 project progress review" deck):
+- style: "isometric tech", prompt: "An isometric illustration of a software project timeline with three milestones (development, testing, launch), figures collaborating around laptops, modern corporate look."
+- style: "hand-drawn doodle", prompt: "A whimsical hand-drawn sketch showing the same project timeline as a winding path with milestone flags, doodled team members, casual notebook feel."
+- style: "flat editorial", prompt: "A flat editorial illustration of the project timeline as a horizontal progress bar with milestone icons, clean magazine layout."
 
 Output STRICT JSON (no markdown fence, no commentary, no preamble):
 
 {
   "samples": [
-    { "style": "<short label>", "prompt": "<full image prompt>" },
-    { "style": "<short label>", "prompt": "<full image prompt>" },
-    { "style": "<short label>", "prompt": "<full image prompt>" }
+    { "style": "<short label>", "prompt": "<full image prompt mentioning the deck's actual subject>" },
+    { "style": "<short label>", "prompt": "<full image prompt mentioning the deck's actual subject>" },
+    { "style": "<short label>", "prompt": "<full image prompt mentioning the deck's actual subject>" }
   ]
 }`
 
