@@ -17,6 +17,8 @@ export type Deck = {
   /** 模板 id，对应 templates/<templateId>/manifest.json；新建 deck 时继承 starter.md */
   templateId: string
   currentVersionId: number | null
+  /** Phase 11.8: 选定的视觉锚图 asset id;null = 未选/已跳过/切模板被清空 */
+  anchorAssetId: string | null
   status: DeckStatus
   createdAt: string
   updatedAt: string

@@ -32,7 +32,9 @@ const deck: Deck = {
   userId: 1,
   title: '初始标题',
   themeId: 'default',
+  templateId: 'beitou-standard',
   currentVersionId: 100,
+  anchorAssetId: null,
   status: 'active',
   createdAt: '2026-04-23T00:00:00Z',
   updatedAt: '2026-04-23T00:00:00Z',
@@ -144,5 +146,74 @@ describe('DeckEditorCanvas · title inline 编辑', () => {
     expect(wrapper.find('.title-error').text()).toBe('重名已存在')
     // input 保持打开供用户修正
     expect(wrapper.find('input.deck-title-input').exists()).toBe(true)
+  })
+})
+
+describe('DeckEditorCanvas · Phase 11.8 anchor picker 集成', () => {
+  function seedLlmHandlers(opts: { hasImage: boolean; hasMain: boolean }) {
+    server.use(
+      http.get('/api/image-llm-settings', () =>
+        HttpResponse.json({ hasApiKey: opts.hasImage, provider: null, model: null, baseUrl: null }),
+      ),
+      http.get('/api/auth/llm-settings', () =>
+        HttpResponse.json({ hasApiKey: opts.hasMain, provider: null }),
+      ),
+    )
+  }
+
+  it('未配 image LLM → 顶栏不渲染选风格按钮', async () => {
+    seedLlmHandlers({ hasImage: false, hasMain: true })
+    const wrapper = mountIt()
+    await flushPromises()
+    expect(wrapper.find('[data-anchor-picker-btn]').exists()).toBe(false)
+  })
+
+  it('未配主 LLM → 顶栏不渲染选风格按钮(两个都要有)', async () => {
+    seedLlmHandlers({ hasImage: true, hasMain: false })
+    const wrapper = mountIt()
+    await flushPromises()
+    expect(wrapper.find('[data-anchor-picker-btn]').exists()).toBe(false)
+  })
+
+  it('配齐 image+main LLM → 渲染选风格按钮 + title=选风格', async () => {
+    seedLlmHandlers({ hasImage: true, hasMain: true })
+    // mood-board generate 自动 open 时会调一次 — handler 必须存在防 unhandled
+    server.use(
+      http.post('/api/decks/42/mood-board/generate', () =>
+        HttpResponse.json({
+          candidates: [
+            { assetId: 'a-1', style: 's1', prompt: 'p1' },
+            { assetId: 'a-2', style: 's2', prompt: 'p2' },
+            { assetId: 'a-3', style: 's3', prompt: 'p3' },
+          ],
+          retried: false,
+          diversityDegraded: false,
+          remaining: 2,
+        }),
+      ),
+    )
+    const wrapper = mountIt()
+    await flushPromises()
+    const btn = wrapper.find('[data-anchor-picker-btn]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('title')).toMatch(/选 AI 生图风格/)
+  })
+
+  it('已有 anchor → 按钮 title 改为"重选风格"', async () => {
+    seedLlmHandlers({ hasImage: true, hasMain: true })
+    server.use(
+      http.get('/api/decks/42/chats', () => HttpResponse.json({ chats: [] })),
+      http.get('/api/decks/42/versions', () => HttpResponse.json({ versions: [] })),
+    )
+    const wrapper = mount(DeckEditorCanvas, {
+      props: {
+        deck: { ...deck, anchorAssetId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' },
+        currentVersion,
+      },
+    })
+    await flushPromises()
+    const btn = wrapper.find('[data-anchor-picker-btn]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('title')).toMatch(/重选/)
   })
 })

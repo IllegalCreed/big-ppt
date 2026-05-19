@@ -7,6 +7,7 @@ import {
   History,
   Layers,
   LogOut,
+  Palette,
   Settings,
   Sparkles,
 } from 'lucide-vue-next'
@@ -18,6 +19,9 @@ import UndoToast from './UndoToast.vue'
 import VersionTimeline from './VersionTimeline.vue'
 import AssetManagerPanel from './AssetManagerPanel.vue'
 import ExportModal from './ExportModal.vue'
+import AnchorPickerModal from './AnchorPickerModal.vue'
+import { useMoodBoardPicker } from '../composables/useMoodBoardPicker'
+import { api } from '../api/client'
 import {
   useDecks,
   type Deck,
@@ -237,8 +241,54 @@ async function onLogout() {
   }, 100)
 }
 
-onMounted(() => {
+// Phase 11.8: 重选风格按钮 + 自动弹 modal。
+// 设计抉择(实施期偏离 plan 32 抉择 6):**不**自动阻塞 SSE 流,因为 backend
+// agent loop 在 backend,frontend 无法真"暂停 LLM 派发"。改成:
+//   (a) 顶栏总是显示"选风格"按钮(image LLM 已配时);用户主动触发
+//   (b) onMounted 检测 anchor=null + image LLM 已配 → 自动 open 一次
+// 让用户在第一次发 prompt 之前就选好 anchor;modal 弹出与 LLM 调 generate_slide_image
+// 的时序竞赛中,用户选完 anchor 的 30-60s 区间内大部分图都能拿到 anchor。
+const moodBoardPicker = useMoodBoardPicker()
+const hasImageLlm = ref(false)
+const hasMainLlm = ref(false)
+
+async function probeLlmSettings(): Promise<void> {
+  try {
+    const [img, main] = await Promise.all([
+      api.get<{ hasApiKey: boolean }>('/api/image-llm-settings').catch(() => ({ hasApiKey: false })),
+      api.get<{ hasApiKey: boolean }>('/api/auth/llm-settings').catch(() => ({ hasApiKey: false })),
+    ])
+    hasImageLlm.value = !!img.hasApiKey
+    hasMainLlm.value = !!main.hasApiKey
+  } catch {
+    // 静默 — 没探到就不显示按钮
+  }
+}
+
+const canPickAnchor = computed(() => hasImageLlm.value && hasMainLlm.value)
+
+async function openAnchorPicker(): Promise<void> {
+  await moodBoardPicker.openPicker(props.deck.id)
+}
+
+// anchor 选定后 → 让父刷一下 deck 元数据(同 template-switched 套路),并清空 picker state
+watch(
+  () => moodBoardPicker.selectedAssetId.value,
+  (assetId) => {
+    if (assetId) {
+      // 触发父 refetch:Deck.anchorAssetId 字段会更新,顶栏按钮 label / 自动弹判断都跟着变
+      emit('template-switched')
+    }
+  },
+)
+
+onMounted(async () => {
   void loadInitialChats()
+  await probeLlmSettings()
+  // 自动弹一次(仅当配过 image+main LLM 且 deck 还没 anchor)
+  if (canPickAnchor.value && !props.deck.anchorAssetId) {
+    void openAnchorPicker()
+  }
 })
 
 onUnmounted(() => {
@@ -314,6 +364,17 @@ onUnmounted(() => {
           @click="showTemplatePicker = true"
         >
           <Layers :size="18" :stroke-width="1.8" />
+        </button>
+        <button
+          v-if="canPickAnchor"
+          type="button"
+          class="icon-btn"
+          :title="deck.anchorAssetId ? '重选 AI 生图风格' : '选 AI 生图风格(让 22 页风格统一)'"
+          :aria-label="deck.anchorAssetId ? '重选风格' : '选风格'"
+          data-anchor-picker-btn
+          @click="openAnchorPicker"
+        >
+          <Palette :size="18" :stroke-width="1.8" />
         </button>
         <button
           type="button"
@@ -396,6 +457,7 @@ onUnmounted(() => {
       @close="showTimeline = false"
       @restored="onTimelineRestored"
     />
+    <AnchorPickerModal />
   </div>
 </template>
 
