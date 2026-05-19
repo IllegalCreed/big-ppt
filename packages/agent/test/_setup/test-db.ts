@@ -21,7 +21,7 @@
  * 副作用：DELETE 不 reset AUTO_INCREMENT —— tests 全部用动态 user.id，不依赖
  * id===1。批量行时 DELETE 比 TRUNCATE 慢，但测试表都 < 100 行可忽略。
  */
-import { afterAll, beforeEach } from 'vitest'
+import { afterAll, beforeAll, beforeEach } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { closeDb, getDb } from '../../src/db/index.js'
 import { __resetForTesting as resetSlidevLock } from '../../src/slidev-lock.js'
@@ -47,6 +47,22 @@ export async function resetDb(): Promise<void> {
 
 /** 在 integration test 文件顶部调用一次 */
 export function useTestDb(): void {
+  // Phase 11.8: 跨 file 累积 prepared statement plan 在 Aliyun RDS 上会撞 stale 问题
+  // (schema 加列后尤甚)。每个 file 开始时 force close 重开 pool + warmup query
+  // 强制新 connection 拿 fresh prepared cache。
+  beforeAll(async () => {
+    await closeDb()
+    // Warmup:跑几条 dummy SELECT/INSERT 让 mysql2 prepared cache 在新 connection 上
+    // 建立 fresh plan,绕过 Aliyun 代理层 silently 复用 stale plan 的 bug。
+    // 这些 dummy 操作不依赖测试 fixtures,只验 schema 完整性。
+    const db = getDb()
+    await db.execute(sql`SELECT 1`)
+    await db.execute(sql`SELECT id FROM users LIMIT 1`)
+    await db.execute(sql`SELECT id FROM sessions LIMIT 1`)
+    await db.execute(sql`SELECT id FROM decks LIMIT 1`)
+    await db.execute(sql`SELECT id FROM deck_versions LIMIT 1`)
+    await db.execute(sql`SELECT id FROM deck_assets LIMIT 1`)
+  })
   beforeEach(async () => {
     await resetDb()
   })
