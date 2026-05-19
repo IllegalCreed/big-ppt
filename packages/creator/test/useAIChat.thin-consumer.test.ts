@@ -783,8 +783,6 @@ describe('useAIChat (thin consumer)', () => {
         createdAt: 't',
       },
     ])
-    // useAIChat 内 instance.start().catch(...) 静默处理 reject,case 里也一样 swallow
-    imageJobStartMock.mockImplementationOnce(() => Promise.reject(new Error('quota exceeded')))
 
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const { chat } = setupChat()
@@ -794,7 +792,8 @@ describe('useAIChat (thin consumer)', () => {
     expect(imageJobInstances.length).toBe(1)
     const inst = imageJobInstances[0]!
 
-    // 推进到 failed + errorMsg
+    // 推进到 failed + errorMsg(通过 watcher 路径,模拟真实 backend job failed 流程,
+    // 不走 instance.start reject 路径 —— 那条路径在新逻辑下表示「backend 404」会清 Map)
     inst.stage.value = 'failed'
     inst.error.value = 'quota exceeded'
     await flushPromises()
@@ -812,6 +811,33 @@ describe('useAIChat (thin consumer)', () => {
     expect(chat.imageJobs.value.has('job-fail')).toBe(false)
 
     vi.useRealTimers()
+  })
+
+  it('imageJobs:instance.start reject(backend 404 / job 不存在)→ Map 立刻清掉 stale 占位', async () => {
+    // 背景:agent 进程内存 jobs Map dev 重启后丢,老 jobId GET 返 404 → instance.start
+    // reject → Map 应立刻清那条 stale "pending",防面板堆假记录
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([{ type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' }]),
+    )
+    listChatsMock.mockResolvedValueOnce([
+      {
+        id: 1,
+        deckId: 7,
+        role: 'tool',
+        content: JSON.stringify({ success: true, jobId: 'stale-old-job' }),
+        toolCallId: 'tc',
+        createdAt: 't',
+      },
+    ])
+    imageJobStartMock.mockImplementationOnce(() => Promise.reject(new Error('job not found')))
+
+    const { chat } = setupChat()
+    await chat.sendMessage('触发拉历史')
+    await flushPromises()
+    // 给 catch 一个 microtask 跑
+    await flushPromises()
+
+    expect(chat.imageJobs.value.has('stale-old-job')).toBe(false)
   })
 
   it('clearHistory:abort 所有 image job composable 实例', async () => {

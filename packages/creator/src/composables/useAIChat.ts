@@ -267,8 +267,25 @@ export function useAIChat(): UseAIChatReturn {
 
     // composable.start 内部 done/fallback-rewrote 已经 slideStore.refresh();
     // failed/cancelled 仅 throw,这里 catch 静默,避免 unhandled rejection。
+    //
+    // Phase 11.8 dogfood 修(2026-05-19):start 抛错时还要把 Map 里那条 stale
+    // "pending" 占位删掉。背景:kickOffPendingImageJobs 每次新 turn 扫 deck_chats
+    // 历史 jobId,对未见过的 kickoff polling。但 backend image_jobs 是进程内存
+    // Map(`jobs` in image-gen-job.ts),agent dev 重启 / 生产 pm2 reload 都丢。
+    // 这些老 jobId 一 fetch backend 就 404 → instance.start reject → 之前 Map 占位
+    // 永远卡在 stage='pending' + slideIndex=undefined,加上 non-done 不自动 prune
+    // 这条规则,几次重启后面板里堆一堆"排队中"假记录。
     instance.start({ jobId }).catch((err) => {
       console.error('[useAIChat] image job tracking failed:', jobId, (err as Error).message)
+      // 清理 stale Map 占位 + 任何已挂的 prune timer + watch 自然不会再触发
+      const pendingTimer = imageJobPruneTimers.get(jobId)
+      if (pendingTimer) {
+        clearTimeout(pendingTimer)
+        imageJobPruneTimers.delete(jobId)
+      }
+      const next = new Map(imageJobs.value)
+      next.delete(jobId)
+      imageJobs.value = next
     })
   }
 
