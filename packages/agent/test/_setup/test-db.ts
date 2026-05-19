@@ -47,21 +47,13 @@ export async function resetDb(): Promise<void> {
 
 /** 在 integration test 文件顶部调用一次 */
 export function useTestDb(): void {
-  // Phase 11.8: 跨 file 累积 prepared statement plan 在 Aliyun RDS 上会撞 stale 问题
-  // (schema 加列后尤甚)。每个 file 开始时 force close 重开 pool + warmup query
-  // 强制新 connection 拿 fresh prepared cache。
+  // Phase 11.8: schema 加列(decks.anchor_skipped)后 Aliyun RDS 服务端 prepared
+  // statement plan 失效但代理层不抛 ER_NEED_REPREPARE。每个 file 开始 close pool
+  // 拿新 connection。**已知偶发 flaky**:单 file 内多 case 累积 stale 时,需要
+  // 跑 `ALTER TABLE <t> COMMENT='reset'` 一次手动 force invalidate(见 CLAUDE.md
+  // 已知坑章节,等待 Aliyun 自然过期或 server-side cache 清空)。
   beforeAll(async () => {
     await closeDb()
-    // Warmup:跑几条 dummy SELECT/INSERT 让 mysql2 prepared cache 在新 connection 上
-    // 建立 fresh plan,绕过 Aliyun 代理层 silently 复用 stale plan 的 bug。
-    // 这些 dummy 操作不依赖测试 fixtures,只验 schema 完整性。
-    const db = getDb()
-    await db.execute(sql`SELECT 1`)
-    await db.execute(sql`SELECT id FROM users LIMIT 1`)
-    await db.execute(sql`SELECT id FROM sessions LIMIT 1`)
-    await db.execute(sql`SELECT id FROM decks LIMIT 1`)
-    await db.execute(sql`SELECT id FROM deck_versions LIMIT 1`)
-    await db.execute(sql`SELECT id FROM deck_assets LIMIT 1`)
   })
   beforeEach(async () => {
     await resetDb()
