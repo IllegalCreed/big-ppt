@@ -11,7 +11,8 @@
  *
  * 排序:已知 slideIndex 升序,未知 slideIndex 排末尾(jobId 字典序兜底)。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { X } from 'lucide-vue-next'
 import type { ImageJobTracking } from '../composables/useAIChat'
 import type { ImageJobState } from '../composables/useDecks'
 
@@ -28,6 +29,35 @@ interface RowVm {
   variant: 'pending' | 'running' | 'done' | 'failed'
   label: string
   detail: string
+  /** 是否还能 cancel(running / pending 时显示 ✕ 按钮) */
+  canCancel: boolean
+}
+
+/**
+ * Phase 11.8 dogfood:用户主动取消卡死 job。
+ *
+ * 背景:OpenAI 出图慢是常态(60-120s),不能加 fetch timeout 误杀正常长任务。
+ * 但偶发 OpenAI 上游卡死(observed 卡 12+ 分钟无任何 log),用户没有兜底入口。
+ *
+ * 修复:在 running / pending 行右侧暴露 ✕ 按钮,点击调 tracking.instance.cancel()
+ * → backend DELETE /api/image-jobs/<jobId> → worker controller.abort() → fetch
+ * 主动断 → worker catch 走 fallback-rewrote 兜底重写为组件版。
+ *
+ * cancellingIds 防双击同时 fire 多次 cancel;状态机由 backend 推进到 cancelled
+ * /failed terminal 后行变红叉,Map prune timer 5s 自动消失。
+ */
+const cancellingIds = ref<Set<string>>(new Set())
+
+async function onCancel(jobId: string): Promise<void> {
+  if (cancellingIds.value.has(jobId)) return
+  const tracking = props.jobs.get(jobId)
+  if (!tracking) return
+  cancellingIds.value.add(jobId)
+  try {
+    await tracking.instance.cancel()
+  } finally {
+    cancellingIds.value.delete(jobId)
+  }
 }
 
 function classifyVariant(stage: ImageJobState): RowVm['variant'] {
@@ -70,6 +100,7 @@ const rows = computed<RowVm[]>(() => {
       // 直接用,不再 +1(2026-05-16 dogfood 修正:之前显示「第 3/4 页」实际是「第 2/3 页」)。
       label: j.slideIndex !== undefined ? `第 ${j.slideIndex} 页` : '排队中…',
       detail: stageLabel(j.stage, j.progressRatio),
+      canCancel: variant === 'running' || variant === 'pending',
     }
   })
   list.sort((a, b) => {
@@ -102,9 +133,23 @@ const failedCount = computed(() => rows.value.filter((r) => r.variant === 'faile
         </span>
         <span class="label">{{ row.label }}</span>
         <span class="detail" :title="row.errorMsg || ''">{{ row.detail }}</span>
-        <span v-if="row.variant === 'running' || row.variant === 'pending'" class="bar" aria-hidden="true">
+        <span v-if="row.canCancel" class="bar" aria-hidden="true">
           <span class="bar-fill" :style="{ width: row.progressPct + '%' }"></span>
         </span>
+        <span v-else class="bar-placeholder" aria-hidden="true" />
+        <button
+          v-if="row.canCancel"
+          type="button"
+          class="cancel-btn"
+          :disabled="cancellingIds.has(row.jobId)"
+          :title="cancellingIds.has(row.jobId) ? '取消中…' : '取消生成(OpenAI 卡死时用)'"
+          :aria-label="`取消第 ${row.slideIndex ?? '?'} 页生图`"
+          :data-cancel-job-id="row.jobId"
+          @click="onCancel(row.jobId)"
+        >
+          <X :size="12" :stroke-width="2" />
+        </button>
+        <span v-else class="cancel-placeholder" aria-hidden="true" />
       </li>
     </ul>
   </div>
@@ -160,11 +205,44 @@ const failedCount = computed(() => rows.value.filter((r) => r.variant === 'faile
 
 .row {
   display: grid;
-  grid-template-columns: 18px 56px 1fr 120px;
+  grid-template-columns: 18px 56px 1fr 120px 22px;
   align-items: center;
   gap: var(--space-2, 8px);
   padding: 4px 2px;
   border-radius: var(--radius-sm, 4px);
+}
+
+.cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--color-text-muted, #6f6a60);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+/* 仅 running / pending 行(.row-running / .row-pending)hover 时显出按钮 */
+.row-running:hover .cancel-btn,
+.row-pending:hover .cancel-btn,
+.cancel-btn:focus-visible {
+  opacity: 1;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  background: var(--color-danger-soft, #ffe8e8);
+  color: var(--color-danger, #c33);
+}
+
+.cancel-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4 !important;
 }
 
 .icon {

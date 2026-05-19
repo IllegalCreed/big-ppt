@@ -63,8 +63,9 @@ describe('parseDeck', () => {
     ])
     // toc 页 items 是 YAML 内联数组
     expect(slides[1]?.frontmatter.items).toEqual(['背景介绍', '数据概览', '对比分析'])
-    // content 页 body 含 <TwoCol> Vue 组件标签
-    expect(slides[3]?.body).toContain('<TwoCol')
+    // content 页 body 含 <EqualSplit> Vue 组件标签(Phase 11.8 dogfood:starter
+    // 删废弃 <TwoCol> 用 EqualSplit count=2 取代)
+    expect(slides[3]?.body).toContain('<EqualSplit')
     expect(slides[3]?.body).toContain('使用示例')
   })
 

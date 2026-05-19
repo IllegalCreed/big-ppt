@@ -9,7 +9,7 @@
  * 两份不重叠:本份的 stage 全态映射 + icon 字符断言不在那份;那份的 shallowRef setProps
  * 响应式回归不在本份。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ImageJobsPanel from '../src/components/ImageJobsPanel.vue'
 import type { ImageJobTracking } from '../src/composables/useAIChat'
@@ -228,5 +228,52 @@ describe('ImageJobsPanel · 渲染细节', () => {
     expect(panel.find('.icon').attributes('aria-hidden')).toBe('true')
     // 进度条本身是装饰性的,aria-hidden 防双读
     expect(panel.find('.bar').attributes('aria-hidden')).toBe('true')
+  })
+
+  describe('Phase 11.8 dogfood:用户主动 cancel 卡死 job', () => {
+    it('running / pending 行渲染 ✕ 按钮(防 OpenAI 卡死无兜底)', () => {
+      const jobs = mkMap([
+        mkJob({ jobId: 'a', slideIndex: 1, stage: 'pending', progressRatio: 0.05 }),
+        mkJob({ jobId: 'b', slideIndex: 2, stage: 'running', progressRatio: 0.5 }),
+      ])
+      const wrapper = mount(ImageJobsPanel, { props: { jobs } })
+      expect(wrapper.find('[data-cancel-job-id="a"]').exists()).toBe(true)
+      expect(wrapper.find('[data-cancel-job-id="b"]').exists()).toBe(true)
+    })
+
+    it('done / failed 行 **不**渲染 ✕ 按钮(终态无意义)', () => {
+      const jobs = mkMap([
+        mkJob({ jobId: 'd', slideIndex: 1, stage: 'done', progressRatio: 1 }),
+        mkJob({ jobId: 'f', slideIndex: 2, stage: 'failed', errorMsg: 'e' }),
+        mkJob({ jobId: 'c', slideIndex: 3, stage: 'cancelled' }),
+      ])
+      const wrapper = mount(ImageJobsPanel, { props: { jobs } })
+      expect(wrapper.find('[data-cancel-job-id="d"]').exists()).toBe(false)
+      expect(wrapper.find('[data-cancel-job-id="f"]').exists()).toBe(false)
+      expect(wrapper.find('[data-cancel-job-id="c"]').exists()).toBe(false)
+    })
+
+    it('点 ✕ → 调 tracking.instance.cancel() + 按钮立即 disabled 防双击', async () => {
+      let resolveCancel: () => void = () => {}
+      const cancelFn = vi.fn(
+        () =>
+          new Promise<void>((r) => {
+            resolveCancel = r
+          }),
+      )
+      const job = mkJob({ jobId: 'x', slideIndex: 1, stage: 'running', progressRatio: 0.5 })
+      job.instance = { cancel: cancelFn } as unknown as ImageJobTracking['instance']
+      const wrapper = mount(ImageJobsPanel, { props: { jobs: mkMap([job]) } })
+
+      const btn = wrapper.find('[data-cancel-job-id="x"]')
+      await btn.trigger('click')
+      expect(cancelFn).toHaveBeenCalledTimes(1)
+      // 还在 inflight → disabled 防双击
+      expect((btn.element as HTMLButtonElement).disabled).toBe(true)
+      resolveCancel()
+      // flush microtasks 让 finally 跑
+      await Promise.resolve()
+      await Promise.resolve()
+    })
   })
 })
