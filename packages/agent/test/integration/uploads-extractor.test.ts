@@ -41,7 +41,16 @@ import {
 
 // 测试期 assets root 隔离到 tmp,避免污染 dev 数据
 const ASSETS_DIR = path.join(process.cwd(), '.test-assets', randomUUID())
-process.env.LUMIDECK_ASSETS_DIR = ASSETS_DIR
+// Phase 11.8 fix: 不要 module top-level set process.env(import 时就泄漏到全局,
+// 后续 file load 时仍生效污染)。改 beforeAll/afterAll 包套 + 保留旧值复位。
+const PREV_ASSETS_DIR = process.env.LUMIDECK_ASSETS_DIR
+beforeAll(() => {
+  process.env.LUMIDECK_ASSETS_DIR = ASSETS_DIR
+})
+afterAll(() => {
+  if (PREV_ASSETS_DIR === undefined) delete process.env.LUMIDECK_ASSETS_DIR
+  else process.env.LUMIDECK_ASSETS_DIR = PREV_ASSETS_DIR
+})
 
 useTestDb()
 

@@ -68,6 +68,7 @@ beforeAll(() => {
 afterAll(() => {
   delete process.env.BIG_PPT_TEST_IMAGE_MODE
   __setAnchorPollingForTesting(true)
+  __setMasterKeyGetterForTesting(null)
 })
 
 beforeEach(() => {
