@@ -19,8 +19,8 @@ export type Deck = {
   currentVersionId: number | null
   /** Phase 11.8: 选定的视觉锚图 asset id;null = 未选/已跳过/切模板被清空 */
   anchorAssetId: string | null
-  /** Phase 11.8: 用户对锚图选样的"已决策"标记;true = 已选 or 已显式跳过;false = 还没决策 */
-  anchorSkipped: boolean
+  /** Phase 11.8: 用户对锚图选样的"已决策"标记;true = 已选 or 已显式跳过;false/null = 还没决策 */
+  anchorSkipped: boolean | null
   status: DeckStatus
   createdAt: string
   updatedAt: string

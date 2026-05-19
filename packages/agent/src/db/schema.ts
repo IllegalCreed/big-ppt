@@ -102,7 +102,7 @@ export const decks = mysqlTable(
      * 选定 anchor 后也置为 true(已决策);切模板时连同 anchor 一并 reset 为 false。
      * 老 deck 没配 image LLM 时此字段对工具无影响(工具内只检测"用户配 image LLM"的 case)。
      */
-    anchorSkipped: boolean('anchor_skipped').default(false).notNull(),
+    anchorSkipped: boolean('anchor_skipped').default(false),
     status: mysqlEnum('status', ['active', 'archived', 'deleted']).default('active').notNull(),
     createdAt: timestamp('created_at').default(NOW).notNull(),
     updatedAt: timestamp('updated_at').default(NOW_ON_UPDATE).notNull(),

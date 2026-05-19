@@ -276,7 +276,7 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   const POLL_INTERVAL_MS = 1_500
   if (anchorPollingEnabled) {
     const imageSettings = await getImageLlmSettings(ctx.userId)
-    if (imageSettings && deck.anchorAssetId === null && deck.anchorSkipped === false) {
+    if (imageSettings && deck.anchorAssetId === null && !deck.anchorSkipped) {
       const startedAt = Date.now()
       while (true) {
         if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
