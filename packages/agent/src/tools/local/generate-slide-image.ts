@@ -127,24 +127,54 @@ function resolveImageSize(manifest: { imageGenSize?: { width: number; height: nu
  * 把 LLM 提供的自由 prompt 包成 Codex imagegen skill 的结构化 schema。
  * 这样工具层强制注入 deck-level invariants(色板 / 风格 / 中文 label / 边界约束),
  * LLM 即使写得 generic 也不会让生图模型乱发挥。
+ *
+ * 2026-05-19 dogfood 修:hasAnchor=true 时,**不再硬编 medium**("clean modern
+ * flat infographic" 之类),让 gpt-5.5 vision 看 anchor 后用其实际视觉技法
+ * 出图。之前 hardcoded medium 跟用户挑的 anchor 风格(isometric / watercolor /
+ * hand-drawn 等)正面冲突,LLM 被 prompt 文字压倒,生成跟 anchor 无关的 flat 图。
  */
-function buildStructuredImagePrompt(userPrompt: string, style: ImageGenStyle): string {
+function buildStructuredImagePrompt(
+  userPrompt: string,
+  style: ImageGenStyle,
+  hasAnchor: boolean,
+): string {
   const paletteList = style.palette.join(', ')
-  return [
+  const lines = [
     `Use case: productivity-visual`,
     `Asset type: corporate slide deck body image (16:9 wide, edge-to-edge illustration; the slide already has its own external header bar above this image)`,
     ``,
     `Primary request: ${userPrompt.trim()}`,
     ``,
-    `Style/medium: clean modern flat infographic / business diagram illustration with subtle gradients and soft shadows. ${style.styleHint}. **Apply this consistent aesthetic across ALL images in this deck — deck-wide invariant, do not drift between flat / 3D / photo / cartoon / line-art per page.**`,
+  ]
+
+  if (hasAnchor) {
+    // 有 anchor:**强制复制 reference 视觉技法**,不要让 gpt-5.5 自己决定 medium
+    lines.push(
+      `**Visual style — MUST replicate the attached reference image exactly:**`,
+      `- Match the reference image's rendering technique (isometric / flat / watercolor / hand-drawn / ink-wash / 3D / line-art / whichever it actually is — look at it and copy that exact medium)`,
+      `- Match the reference's palette, lighting, level of detail, line weight, brush / shading style`,
+      `- The NEW image should look like a sibling page from the same deck as the reference — same hand, same medium, same mood`,
+      `- Do NOT default to "flat infographic" or "modern corporate illustration" unless the reference itself is that style`,
+      `- The subject described in "Primary request" is different from the reference, but the LOOK must be identical`,
+    )
+  } else {
+    // 没 anchor:走老路,模板 manifest 的 styleHint 控制风格
+    lines.push(
+      `Style/medium: clean modern flat infographic / business diagram illustration with subtle gradients and soft shadows. ${style.styleHint}. **Apply this consistent aesthetic across ALL images in this deck — deck-wide invariant, do not drift between flat / 3D / photo / cartoon / line-art per page.**`,
+    )
+  }
+
+  lines.push(
     `Composition/framing: wide 16:9 body-only layout. The slide's own header bar with the Chinese title sits ABOVE this image, so do NOT add any title / banner / large decorative text strip inside the image itself.`,
-    `Color palette: anchor on these brand colors — ${paletteList}. Use these tones cohesively; do not introduce off-palette saturated colors.`,
+    `Color palette: anchor on these brand colors — ${paletteList}. Use these tones cohesively; do not introduce off-palette saturated colors.${hasAnchor ? ' (Reference image\'s actual palette takes priority if conflict.)' : ''}`,
     ``,
     `Internal labels: if the diagram needs labels inside boxes / nodes / chart axes, they must be in **Chinese only** (例如「检索器」「向量库」「核心模块」), **never English**. If labels would feel forced or unnatural, omit them entirely — the slide's external Chinese header already provides context.`,
     ``,
     `Constraints: edge-to-edge body content; no outer chrome.`,
     `Avoid: outer title / heading / banner / large decorative text strip; image caption / watermark / signature / logo overlay; English-only labels; photo-realistic 3D renders; cluttered text walls; cartoon mascots; comic strips; placeholder lorem ipsum.`,
-  ].join('\n')
+  )
+
+  return lines.join('\n')
 }
 
 /**
@@ -405,9 +435,11 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   }
 
   // 拿到 deck.templateId 后再拼最终 prompt:从 manifest.imageGenStyle 读色板 + 风格(模板
-  // 元数据跟模板同包,新模板加色板只改 manifest 不动 agent),缺省走通用 fallback
+  // 元数据跟模板同包,新模板加色板只改 manifest 不动 agent),缺省走通用 fallback。
+  // hasAnchor 决定 prompt medium 段:有 anchor 时强制复制 reference 风格,不硬编 flat infographic
   const templateStyle = manifest.imageGenStyle ?? FALLBACK_IMAGE_STYLE
-  const finalPrompt = buildStructuredImagePrompt(userPrompt, templateStyle)
+  const hasAnchor = !!baseImageBase64
+  const finalPrompt = buildStructuredImagePrompt(userPrompt, templateStyle, hasAnchor)
   // Phase 11.8: size 跟模板包同源,从 manifest.imageGenSize 读;缺省走通用 fallback。
   // 每个模板对应一个独立的内容页 layout(beitou-image-content / jingyeda-image-content
   // 等),其实际显示区域不同,生图比例应跟它对齐,object-fit:cover 时上下不裁。
