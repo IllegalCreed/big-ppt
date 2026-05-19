@@ -14,6 +14,8 @@ import {
   discardAssets,
   type AssetPurpose,
 } from '../db/deck-assets.js'
+import fs from 'node:fs'
+import path from 'node:path'
 import { generateImage as defaultGenerateImage } from '../llm/openai-image.js'
 import type { ImageGenInput, ImageGenOutput } from '../llm/openai-image.js'
 import { acquireImageSlot } from '../middleware/image-semaphore.js'
@@ -90,8 +92,66 @@ export function __setGenerateImageForMoodBoardTesting(
   generateImageOverride = fn
 }
 
+/**
+ * E2E / CI stub 模式:env BIG_PPT_TEST_MOOD_BOARD_MODE=stub 时跳真主 LLM,
+ * 直接返 hardcoded 3 个差异化 sample。配 BIG_PPT_TEST_IMAGE_MODE=stub 一起用
+ * 让整条 mood-board E2E 流程不烧 token。
+ */
+const STUB_SAMPLES_JSON = JSON.stringify({
+  samples: [
+    { style: 'isometric tech', prompt: '[stub] isometric tech illustration about deck theme' },
+    { style: 'hand-drawn doodle', prompt: '[stub] hand-drawn doodle of deck theme' },
+    { style: 'watercolor wash', prompt: '[stub] soft watercolor painting of deck theme' },
+  ],
+})
+
+function shouldUseStubMainLlm(): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' &&
+    process.env.BIG_PPT_TEST_MOOD_BOARD_MODE === 'stub'
+  )
+}
+
+/**
+ * Stub generateImage 复用 generate-slide-image 同款 fixture(BIG_PPT_TEST_IMAGE_MODE=stub),
+ * 避免 mood-board 在 e2e 真打 OpenAI。仅 NODE_ENV !== 'production' 时启用。
+ */
+function shouldUseStubGenerateImage(): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_IMAGE_MODE === 'stub'
+  )
+}
+
+function readStubImageBytes(): Buffer {
+  const fixturePath = path.join(
+    process.cwd(),
+    'packages/agent/test/fixtures/test-image.png',
+  )
+  if (fs.existsSync(fixturePath)) return fs.readFileSync(fixturePath)
+  const fallback = path.join(
+    import.meta.dirname ?? '',
+    '../../test/fixtures/test-image.png',
+  )
+  if (fs.existsSync(fallback)) return fs.readFileSync(fallback)
+  throw new Error(`mood-board stub fixture not found: ${fixturePath}`)
+}
+
+async function stubGenerateImageForMoodBoard(
+  _input: ImageGenInput,
+): Promise<ImageGenOutput> {
+  const buf = readStubImageBytes()
+  return {
+    b64: buf.toString('base64'),
+    modelUsed: 'stub-fixture',
+    pathTaken: 'B',
+  }
+}
+
 /** 默认主 LLM 调用实现(套用 rewriteSinglePageToComponents 同款套路:loadUserLlmSettings + fetch /chat/completions) */
 const defaultMainLlmCaller: MainLlmCaller = async ({ userId, systemPrompt, userPrompt }) => {
+  if (shouldUseStubMainLlm()) {
+    return STUB_SAMPLES_JSON
+  }
   const settings = await loadUserLlmSettings(userId)
   const { url, model } = resolveUpstream(settings)
   const release = await acquireLlmSlot(userId)
@@ -141,11 +201,14 @@ export async function generateMoodBoard(
     throw new MoodBoardGenError('请到设置 → 生图模型 中配置 OpenAI API Key')
   }
 
-  // 2. 校验主 LLM 也配了(出 mood-board prompt 用),loadUserLlmSettings 内会抛
-  try {
-    await loadUserLlmSettings(input.userId)
-  } catch (err) {
-    throw new MoodBoardGenError(`主 LLM 未配置:${(err as Error).message}`)
+  // 2. 校验主 LLM 也配了(出 mood-board prompt 用),loadUserLlmSettings 内会抛。
+  // stub 模式(BIG_PPT_TEST_MOOD_BOARD_MODE=stub)跳过主 LLM key 校验,e2e 不需要 seed key
+  if (!shouldUseStubMainLlm()) {
+    try {
+      await loadUserLlmSettings(input.userId)
+    } catch (err) {
+      throw new MoodBoardGenError(`主 LLM 未配置:${(err as Error).message}`)
+    }
   }
 
   // 3. 截 outline 喂主 LLM
@@ -231,7 +294,12 @@ export async function generateMoodBoard(
   // 再判结果,否则 Promise.all 一 reject 其它 inflight 的 createAsset 写入会"漏 GC":
   // catch 段已跑 discardAssets 时,fulfilled promise 还没 push id 进 writtenAssetIds,
   // 最终 DB 留两条 candidate 没被 discard(脏 row)。
-  const imageGen = generateImageOverride ?? defaultGenerateImage
+  // 优先级:override(单测) > stub(e2e) > 真 generateImage(prod)
+  const imageGen = generateImageOverride
+    ? generateImageOverride
+    : shouldUseStubGenerateImage()
+      ? stubGenerateImageForMoodBoard
+      : defaultGenerateImage
   const ctrl = new AbortController()
 
   type ImageOutcome =

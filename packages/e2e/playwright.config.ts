@@ -64,6 +64,10 @@ export default defineConfig({
         //  - fallback → 强制 generateImage 抛错走 Phase 11.6 graceful-degradation
         //  - 设 OPENAI_IMAGE_TEST_KEY 时 unset → 真打 OpenAI(image-gen-smoke.spec.ts 用)
         ...(IMAGE_MODE !== undefined ? { BIG_PPT_TEST_IMAGE_MODE: IMAGE_MODE } : {}),
+        // Phase 11.8: mood-board 生成器 stub 模式,跳真主 LLM 直接返 hardcoded 3
+        // 个差异化 sample。配 BIG_PPT_TEST_IMAGE_MODE=stub 一起用,anchor 选样 E2E
+        // 全不烧 token。
+        BIG_PPT_TEST_MOOD_BOARD_MODE: 'stub',
         // 让 e2e 的 mirror 写到 tmp 而非 packages/slidev/slides.md，
         // 避免你 dev 跑着的 :3031 slidev HMR 被 e2e 切模板搞乱（root cause：
         // 大改 frontmatter 触发 slidev cli full reload，dev iframe 闪/状态错乱）。
