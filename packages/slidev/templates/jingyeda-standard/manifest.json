@@ -172,8 +172,8 @@
     "styleHint": "corporate blue + green dual-anchor with warm accents, formal Chinese business presentation aesthetic"
   },
   "imageGenSize": {
-    "width": 1536,
-    "height": 720
+    "width": 1280,
+    "height": 624
   },
   "thumbnail": "thumbnail.png"
 }
