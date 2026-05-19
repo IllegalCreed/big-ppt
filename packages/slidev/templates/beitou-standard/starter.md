@@ -28,22 +28,26 @@ heading: 请填写页标题
 
 在左侧对话框告诉 AI 想要什么内容，AI 会基于模板和公共组件帮你生成。
 
-<TwoCol left-title="使用示例" right-title="可用组件">
-<template #left>
+<EqualSplit :count="2">
+<template #slot1>
+
+**使用示例**
 
 - "做一份 Q1 业务汇报，4 页"
 - "加一页两栏对比研发与市场"
 - "把第 3 页的标题改成 OKR 回顾"
 
 </template>
-<template #right>
+<template #slot2>
 
-- 栅格类：TwoCol / NineGrid / 田字格 等
+**可用组件**
+
+- 栅格类：EqualSplit / OneVsThree / NineGrid / 田字格
 - 装饰类：PetalFour / ProcessFlow
-- 内容块：MetricCard / Quote / Callout / Chart
+- 内容块：MetricCard / Quote / BarChart / LineChart
 
 </template>
-</TwoCol>
+</EqualSplit>
 
 ---
 layout: beitou-back-cover

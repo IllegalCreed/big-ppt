@@ -1,7 +1,13 @@
 /** Phase 12.7 Task G：ToolExecutionBlock 四态渲染 + 折叠详情交互单测。 */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ToolExecutionBlock from '../src/components/ToolExecutionBlock.vue'
+import { useMoodBoardPicker } from '../src/composables/useMoodBoardPicker'
+
+afterEach(() => {
+  // module-level picker 状态跨 case 污染:每 case 复位避免上一条 set picker.open 让下一条断言飘
+  useMoodBoardPicker().__resetForTesting()
+})
 
 describe('ToolExecutionBlock', () => {
   it('pending 状态：label="排队中" + 类 .pending', () => {
@@ -79,5 +85,34 @@ describe('ToolExecutionBlock', () => {
     })
     const details = wrapper.find('details').element as HTMLDetailsElement
     expect(details.open).toBe(false)
+  })
+
+  describe('Phase 11.8 dogfood:anchor 决策中的 polling 状态', () => {
+    it('toolName=generate_slide_image + state=running + picker.open=true → label="等待视觉风格选定"(防误导用户已开始烧 OpenAI)', () => {
+      const picker = useMoodBoardPicker()
+      picker.open.value = true
+      const wrapper = mount(ToolExecutionBlock, {
+        props: { toolName: 'generate_slide_image', state: 'running' },
+      })
+      expect(wrapper.find('.tool-state').text()).toBe('等待视觉风格选定')
+    })
+
+    it('toolName=generate_slide_image + state=running + picker.open=false → label="执行中"(用户已决策,backend polling 已解锁)', () => {
+      const picker = useMoodBoardPicker()
+      picker.open.value = false
+      const wrapper = mount(ToolExecutionBlock, {
+        props: { toolName: 'generate_slide_image', state: 'running' },
+      })
+      expect(wrapper.find('.tool-state').text()).toBe('执行中')
+    })
+
+    it('其它工具 + state=running + picker.open=true → label="执行中"(只覆盖 generate_slide_image)', () => {
+      const picker = useMoodBoardPicker()
+      picker.open.value = true
+      const wrapper = mount(ToolExecutionBlock, {
+        props: { toolName: 'write_slides', state: 'running' },
+      })
+      expect(wrapper.find('.tool-state').text()).toBe('执行中')
+    })
   })
 })
