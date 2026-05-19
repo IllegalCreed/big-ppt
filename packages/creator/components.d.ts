@@ -12,6 +12,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AnchorPickerModal: typeof import('./src/components/AnchorPickerModal.vue')['default']
     App: typeof import('./src/components/App.vue')['default']
     AssetManagerPanel: typeof import('./src/components/AssetManagerPanel.vue')['default']
     BarChart: typeof import('./../slidev/components/block/BarChart.vue')['default']
@@ -72,6 +73,7 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
+  const AnchorPickerModal: typeof import('./src/components/AnchorPickerModal.vue')['default']
   const App: typeof import('./src/components/App.vue')['default']
   const AssetManagerPanel: typeof import('./src/components/AssetManagerPanel.vue')['default']
   const BarChart: typeof import('./../slidev/components/block/BarChart.vue')['default']

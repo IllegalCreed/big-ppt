@@ -264,4 +264,33 @@ export interface CallToolResponse {
   error?: string
 }
 
+// === Phase 11.8 /api/decks/:id/mood-board/generate + /api/decks/:id/anchor ===
+
+/** 单张样张候选(轻量元数据,实际图片字节走 /api/assets/<assetId>) */
+export interface MoodBoardCandidate {
+  /** deck_assets.id, purpose='mood-board-candidate' */
+  assetId: string
+  style: string
+  prompt: string
+}
+
+export interface GenerateMoodBoardResponse {
+  candidates: MoodBoardCandidate[]
+  /** 主 LLM 是否触发过 diversity retry */
+  retried: boolean
+  /** retry 后仍雷同(降级接受)? */
+  diversityDegraded: boolean
+  /** 本 deck 剩余可用生成次数(MAX - 已用) */
+  remaining: number
+}
+
+export interface SetAnchorRequest {
+  assetId: string
+}
+
+export interface SetAnchorResponse {
+  ok: true
+  anchorAssetId: string
+}
+
 export type { ChatMessage, ToolCall, LLMTool, LogPayload }
