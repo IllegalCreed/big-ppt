@@ -98,6 +98,7 @@ describe('generateMoodBoard happy path', () => {
       deckId: deck.id,
       userId: user.id,
       deckContent: '---\nlayout: cover\n---\n\n# AI 系统',
+      templateId: deck.templateId,
     })
 
     expect(out.candidates).toHaveLength(3)
@@ -141,6 +142,7 @@ describe('generateMoodBoard retry on duplicate styles', () => {
       deckId: deck.id,
       userId: user.id,
       deckContent: '# x',
+      templateId: deck.templateId,
     })
 
     expect(out.retried).toBe(true)
@@ -171,6 +173,7 @@ describe('generateMoodBoard retry on duplicate styles', () => {
       deckId: deck.id,
       userId: user.id,
       deckContent: '# x',
+      templateId: deck.templateId,
     })
 
     expect(out.retried).toBe(true)
@@ -196,6 +199,7 @@ describe('generateMoodBoard retry on duplicate styles', () => {
       deckId: deck.id,
       userId: user.id,
       deckContent: '# x',
+      templateId: deck.templateId,
     })
 
     expect(out.retried).toBe(true)
@@ -220,10 +224,10 @@ describe('generateMoodBoard error paths', () => {
     __setGenerateImageForMoodBoardTesting(makeFakeGenerateImage())
 
     await expect(
-      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x' }),
+      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x', templateId: deck.templateId }),
     ).rejects.toThrow(MoodBoardGenError)
     await expect(
-      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x' }),
+      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x', templateId: deck.templateId }),
     ).rejects.toThrow(/主 LLM 出 prompt 失败/)
   })
 
@@ -237,7 +241,7 @@ describe('generateMoodBoard error paths', () => {
     __setGenerateImageForMoodBoardTesting(makeFakeGenerateImage())
 
     await expect(
-      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x' }),
+      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x', templateId: deck.templateId }),
     ).rejects.toThrow(MoodBoardGenError)
   })
 
@@ -257,7 +261,7 @@ describe('generateMoodBoard error paths', () => {
     })
 
     await expect(
-      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x' }),
+      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x', templateId: deck.templateId }),
     ).rejects.toThrow(MoodBoardGenError)
 
     // 已落库的 candidate 应当全部被标 discarded(防脏 row)
@@ -280,7 +284,7 @@ describe('generateMoodBoard error paths', () => {
     __setGenerateImageForMoodBoardTesting(makeFakeGenerateImage())
 
     await expect(
-      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x' }),
+      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x', templateId: deck.templateId }),
     ).rejects.toThrow(/请到设置 → 生图模型 中配置/)
     // 不应走到主 LLM
     expect(llmFake).not.toHaveBeenCalled()
@@ -297,7 +301,7 @@ describe('generateMoodBoard error paths', () => {
     __setGenerateImageForMoodBoardTesting(makeFakeGenerateImage())
 
     await expect(
-      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x' }),
+      generateMoodBoard({ deckId: deck.id, userId: user.id, deckContent: '# x', templateId: deck.templateId }),
     ).rejects.toThrow(/主 LLM 未配置/)
     expect(llmFake).not.toHaveBeenCalled()
   })
@@ -314,7 +318,7 @@ describe('generateMoodBoard 跟其它 deck 隔离', () => {
     __setMainLlmCallerForTesting(async () => VALID_3_SAMPLES)
     __setGenerateImageForMoodBoardTesting(makeFakeGenerateImage())
 
-    await generateMoodBoard({ deckId: a.id, userId: user.id, deckContent: '# A' })
+    await generateMoodBoard({ deckId: a.id, userId: user.id, deckContent: '# A', templateId: a.templateId })
 
     const aRows = await getDb()
       .select({ purpose: deckAssets.purpose })

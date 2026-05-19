@@ -94,6 +94,7 @@ moodBoardRoute.post('/decks/:id{[0-9]+}/mood-board/generate', async (c) => {
       deckId,
       userId: user.id,
       deckContent,
+      templateId: check.deck.templateId,
     })
     return c.json({
       candidates: candidates.map((c) => ({

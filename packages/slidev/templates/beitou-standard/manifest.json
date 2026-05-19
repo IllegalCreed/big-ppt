@@ -160,5 +160,9 @@
     ],
     "styleHint": "corporate red anchor with warm-cool secondary tones, formal Chinese business presentation aesthetic"
   },
+  "imageGenSize": {
+    "width": 1536,
+    "height": 720
+  },
   "thumbnail": "thumbnail.png"
 }

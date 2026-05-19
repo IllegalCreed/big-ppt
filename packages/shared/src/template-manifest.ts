@@ -67,6 +67,23 @@ export interface TemplateManifest {
    * 缺省时工具层用通用 fallback。
    */
   imageGenStyle?: ImageGenStyle
+  /**
+   * Phase 11.8 dogfood 后引入:模板自有的"内容页生图尺寸",根据每个模板的
+   * `<id>-image-content` layout body 实际显示区域换算来。需满足 OpenAI gpt-image-2
+   * 约束(width / height 都是 16 的倍数 + 总像素 ≥ 655360 + ratio ≤ 3:1)。
+   *
+   * 缺省时工具层 fallback 到 1536×720(约 2.13:1,贴合大多数 16:9 减去 header 后的
+   * 内容区域)。mood-board / generate_slide_image 都用本字段,确保 anchor 与正式生图
+   * 几何形状一致。
+   */
+  imageGenSize?: ImageGenSize
+}
+
+export interface ImageGenSize {
+  /** 宽度(像素,必须是 16 倍数,且 width × height ≥ 655360) */
+  width: number
+  /** 高度(像素,必须是 16 倍数) */
+  height: number
 }
 
 export interface ImageGenStyle {
@@ -226,6 +243,42 @@ export function validateManifest(raw: unknown): ValidateManifestResult {
       }
       if (!isNonEmptyString(style.styleHint)) {
         errors.push('imageGenStyle.styleHint 必填(非空字符串)')
+      }
+    }
+  }
+
+  if (raw.imageGenSize !== undefined) {
+    if (!isPlainObject(raw.imageGenSize)) {
+      errors.push('imageGenSize 若存在必须是对象')
+    } else {
+      const size = raw.imageGenSize
+      const w = size.width
+      const h = size.height
+      if (typeof w !== 'number' || !Number.isInteger(w) || w <= 0) {
+        errors.push('imageGenSize.width 必须是正整数')
+      } else if (w % 16 !== 0) {
+        errors.push(`imageGenSize.width 必须是 16 的倍数 (OpenAI gpt-image-2 约束), 收到 ${w}`)
+      }
+      if (typeof h !== 'number' || !Number.isInteger(h) || h <= 0) {
+        errors.push('imageGenSize.height 必须是正整数')
+      } else if (h % 16 !== 0) {
+        errors.push(`imageGenSize.height 必须是 16 的倍数, 收到 ${h}`)
+      }
+      if (
+        typeof w === 'number' &&
+        typeof h === 'number' &&
+        Number.isInteger(w) &&
+        Number.isInteger(h) &&
+        w > 0 &&
+        h > 0
+      ) {
+        if (w * h < 655_360) {
+          errors.push(`imageGenSize 总像素必须 ≥ 655360 (OpenAI 最低), 收到 ${w}×${h}=${w * h}`)
+        }
+        const ratio = w >= h ? w / h : h / w
+        if (ratio > 3.0001) {
+          errors.push(`imageGenSize 长宽比必须 ≤ 3:1, 收到 ${w}×${h} (≈${ratio.toFixed(2)}:1)`)
+        }
       }
     }
   }

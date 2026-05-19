@@ -122,6 +122,16 @@ const chatCtx: DeckChatContext = {
   deckId: props.deck.id,
   templateId: props.deck.templateId,
   initialHistory: [],
+  onWriteSlidesCompleted: () => {
+    // Phase 11.8 trigger-timing fix:write_slides 成功 → 此刻 deck 内容已被主 LLM
+    // 写成真实业务大纲,适合喂给 mood-board prompt。仅在「image LLM 已配 + 没选过
+    // anchor + 没主动跳过」时弹一次,避免每轮 write_slides 都骚扰。
+    if (!hasImageLlm.value) return
+    if (props.deck.anchorAssetId) return
+    if (props.deck.anchorSkipped) return
+    if (moodBoardPicker.open.value) return
+    void moodBoardPicker.openPicker(props.deck.id)
+  },
 }
 provide(DECK_CHAT_CONTEXT, chatCtx)
 
@@ -285,11 +295,10 @@ watch(
 onMounted(async () => {
   void loadInitialChats()
   await probeLlmSettings()
-  // 自动弹一次:配过 image+main LLM + deck 既没 anchor 也没显式跳过(anchorSkipped=false)
-  // 才弹。已跳过的 deck 不打扰,用户主动点顶栏「调色板」按钮才重开。
-  if (canPickAnchor.value && !props.deck.anchorAssetId && !props.deck.anchorSkipped) {
-    void openAnchorPicker()
-  }
+  // 注意:**不**在 onMounted 自动弹 anchor picker —— 进编辑器时 deck 只有 starter
+  // 骨架(几句占位文字),主 LLM 看不到真实业务大纲,出的 mood-board prompt 全是
+  // 泛泛废话。真正触发时机由 useAIChat 监听 write_slides tool_execution.end 后
+  // emit 'anchor-picker-needed' 事件,DeckEditorCanvas 接到后才弹 modal。
 })
 
 onUnmounted(() => {

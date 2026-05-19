@@ -22,6 +22,7 @@ import { acquireImageSlot } from '../middleware/image-semaphore.js'
 import { acquireLlmSlot } from '../middleware/llm-semaphore.js'
 import { loadUserLlmSettings, resolveUpstream } from '../prompts/rewriteForTemplate.js'
 import { getImageLlmSettings } from '../db/image-llm-settings.js'
+import { getManifest } from '../templates/registry.js'
 import { logServerEvent } from '../logger/server-log.js'
 import {
   MOOD_BOARD_SYSTEM_PROMPT,
@@ -54,6 +55,25 @@ export interface GenerateMoodBoardInput {
   userId: number
   /** 当前 deck markdown 全文(被 outline 截断到 ≤ 2KB 喂主 LLM) */
   deckContent: string
+  /**
+   * Phase 11.8 dogfood:deck 当前模板 id,用于查 manifest.imageGenSize 让 mood-board
+   * 候选图的尺寸跟正式内容页生图一致(用户挑的 anchor 与后续 generate_slide_image
+   * 比例对齐,免得 anchor 看起来 1:1 漂亮但实际正式页 2:1 走形)。
+   */
+  templateId: string
+}
+
+/**
+ * Phase 11.8 dogfood 后引入:模板缺 imageGenSize 字段时 mood-board 用的通用兜底。
+ * 跟 generate-slide-image.ts 保持一致,新模板都应在 manifest.json 显式声明,
+ * 不要依赖此 fallback。
+ */
+const MOOD_BOARD_FALLBACK_SIZE = { width: 1536, height: 720 } as const
+
+function resolveMoodBoardSize(templateId: string): string {
+  const manifest = getManifest(templateId)
+  const cfg = manifest?.imageGenSize ?? MOOD_BOARD_FALLBACK_SIZE
+  return `${cfg.width}x${cfg.height}`
 }
 
 export interface GenerateMoodBoardOutput {
@@ -306,13 +326,17 @@ export async function generateMoodBoard(
     | { ok: true; assetId: string; style: string; prompt: string }
     | { ok: false; error: Error }
 
+  const moodBoardSize = resolveMoodBoardSize(input.templateId)
   const outcomes: ImageOutcome[] = await Promise.all(
     samples.map(async (sample): Promise<ImageOutcome> => {
       const release = await acquireImageSlot(input.userId)
       try {
         const out = await imageGen({
           prompt: sample.prompt,
-          size: '512x512',
+          // Phase 11.8 dogfood:size 跟模板的 imageGenSize 同源,确保用户挑的 anchor
+          // 跟后续正式生图比例一致。OpenAI gpt-image-2 size 约束:16 倍数 + ratio
+          // ≤3:1 + 像素数 ≥ 655360,由 manifest schema 校验保证。
+          size: moodBoardSize,
           signal: ctrl.signal,
           apiKey: imageSettings.apiKey,
           baseUrl: imageSettings.baseUrl,

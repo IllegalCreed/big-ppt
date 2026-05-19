@@ -111,6 +111,19 @@ const FALLBACK_IMAGE_STYLE: ImageGenStyle = {
 }
 
 /**
+ * Phase 11.8 dogfood 后引入:模板缺 imageGenSize 字段时的通用兜底。
+ * 1536×720 ≈ 2.13:1,贴合大多数 16:9 内容页减去 header 后的画布;同时满足
+ * OpenAI gpt-image-2 约束(16 倍数 / 总像素 ≥655360 / ratio ≤3:1)。
+ * 新模板都应在 manifest.json 显式声明 imageGenSize,不要依赖此 fallback。
+ */
+const FALLBACK_IMAGE_SIZE = { width: 1536, height: 720 } as const
+
+function resolveImageSize(manifest: { imageGenSize?: { width: number; height: number } }): string {
+  const cfg = manifest.imageGenSize ?? FALLBACK_IMAGE_SIZE
+  return `${cfg.width}x${cfg.height}`
+}
+
+/**
  * 把 LLM 提供的自由 prompt 包成 Codex imagegen skill 的结构化 schema。
  * 这样工具层强制注入 deck-level invariants(色板 / 风格 / 中文 label / 边界约束),
  * LLM 即使写得 generic 也不会让生图模型乱发挥。
@@ -203,7 +216,7 @@ const TOOL_DESCRIPTION = [
   '',
   'Side effect on success: the slide layout switches to `*-image-content` and `body` is wiped (the slide becomes pure image with the existing header heading on top). On failure the graceful-degradation rewrite replaces the slide with a `*-content` layout + components version derived from `fallbackSummary`.',
   '',
-  'Image dimensions are hardcoded 1536x720 to match the layout body aspect ratio; do not pass a size argument.',
+  'Image dimensions are decided by the template (manifest.imageGenSize, matched to the image-content layout body region); do not pass a size argument.',
 ].join('\n')
 
 async function runTool(args: Record<string, unknown>): Promise<string> {
@@ -239,13 +252,8 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   // - 每次调用注入同一份 deck-level invariants(productivity-visual + 模板色板 hex + 中文 label + 边界约束)
   // - 让生图 LLM 跨调用保持视觉一致,而非 22 页各自漂出 22 个风格
   // - 解决 dogfood 报告的「图片风格不统一 + 英文图」问题
-  // 注:实际 prompt 在 createImageJob 之后才拼,因为要拿 deck.templateId(在下方)
-  // **size 自动选**:模板的 image-content layout body 实际比例约 2:1
-  // (Slidev 默认 16:9 canvas 减去 LBtHeader/LJydHeader 高度约 4.5em ≈ 15%)。
-  // 1536x720 满足 OpenAI gpt-image-2 约束(min 655360 像素 + 16 倍数 + ≤3:1)
-  // 且更贴近 layout 比例,object-fit:cover 时上下基本不裁。
-  // LLM 不再决定 size — 工具按模板硬编最优值,避免 LLM 选错比例导致裁剪。
-  const size: ImageJobInput['size'] = '1536x720'
+  // 注:实际 prompt + size 在拿到 manifest 之后才拼(deck.templateId 在下方加载),
+  // size 从 manifest.imageGenSize 读;LLM 不参与决定 size,避免选错比例导致裁剪。
 
   const deckId = ctx.activeDeckId
   if (!deckId) {
@@ -400,13 +408,17 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   // 元数据跟模板同包,新模板加色板只改 manifest 不动 agent),缺省走通用 fallback
   const templateStyle = manifest.imageGenStyle ?? FALLBACK_IMAGE_STYLE
   const finalPrompt = buildStructuredImagePrompt(userPrompt, templateStyle)
+  // Phase 11.8: size 跟模板包同源,从 manifest.imageGenSize 读;缺省走通用 fallback。
+  // 每个模板对应一个独立的内容页 layout(beitou-image-content / jingyeda-image-content
+  // 等),其实际显示区域不同,生图比例应跟它对齐,object-fit:cover 时上下不裁。
+  const sizeForJob: ImageJobInput['size'] = resolveImageSize(manifest)
 
   const job = createImageJob({
     deckId,
     userId: ctx.userId,
     slideIndex,
     prompt: finalPrompt,
-    size,
+    size: sizeForJob,
     model: imageSettings.model,
     fallbackSummary,
     heading: preservedHeading,
