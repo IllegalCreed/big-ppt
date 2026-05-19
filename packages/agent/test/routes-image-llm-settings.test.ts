@@ -1,7 +1,7 @@
 /**
  * Phase 11.5 Task 0：image-llm-settings 路由集成测。
  */
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Hono } from 'hono'
 import { imageLlmSettingsRoute } from '../src/routes/image-llm-settings.js'
 import { authOptional, type AuthVars } from '../src/middleware/auth.js'
@@ -18,6 +18,10 @@ useTestDb()
 
 beforeAll(() => {
   __setMasterKeyGetterForTesting(() => FIXED_KEY)
+})
+
+afterAll(() => {
+  __setMasterKeyGetterForTesting(null)
 })
 
 function makeApp() {

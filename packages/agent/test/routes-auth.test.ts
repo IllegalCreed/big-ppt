@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Hono } from 'hono'
 import { auth } from '../src/routes/auth.js'
 import { authOptional, SESSION_COOKIE, type AuthVars } from '../src/middleware/auth.js'
@@ -14,6 +14,10 @@ useTestDb()
 
 beforeAll(() => {
   __setMasterKeyGetterForTesting(() => FIXED_KEY)
+})
+
+afterAll(() => {
+  __setMasterKeyGetterForTesting(null)
 })
 
 function makeApp() {

@@ -5,7 +5,7 @@
  * 类比 migrate-llm-settings.test.ts:直接 import src 的 migrateThinkingLevel,
  * 不通过 spawn script(.mjs)走 dist —— 不依赖 build 产物。
  */
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import mysql from 'mysql2/promise'
 import { useTestDb } from '../_setup/test-db.js'
 import { createTestUser } from '../_setup/factories.js'
@@ -20,6 +20,10 @@ useTestDb()
 
 beforeAll(() => {
   __setMasterKeyGetterForTesting(() => FIXED_KEY)
+})
+
+afterAll(() => {
+  __setMasterKeyGetterForTesting(null)
 })
 
 async function newConn(): Promise<mysql.Connection> {

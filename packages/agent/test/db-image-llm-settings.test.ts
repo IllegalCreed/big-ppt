@@ -1,7 +1,7 @@
 /**
  * Phase 11.5 Task 0：image-llm-settings DB helper 加密往返 + 缺省语义。
  */
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { useTestDb } from './_setup/test-db.js'
 import { createTestUser } from './_setup/factories.js'
 import { __setMasterKeyGetterForTesting } from '../src/crypto/apikey.js'
@@ -17,6 +17,10 @@ useTestDb()
 
 beforeAll(() => {
   __setMasterKeyGetterForTesting(() => FIXED_KEY)
+})
+
+afterAll(() => {
+  __setMasterKeyGetterForTesting(null)
 })
 
 describe('db/image-llm-settings', () => {

@@ -47,14 +47,6 @@ export async function resetDb(): Promise<void> {
 
 /** 在 integration test 文件顶部调用一次 */
 export function useTestDb(): void {
-  // Phase 11.8: schema 加列(decks.anchor_skipped)后 Aliyun RDS 服务端 prepared
-  // statement plan 失效但代理层不抛 ER_NEED_REPREPARE。每个 file 开始 close pool
-  // 拿新 connection。**已知偶发 flaky**:单 file 内多 case 累积 stale 时,需要
-  // 跑 `ALTER TABLE <t> COMMENT='reset'` 一次手动 force invalidate(见 CLAUDE.md
-  // 已知坑章节,等待 Aliyun 自然过期或 server-side cache 清空)。
-  beforeAll(async () => {
-    await closeDb()
-  })
   beforeEach(async () => {
     await resetDb()
   })

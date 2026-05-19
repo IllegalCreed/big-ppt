@@ -14,7 +14,7 @@
  * llm.post('/chat/completions') 的端到端链路,跟其他 routes-*.test.ts 的集成测
  * 一致风格,但放 integration/ 子目录强调"路由集成"语义。
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { useTestDb } from '../_setup/test-db.js'
@@ -38,6 +38,10 @@ useTestDb()
 
 beforeAll(() => {
   __setMasterKeyGetterForTesting(() => FIXED_KEY)
+})
+
+afterAll(() => {
+  __setMasterKeyGetterForTesting(null)
 })
 
 afterEach(() => {
