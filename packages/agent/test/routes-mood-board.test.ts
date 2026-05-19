@@ -376,7 +376,8 @@ describe('POST /api/decks/:id/anchor', () => {
     expect(d!.anchorAssetId).toBe(target.id)
     expect(d!.anchorSkipped).toBe(true)
 
-    // 目标 asset purpose=anchor,其它两个 discarded
+    // 目标 asset purpose=anchor,其它两个 **保持 candidate**
+    // Phase 11.8 dogfood 改:不再 discard 同批 candidate,让 picker reopen 时能显示 3 张 + 高亮
     const rows = await getDb()
       .select({ id: deckAssets.id, purpose: deckAssets.purpose })
       .from(deckAssets)
@@ -385,7 +386,7 @@ describe('POST /api/decks/:id/anchor', () => {
     expect(map[target.id]).toBe('anchor')
     candidates
       .filter((c) => c.id !== target.id)
-      .forEach((c) => expect(map[c.id]).toBe('mood-board-discarded'))
+      .forEach((c) => expect(map[c.id]).toBe('mood-board-candidate'))
   })
 })
 

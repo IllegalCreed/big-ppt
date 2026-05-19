@@ -237,6 +237,11 @@ export const deckAssets = mysqlTable(
     /** 出图模型,如 'gpt-5.5' / 'gpt-image-2',用于成本核算 */
     model: varchar('model', { length: 50 }),
     /**
+     * Phase 11.8 dogfood:mood-board candidate 的短风格标签(如 "flat editorial"),
+     * 仅 mood-board-* purpose 行有值;其他 asset 用途 NULL。前端 picker modal 展示用。
+     */
+    style: varchar('style', { length: 64 }),
+    /**
      * Phase 11.8: asset 用途分类。
      * - null: 默认/历史/普通 generate_slide_image 产物(slide imageSrc 指向用)
      * - 'anchor': 当前选定锚图(被 decks.anchor_asset_id 引用)

@@ -134,7 +134,7 @@ describe('Phase 11.8 anchor schema + helpers', () => {
   })
 
   describe('markAsAnchor 状态机', () => {
-    it('选 1 个 candidate → 该 asset.purpose=anchor、其它 candidate=discarded、deck.anchor 写入', async () => {
+    it('选 1 个 candidate → 该 asset.purpose=anchor、其它 candidate **保持 candidate**、deck.anchor 写入(Phase 11.8 dogfood 改:不再破坏同批其他候选,让 picker reopen 能显示 3 张 + 高亮)', async () => {
       const { user } = await createLoggedInUser('mark@a.com')
       const { deck } = await createDeckDirect(user.id)
       const a = await createAsset({
@@ -166,9 +166,9 @@ describe('Phase 11.8 anchor schema + helpers', () => {
         getAsset(b.id),
         getAsset(c.id),
       ])
-      expect(aRow!.purpose).toBe('mood-board-discarded')
+      expect(aRow!.purpose).toBe('mood-board-candidate')
       expect(bRow!.purpose).toBe('anchor')
-      expect(cRow!.purpose).toBe('mood-board-discarded')
+      expect(cRow!.purpose).toBe('mood-board-candidate')
 
       const [d] = await getDb()
         .select({ anchorAssetId: decks.anchorAssetId })
@@ -178,7 +178,7 @@ describe('Phase 11.8 anchor schema + helpers', () => {
       expect(d!.anchorAssetId).toBe(b.id)
     })
 
-    it('已有 anchor 的 deck 选新 anchor → 旧 anchor 降级 discarded、新 anchor 顶上', async () => {
+    it('已有 anchor 的 deck 选新 anchor → 旧 anchor **降回 candidate**、新 anchor 顶上(Phase 11.8 dogfood 改:旧 anchor 不再 discard,让重选可逆 + reopen 仍能看到 3 张)', async () => {
       const { user } = await createLoggedInUser('repick@a.com')
       const { deck } = await createDeckDirect(user.id)
       // 已有 anchor
@@ -209,7 +209,7 @@ describe('Phase 11.8 anchor schema + helpers', () => {
         getAsset(oldAnchor.id),
         getAsset(newCandidate.id),
       ])
-      expect(oldRow!.purpose).toBe('mood-board-discarded')
+      expect(oldRow!.purpose).toBe('mood-board-candidate')
       expect(newRow!.purpose).toBe('anchor')
 
       const [d] = await getDb()

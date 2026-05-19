@@ -10,7 +10,7 @@
  *
  * 套用 MSW 拦截 backend,不真打 Hono。
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useMsw, server, http, HttpResponse } from './_setup/msw'
 import { useMoodBoardPicker } from '../src/composables/useMoodBoardPicker'
 
@@ -18,6 +18,23 @@ useMsw()
 
 afterEach(() => {
   useMoodBoardPicker().__resetForTesting()
+})
+
+/**
+ * Phase 11.8 dogfood:openPicker 现在先调 GET /candidates,空数组才 fallback 到 generate。
+ * 给所有 case 默认 stub 返回空数组,模拟"没历史"语境;真要 mock 历史的 case 在自己 server.use 里覆写。
+ */
+beforeEach(() => {
+  server.use(
+    http.get('/api/decks/:id/mood-board/candidates', () =>
+      HttpResponse.json({
+        candidates: [],
+        selectedAssetId: null,
+        anchorSkipped: false,
+        remaining: 3,
+      }),
+    ),
+  )
 })
 
 const FAKE_CANDIDATES = {
@@ -195,7 +212,7 @@ describe('useMoodBoardPicker.skip', () => {
     await picker.openPicker(1)
     picker.skip()
     expect(picker.open.value).toBe(false)
-    expect(picker.skipped.value).toBe(true)
+    expect(picker.anchorSkipped.value).toBe(true)
     expect(picker.selectedAssetId.value).toBeNull()
   })
 
@@ -207,7 +224,7 @@ describe('useMoodBoardPicker.skip', () => {
     await picker.openPicker(1)
     picker.closePicker()
     expect(picker.open.value).toBe(false)
-    expect(picker.skipped.value).toBe(true)
+    expect(picker.anchorSkipped.value).toBe(true)
   })
 })
 

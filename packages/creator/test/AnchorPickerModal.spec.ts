@@ -14,7 +14,7 @@
  * 用 useMsw 拦截 fetch 但本组件主要通过 mount 后操作 picker composable state,
  * mock backend 主要为了 openPicker / actions 不真打。
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AnchorPickerModal from '../src/components/AnchorPickerModal.vue'
 import { useMoodBoardPicker } from '../src/composables/useMoodBoardPicker'
@@ -24,6 +24,23 @@ useMsw()
 
 afterEach(() => {
   useMoodBoardPicker().__resetForTesting()
+})
+
+/**
+ * Phase 11.8 dogfood:openPicker 先调 GET /candidates,空数组 fallback 到 generate。
+ * 默认 stub 让所有 case 走"无历史候选 → 触发 regenerate"语境。
+ */
+beforeEach(() => {
+  server.use(
+    http.get('/api/decks/:id/mood-board/candidates', () =>
+      HttpResponse.json({
+        candidates: [],
+        selectedAssetId: null,
+        anchorSkipped: false,
+        remaining: 3,
+      }),
+    ),
+  )
 })
 
 const FAKE_CANDIDATES = {
@@ -116,9 +133,9 @@ describe('AnchorPickerModal', () => {
     const picker = useMoodBoardPicker()
     await picker.openPicker(1)
     const wrapper = mount(AnchorPickerModal, { props: { disableTeleport: true } })
-    await wrapper.find('[data-skip-bottom]').trigger('click')
+    await wrapper.find('[data-primary-action]').trigger('click')
     expect(picker.open.value).toBe(false)
-    expect(picker.skipped.value).toBe(true)
+    expect(picker.anchorSkipped.value).toBe(true)
   })
 
   it('右上 × 关闭按钮 = 跳过 alias', async () => {
@@ -126,9 +143,9 @@ describe('AnchorPickerModal', () => {
     const picker = useMoodBoardPicker()
     await picker.openPicker(1)
     const wrapper = mount(AnchorPickerModal, { props: { disableTeleport: true } })
-    await wrapper.find('[data-skip-button]').trigger('click')
+    await wrapper.find('[data-close-button]').trigger('click')
     expect(picker.open.value).toBe(false)
-    expect(picker.skipped.value).toBe(true)
+    expect(picker.anchorSkipped.value).toBe(true)
   })
 
   it('retried=true + diversityDegraded=false → 渲染"已 retry"提示', async () => {

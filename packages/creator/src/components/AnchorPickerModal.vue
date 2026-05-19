@@ -1,15 +1,16 @@
 <script setup lang="ts">
 /**
  * Phase 11.8 Task F-2: 选风格 modal。
- *
- * 3 张样张缩略图(`/api/assets/<assetId>` 加载)+ "换一批" + "跳过本次" + 选定 → 写 anchor。
- * 真 state 由 useMoodBoardPicker composable 提供(单例 modal,自动触发 / 顶栏按钮共享)。
+ * Phase 11.8 dogfood(2026-05-19)重写:
+ *   - 已选 anchor 状态:卡片高亮选中,「换一批」按钮 disabled,底部主按钮文案「取消风格限制」
+ *   - 未选 anchor:卡片正常,「换一批」可用,底部主按钮文案「暂不指定风格」
+ *   - 重开 modal 显示历史候选(不再每次 regenerate)
  *
  * VTU 2 不跨 Teleport 边界 query,组件外 `disableTeleport` prop 给单测用(参考
  * TemplatePickerModal 套路)。
  */
 import { computed } from 'vue'
-import { X, RefreshCw, SkipForward } from 'lucide-vue-next'
+import { X, RefreshCw, Check } from 'lucide-vue-next'
 import { useMoodBoardPicker } from '../composables/useMoodBoardPicker'
 
 defineProps<{
@@ -26,16 +27,31 @@ const {
   retried,
   diversityDegraded,
   remainingGenerations,
+  selectedAssetId,
   canRegenerate,
+  primaryActionMode,
   selectAnchor,
   regenerate,
-  skip,
+  triggerPrimaryAction,
+  closePicker,
 } = picker
 
 const remainingLabel = computed(() => {
   if (remainingGenerations.value === -1) return ''
-  if (remainingGenerations.value === 0) return '已用完 3 次,请跳过或选定一张'
+  if (remainingGenerations.value === 0) return '已用完 3 次生成,可继续选已有候选或取消风格限制'
   return `还可换 ${remainingGenerations.value} 次`
+})
+
+const primaryButtonLabel = computed(() =>
+  primaryActionMode.value === 'clear' ? '取消风格限制' : '暂不指定风格',
+)
+
+const regenerateTooltip = computed(() => {
+  if (selectedAssetId.value !== null) {
+    return '请先点「取消风格限制」放弃当前 anchor,才能换一批'
+  }
+  if (remainingGenerations.value === 0) return '本 deck 已用完 3 次生成'
+  return ''
 })
 
 const progressHint = computed(() => {
@@ -44,6 +60,13 @@ const progressHint = computed(() => {
     return '正在为您准备 3 张样张,约 30-60 秒(分析大纲 → 主 LLM 出 prompt → 并发出图)…'
   }
   return '正在更新…'
+})
+
+const modalSubtitle = computed(() => {
+  if (selectedAssetId.value !== null) {
+    return '你已选定这个风格作为锚图,后续每页都按它生成。可以「取消风格限制」让 AI 自由发挥,或重新挑一张。'
+  }
+  return '主 LLM 根据 deck 内容出了 3 个不同风格的样张。挑一张作为锚图,后续每页都按它的风格生成。'
 })
 </script>
 
@@ -54,14 +77,14 @@ const progressHint = computed(() => {
         <div class="modal-header">
           <div>
             <h3>选个视觉风格</h3>
-            <p class="modal-sub">主 LLM 根据 deck 内容出了 3 个不同风格的样张。挑一张作为锚图,后续每页都按它的风格生成。</p>
+            <p class="modal-sub">{{ modalSubtitle }}</p>
           </div>
           <button
             type="button"
             class="close-btn"
-            aria-label="跳过本次选风格"
-            data-skip-button
-            @click="skip"
+            aria-label="关闭"
+            data-close-button
+            @click="closePicker"
           >
             <X :size="18" :stroke-width="1.8" />
           </button>
@@ -87,17 +110,24 @@ const progressHint = computed(() => {
                 :key="c.assetId"
                 type="button"
                 class="candidate-card"
+                :class="{ 'is-selected': selectedAssetId === c.assetId }"
                 :disabled="loading"
                 :data-candidate-id="c.assetId"
+                :data-selected="selectedAssetId === c.assetId ? 'true' : 'false'"
                 @click="selectAnchor(c.assetId)"
               >
-                <img
-                  :src="`/api/assets/${c.assetId}`"
-                  :alt="c.style"
-                  class="candidate-img"
-                  loading="lazy"
-                />
-                <div class="candidate-label">{{ c.style }}</div>
+                <div class="candidate-img-wrap">
+                  <img
+                    :src="`/api/assets/${c.assetId}`"
+                    :alt="c.style"
+                    class="candidate-img"
+                    loading="lazy"
+                  />
+                  <div v-if="selectedAssetId === c.assetId" class="selected-badge" aria-label="已选定">
+                    <Check :size="16" :stroke-width="2.5" />
+                  </div>
+                </div>
+                <div class="candidate-label">{{ c.style || '风格' }}</div>
               </button>
             </div>
 
@@ -113,19 +143,20 @@ const progressHint = computed(() => {
           <div class="modal-footer__btns">
             <button
               type="button"
-              class="btn-skip"
-              data-skip-bottom
+              class="btn-primary-action"
+              data-primary-action
+              :data-mode="primaryActionMode"
               :disabled="loading"
-              @click="skip"
+              @click="triggerPrimaryAction"
             >
-              <SkipForward :size="14" :stroke-width="1.8" />
-              跳过本次
+              {{ primaryButtonLabel }}
             </button>
             <button
               type="button"
               class="btn-regenerate"
               data-regenerate
               :disabled="!canRegenerate"
+              :title="regenerateTooltip"
               @click="regenerate"
             >
               <RefreshCw :size="14" :stroke-width="1.8" />
@@ -244,7 +275,7 @@ const progressHint = computed(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: border-color 0.15s, transform 0.15s;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
 }
 .candidate-card:hover:not(:disabled) {
   border-color: var(--color-accent, #ea580c);
@@ -254,11 +285,33 @@ const progressHint = computed(() => {
   opacity: 0.5;
   cursor: not-allowed;
 }
+.candidate-card.is-selected {
+  border-color: var(--color-accent, #ea580c);
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.18);
+}
+.candidate-img-wrap {
+  position: relative;
+}
 .candidate-img {
   width: 100%;
   aspect-ratio: 1 / 1;
   object-fit: cover;
   background: var(--color-bg-hover, #f3f4f6);
+  display: block;
+}
+.selected-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  background: var(--color-accent, #ea580c);
+  color: #fff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
 }
 .candidate-label {
   font-size: 12px;
@@ -289,7 +342,7 @@ const progressHint = computed(() => {
   display: flex;
   gap: 8px;
 }
-.btn-skip,
+.btn-primary-action,
 .btn-regenerate {
   display: inline-flex;
   align-items: center;
@@ -307,13 +360,13 @@ const progressHint = computed(() => {
   border-color: var(--color-accent, #ea580c);
   color: #fff;
 }
-.btn-skip:hover:not(:disabled) {
+.btn-primary-action:hover:not(:disabled) {
   background: var(--color-bg-hover, #f3f4f6);
 }
 .btn-regenerate:hover:not(:disabled) {
   filter: brightness(0.9);
 }
-.btn-skip:disabled,
+.btn-primary-action:disabled,
 .btn-regenerate:disabled {
   opacity: 0.5;
   cursor: not-allowed;

@@ -351,6 +351,9 @@ export async function generateMoodBoard(
           prompt: sample.prompt,
           model: out.modelUsed,
           purpose: 'mood-board-candidate' satisfies AssetPurpose,
+          // Phase 11.8 dogfood:把短风格标签也存 DB,picker reopen 时 GET candidates
+          // 能拿回展示,不再依赖 frontend 内存
+          style: sample.style,
         })
         return { ok: true, assetId: id, style: sample.style, prompt: sample.prompt }
       } catch (err) {

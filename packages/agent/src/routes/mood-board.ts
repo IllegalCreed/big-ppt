@@ -17,7 +17,12 @@ import { eq, and } from 'drizzle-orm'
 import { type AuthVars } from '../middleware/auth.js'
 import { getDb, decks, deckVersions, deckAssets } from '../db/index.js'
 import { generateMoodBoard, MoodBoardGenError } from '../mood-board/index.js'
-import { markAsAnchor } from '../db/deck-assets.js'
+import {
+  markAsAnchor,
+  listAnchorAndCandidates,
+  discardCurrentMoodBoard,
+  clearAnchorKeepCandidates,
+} from '../db/deck-assets.js'
 import { logServerEvent } from '../logger/server-log.js'
 
 export const moodBoardRoute = new Hono<{ Variables: AuthVars }>()
@@ -88,6 +93,11 @@ moodBoardRoute.post('/decks/:id{[0-9]+}/mood-board/generate', async (c) => {
 
   // 计数 +1(先增后跑,防并发请求同时通过限频检查)
   generateCountByDeck.set(deckId, prevCount + 1)
+
+  // Phase 11.8 dogfood:换一批前把同 deck 现存的 mood-board 候选 + 当前 anchor 标 discarded
+  // 避免历史堆积让 GET /candidates 拉超 3 条。前提是 frontend 已强制用户"先取消才能换",
+  // 但这里 backend 仍 defense-in-depth 清理,保证状态机一致。
+  await discardCurrentMoodBoard(deckId)
 
   try {
     const { candidates, retried, diversityDegraded } = await generateMoodBoard({
@@ -201,4 +211,66 @@ moodBoardRoute.post('/decks/:id{[0-9]+}/anchor/skip', async (c) => {
   })
 
   return c.json({ ok: true, anchorSkipped: true })
+})
+
+/**
+ * Phase 11.8 dogfood:GET 同 deck 的当前 mood-board 候选 + 哪张被选(picker reopen 用)。
+ * 返:candidates 3 张(id/style/prompt;若 deck 有 anchor 则其中 1 张是 selected)+
+ *   selectedAssetId(=== deck.anchorAssetId,若 null 表示没选)+
+ *   remaining(generate 配额剩余次数,UI 展示用)
+ *
+ * 不带 IDOR 反查:listAnchorAndCandidates 的 query 用 deckId 做 hard filter,
+ * 但 deck ownership 已由本路由 getOwnedDeck 守。
+ */
+moodBoardRoute.get('/decks/:id{[0-9]+}/mood-board/candidates', async (c) => {
+  const user = c.get('user')
+  if (!user) return c.json({ error: 'unauthorized' }, 401)
+  const deckId = Number(c.req.param('id'))
+  const check = await getOwnedDeck(user.id, deckId)
+  if (!check.ok) return c.json({ error: check.error }, check.status)
+
+  const rows = await listAnchorAndCandidates(deckId)
+  const candidates = rows.map((r) => ({
+    assetId: r.id,
+    style: r.style ?? '',
+    prompt: r.prompt ?? '',
+  }))
+  const usedCount = generateCountByDeck.get(deckId) ?? 0
+  const remaining = Math.max(0, MAX_MOOD_BOARD_GENERATE_PER_DECK - usedCount)
+
+  return c.json({
+    candidates,
+    selectedAssetId: check.deck.anchorAssetId ?? null,
+    anchorSkipped: !!check.deck.anchorSkipped,
+    remaining,
+  })
+})
+
+/**
+ * Phase 11.8 dogfood:用户点「取消风格限制」触发。
+ * - 当前 anchor 降级回 candidate(保留在 GET candidates 列表里可重选)
+ * - decks.anchor_asset_id = NULL + decks.anchor_skipped = true
+ *   (= 用户已决策"自由发挥",polling block 不再触发,但 candidates 保留)
+ *
+ * 跟 POST /anchor/skip 区别:skip 用于"还没选过的初次决策",clear 用于"已选过的撤回"。
+ * 两者 backend 终态一样,但 clear 还要把当前 anchor asset 降级回 candidate。
+ */
+moodBoardRoute.post('/decks/:id{[0-9]+}/anchor/clear', async (c) => {
+  const user = c.get('user')
+  if (!user) return c.json({ error: 'unauthorized' }, 401)
+  const deckId = Number(c.req.param('id'))
+  const check = await getOwnedDeck(user.id, deckId)
+  if (!check.ok) return c.json({ error: check.error }, check.status)
+
+  await clearAnchorKeepCandidates(deckId)
+
+  logServerEvent({
+    category: 'mood-board',
+    event: 'anchor-cleared',
+    deckId,
+    userId: user.id,
+    prevAnchorAssetId: check.deck.anchorAssetId ?? null,
+  })
+
+  return c.json({ ok: true })
 })

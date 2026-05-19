@@ -28,6 +28,8 @@ export interface CreateAssetArgs {
   model?: string
   /** Phase 11.8: 默认 null(普通生图产物);mood-board / anchor 用法显式传 */
   purpose?: AssetPurpose
+  /** Phase 11.8 dogfood:mood-board candidate 的短风格标签(picker UI 展示用) */
+  style?: string
 }
 
 export interface AssetRow {
@@ -40,6 +42,7 @@ export interface AssetRow {
   prompt: string | null
   model: string | null
   purpose: string | null
+  style: string | null
   createdAt: Date
 }
 
@@ -56,6 +59,7 @@ export async function createAsset(args: CreateAssetArgs): Promise<{ id: string }
     prompt: args.prompt,
     model: args.model,
     purpose: args.purpose,
+    style: args.style,
   })
   return { id }
 }
@@ -122,17 +126,70 @@ export async function deleteAsset(id: string, userId: number): Promise<boolean> 
  */
 export async function listMoodBoardCandidates(
   deckId: number,
-): Promise<Array<Pick<AssetRow, 'id' | 'mimeType' | 'prompt' | 'createdAt'>>> {
+): Promise<Array<Pick<AssetRow, 'id' | 'mimeType' | 'prompt' | 'style' | 'createdAt'>>> {
   const db = getDb()
   return db
     .select({
       id: deckAssets.id,
       mimeType: deckAssets.mimeType,
       prompt: deckAssets.prompt,
+      style: deckAssets.style,
       createdAt: deckAssets.createdAt,
     })
     .from(deckAssets)
     .where(and(eq(deckAssets.deckId, deckId), eq(deckAssets.purpose, 'mood-board-candidate')))
+}
+
+/**
+ * Phase 11.8 dogfood:列出某 deck **当前展示的 anchor + 同批 candidate**(picker
+ * 重开时用)。
+ *
+ * 返回 purpose IN ('mood-board-candidate', 'anchor') 的全部行 + style + prompt,
+ * 不返 BLOB。前端展示时通过 deck.anchorAssetId 反查哪张是 selected。
+ *
+ * 一般情况下返 3 行(同批),最多场景:用户已选 anchor 后再次"换一批"前的旧批
+ * 也是 3 行(其中 1 行 purpose='anchor',另 2 行 'mood-board-candidate')。
+ */
+export async function listAnchorAndCandidates(
+  deckId: number,
+): Promise<Array<Pick<AssetRow, 'id' | 'mimeType' | 'prompt' | 'style' | 'purpose' | 'createdAt'>>> {
+  const db = getDb()
+  return db
+    .select({
+      id: deckAssets.id,
+      mimeType: deckAssets.mimeType,
+      prompt: deckAssets.prompt,
+      style: deckAssets.style,
+      purpose: deckAssets.purpose,
+      createdAt: deckAssets.createdAt,
+    })
+    .from(deckAssets)
+    .where(
+      and(
+        eq(deckAssets.deckId, deckId),
+        inArray(deckAssets.purpose, ['mood-board-candidate', 'anchor']),
+      ),
+    )
+    .orderBy(deckAssets.createdAt)
+}
+
+/**
+ * Phase 11.8 dogfood:把同 deck 现有的所有 mood-board 候选 + 当前 anchor 标 discarded。
+ * 「换一批」前先调用本函数,避免历史候选堆积让 listAnchorAndCandidates 返超过 3 行。
+ * decks.anchor_asset_id 跟着置 NULL(因为已选的 anchor 也被丢弃,语义=用户决定换一组)。
+ */
+export async function discardCurrentMoodBoard(deckId: number): Promise<void> {
+  const db = getDb()
+  await db
+    .update(deckAssets)
+    .set({ purpose: 'mood-board-discarded' })
+    .where(
+      and(
+        eq(deckAssets.deckId, deckId),
+        inArray(deckAssets.purpose, ['mood-board-candidate', 'anchor']),
+      ),
+    )
+  await db.update(decks).set({ anchorAssetId: null }).where(eq(decks.id, deckId))
 }
 
 /**
@@ -146,7 +203,7 @@ export async function listMoodBoardCandidates(
  */
 export async function markAsAnchor(deckId: number, assetId: string): Promise<void> {
   const db = getDb()
-  // 1) 读现 deck.anchor_asset_id(若存在,旧 anchor 也要降级为 discarded)
+  // 1) 读现 deck.anchor_asset_id(若存在,旧 anchor 降级回 candidate 让用户能重选)
   const [deck] = await db
     .select({ anchorAssetId: decks.anchorAssetId })
     .from(decks)
@@ -154,17 +211,16 @@ export async function markAsAnchor(deckId: number, assetId: string): Promise<voi
     .limit(1)
   const prevAnchorId = deck?.anchorAssetId ?? null
 
-  // 2) 把同 deck 所有 candidate 改 discarded(将选中的那个 candidate 排除,稍后单独标 anchor)
-  await db
-    .update(deckAssets)
-    .set({ purpose: 'mood-board-discarded' })
-    .where(and(eq(deckAssets.deckId, deckId), eq(deckAssets.purpose, 'mood-board-candidate')))
+  // 2) Phase 11.8 dogfood 调整:**不**把同批其他 candidate 标 discarded。
+  //    设计语义:已选 anchor 后用户重开 modal,应看到原 3 张 + 选中态高亮,而非只剩 1 张。
+  //    其他 candidate 保持 'mood-board-candidate' 状态;同批堆积由 POST /generate 路由
+  //    在「换一批」时主动 discard 旧批解决,避免 N 批堆。
 
-  // 3) 旧 anchor 降级为 discarded(若有)
+  // 3) 旧 anchor 降级回 candidate(不是 discarded;让重选语义可逆)
   if (prevAnchorId && prevAnchorId !== assetId) {
     await db
       .update(deckAssets)
-      .set({ purpose: 'mood-board-discarded' })
+      .set({ purpose: 'mood-board-candidate' })
       .where(and(eq(deckAssets.id, prevAnchorId), eq(deckAssets.deckId, deckId)))
   }
 
@@ -176,6 +232,35 @@ export async function markAsAnchor(deckId: number, assetId: string): Promise<voi
 
   // 5) decks.anchor_asset_id 写入
   await db.update(decks).set({ anchorAssetId: assetId }).where(eq(decks.id, deckId))
+}
+
+/**
+ * Phase 11.8 dogfood 新增:用户点「取消风格限制」按钮触发。
+ * - 把当前 anchor asset 降级回 'mood-board-candidate'(保留在历史候选里,可被重新选中)
+ * - decks.anchor_asset_id 置 NULL
+ * - decks.anchor_skipped 设 true(语义=用户已决策"自由发挥",polling block 不再触发)
+ *
+ * 跟 clearDeckAnchor 的区别:那个是切模板用的破坏性操作(把 anchor 标 discarded);
+ * 本函数让 anchor 状态可逆,用户随时能重选。
+ */
+export async function clearAnchorKeepCandidates(deckId: number): Promise<void> {
+  const db = getDb()
+  const [deck] = await db
+    .select({ anchorAssetId: decks.anchorAssetId })
+    .from(decks)
+    .where(eq(decks.id, deckId))
+    .limit(1)
+  const prevAnchorId = deck?.anchorAssetId ?? null
+  if (prevAnchorId) {
+    await db
+      .update(deckAssets)
+      .set({ purpose: 'mood-board-candidate' })
+      .where(and(eq(deckAssets.id, prevAnchorId), eq(deckAssets.deckId, deckId)))
+  }
+  await db
+    .update(decks)
+    .set({ anchorAssetId: null, anchorSkipped: true })
+    .where(eq(decks.id, deckId))
 }
 
 /**
