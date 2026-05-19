@@ -406,9 +406,23 @@ export const deckVersions = mysqlTable('deck_versions', {
 
 ---
 
-## 执行期偏离(关闭后追加)
+## 执行期偏离
 
-> 待执行后回填。
+### 偏离 #1: 多样性算法从字符级 Levenshtein 换 token-based Jaccard,阈值 0.8 → 0.3(2026-05-19,Task B-1)
+
+- **原 plan(抉择 1)**:"sanity check pairwise Levenshtein normalized similarity 平均,≥ 0.8 视为雷同要 retry"
+- **实测发现**:字符级 Levenshtein 对 "flat infographic / flat geometric / flat illustration" 这种"共享一个高频词但后半截全不同"系列只算 0.48 — 编辑距离看字符变换数,后半截不同就距离大。**用户视角下这 3 个 label 是雷同的**(都"flat" 调),算法没抓到
+- **修正**:换 token-based Jaccard(把 label 按空白 / 连字符切词,小写后比 set 交并比)。"flat X / flat Y / flat Z" → 3 对都共享 {flat},Jaccard 各 1/3=0.33,平均 0.33;阈值改 **0.3** 触发 retry
+- **commit**:同 Task B-1
+- **预防回归**:`mood-board-prompt.test.ts` 加 case「3 个共享 flat 的 style → Jaccard 1/3=0.33 → 高于阈值触发 retry」+ 「2 对共享 1 对不共享 → 平均 1/9≈0.11 低于阈值放行」,实测数字锁死
+
+### 偏离 #2: 并发出图从 Promise.all 换 Promise.allSettled(2026-05-19,Task B-2)
+
+- **原 plan(Task B 操作 6)**:"3 个 prompt 并发调 generateImage";"任一图失败 → 整批失败 + 已写入 candidate 标记 discarded"
+- **实测发现**:Promise.all 任一 reject 立即抛,**其它 inflight promise 还在跑 createAsset 写库**。catch 段执行 discardAssets 时 writtenAssetIds 仍空(fulfilled promise 还没 push id),最终 DB 留两条 candidate 没被 discard(脏 row)
+- **修正**:换 Promise.allSettled,**等所有 settled 后**根据结果分流;有失败时收集所有 successful asset ids 再 discardAssets;失败时立即 ctrl.abort() 信号其它 inflight image 调用(对支持 AbortSignal 的 generateImage 友好,默认 generateImage 也接此参数)
+- **commit**:同 Task B-2
+- **预防回归**:`mood-board.test.ts > 出图任一失败` 显式断言「DB 中应有 2 行(头 2 张图已落库)+ 全部 purpose=mood-board-discarded」,而不是 0 行
 
 ---
 
