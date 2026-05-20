@@ -32,13 +32,6 @@ function getPool(): mysql.Pool {
       // 客户端统一用 UTC 序列化 JS Date；避免与服务端会话时区不一致
       // 造成 DATETIME 比较错位（实测：锁的 heartbeat 会被误判为永远过期）
       timezone: 'Z',
-      // Phase 11.8: 防 mysql2 + Aliyun RDS 在 connection 长跑(尤其 schema 加列后)
-      // 出现 stale read race。TCP keepalive 让代理层不杀 idle connection;
-      // idleTimeout 让 idle 30s 的 connection 主动重建,防 driver 内部 buffer
-      // 累积错位。生产请求频繁不会触发 idle,纯防御。
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10_000,
-      idleTimeout: 30_000,
     })
 
     // 每条新连接创建时把会话时区改为 UTC，保证 NOW() / 存储 / 比较都在同一基准。

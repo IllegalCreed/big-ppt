@@ -5,7 +5,7 @@
  * 所有端点都要求登录；且所有 deckId 操作都会先校验 ownership。
  */
 import { Hono } from 'hono'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { getDb, decks, deckVersions, deckChats } from '../db/index.js'
 import type { AuthVars } from '../middleware/auth.js'
 import { getManifest, readStarter } from '../templates/registry.js'
@@ -109,24 +109,13 @@ decksRoute.post('/decks', async (c) => {
   try {
     createdId = await db.transaction(async (tx) => {
       await tx.insert(decks).values({ userId: user.id, title, templateId })
-      // Phase 11.8 workaround:INSERT 后 SELECT 偶发拿空(mysql2 driver bug 在测试场景),
-      // 中间塞 SELECT 1 屏障后 retry。详见 routes/auth.ts register handler 同款。
-      let created = (await tx
+      const created = (await tx
         .select({ id: decks.id })
         .from(decks)
         .where(and(eq(decks.userId, user.id), eq(decks.title, title)))
         .orderBy(desc(decks.id))
         .limit(1))[0]
-      if (!created) {
-        await tx.execute(sql`SELECT 1`)
-        created = (await tx
-          .select({ id: decks.id })
-          .from(decks)
-          .where(and(eq(decks.userId, user.id), eq(decks.title, title)))
-          .orderBy(desc(decks.id))
-          .limit(1))[0]
-        if (!created) throw new Error('创建失败：deck 回查为空')
-      }
+      if (!created) throw new Error('创建失败：deck 回查为空')
 
       await tx.insert(deckVersions).values({
         deckId: created.id,
@@ -135,22 +124,13 @@ decksRoute.post('/decks', async (c) => {
         templateId,
         authorId: user.id,
       })
-      let firstVersion = (await tx
+      const firstVersion = (await tx
         .select({ id: deckVersions.id })
         .from(deckVersions)
         .where(eq(deckVersions.deckId, created.id))
         .orderBy(desc(deckVersions.id))
         .limit(1))[0]
-      if (!firstVersion) {
-        await tx.execute(sql`SELECT 1`)
-        firstVersion = (await tx
-          .select({ id: deckVersions.id })
-          .from(deckVersions)
-          .where(eq(deckVersions.deckId, created.id))
-          .orderBy(desc(deckVersions.id))
-          .limit(1))[0]
-        if (!firstVersion) throw new Error('创建失败：version 回查为空')
-      }
+      if (!firstVersion) throw new Error('创建失败：version 回查为空')
 
       await tx
         .update(decks)
