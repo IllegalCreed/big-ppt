@@ -19,6 +19,7 @@ import { randomUUID } from 'node:crypto'
 import { acquireImageSlot } from './middleware/image-semaphore.js'
 import { logServerEvent } from './logger/server-log.js'
 import { runInRequest } from './context.js'
+import { readImageDimensions, SIZE_AR_TOLERANCE } from './llm/image-dimensions.js'
 
 export type ImageJobState =
   | 'pending'
@@ -130,6 +131,42 @@ function toPublic(j: InternalJob): ImageJob {
   const { controller: _controller, ...rest } = j
   void _controller
   return rest
+}
+
+/**
+ * 校验出图 provider 实际返回的分辨率与请求 size 的宽高比是否一致。
+ * 不一致(中转忽略 size 参数)→ console.warn + logServerEvent('size-mismatch'),
+ * 供事后 grep 定位。解析不出尺寸 / size 串非法 → 静默跳过,绝不阻断落库。
+ */
+function verifyReturnedSize(
+  buffer: Buffer,
+  requestedSize: string,
+  modelUsed: string,
+  baseFields: { category: string } & Record<string, unknown>,
+  jobId: string,
+): void {
+  const dims = readImageDimensions(buffer)
+  if (!dims) return
+  const [reqW, reqH] = requestedSize.split('x').map((n) => Number(n))
+  if (!reqW || !reqH || dims.height === 0) return
+  const reqAR = reqW / reqH
+  const actAR = dims.width / dims.height
+  const arDrift = Math.abs(actAR - reqAR) / reqAR
+  if (arDrift <= SIZE_AR_TOLERANCE) return
+  console.warn(
+    `[image-gen-job ${jobId.slice(0, 8)}] size-mismatch: requested ${requestedSize} (AR ${reqAR.toFixed(3)}) but provider returned ${dims.width}x${dims.height} (AR ${actAR.toFixed(3)}, drift ${(arDrift * 100).toFixed(1)}%) — provider ignored size; image will be cropped by *-image-content object-fit:cover`,
+  )
+  logServerEvent({
+    ...baseFields,
+    event: 'size-mismatch',
+    modelUsed,
+    requestedSize,
+    actualWidth: dims.width,
+    actualHeight: dims.height,
+    requestedAR: Number(reqAR.toFixed(3)),
+    actualAR: Number(actAR.toFixed(3)),
+    arDriftPct: Number((arDrift * 100).toFixed(1)),
+  })
 }
 
 /**
@@ -308,6 +345,14 @@ async function _runImageJobInner(jobId: string, deps: RunImageJobDeps): Promise<
     }
 
     const buffer = Buffer.from(gen.b64, 'base64')
+
+    // 落库前校验实际返回分辨率。出图工具按模板 imageGenSize 请求(如 1280x624=2.051:1,
+    // 贴合 *-image-content layout 的 body 区),但部分出图中转不认 size 参数,会按自己的
+    // 默认比例返回(2026-07 实测生产把请求按 16:9 返 1672x941=1.777:1)。AR 与请求不符
+    // 会被 layout 的 object-fit:cover 静默裁切(1.777 塞 2.051 上下各裁 ~6.7%)。命中即
+    // 落 size-mismatch,grep 就能定位哪家 provider / baseUrl 忽略了尺寸。校验失败不阻断落库。
+    verifyReturnedSize(buffer, job.size, gen.modelUsed, baseFields, jobId)
+
     const asset = await deps.createAsset({
       deckId: job.deckId,
       userId: job.userId,
