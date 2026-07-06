@@ -19,6 +19,7 @@ import { __setMasterKeyGetterForTesting } from '../src/crypto/apikey.js'
 import { encryptApiKey } from '../src/crypto/apikey.js'
 import { setImageLlmSettings } from '../src/db/image-llm-settings.js'
 import { getDb, users, deckAssets } from '../src/db/index.js'
+import { readImageDimensions } from '../src/llm/image-dimensions.js'
 import {
   generateMoodBoard,
   MoodBoardGenError,
@@ -30,8 +31,19 @@ import {
 useTestDb()
 
 const FIXED_KEY = Buffer.alloc(32, 0x4f)
-const TINY_PNG_B64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+/** 造指定尺寸的合法 PNG 头 → base64(mood-board 现校验候选 AR,fake 必须给对比例) */
+function pngB64(w: number, h: number): string {
+  const b = Buffer.alloc(33)
+  b.writeUInt32BE(0x89504e47, 0)
+  b.writeUInt32BE(0x0d0a1a0a, 4)
+  b.writeUInt32BE(13, 8)
+  b.write('IHDR', 12, 'ascii')
+  b.writeUInt32BE(w, 16)
+  b.writeUInt32BE(h, 20)
+  return b.toString('base64')
+}
+/** 默认模板 imageGenSize = 1280x624(AR 2.051),与请求一致 → 不触发重抽 */
+const SIZED_PNG_B64 = pngB64(1280, 624)
 
 const VALID_3_SAMPLES = JSON.stringify({
   samples: [
@@ -76,7 +88,7 @@ async function seedMainLlmKey(userId: number): Promise<void> {
 
 function makeFakeGenerateImage(): ReturnType<typeof vi.fn> {
   return vi.fn(async () => ({
-    b64: TINY_PNG_B64,
+    b64: SIZED_PNG_B64,
     modelUsed: 'gpt-image-2',
     pathTaken: 'B' as const,
   }))
@@ -120,6 +132,78 @@ describe('generateMoodBoard happy path', () => {
     expect(llmFake).toHaveBeenCalledTimes(1)
     // 出图被并发调 3 次
     expect(imgFake).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('generateMoodBoard 候选尺寸校验重抽', () => {
+  it('中转首次返错比例(16:9)→ 重抽 → 落库的是修正后 2.051 图', async () => {
+    const { user } = await createLoggedInUser('sizeretry@a.com')
+    const { deck } = await createDeckDirect(user.id)
+    await seedMainLlmKey(user.id)
+    await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
+
+    // 每个 prompt 首次返 16:9(1672x941),重抽第二次返对 2.051(1280x624)
+    const seen = new Map<string, number>()
+    const imgFake = vi.fn(async (input: { prompt: string }) => {
+      const n = (seen.get(input.prompt) ?? 0) + 1
+      seen.set(input.prompt, n)
+      return {
+        b64: n === 1 ? pngB64(1672, 941) : pngB64(1280, 624),
+        modelUsed: 'gpt-image-2',
+        pathTaken: 'B' as const,
+      }
+    })
+    __setMainLlmCallerForTesting(async () => VALID_3_SAMPLES)
+    __setGenerateImageForMoodBoardTesting(imgFake)
+
+    const out = await generateMoodBoard({
+      deckId: deck.id,
+      userId: user.id,
+      deckContent: '# x',
+      templateId: deck.templateId,
+    })
+
+    expect(out.candidates).toHaveLength(3)
+    // 每个候选重抽一次 → 3 候选 × 2 次 = 6
+    expect(imgFake).toHaveBeenCalledTimes(6)
+    // 落库的 3 张必是修正后的 1280x624,而非首次的 16:9
+    const rows = await getDb()
+      .select({ data: deckAssets.data })
+      .from(deckAssets)
+      .where(eq(deckAssets.deckId, deck.id))
+    expect(rows).toHaveLength(3)
+    for (const r of rows) {
+      expect(readImageDimensions(r.data as Buffer)).toEqual({
+        width: 1280,
+        height: 624,
+        format: 'png',
+      })
+    }
+  })
+
+  it('中转始终返错比例 → 重抽用尽后接受(contain 兜底),不抛错', async () => {
+    const { user } = await createLoggedInUser('sizegiveup@a.com')
+    const { deck } = await createDeckDirect(user.id)
+    await seedMainLlmKey(user.id)
+    await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
+
+    const imgFake = vi.fn(async () => ({
+      b64: pngB64(1672, 941),
+      modelUsed: 'gpt-image-2',
+      pathTaken: 'B' as const,
+    }))
+    __setMainLlmCallerForTesting(async () => VALID_3_SAMPLES)
+    __setGenerateImageForMoodBoardTesting(imgFake)
+
+    const out = await generateMoodBoard({
+      deckId: deck.id,
+      userId: user.id,
+      deckContent: '# x',
+      templateId: deck.templateId,
+    })
+    expect(out.candidates).toHaveLength(3)
+    // 每个候选重抽到上限 2 次 → 3 × 2 = 6,然后接受错图
+    expect(imgFake).toHaveBeenCalledTimes(6)
   })
 })
 
@@ -257,7 +341,7 @@ describe('generateMoodBoard error paths', () => {
     __setGenerateImageForMoodBoardTesting(async () => {
       call++
       if (call === 3) throw new Error('OpenAI 5xx')
-      return { b64: TINY_PNG_B64, modelUsed: 'gpt-image-2', pathTaken: 'B' as const }
+      return { b64: SIZED_PNG_B64, modelUsed: 'gpt-image-2', pathTaken: 'B' as const }
     })
 
     await expect(

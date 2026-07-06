@@ -18,6 +18,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { generateImage as defaultGenerateImage } from '../llm/openai-image.js'
 import type { ImageGenInput, ImageGenOutput } from '../llm/openai-image.js'
+import { readImageDimensions, SIZE_AR_TOLERANCE } from '../llm/image-dimensions.js'
 import { acquireImageSlot } from '../middleware/image-semaphore.js'
 import { acquireLlmSlot } from '../middleware/llm-semaphore.js'
 import { loadUserLlmSettings, resolveUpstream } from '../prompts/rewriteForTemplate.js'
@@ -74,6 +75,62 @@ function resolveMoodBoardSize(templateId: string): string {
   const manifest = getManifest(templateId)
   const cfg = manifest?.imageGenSize ?? MOOD_BOARD_FALLBACK_SIZE
   return `${cfg.width}x${cfg.height}`
+}
+
+/** 候选/锚图出图的重抽上限(含首次) */
+const MOOD_BOARD_MAX_ATTEMPTS = 2
+
+/**
+ * 出图 + 尺寸校验重抽(2026-07 生产 dogfood)。
+ *
+ * 中转偶发不按请求 size 返图(生产 deck#30 实测:请求 1280x624 却返 1536x1024=1.5)。
+ * mood-board 候选被用户选中即成锚图,而 hybrid 出图**比例跟着锚图走**(生产验证:锚图 2.051
+ * → 出图 2.051 满铺;锚图 1.5 → 出图全 16:9 被裁)。故锚图尺寸必须正,否则整批内容页跑偏。
+ *
+ * 出图后用 readImageDimensions 校验 AR,与请求 size 差 > SIZE_AR_TOLERANCE 就重抽一次;
+ * 用尽仍不符则接受(*-image-content 的 object-fit:contain 兜底整图显示)并落 giveup 日志。
+ * 只对「尺寸不符」重抽;imageGen 抛错(取消/5xx)直接向上传播,不在此吞。
+ */
+async function generateSizedImage(
+  imageGen: (input: ImageGenInput) => Promise<ImageGenOutput>,
+  input: ImageGenInput,
+  expectedSize: string,
+  ctx: { deckId: number; userId: number; style: string },
+): Promise<ImageGenOutput> {
+  const [rw, rh] = expectedSize.split('x').map((n) => Number(n))
+  let out: ImageGenOutput
+  for (let attempt = 1; ; attempt++) {
+    out = await imageGen(input)
+    const dims = readImageDimensions(Buffer.from(out.b64, 'base64'))
+    if (!dims || !rw || !rh || dims.height === 0) return out // 无法校验 → 接受
+    const drift = Math.abs(dims.width / dims.height - rw / rh) / (rw / rh)
+    if (drift <= SIZE_AR_TOLERANCE) return out // 比例匹配 → 用它
+    if (attempt >= MOOD_BOARD_MAX_ATTEMPTS) {
+      logServerEvent({
+        category: 'mood-board',
+        event: 'anchor-size-giveup',
+        deckId: ctx.deckId,
+        userId: ctx.userId,
+        style: ctx.style,
+        requestedSize: expectedSize,
+        actualWidth: dims.width,
+        actualHeight: dims.height,
+        attempts: attempt,
+      })
+      return out // 用尽仍不符 → 接受,contain 兜底显示
+    }
+    logServerEvent({
+      category: 'mood-board',
+      event: 'anchor-size-retry',
+      deckId: ctx.deckId,
+      userId: ctx.userId,
+      style: ctx.style,
+      attempt,
+      requestedSize: expectedSize,
+      actualWidth: dims.width,
+      actualHeight: dims.height,
+    })
+  }
 }
 
 export interface GenerateMoodBoardOutput {
@@ -331,17 +388,22 @@ export async function generateMoodBoard(
     samples.map(async (sample): Promise<ImageOutcome> => {
       const release = await acquireImageSlot(input.userId)
       try {
-        const out = await imageGen({
-          prompt: sample.prompt,
-          // Phase 11.8 dogfood:size 跟模板的 imageGenSize 同源,确保用户挑的 anchor
-          // 跟后续正式生图比例一致。OpenAI gpt-image-2 size 约束:16 倍数 + ratio
-          // ≤3:1 + 像素数 ≥ 655360,由 manifest schema 校验保证。
-          size: moodBoardSize,
-          signal: ctrl.signal,
-          apiKey: imageSettings.apiKey,
-          baseUrl: imageSettings.baseUrl,
-          primaryModel: imageSettings.model,
-        })
+        // Phase 11.8 dogfood:size 跟模板的 imageGenSize 同源,确保用户挑的 anchor
+        // 跟后续正式生图比例一致。2026-07:中转偶发不认 size,故出图后校验 AR 不符则重抽
+        // (generateSizedImage),避免锚图比例错导致整批内容页跑偏(生产 deck#30 教训)。
+        const out = await generateSizedImage(
+          imageGen,
+          {
+            prompt: sample.prompt,
+            size: moodBoardSize,
+            signal: ctrl.signal,
+            apiKey: imageSettings.apiKey,
+            baseUrl: imageSettings.baseUrl,
+            primaryModel: imageSettings.model,
+          },
+          moodBoardSize,
+          { deckId: input.deckId, userId: input.userId, style: sample.style },
+        )
         const bytes = Buffer.from(out.b64, 'base64')
         const { id } = await createAsset({
           deckId: input.deckId,
