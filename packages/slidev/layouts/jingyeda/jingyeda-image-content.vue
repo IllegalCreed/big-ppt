@@ -6,7 +6,7 @@
   frontmatter 字段:
     heading?  : string —— 页标题(蓝底白字,经 LJydHeader)
     imageSrc  : string —— /api/assets/<uuid>(agent 绝对路径,不要经 templateAsset())
-    imageFit? : 'cover' | 'contain' —— 默认 cover
+    imageFit? : 'cover' | 'contain' —— 默认 contain(整图必显,比例不符留边不裁);hero 满铺可显式传 cover
 -->
 <script setup lang="ts">
 import { templateAsset } from '../../composables/useTemplateAsset'
@@ -30,7 +30,7 @@ defineProps<{
           :src="imageSrc"
           :alt="heading || ''"
           class="jyd-image-content-img"
-          :class="`jyd-image-content-img--${imageFit || 'cover'}`"
+          :class="`jyd-image-content-img--${imageFit || 'contain'}`"
           decoding="async"
           loading="eager"
         />

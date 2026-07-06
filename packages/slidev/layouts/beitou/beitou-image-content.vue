@@ -6,7 +6,9 @@
   frontmatter 字段:
     heading?  : string —— 页标题(红色,40px,与 beitou-content 一致)
     imageSrc  : string —— /api/assets/<uuid>(agent 绝对路径,不要经 templateAsset())
-    imageFit? : 'cover' | 'contain' —— 默认 cover(AI hero 图);diagram/screenshot 用 contain
+    imageFit? : 'cover' | 'contain' —— 默认 contain(整图必显,比例不符留边不裁);hero 满铺可显式传 cover
+                注:出图尺寸(manifest.imageGenSize)匹配 body 区时 contain≡cover 满铺无边;
+                仅当 provider 返回比例不符(如中转无视 size 按 16:9 返图)才留边——此时留边 ≫ 裁掉内容
 -->
 <script setup lang="ts">
 defineProps<{
@@ -32,7 +34,7 @@ defineProps<{
           :src="imageSrc"
           :alt="heading || ''"
           class="image-content-img"
-          :class="`image-content-img--${imageFit || 'cover'}`"
+          :class="`image-content-img--${imageFit || 'contain'}`"
           decoding="async"
           loading="eager"
         />
