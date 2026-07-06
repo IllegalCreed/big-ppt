@@ -57,7 +57,7 @@ const regenerateTooltip = computed(() => {
 const progressHint = computed(() => {
   if (!loading.value) return ''
   if (candidates.value.length === 0) {
-    return '正在为您准备 3 张样张,约 30-60 秒(分析大纲 → 主 LLM 出 prompt → 并发出图)…'
+    return '正在为您准备 3 张样张,约 30-60 秒(分析大纲 → 主 LLM 出 prompt → 并发出图)…不想等可点下方「暂不指定风格」直接用默认风格生成。'
   }
   return '正在更新…'
 })
@@ -141,12 +141,17 @@ const modalSubtitle = computed(() => {
         <div class="modal-footer">
           <span class="remaining-label">{{ remainingLabel }}</span>
           <div class="modal-footer__btns">
+            <!--
+              skip 模式(未选 anchor)即使生成中也可点:用户想直接走默认风格兜底,不必等 3 张
+              样张生成完(约几分钟)。skip() 无 loading 守卫,点了即 anchor_skipped=true 解锁
+              后端 polling LLM。clear 模式(已选 anchor)生成中仍禁用,防清除操作双击。
+            -->
             <button
               type="button"
               class="btn-primary-action"
               data-primary-action
               :data-mode="primaryActionMode"
-              :disabled="loading"
+              :disabled="loading && primaryActionMode !== 'skip'"
               @click="triggerPrimaryAction"
             >
               {{ primaryButtonLabel }}
