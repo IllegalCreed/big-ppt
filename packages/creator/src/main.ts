@@ -1,6 +1,4 @@
 import { createApp } from 'vue'
-import Antd from 'antdv-next'
-import XProvider from '@antdv-next/x'
 import 'antdv-next/dist/reset.css'
 import './styles/tokens.css'
 // Phase 10.5：把 slidev 包的两套模板 tokens.css（--bt-* / --jyd-* / --ld-*）
@@ -11,16 +9,17 @@ import '@big-ppt/slidev/global.css'
 import App from './components/App.vue'
 import router from './router'
 import { installErrorHandlers } from './composables/logger'
-import { registerDeckRendererComponents } from './deck-renderer/register-layouts'
 
 const app = createApp(App)
 installErrorHandlers(app)
-app.use(Antd)
-app.use(XProvider)
+
+// DeckRenderer 的 layouts / 图表组件只在编辑器与视觉基线路由使用。
+// 路由进入前再加载注册表，避免登录页和 deck 列表首屏携带 Chart.js 等重依赖。
+router.beforeEach(async (to) => {
+  if (!to.meta.requiresDeckRenderer) return
+  const { registerDeckRendererComponents } = await import('./deck-renderer/register-layouts')
+  registerDeckRendererComponents(app)
+})
+
 app.use(router)
-// Phase 10.5：unplugin-vue-components 只能解析 .vue 模板里的字面量标签
-// （如 layouts 内部的 <LBeitouCoverLogo />），对 DeckRenderer 的
-// `<component :is="动态字符串">` + body markdown 运行时编译出的 `<TwoCol>`
-// 完全看不见。layouts + 公共组件必须额外手工 app.component() 全局注册。
-registerDeckRendererComponents(app)
 app.mount('#app')

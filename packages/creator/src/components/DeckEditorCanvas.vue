@@ -1,5 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  defineComponent,
+  h,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  provide,
+  ref,
+  watch,
+} from 'vue'
 import {
   ArrowLeft,
   Download,
@@ -11,29 +22,32 @@ import {
   Settings,
   Sparkles,
 } from 'lucide-vue-next'
-import ChatPanel from './ChatPanel.vue'
 import SlidePreview from './SlidePreview.vue'
-import SettingsModal from './SettingsModal.vue'
-import TemplatePickerModal from './TemplatePickerModal.vue'
-import UndoToast from './UndoToast.vue'
-import VersionTimeline from './VersionTimeline.vue'
-import AssetManagerPanel from './AssetManagerPanel.vue'
-import ExportModal from './ExportModal.vue'
-import AnchorPickerModal from './AnchorPickerModal.vue'
 import { useMoodBoardPicker } from '../composables/useMoodBoardPicker'
 import { api } from '../api/client'
-import {
-  useDecks,
-  type Deck,
-  type DeckChat,
-  type DeckVersion,
-} from '../composables/useDecks'
+import { useDecks, type Deck, type DeckChat, type DeckVersion } from '../composables/useDecks'
 import { DECK_CHAT_CONTEXT, type DeckChatContext } from '../composables/useAIChat'
 // Phase 12.7：persistChat 删了 —— backend agent loop 写 deck_chats，listChats 由
 // useAIChat 内部 refresh。这里仍 listChats prefill 初始历史给 ChatPanel 挂载用。
 import { useSlideStore } from '../composables/useSlideStore'
 import { useAuth } from '../composables/useAuth'
 import { ApiError } from '../api/client'
+
+const SettingsModal = defineAsyncComponent(() => import('./SettingsModal.vue'))
+const ChatPanel = defineAsyncComponent({
+  loader: () => import('./ChatPanel.vue'),
+  loadingComponent: defineComponent({
+    name: 'ChatPanelLoading',
+    setup: () => () => h('div', { class: 'loading-inline' }, '加载对话面板...'),
+  }),
+  delay: 0,
+})
+const TemplatePickerModal = defineAsyncComponent(() => import('./TemplatePickerModal.vue'))
+const VersionTimeline = defineAsyncComponent(() => import('./VersionTimeline.vue'))
+const AssetManagerPanel = defineAsyncComponent(() => import('./AssetManagerPanel.vue'))
+const ExportModal = defineAsyncComponent(() => import('./ExportModal.vue'))
+const AnchorPickerModal = defineAsyncComponent(() => import('./AnchorPickerModal.vue'))
+const UndoToast = defineAsyncComponent(() => import('./UndoToast.vue'))
 
 const props = defineProps<{
   deck: Deck
@@ -141,7 +155,10 @@ async function loadInitialChats() {
   try {
     const chats = await listChats(props.deck.id)
     chatCtx.initialHistory = chats
-      .filter((c): c is DeckChat & { role: 'user' | 'assistant' } => c.role === 'user' || c.role === 'assistant')
+      .filter(
+        (c): c is DeckChat & { role: 'user' | 'assistant' } =>
+          c.role === 'user' || c.role === 'assistant',
+      )
       .map((c) => ({ role: c.role, content: c.content }))
   } finally {
     historyLoaded.value = true
@@ -198,11 +215,13 @@ const exportDeckPayload = computed(() => ({
 }))
 
 // ── UndoToast + VersionTimeline 高亮 ──────────────────────────────────────
-const undoToast = ref<{ visible: boolean; templateName: string; snapshotVersionId: number | null }>({
-  visible: false,
-  templateName: '',
-  snapshotVersionId: null,
-})
+const undoToast = ref<{ visible: boolean; templateName: string; snapshotVersionId: number | null }>(
+  {
+    visible: false,
+    templateName: '',
+    snapshotVersionId: null,
+  },
+)
 const highlightVersionId = ref<number | null>(null)
 let highlightTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -259,13 +278,16 @@ async function onLogout() {
 // modal 弹出与 LLM 调 generate_slide_image 的时序竞赛中,用户选完 anchor 的
 // 30-60s 区间内大部分图都能拿到 anchor。
 const moodBoardPicker = useMoodBoardPicker()
+const isAnchorPickerOpen = moodBoardPicker.open
 const hasImageLlm = ref(false)
 const hasMainLlm = ref(false)
 
 async function probeLlmSettings(): Promise<void> {
   try {
     const [img, main] = await Promise.all([
-      api.get<{ hasApiKey: boolean }>('/api/image-llm-settings').catch(() => ({ hasApiKey: false })),
+      api
+        .get<{ hasApiKey: boolean }>('/api/image-llm-settings')
+        .catch(() => ({ hasApiKey: false })),
       api.get<{ hasApiKey: boolean }>('/api/auth/llm-settings').catch(() => ({ hasApiKey: false })),
     ])
     hasImageLlm.value = !!img.hasApiKey
@@ -442,10 +464,11 @@ onUnmounted(() => {
       <div v-if="isDragging" class="drag-overlay" />
     </main>
 
-    <SettingsModal v-model:open="showSettings" />
-    <AssetManagerPanel v-model:open="showAssetsPanel" />
-    <ExportModal v-model:open="showExport" :deck="exportDeckPayload" />
+    <SettingsModal v-if="showSettings" v-model:open="showSettings" />
+    <AssetManagerPanel v-if="showAssetsPanel" v-model:open="showAssetsPanel" />
+    <ExportModal v-if="showExport" v-model:open="showExport" :deck="exportDeckPayload" />
     <TemplatePickerModal
+      v-if="showTemplatePicker"
       v-model:open="showTemplatePicker"
       mode="switch"
       :deck-id="deck.id"
@@ -453,6 +476,7 @@ onUnmounted(() => {
       @switched="onTemplateSwitched"
     />
     <UndoToast
+      v-if="undoToast.visible"
       :visible="undoToast.visible"
       :template-name="undoToast.templateName"
       :snapshot-version-id="undoToast.snapshotVersionId"
@@ -460,6 +484,7 @@ onUnmounted(() => {
       @undo="onUndoFromToast"
     />
     <VersionTimeline
+      v-if="showTimeline"
       :deck-id="deck.id"
       :current-version-id="currentVersion?.id ?? null"
       :highlight-version-id="highlightVersionId"
@@ -467,7 +492,7 @@ onUnmounted(() => {
       @close="showTimeline = false"
       @restored="onTimelineRestored"
     />
-    <AnchorPickerModal />
+    <AnchorPickerModal v-if="isAnchorPickerOpen" />
   </div>
 </template>
 
@@ -562,7 +587,9 @@ onUnmounted(() => {
   background: var(--color-bg-surface);
   outline: none;
   box-shadow: 0 0 0 3px var(--color-accent-soft);
-  transition: opacity var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
 }
 
 .deck-title-input.is-saving {
@@ -571,12 +598,12 @@ onUnmounted(() => {
 }
 
 .deck-title-input.is-error {
-  border-color: #B4472C;
+  border-color: #b4472c;
   box-shadow: 0 0 0 3px rgba(180, 71, 44, 0.14);
 }
 
 .title-error {
-  color: #B4472C;
+  color: #b4472c;
 }
 
 .brand-text .deck-subtitle {

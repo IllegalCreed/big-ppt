@@ -8,6 +8,10 @@ import AutoImport from 'unplugin-auto-import/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    // 给 scripts/check-bundle.mjs 提供结构化 chunk 图，避免靠哈希文件名猜入口依赖。
+    manifest: true,
+  },
   plugins: [
     vue(),
     vueDevTools(),

@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { FileText, LogOut, Plus, Sparkles, Trash2, Upload } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth'
 import { useDecks, type Deck } from '../composables/useDecks'
 import { useImport } from '../composables/useImport'
 import { ApiError } from '../api/client'
-import TemplatePickerModal from '../components/TemplatePickerModal.vue'
+
+const TemplatePickerModal = defineAsyncComponent(
+  () => import('../components/TemplatePickerModal.vue'),
+)
 
 const router = useRouter()
 const { currentUser, logout } = useAuth()
@@ -112,7 +115,13 @@ onMounted(refresh)
       </div>
       <div class="topbar-actions">
         <span v-if="currentUser" class="user-email">{{ currentUser.email }}</span>
-        <button type="button" class="icon-btn" title="退出登录" aria-label="退出登录" @click="onLogout">
+        <button
+          type="button"
+          class="icon-btn"
+          title="退出登录"
+          aria-label="退出登录"
+          @click="onLogout"
+        >
           <LogOut :size="18" :stroke-width="1.8" />
         </button>
       </div>
@@ -172,10 +181,20 @@ onMounted(refresh)
           </div>
           <div class="deck-meta">更新于 {{ formatDate(deck.updatedAt) }}</div>
           <div class="deck-actions" @click.stop>
-            <button type="button" class="card-action" title="重命名" @click="onRename(deck, $event)">
+            <button
+              type="button"
+              class="card-action"
+              title="重命名"
+              @click="onRename(deck, $event)"
+            >
               重命名
             </button>
-            <button type="button" class="card-action danger" title="删除" @click="onDelete(deck, $event)">
+            <button
+              type="button"
+              class="card-action danger"
+              title="删除"
+              @click="onDelete(deck, $event)"
+            >
               <Trash2 :size="14" :stroke-width="1.8" />
             </button>
           </div>
@@ -184,6 +203,7 @@ onMounted(refresh)
     </main>
 
     <TemplatePickerModal
+      v-if="showPicker"
       v-model:open="showPicker"
       mode="create"
       @created="onPickerCreated"
@@ -318,7 +338,7 @@ onMounted(refresh)
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #A94E2E;
+  background: #a94e2e;
 }
 
 .btn-primary:disabled {
@@ -340,7 +360,9 @@ onMounted(refresh)
   font-weight: var(--fw-medium);
   font-family: inherit;
   cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -359,7 +381,7 @@ onMounted(refresh)
   background: rgba(180, 71, 44, 0.08);
   border: 1px solid rgba(180, 71, 44, 0.25);
   border-radius: var(--radius-md);
-  color: #B4472C;
+  color: #b4472c;
   font-size: var(--fs-sm);
 }
 
@@ -401,7 +423,9 @@ onMounted(refresh)
   border-radius: var(--radius-lg);
   padding: var(--space-4);
   cursor: pointer;
-  transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -477,7 +501,7 @@ onMounted(refresh)
 }
 
 .card-action.danger:hover {
-  border-color: #B4472C;
-  color: #B4472C;
+  border-color: #b4472c;
+  color: #b4472c;
 }
 </style>

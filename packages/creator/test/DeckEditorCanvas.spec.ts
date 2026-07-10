@@ -4,15 +4,18 @@ import { describe, expect, it, vi } from 'vitest'
 // 跑 Canvas 的 title 测试不需要真渲染它们，统一 vi.mock 成 noop。
 // vi.mock 会被 vitest 提升到文件顶部。
 vi.mock('../src/components/SettingsModal.vue', () => ({
+  __esModule: true,
   default: { name: 'SettingsModal', render: () => null, props: ['open'] },
 }))
 vi.mock('../src/components/ChatPanel.vue', () => ({
+  __esModule: true,
   default: { name: 'ChatPanel', render: () => null },
 }))
 vi.mock('../src/components/SlidePreview.vue', () => ({
   default: { name: 'SlidePreview', render: () => null },
 }))
 vi.mock('../src/components/VersionTimeline.vue', () => ({
+  __esModule: true,
   default: {
     name: 'VersionTimeline',
     render: () => null,

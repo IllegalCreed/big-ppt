@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { createApp, h } from 'vue'
 import { registerDeckRendererComponents } from './register-layouts'
 
@@ -37,6 +37,22 @@ describe('registerDeckRendererComponents', () => {
     ]
     for (const name of names) {
       expect(app.component(name)).toBeDefined()
+    }
+  })
+
+  it('同一 app 重复调用时保持幂等', () => {
+    const app = createApp({ render: () => h('div') })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    try {
+      registerDeckRendererComponents(app)
+      registerDeckRendererComponents(app)
+
+      expect(warn).not.toHaveBeenCalled()
+      expect(app.component('beitou-cover')).toBeDefined()
+      expect(app.component('BarChart')).toBeDefined()
+    } finally {
+      warn.mockRestore()
     }
   })
 })

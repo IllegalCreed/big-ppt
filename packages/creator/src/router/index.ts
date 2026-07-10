@@ -25,7 +25,7 @@ const router = createRouter({
       path: '/decks/:id(\\d+)',
       name: 'deck-editor',
       component: () => import('../pages/DeckEditorPage.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiresDeckRenderer: true },
     },
     {
       path: '/login',
@@ -45,6 +45,7 @@ const router = createRouter({
             path: '/_visual/:template/:layout',
             name: 'visual-baseline',
             component: () => import('../pages/VisualBaselinePage.vue'),
+            meta: { requiresDeckRenderer: true },
           },
         ]
       : []),

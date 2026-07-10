@@ -28,10 +28,12 @@
  *   也是 composable 内直调依赖);将来重构可统一抽到 `api/archive.ts`。
  */
 import { ref } from 'vue'
-import { capturePages } from '../export/capture-pages'
-import { pngsToPdf } from '../export/to-pdf'
-import { pngsToPptx } from '../export/to-pptx'
-import { pngsToZip } from '../export/to-png-zip'
+import {
+  capturePagesLazy,
+  pngsToPdfLazy,
+  pngsToPptxLazy,
+  pngsToZipLazy,
+} from '../export/lazy-export'
 import { triggerDownload } from '../export/download'
 
 export type ExportFormat = 'pdf' | 'png-zip' | 'pptx' | 'lumideck'
@@ -95,7 +97,7 @@ export function useExport() {
     progress.value = { done: 0, total: deck.totalPages }
 
     try {
-      const pngs = await capturePages({
+      const pngs = await capturePagesLazy({
         deckId: deck.id,
         markdown: deck.markdown,
         templateId: deck.templateId,
@@ -108,13 +110,13 @@ export function useExport() {
       let blob: Blob
       let ext: string
       if (format === 'pdf') {
-        blob = await pngsToPdf(pngs)
+        blob = await pngsToPdfLazy(pngs)
         ext = 'pdf'
       } else if (format === 'pptx') {
-        blob = await pngsToPptx(pngs)
+        blob = await pngsToPptxLazy(pngs)
         ext = 'pptx'
       } else {
-        blob = await pngsToZip(pngs)
+        blob = await pngsToZipLazy(pngs)
         ext = 'zip'
       }
 

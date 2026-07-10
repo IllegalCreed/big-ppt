@@ -93,11 +93,16 @@ const commonComponents = {
   PieChart,
 } as const
 
+const registeredApps = new WeakSet<App>()
+
 export function registerDeckRendererComponents(app: App): void {
+  if (registeredApps.has(app)) return
+
   for (const [name, component] of Object.entries(layouts)) {
     app.component(name, component)
   }
   for (const [name, component] of Object.entries(commonComponents)) {
     app.component(name, component)
   }
+  registeredApps.add(app)
 }

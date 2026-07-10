@@ -9,31 +9,22 @@
  * - progress 在 capture-pages onProgress 期间更新
  * - exporting/progress 在 finally 复位
  *
- * vi.mock 顶层 factory + static import:CLAUDE.md vitest 4 已知坑(dynamic
- * import mock 不稳)。
+ * 动态加载边界统一 mock lazy-export 模块，测试仍保持顶层 vi.mock + static import，
+ * 避开 Vitest 4 多次 dynamic import mock 不稳定的问题。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 // ── mocks ────────────────────────────────────────────────────────────────
 const capturePagesMock = vi.fn()
-vi.mock('../../export/capture-pages', () => ({
-  capturePages: (opts: unknown) => capturePagesMock(opts),
-}))
-
 const pngsToPdfMock = vi.fn()
-vi.mock('../../export/to-pdf', () => ({
-  pngsToPdf: (pngs: unknown) => pngsToPdfMock(pngs),
-}))
-
 const pngsToPptxMock = vi.fn()
-vi.mock('../../export/to-pptx', () => ({
-  pngsToPptx: (pngs: unknown) => pngsToPptxMock(pngs),
-}))
-
 const pngsToZipMock = vi.fn()
-vi.mock('../../export/to-png-zip', () => ({
-  pngsToZip: (pngs: unknown) => pngsToZipMock(pngs),
+vi.mock('../../export/lazy-export', () => ({
+  capturePagesLazy: (opts: unknown) => capturePagesMock(opts),
+  pngsToPdfLazy: (pngs: unknown) => pngsToPdfMock(pngs),
+  pngsToPptxLazy: (pngs: unknown) => pngsToPptxMock(pngs),
+  pngsToZipLazy: (pngs: unknown) => pngsToZipMock(pngs),
 }))
 
 const triggerDownloadMock = vi.fn()
