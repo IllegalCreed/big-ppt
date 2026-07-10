@@ -40,6 +40,12 @@ const router = createRouter({
       meta: { requiresDeckRenderer: true },
     },
     {
+      path: '/live/:token',
+      name: 'live-presentation',
+      component: () => import('../pages/LivePresentationPage.vue'),
+      meta: { requiresDeckRenderer: true },
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('../pages/LoginPage.vue'),
@@ -72,7 +78,12 @@ let bootstrapped = false
 
 router.beforeEach(async (to) => {
   // 视觉入口不依赖 agent；公开分享也不应被 /auth/me 的网络状态阻塞。
-  if (to.name === 'visual-baseline' || to.name === 'share-presentation') return
+  if (
+    to.name === 'visual-baseline' ||
+    to.name === 'share-presentation' ||
+    to.name === 'live-presentation'
+  )
+    return
 
   const { isLoggedIn, fetchMe } = useAuth()
 

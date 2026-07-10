@@ -121,11 +121,11 @@ watch(
         class="share-modal"
         role="dialog"
         aria-modal="true"
-        :aria-label="`分享 ${deckTitle}`"
+        :aria-label="`静态分享 ${deckTitle}`"
       >
         <header class="modal-header">
           <div>
-            <h2>分享演示文稿</h2>
+            <h2>静态分享</h2>
             <p>{{ deckTitle }}</p>
           </div>
           <button

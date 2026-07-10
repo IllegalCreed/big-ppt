@@ -19,6 +19,7 @@ import {
 import { rewriteForTemplate } from '../prompts/rewriteForTemplate.js'
 import { canonicalToRow, rowToCanonical } from '../llm/chat-row.js'
 import type { CanonicalMessage, CanonicalRole } from '../llm/types.js'
+import { endOwnerDeckLivePresentation } from '../live-presentation.js'
 
 type UserVars = AuthVars
 
@@ -39,8 +40,10 @@ async function getOwnedDeck(userId: number, deckId: number) {
   const db = getDb()
   const [deck] = await db.select().from(decks).where(eq(decks.id, deckId)).limit(1)
   if (!deck) return { ok: false as const, status: 404 as const, error: 'deck 不存在' }
-  if (deck.userId !== userId) return { ok: false as const, status: 403 as const, error: '无权访问该 deck' }
-  if (deck.status === 'deleted') return { ok: false as const, status: 404 as const, error: 'deck 已删除' }
+  if (deck.userId !== userId)
+    return { ok: false as const, status: 403 as const, error: '无权访问该 deck' }
+  if (deck.status === 'deleted')
+    return { ok: false as const, status: 404 as const, error: 'deck 已删除' }
   return { ok: true as const, deck }
 }
 
@@ -109,12 +112,14 @@ decksRoute.post('/decks', async (c) => {
   try {
     createdId = await db.transaction(async (tx) => {
       await tx.insert(decks).values({ userId: user.id, title, templateId })
-      const created = (await tx
-        .select({ id: decks.id })
-        .from(decks)
-        .where(and(eq(decks.userId, user.id), eq(decks.title, title)))
-        .orderBy(desc(decks.id))
-        .limit(1))[0]
+      const created = (
+        await tx
+          .select({ id: decks.id })
+          .from(decks)
+          .where(and(eq(decks.userId, user.id), eq(decks.title, title)))
+          .orderBy(desc(decks.id))
+          .limit(1)
+      )[0]
       if (!created) throw new Error('创建失败：deck 回查为空')
 
       await tx.insert(deckVersions).values({
@@ -124,12 +129,14 @@ decksRoute.post('/decks', async (c) => {
         templateId,
         authorId: user.id,
       })
-      const firstVersion = (await tx
-        .select({ id: deckVersions.id })
-        .from(deckVersions)
-        .where(eq(deckVersions.deckId, created.id))
-        .orderBy(desc(deckVersions.id))
-        .limit(1))[0]
+      const firstVersion = (
+        await tx
+          .select({ id: deckVersions.id })
+          .from(deckVersions)
+          .where(eq(deckVersions.deckId, created.id))
+          .orderBy(desc(deckVersions.id))
+          .limit(1)
+      )[0]
       if (!firstVersion) throw new Error('创建失败：version 回查为空')
 
       await tx
@@ -219,6 +226,7 @@ decksRoute.delete('/decks/:id{[0-9]+}', async (c) => {
 
   const db = getDb()
   await db.update(decks).set({ status: 'deleted' }).where(eq(decks.id, deckId))
+  endOwnerDeckLivePresentation(user.id, deckId)
   // Phase 11.5：deck 是 soft delete 不触发 FK cascade,显式清 deck_assets BLOB 行
   // 避免 DB 长期膨胀。失败不阻塞响应(asset 留库变孤儿是可恢复的)。
   try {

@@ -122,7 +122,8 @@ FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confir
    │                            └─ tool registry（本地工具 + MCP 远端工具）
    │
    └─ creator SPA 内 <DeckRenderer> 统一渲染编辑、放映、演讲者视图、导出与公开分享
-      └─ 同浏览器观众/演讲者窗口用 deckId + 随机 channel 的 BroadcastChannel 同步
+      ├─ 同浏览器观众/演讲者窗口：deckId + 随机 channel 的 BroadcastChannel
+      └─ 远程直播观众：公开 token 加载只读 payload，再用 /api/live/:token/events SSE 跟随
 ```
 
 ### 关键模块（agent）
@@ -130,7 +131,8 @@ FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confir
 - `src/app.ts`：Hono app 装配，**只做路由 + middleware**，不带启动副作用。生产入口 `src/index.ts` 交给 `@hono/node-server`；集成测靠 `app.fetch(req)` in-process 调用
 - `src/middleware/auth.ts`：`authOptional` 解 session cookie → `ctx.var.user`；`requireAuth` 闸门
 - `src/middleware/request-context.ts`：把 user/session/activeDeckId 包进 `AsyncLocalStorage`；activeDeckId 只读 `X-Deck-Id`，不从 session 隐式继承
-- `src/routes/presentation.ts`：owner presentation 契约、分享链接生命周期与 public share-scoped asset；公开响应 `no-store`，asset SQL 同时约束 slug + deckId + assetId
+- `src/routes/presentation.ts`：owner presentation 契约、静态分享生命周期、直播 owner/public/SSE 与两类 public asset；公开响应 `no-store`，asset 查询必须绑定分享凭据 + deckId + assetId
+- `src/live-presentation.ts`：单进程直播 registry；每个 owner+deck 只有一个会话，随机 token、8h TTL、完整 snapshot revision、SSE listeners 与 ended tombstone。owner 写/结束必须同时匹配 userId + deckId + token；agent 重启会结束所有直播
 - `src/tools/`：本地工具注册表；命名规范 `mcp__<serverId>__<toolName>`；`switch_template` 可注入 `RewriteFn` DI 便于测试
 - `src/db/`：Drizzle schema；开发期用 `drizzle-kit push` 不写 migration
 
@@ -138,7 +140,7 @@ FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confir
 
 - `src/deck-renderer/`：Phase 10.5 起编辑器主视图。`DeckRenderer.vue` 接 markdown + templateId + currentPage prop → `parseDeck()` 切页 → `<component :is="layout">` 动态查找 layout（**手工 `app.component()` 注册**，见 `register-layouts.ts`，因为 unplugin-vue-components 看不到 `:is` 动态字符串）；body markdown 走 `compile-body.ts` 的 `marked + Vue.compile` 运行时编译让 `<TwoCol>` 等 Vue 标签解析
 - 响应式缩放：`DeckRenderer` 用 ResizeObserver 算 scale；编辑器默认封顶 960×540，放映通过 `allowUpscale` 填满受约束的 16:9 容器
-- `src/presentation/`：`PresentationViewer` / `PresenterMode` / overview / SVG drawing；窗口同步只用带随机 channel 的 `BroadcastChannel`，不落 DB、不建后端全局状态
+- `src/presentation/`：`PresentationViewer` / `PresenterMode` / overview / SVG drawing；本机双窗口走 BroadcastChannel，`LiveShareModal` 把演讲者 snapshot 节流写入 agent，`LiveAudienceViewer` 只读订阅 SSE，不暴露翻页或标注控制
 - `src/composables/useSlideStore.ts`：单例 store。`refresh()` 走 `GET /api/decks/:id` 取 currentVersion.content；`pages` / `totalPages` 复用 `parseDeck`
 
 ### 关键约定（前端）
@@ -254,6 +256,8 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - **`useSlideStore.refresh()` 走 deck-scoped 路径**：fetch `GET /api/decks/:id` 取 currentVersion.content；编辑器进入由 SlidePreview 调 `initDeck(deckId, initialContent)`
 - **所有 deck-scoped 工具与 undo/redo 请求必须带 `X-Deck-Id`**：middleware 不读 legacy `session.activeDeckId`；缺 header 直接拒绝，SQL 再校验 userId + deckId
 - **BroadcastChannel 不能发送 Vue reactive Proxy**：drawings/state 发消息前深拷成 plain object，否则真浏览器抛 `DataCloneError`；频道名必须含 deckId + 随机 channel，避免不同演讲会话串扰（[plan 33](docs/plans/33-phase16-presentation-viewer.md)）
+- **静态分享与直播分享是两套语义**：`/share/:slug` 允许访客自行翻页但不能编辑；`/live/:token` 只能跟随演讲者 page/blackout/drawings。直播 owner 更新必须带当前 token，防旧演讲者窗口覆盖后来创建的新会话；deck 删除必须同步结束直播
+- **直播 registry 是单 agent 进程内临时状态**：TTL 8h，不落 DB；PM2 reload / 部署会让直播链接失效。SSE 必须保留 nginx `proxy_buffering off` + `X-Accel-Buffering: no`，registry 必须由 `__resetLivePresentationsForTesting()` 在测试间清理
 - **body markdown 编译用 `vue/dist/vue.esm-bundler.js`**：vite alias 切到带 runtime compiler 的 Vue 构建版本（+50KB gzip），让 `marked → HTML → Vue.compile(html)` 链路能在浏览器跑（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) Task A-2）
 
 ### 测试基建
@@ -332,4 +336,4 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 
 ## 阶段进展
 
-详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–10 ✅(2026-04-27 lumideck.illegalscreed.cn 上线),Phase 11.5(AI 图片内容页 / `generate_slide_image` 工具) ✅(2026-04-30),Phase 11.6 + 11.7 ✅,Phase 10.5(Slidev 解耦 / DeckRenderer / 锁语义归位) ✅(2026-05-12,plan 25),Phase 12(多 LLM Provider 原生接口) ✅(2026-05-13,plan 26),Phase 12.5(切到 pi-ai 0.74.0) ✅(2026-05-15,plan 27),Phase 12.7(pi-agent-core 上移 backend agent runtime) ✅(2026-05-16,plan 28),Phase 13(文件上传 + 引用 + 用户级 Asset 管理) ✅(2026-05-16,plan 29),**Phase 14(导出 PDF / PNG 序列 zip / PPTX) ✅(2026-05-18,plan 30)** —— 完全 client-side(html2canvas + jsPDF + pptxgenjs browser bundle + jszip),用户浏览器内 mount 隐藏 ExportRenderer 1920×1080 截 DeckRenderer 静态视图,backend **零改动**;`waitForRenderStable` 5 条 settle(`img.complete && naturalWidth>0` + `document.fonts.ready` + animations.finished + 2×rAF + 500ms)规避 Slidev 自带 export image-onload race bug;顶栏「导出」按钮 + Modal 单选格式 + 同步进度条。Phase 13.5 MCP catalog 暂搁置(服务器资源 + vision 已由主 LLM 多模态解,见 memory `phase13.5-mcp-catalog-deferred`)。**Phase 15(归档数据包 export + import `.lumideck`) ✅(2026-05-18,plan 31)** —— backend `GET /api/decks/:id/export-archive` 拉 deck_assets BLOB + jszip STORE 压成 zip,`POST /api/decks/import` 接 multipart 100MB cap + parseArchive 6 步 validate(magic-bytes / manifest schema / templateId whitelist / asset 字节 size 匹配)+ DB transaction 4 步原子(decks INSERT → asset INSERTs new uuid → version INSERT rewrite asset url → currentVersionId UPDATE);包内 manifest.json + content.md + assets/<uuid>.<ext>;**不包** user_assets / deck_versions 历史;schemaVersion 兼容表硬编 `SUPPORTED_SCHEMA_VERSIONS=[1]` 不做 auto migration;前端编辑器导出 modal 加第 4 个 `.lumideck` radio,deck 列表页加「导入」按钮 + 隐藏 file input;round-trip E2E 真测 create+export+删原+import → 新 deck title 含「(导入)」+ asset byte-equal。**Phase 16(PresentationViewer + 公开分享 + Slidev runtime 退役) ✅(2026-07-10,plan 33)** —— 原生放映、演讲者备注/计时/黑白屏/overview/画笔与 BroadcastChannel 同步全部落地；公开分享具备过期、撤销和 share-scoped asset 隔离；生产收敛为 creator 静态站点 + 单 agent 进程。下一步:Phase 17+ Markdown 粘贴导入 + PPTX 导入。
+详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–10 ✅(2026-04-27 lumideck.illegalscreed.cn 上线),Phase 11.5(AI 图片内容页 / `generate_slide_image` 工具) ✅(2026-04-30),Phase 11.6 + 11.7 ✅,Phase 10.5(Slidev 解耦 / DeckRenderer / 锁语义归位) ✅(2026-05-12,plan 25),Phase 12(多 LLM Provider 原生接口) ✅(2026-05-13,plan 26),Phase 12.5(切到 pi-ai 0.74.0) ✅(2026-05-15,plan 27),Phase 12.7(pi-agent-core 上移 backend agent runtime) ✅(2026-05-16,plan 28),Phase 13(文件上传 + 引用 + 用户级 Asset 管理) ✅(2026-05-16,plan 29),**Phase 14(导出 PDF / PNG 序列 zip / PPTX) ✅(2026-05-18,plan 30)** —— 完全 client-side(html2canvas + jsPDF + pptxgenjs browser bundle + jszip),用户浏览器内 mount 隐藏 ExportRenderer 1920×1080 截 DeckRenderer 静态视图,backend **零改动**;`waitForRenderStable` 5 条 settle(`img.complete && naturalWidth>0` + `document.fonts.ready` + animations.finished + 2×rAF + 500ms)规避 Slidev 自带 export image-onload race bug;顶栏「导出」按钮 + Modal 单选格式 + 同步进度条。Phase 13.5 MCP catalog 暂搁置(服务器资源 + vision 已由主 LLM 多模态解,见 memory `phase13.5-mcp-catalog-deferred`)。**Phase 15(归档数据包 export + import `.lumideck`) ✅(2026-05-18,plan 31)** —— backend `GET /api/decks/:id/export-archive` 拉 deck_assets BLOB + jszip STORE 压成 zip,`POST /api/decks/import` 接 multipart 100MB cap + parseArchive 6 步 validate(magic-bytes / manifest schema / templateId whitelist / asset 字节 size 匹配)+ DB transaction 4 步原子(decks INSERT → asset INSERTs new uuid → version INSERT rewrite asset url → currentVersionId UPDATE);包内 manifest.json + content.md + assets/<uuid>.<ext>;**不包** user_assets / deck_versions 历史;schemaVersion 兼容表硬编 `SUPPORTED_SCHEMA_VERSIONS=[1]` 不做 auto migration;前端编辑器导出 modal 加第 4 个 `.lumideck` radio,deck 列表页加「导入」按钮 + 隐藏 file input;round-trip E2E 真测 create+export+删原+import → 新 deck title 含「(导入)」+ asset byte-equal。**Phase 16(PresentationViewer + 静态/直播分享 + Slidev runtime 退役) ✅(2026-07-10,plan 33)** —— 原生放映、演讲者备注/计时/黑白屏/overview/画笔与本机 BroadcastChannel 同步全部落地；静态分享允许访客自行翻页且具备过期/撤销与 asset 隔离，直播分享通过 token + SSE 单向同步远程只读观众；生产收敛为 creator 静态站点 + 单 agent 进程。下一步:Phase 17+ Markdown 粘贴导入 + PPTX 导入。

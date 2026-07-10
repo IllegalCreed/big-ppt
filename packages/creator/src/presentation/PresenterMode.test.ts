@@ -54,6 +54,7 @@ function mountPresenter() {
       stubs: {
         DeckRenderer: DeckRendererStub,
         DrawingLayer: DrawingLayerStub,
+        LiveShareModal: true,
       },
     },
   })
@@ -102,6 +103,7 @@ describe('PresenterMode', () => {
     expect(presenter.classes()).toContain('ui-theme-dark')
 
     await wrapper.get('button[aria-label="打开观众窗口"]').trigger('click')
+    await wrapper.get('button[aria-label="直播观看"]').trigger('click')
     await wrapper.get('button[aria-label="退出演讲者视图"]').trigger('click')
     expect(wrapper.emitted('open-audience')?.[0]).toEqual([1])
     expect(wrapper.emitted('exit')).toHaveLength(1)

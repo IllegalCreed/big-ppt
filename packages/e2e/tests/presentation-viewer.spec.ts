@@ -72,10 +72,7 @@ async function createUserAndDeck(label: string, initialContent = PRESENTATION_MA
   return { api, deckId: deck.id as number, email }
 }
 
-test('多页总览保持 16:9 且在独立容器内滚动', async (
-  { page, context, baseURL },
-  testInfo,
-) => {
+test('多页总览保持 16:9 且在独立容器内滚动', async ({ page, context, baseURL }, testInfo) => {
   const owner = await createUserAndDeck('long-overview', createLongPresentationMarkdown(28))
   await installSession(context, owner.api, baseURL!)
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -209,6 +206,91 @@ test('双屏放映自动分配演讲者与观众窗口，并由演讲者同步�
   await page.mouse.click(box!.x + box!.width * 0.5, box!.y + box!.height * 0.45)
   await expect(audience.locator('.slide-shell polyline')).toHaveCount(0)
 
+  await owner.api.dispose()
+})
+
+test('演讲者通过直播链接单向同步远程只读观众', async ({
+  page,
+  context,
+  browser,
+  baseURL,
+}, testInfo) => {
+  const owner = await createUserAndDeck('remote-live')
+  await installSession(context, owner.api, baseURL!)
+  const channel = `remote-${Date.now()}`
+  await page.goto(`/decks/${owner.deckId}/present?view=presenter&channel=${channel}`)
+  await expect(page.locator('[data-presenter-mode]')).toBeVisible({ timeout: 15_000 })
+
+  await page.getByRole('button', { name: '直播观看', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: /直播观看 remote-live deck/ })).toBeVisible()
+  await page.getByRole('button', { name: '开始直播', exact: true }).click()
+  const liveInput = page.getByRole('textbox', { name: '直播观看链接' })
+  await expect(liveInput).toBeVisible()
+  const liveUrl = await liveInput.inputValue()
+  expect(liveUrl).toMatch(/\/live\/[A-Za-z0-9_-]+$/)
+  await page.getByRole('button', { name: '关闭直播窗口' }).click()
+
+  const remoteContext = await browser.newContext()
+  const remote = await remoteContext.newPage()
+  await remote.goto(liveUrl)
+  await expect(remote.locator('[data-live-audience]')).toBeVisible({ timeout: 15_000 })
+  await expect(remote.locator('.slide-canvas').first()).toBeVisible({ timeout: 10_000 })
+  await expect(remote.getByText('1 / 3')).toBeVisible()
+  await expect(remote.getByRole('button')).toHaveCount(1)
+  await expect(remote.getByRole('button', { name: '切换全屏' })).toBeVisible()
+  await expect(remote.getByRole('button', { name: '下一页' })).toHaveCount(0)
+  await expect(remote.getByRole('button', { name: '画笔' })).toHaveCount(0)
+  expect(
+    (await remoteContext.cookies()).find((cookie) => cookie.name === 'lumideck_session'),
+  ).toBeUndefined()
+
+  await page.getByRole('button', { name: '下一页' }).click()
+  await expect(remote.getByText('2 / 3')).toBeVisible()
+
+  await page.keyboard.press('b')
+  await expect(remote.locator('.blackout.black')).toBeVisible()
+  await page.keyboard.press('b')
+  await expect(remote.locator('.blackout')).toHaveCount(0)
+
+  await page.getByRole('button', { name: '画笔', exact: true }).click()
+  const layer = page.locator('.current-stage [data-drawing-layer]')
+  const box = await layer.boundingBox()
+  expect(box).toBeTruthy()
+  await page.mouse.move(box!.x + box!.width * 0.25, box!.y + box!.height * 0.3)
+  await page.mouse.down()
+  await page.mouse.move(box!.x + box!.width * 0.7, box!.y + box!.height * 0.6, { steps: 5 })
+  await page.mouse.up()
+  await expect(remote.locator('.slide-shell polyline')).toHaveCount(1)
+  await remote.screenshot({ path: testInfo.outputPath('remote-live-viewer.png'), fullPage: true })
+
+  await page.getByRole('button', { name: '橡皮擦' }).click()
+  await page.mouse.click(box!.x + box!.width * 0.48, box!.y + box!.height * 0.45)
+  await expect(remote.locator('.slide-shell polyline')).toHaveCount(0)
+
+  await remote.setViewportSize({ width: 390, height: 844 })
+  const mobileMetrics = await remote.evaluate(() => {
+    const slide = document.querySelector<HTMLElement>('.slide-shell')
+    const rect = slide?.getBoundingClientRect()
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      slideAspectRatio: rect ? rect.width / rect.height : 0,
+    }
+  })
+  expect(mobileMetrics.documentWidth).toBeLessThanOrEqual(mobileMetrics.viewportWidth)
+  expect(mobileMetrics.slideAspectRatio).toBeCloseTo(16 / 9, 2)
+  await remote.screenshot({
+    path: testInfo.outputPath('remote-live-viewer-mobile.png'),
+    fullPage: true,
+  })
+
+  await page.getByRole('button', { name: '管理直播观看' }).click()
+  page.once('dialog', (dialog) => void dialog.accept())
+  await page.getByRole('button', { name: '结束直播', exact: true }).click()
+  await expect(remote.locator('[data-live-ended]')).toBeVisible()
+  await expect(remote.getByText('直播已结束')).toBeVisible()
+
+  await remoteContext.close()
   await owner.api.dispose()
 })
 

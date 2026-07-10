@@ -16,6 +16,7 @@ import { afterAll, beforeEach } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { closeDb, getDb } from '../../src/db/index.js'
 import { __resetRegistryForTesting as resetMcpRegistries } from '../../src/mcp-registry/index.js'
+import { __resetLivePresentationsForTesting } from '../../src/live-presentation.js'
 import { __resetRateLimitForTesting } from '../../src/middleware/rate-limit.js'
 
 export async function resetDb(): Promise<void> {
@@ -32,6 +33,7 @@ export async function resetDb(): Promise<void> {
   await db.execute(sql`TRUNCATE TABLE users`)
   await db.execute(sql`SET FOREIGN_KEY_CHECKS=1`)
   resetMcpRegistries()
+  __resetLivePresentationsForTesting()
   __resetRateLimitForTesting()
 }
 

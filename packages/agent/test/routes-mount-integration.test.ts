@@ -8,7 +8,7 @@
  * 这个测试用真 `app` 实例（不是 unit 测的 buildApp）跑 fetch，确保：
  *   - 公开端点（list-templates / system-prompt）维持公开
  *   - 鉴权端点（log-event / tools / call-tool / owner presentation）未登录返 401
- *   - public share endpoint 不被其他 router 中间件误拦
+ *   - public static/live share endpoints 不被其他 router 中间件误拦
  *
  * 跨 sub-router 的相互影响只能在真 app 里 catch，不能在 sub-router 单测里复现。
  */
@@ -28,7 +28,9 @@ describe('Hono sub-router 挂载完整性（A01 防 wildcard 泄漏）', () => {
   })
 
   it('GET /api/system-prompt?templateId=beitou-standard 维持公开', async () => {
-    const res = await app.fetch(new Request('http://test/api/system-prompt?templateId=beitou-standard'))
+    const res = await app.fetch(
+      new Request('http://test/api/system-prompt?templateId=beitou-standard'),
+    )
     expect(res.status).toBe(200)
   })
 
@@ -83,6 +85,17 @@ describe('Hono sub-router 挂载完整性（A01 防 wildcard 泄漏）', () => {
     const res = await app.fetch(new Request('http://test/api/share/not-found/presentation'))
     expect(res.status).toBe(404)
     expect(await res.json()).toMatchObject({ code: 'not-found' })
+  })
+
+  it('GET /api/live/:token/presentation 维持公开并返回稳定 404', async () => {
+    const res = await app.fetch(new Request('http://test/api/live/not-found/presentation'))
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({ code: 'not-found' })
+  })
+
+  it('GET /api/decks/:id/live 未登录 → 401', async () => {
+    const res = await app.fetch(new Request('http://test/api/decks/1/live'))
+    expect(res.status).toBe(401)
   })
 
   it('旧 lock/read-slides endpoints 已退役', async () => {

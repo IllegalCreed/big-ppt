@@ -12,6 +12,7 @@ import {
   Pause,
   Pencil,
   Play,
+  Radio,
   RotateCcw,
   Sun,
   Trash2,
@@ -21,6 +22,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
 import { parseDeck } from '../deck-renderer/parse-deck'
 import DrawingLayer from './DrawingLayer.vue'
+import LiveShareModal from './LiveShareModal.vue'
 import type { DrawingMode, DrawingStroke, PresentationUiTheme } from './types'
 import { usePresentationSession } from './usePresentationSession'
 
@@ -53,10 +55,13 @@ const uiTheme = ref<PresentationUiTheme>('dark')
 const drawingEnabled = ref(false)
 const drawingTool = ref<DrawingMode>('pen')
 const drawingColor = ref('#ef4444')
+const liveShareOpen = ref(false)
+const liveActive = ref(false)
 const currentSlide = computed(() => parsed.value.slides[session.currentPage.value - 1] ?? null)
 const nextPage = computed(() => Math.min(totalPages.value, session.currentPage.value + 1))
 const hasNext = computed(() => session.currentPage.value < totalPages.value)
 const currentStrokes = computed(() => session.drawings.value[session.currentPage.value] ?? [])
+const liveSnapshot = computed(() => session.snapshot())
 const formattedTime = computed(() => {
   const hours = Math.floor(elapsedSeconds.value / 3600)
   const minutes = Math.floor((elapsedSeconds.value % 3600) / 60)
@@ -146,6 +151,17 @@ onBeforeUnmount(() => {
           @click="resetTimer"
         >
           <RotateCcw :size="17" />
+        </button>
+        <button
+          type="button"
+          class="icon-btn"
+          :class="{ 'is-live': liveActive }"
+          :title="liveActive ? '管理直播观看' : '直播观看'"
+          :aria-label="liveActive ? '管理直播观看' : '直播观看'"
+          :aria-pressed="liveActive"
+          @click="liveShareOpen = true"
+        >
+          <Radio :size="17" />
         </button>
         <button
           type="button"
@@ -324,6 +340,14 @@ onBeforeUnmount(() => {
       </div>
     </footer>
   </div>
+  <LiveShareModal
+    v-model:open="liveShareOpen"
+    :deck-id="presentation.deckId"
+    :deck-title="presentation.title"
+    :snapshot="liveSnapshot"
+    :ui-theme="uiTheme"
+    @update:active="liveActive = $event"
+  />
 </template>
 
 <style scoped>
@@ -529,6 +553,11 @@ onBeforeUnmount(() => {
 .icon-btn.active {
   background: var(--presentation-hover);
   color: var(--presentation-fg);
+}
+
+.icon-btn.is-live {
+  background: rgba(221, 72, 57, 0.16);
+  color: #eb7565;
 }
 
 .icon-btn:disabled {

@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
+import type { PresentationSnapshot } from '@big-ppt/shared'
 import { describe, expect, it } from 'vitest'
 import { createAsset } from '../src/db/deck-assets.js'
 import { decks, deckVersions, getDb, shareLinks } from '../src/db/index.js'
@@ -44,6 +45,39 @@ async function createShare(
   return (await res.json()).share as { slug: string; path: string; status: string }
 }
 
+function liveState(page = 1): PresentationSnapshot {
+  return { page, blackout: 'none', drawings: {} }
+}
+
+async function createLive(app: Hono, deckId: number, cookie: string, state = liveState()) {
+  const res = await app.request(`/api/decks/${deckId}/live`, jsonRequest('POST', { state }, cookie))
+  expect(res.status).toBe(201)
+  return (await res.json()).live as { token: string; path: string; expiresAt: string }
+}
+
+async function readSseEvent(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  eventName: string,
+): Promise<Record<string, unknown>> {
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const chunk = await reader.read()
+    if (chunk.done) throw new Error(`SSE 在 ${eventName} 事件前结束`)
+    buffer += decoder.decode(chunk.value, { stream: true })
+    const frames = buffer.split('\n\n')
+    buffer = frames.pop() ?? ''
+    for (const frame of frames) {
+      const lines = frame.split('\n')
+      if (lines.find((line) => line === `event: ${eventName}`)) {
+        const data = lines.find((line) => line.startsWith('data: '))
+        if (!data) throw new Error(`SSE ${eventName} 缺少 data`)
+        return JSON.parse(data.slice(6)) as Record<string, unknown>
+      }
+    }
+  }
+}
+
 describe('presentation routes', () => {
   it('owner presentation/share 管理端点未登录均返回 401', async () => {
     const app = makeApp()
@@ -52,8 +86,12 @@ describe('presentation routes', () => {
       app.request('/api/decks/1/share'),
       app.request('/api/decks/1/share', jsonRequest('POST', { expiresInDays: 7 })),
       app.request('/api/decks/1/share', jsonRequest('DELETE')),
+      app.request('/api/decks/1/live'),
+      app.request('/api/decks/1/live', jsonRequest('POST', { state: liveState() })),
+      app.request('/api/decks/1/live/token/state', jsonRequest('PUT', { state: liveState() })),
+      app.request('/api/decks/1/live/token', jsonRequest('DELETE')),
     ])
-    expect(results.map((res) => res.status)).toEqual([401, 401, 401, 401])
+    expect(results.map((res) => res.status)).toEqual([401, 401, 401, 401, 401, 401, 401, 401])
   })
 
   it('owner presentation 返回当前版本稳定契约', async () => {
@@ -229,5 +267,148 @@ describe('presentation routes', () => {
     const revoked = await app.request(`/api/share/${share.slug}/assets/${ownAsset.id}`)
     expect(revoked.status).toBe(410)
     expect(await revoked.json()).toMatchObject({ code: 'revoked' })
+  })
+
+  it('直播链接公开只读，SSE 同步状态并在演讲者结束后立即关闭', async () => {
+    const app = makeApp()
+    const owner = await createLoggedInUser()
+    const outsider = await createLoggedInUser('live-outsider@example.com')
+    const { deck, initialVersionId } = await createDeckDirect(owner.user.id, 'Live Deck')
+    const asset = await createAsset({
+      deckId: deck.id,
+      userId: owner.user.id,
+      mimeType: 'image/png',
+      data: Buffer.from([4, 3, 2, 1]),
+    })
+    await getDb()
+      .update(deckVersions)
+      .set({
+        content: `---\nlayout: beitou-image-content\nimageSrc: /api/assets/${asset.id}\n---\n`,
+      })
+      .where(eq(deckVersions.id, initialVersionId))
+
+    const live = await createLive(app, deck.id, owner.cookie)
+    expect(live.path).toBe(`/live/${live.token}`)
+    expect(new Date(live.expiresAt).getTime()).toBeGreaterThan(Date.now())
+
+    const publicPresentation = await app.request(`/api/live/${live.token}/presentation`)
+    expect(publicPresentation.status).toBe(200)
+    expect(publicPresentation.headers.get('cache-control')).toBe('private, no-store')
+    const publicPayload = (await publicPresentation.json()).live
+    expect(publicPayload.presentation.markdown).toContain(
+      `/api/live/${live.token}/assets/${asset.id}`,
+    )
+    expect(publicPayload.state).toEqual(liveState())
+
+    const publicAsset = await app.request(`/api/live/${live.token}/assets/${asset.id}`)
+    expect(publicAsset.status).toBe(200)
+    expect([...new Uint8Array(await publicAsset.arrayBuffer())]).toEqual([4, 3, 2, 1])
+
+    const events = await app.request(`/api/live/${live.token}/events`)
+    expect(events.status).toBe(200)
+    expect(events.headers.get('content-type')).toContain('text/event-stream')
+    expect(events.headers.get('x-accel-buffering')).toBe('no')
+    const reader = events.body!.getReader()
+    const initialEvent = await readSseEvent(reader, 'state')
+    expect(initialEvent).toMatchObject({ type: 'state', revision: 1, state: liveState() })
+
+    const outsiderUpdate = await app.request(
+      `/api/decks/${deck.id}/live/${live.token}/state`,
+      jsonRequest('PUT', { state: liveState(2) }, outsider.cookie),
+    )
+    expect(outsiderUpdate.status).toBe(409)
+
+    const ownerUpdate = await app.request(
+      `/api/decks/${deck.id}/live/${live.token}/state`,
+      jsonRequest(
+        'PUT',
+        {
+          state: {
+            page: 2,
+            blackout: 'black',
+            drawings: {
+              2: [
+                {
+                  id: 'stroke-1',
+                  tool: 'pen',
+                  color: '#ef4444',
+                  width: 4,
+                  points: [
+                    { x: 10, y: 20 },
+                    { x: 30, y: 40 },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        owner.cookie,
+      ),
+    )
+    expect(ownerUpdate.status).toBe(200)
+    const updateEvent = await readSseEvent(reader, 'state')
+    expect(updateEvent).toMatchObject({
+      type: 'state',
+      revision: 2,
+      state: { page: 2, blackout: 'black' },
+    })
+
+    const ended = await app.request(
+      `/api/decks/${deck.id}/live/${live.token}`,
+      jsonRequest('DELETE', undefined, owner.cookie),
+    )
+    expect(ended.status).toBe(200)
+    expect(await ended.json()).toMatchObject({ ok: true, ended: true })
+    expect(await readSseEvent(reader, 'ended')).toMatchObject({ type: 'ended', reason: 'ended' })
+    await reader.cancel()
+
+    const afterEnd = await app.request(`/api/live/${live.token}/presentation`)
+    expect(afterEnd.status).toBe(410)
+    expect(await afterEnd.json()).toMatchObject({ code: 'ended' })
+  })
+
+  it('直播会话校验状态、隔离 deck 资源，并使被替换的旧链接失效', async () => {
+    const app = makeApp()
+    const owner = await createLoggedInUser()
+    const { deck } = await createDeckDirect(owner.user.id, 'Live A')
+    const { deck: otherDeck } = await createDeckDirect(owner.user.id, 'Live B')
+    const otherAsset = await createAsset({
+      deckId: otherDeck.id,
+      userId: owner.user.id,
+      mimeType: 'image/png',
+      data: Buffer.from([9]),
+    })
+
+    const invalid = await app.request(
+      `/api/decks/${deck.id}/live`,
+      jsonRequest('POST', { state: { page: 0, blackout: 'none', drawings: {} } }, owner.cookie),
+    )
+    expect(invalid.status).toBe(400)
+
+    const first = await createLive(app, deck.id, owner.cookie)
+    const crossDeckAsset = await app.request(`/api/live/${first.token}/assets/${otherAsset.id}`)
+    expect(crossDeckAsset.status).toBe(404)
+
+    const second = await createLive(app, deck.id, owner.cookie, liveState(2))
+    expect(second.token).not.toBe(first.token)
+    const oldLink = await app.request(`/api/live/${first.token}/presentation`)
+    expect(oldLink.status).toBe(410)
+    expect(await oldLink.json()).toMatchObject({ code: 'ended' })
+
+    const staleUpdate = await app.request(
+      `/api/decks/${deck.id}/live/${first.token}/state`,
+      jsonRequest('PUT', { state: liveState(1) }, owner.cookie),
+    )
+    expect(staleUpdate.status).toBe(409)
+    const staleEnd = await app.request(
+      `/api/decks/${deck.id}/live/${first.token}`,
+      jsonRequest('DELETE', undefined, owner.cookie),
+    )
+    expect(await staleEnd.json()).toMatchObject({ ended: false })
+
+    const listed = await app.request(`/api/decks/${deck.id}/live`, {
+      headers: { Cookie: owner.cookie },
+    })
+    expect((await listed.json()).live.token).toBe(second.token)
   })
 })

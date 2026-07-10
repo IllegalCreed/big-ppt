@@ -1,28 +1,21 @@
-export type BlackoutMode = 'none' | 'black' | 'white'
-export type DrawingTool = 'pen' | 'highlighter'
+import type {
+  BlackoutMode,
+  DrawingStroke,
+  DrawingTool,
+  PresentationSnapshot,
+} from '@big-ppt/shared'
+
+export type {
+  BlackoutMode,
+  DrawingPoint,
+  DrawingStroke,
+  DrawingTool,
+  PresentationSnapshot,
+  SlideDrawings,
+} from '@big-ppt/shared'
+
 export type DrawingMode = DrawingTool | 'eraser'
 export type PresentationUiTheme = 'dark' | 'light'
-
-export interface DrawingPoint {
-  x: number
-  y: number
-}
-
-export interface DrawingStroke {
-  id: string
-  tool: DrawingTool
-  color: string
-  width: number
-  points: DrawingPoint[]
-}
-
-export type SlideDrawings = Record<number, DrawingStroke[]>
-
-export interface PresentationSnapshot {
-  page: number
-  blackout: BlackoutMode
-  drawings: SlideDrawings
-}
 
 export type PresentationChannelMessage =
   | { type: 'state-request'; sender: string }
@@ -31,5 +24,4 @@ export type PresentationChannelMessage =
   | { type: 'blackout'; sender: string; blackout: BlackoutMode }
   | { type: 'drawings'; sender: string; page: number; strokes: DrawingStroke[] }
 
-export const DRAWING_VIEWBOX_WIDTH = 1000
-export const DRAWING_VIEWBOX_HEIGHT = 562.5
+export { DRAWING_VIEWBOX_HEIGHT, DRAWING_VIEWBOX_WIDTH } from '@big-ppt/shared'

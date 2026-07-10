@@ -7,6 +7,11 @@ import { useTestDb } from './_setup/test-db.js'
 import { createLoggedInUser, createDeckDirect } from './_setup/factories.js'
 import { getDb, decks, deckChats, deckVersions } from '../src/db/index.js'
 import { and, eq } from 'drizzle-orm'
+import {
+  createLivePresentation,
+  getPublicLiveErrorCode,
+  getPublicLivePresentation,
+} from '../src/live-presentation.js'
 
 useTestDb()
 
@@ -33,7 +38,11 @@ describe('routes/decks', () => {
       app.request('/api/decks'),
       postJson(app, '/api/decks', { title: 'x' }),
       app.request('/api/decks/1'),
-      app.request('/api/decks/1', { method: 'PUT', body: '{}', headers: { 'content-type': 'application/json' } }),
+      app.request('/api/decks/1', {
+        method: 'PUT',
+        body: '{}',
+        headers: { 'content-type': 'application/json' },
+      }),
       app.request('/api/decks/1', { method: 'DELETE' }),
       app.request('/api/decks/1/versions'),
       postJson(app, '/api/decks/1/restore/1', {}),
@@ -72,7 +81,11 @@ describe('routes/decks', () => {
     const res = await postJson(app, '/api/decks', { title: 'T', initialContent: custom }, cookie)
     const { deck } = await res.json()
     const db = getDb()
-    const [v] = await db.select().from(deckVersions).where(eq(deckVersions.id, deck.currentVersionId!)).limit(1)
+    const [v] = await db
+      .select()
+      .from(deckVersions)
+      .where(eq(deckVersions.id, deck.currentVersionId!))
+      .limit(1)
     expect(v?.content).toBe(custom)
   })
 
@@ -196,9 +209,13 @@ describe('routes/decks', () => {
     const { deck, initialVersionId } = await createDeckDirect(user.id, 'With versions')
     // 再加两个 version（注意 createdAt 分辨率是秒级，要间隔 > 1s 才能看出倒序）
     const db = getDb()
-    await db.insert(deckVersions).values({ deckId: deck.id, content: 'v2', message: 'edit', authorId: user.id })
+    await db
+      .insert(deckVersions)
+      .values({ deckId: deck.id, content: 'v2', message: 'edit', authorId: user.id })
     await new Promise((r) => setTimeout(r, 1100))
-    await db.insert(deckVersions).values({ deckId: deck.id, content: 'v3', message: 'edit', authorId: user.id })
+    await db
+      .insert(deckVersions)
+      .values({ deckId: deck.id, content: 'v3', message: 'edit', authorId: user.id })
 
     const res = await app.request(`/api/decks/${deck.id}`, { headers: { Cookie: cookie } })
     expect(res.status).toBe(200)
@@ -269,13 +286,30 @@ describe('routes/decks', () => {
     const app = makeApp()
     const { user, cookie } = await createLoggedInUser()
     const { deck } = await createDeckDirect(user.id, 'To Delete')
+    const { info: live } = createLivePresentation({
+      userId: user.id,
+      presentation: {
+        deckId: deck.id,
+        title: deck.title,
+        templateId: deck.templateId,
+        markdown: '---\nlayout: beitou-cover\n---\n',
+        updatedAt: new Date().toISOString(),
+      },
+      state: { page: 1, blackout: 'none', drawings: {} },
+    })
+    expect(getPublicLivePresentation(live.token)).not.toBeNull()
 
-    const res = await app.request(`/api/decks/${deck.id}`, { method: 'DELETE', headers: { Cookie: cookie } })
+    const res = await app.request(`/api/decks/${deck.id}`, {
+      method: 'DELETE',
+      headers: { Cookie: cookie },
+    })
     expect(res.status).toBe(200)
 
     const list = await app.request('/api/decks', { headers: { Cookie: cookie } })
     const { decks: rows } = await list.json()
     expect(rows.find((d: { id: number }) => d.id === deck.id)).toBeUndefined()
+    expect(getPublicLivePresentation(live.token)).toBeNull()
+    expect(getPublicLiveErrorCode(live.token)).toBe('ended')
   })
 
   it('deleted deck: detail / update / versions / chats 均返回 404,不能被恢复成 active', async () => {
@@ -294,7 +328,9 @@ describe('routes/decks', () => {
     })
     expect(update.status).toBe(404)
 
-    const versions = await app.request(`/api/decks/${deck.id}/versions`, { headers: { Cookie: cookie } })
+    const versions = await app.request(`/api/decks/${deck.id}/versions`, {
+      headers: { Cookie: cookie },
+    })
     expect(versions.status).toBe(404)
 
     const chats = await app.request(`/api/decks/${deck.id}/chats`, { headers: { Cookie: cookie } })
@@ -318,7 +354,10 @@ describe('routes/decks', () => {
     })
     expect(await listAssetIdsByDeck(deck.id)).toContain(assetId)
 
-    const res = await app.request(`/api/decks/${deck.id}`, { method: 'DELETE', headers: { Cookie: cookie } })
+    const res = await app.request(`/api/decks/${deck.id}`, {
+      method: 'DELETE',
+      headers: { Cookie: cookie },
+    })
     expect(res.status).toBe(200)
 
     expect(await getAsset(assetId)).toBeNull()
@@ -368,7 +407,12 @@ describe('routes/decks', () => {
     const [snapshot] = await db
       .select({ id: deckVersions.id })
       .from(deckVersions)
-      .where(and(eq(deckVersions.deckId, deck.id), eq(deckVersions.message, '切换模板前快照 (beitou-standard → alpha)')))
+      .where(
+        and(
+          eq(deckVersions.deckId, deck.id),
+          eq(deckVersions.message, '切换模板前快照 (beitou-standard → alpha)'),
+        ),
+      )
       .limit(1)
     await db.insert(deckVersions).values({
       deckId: deck.id,
@@ -382,7 +426,10 @@ describe('routes/decks', () => {
       .from(deckVersions)
       .where(and(eq(deckVersions.deckId, deck.id), eq(deckVersions.message, '切换到模板 alpha')))
       .limit(1)
-    await db.update(decks).set({ currentVersionId: newVer!.id, templateId: 'alpha' }).where(eq(decks.id, deck.id))
+    await db
+      .update(decks)
+      .set({ currentVersionId: newVer!.id, templateId: 'alpha' })
+      .where(eq(decks.id, deck.id))
 
     // 回滚到 snapshot：decks.template_id 应同步回 'beitou-standard'
     const res = await postJson(app, `/api/decks/${deck.id}/restore/${snapshot!.id}`, {}, cookie)
@@ -457,7 +504,12 @@ describe('routes/decks', () => {
     expect(empty.status).toBe(200)
     expect((await empty.json()).chats).toEqual([])
 
-    const badRole = await postJson(app, `/api/decks/${deck.id}/chats`, { role: 'stranger', content: 'x' }, cookie)
+    const badRole = await postJson(
+      app,
+      `/api/decks/${deck.id}/chats`,
+      { role: 'stranger', content: 'x' },
+      cookie,
+    )
     expect(badRole.status).toBe(400)
 
     const noContent = await postJson(app, `/api/decks/${deck.id}/chats`, { role: 'user' }, cookie)
@@ -488,7 +540,9 @@ describe('routes/decks', () => {
 
     // 跨用户访问同 deck chats → 403
     const other = await createLoggedInUser('other-chats@a.com')
-    const forbid = await app.request(`/api/decks/${deck.id}/chats`, { headers: { Cookie: other.cookie } })
+    const forbid = await app.request(`/api/decks/${deck.id}/chats`, {
+      headers: { Cookie: other.cookie },
+    })
     expect(forbid.status).toBe(403)
   })
 
@@ -554,11 +608,7 @@ describe('routes/decks', () => {
     expect(post.status).toBe(201)
 
     const db = getDb()
-    const [row] = await db
-      .select()
-      .from(deckChats)
-      .where(eq(deckChats.deckId, deck.id))
-      .limit(1)
+    const [row] = await db.select().from(deckChats).where(eq(deckChats.deckId, deck.id)).limit(1)
     expect(row).toBeDefined()
     // canonicalContent 保真
     expect(JSON.parse(row!.canonicalContent!)).toEqual(canonical)
