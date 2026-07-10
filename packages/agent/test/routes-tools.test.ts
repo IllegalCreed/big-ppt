@@ -1,7 +1,4 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { tools as toolsRoute } from '../src/routes/tools.js'
@@ -9,14 +6,9 @@ import { authOptional, type AuthVars } from '../src/middleware/auth.js'
 import { requestContextMiddleware } from '../src/middleware/request-context.js'
 import { __resetRegistry, register } from '../src/tools/registry.js'
 import { registerLocalTools } from '../src/tools/local/index.js'
-import { __resetPathsForTesting } from '../src/workspace.js'
 import { useTestDb } from './_setup/test-db.js'
 import { createLoggedInUser, createDeckDirect } from './_setup/factories.js'
-import {
-  __resetImageJobsForTesting,
-  getImageJob,
-  type ImageJob,
-} from '../src/image-gen-job.js'
+import { __resetImageJobsForTesting, getImageJob, type ImageJob } from '../src/image-gen-job.js'
 import {
   __setGenerateImageForTesting,
   __setAnchorPollingForTesting,
@@ -45,25 +37,12 @@ function buildApp() {
   return app
 }
 
-let tmpRoot: string
-
 beforeEach(() => {
-  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bigppt-routes-'))
-  const slidevDir = path.join(tmpRoot, 'packages/slidev')
-  fs.mkdirSync(path.join(slidevDir, 'templates/beitou-standard'), { recursive: true })
-  fs.writeFileSync(path.join(slidevDir, 'slides.md'), '# t\n')
-  process.env.BIG_PPT_SLIDES_PATH = path.join(slidevDir, 'slides.md')
-  process.env.BIG_PPT_HISTORY_DIR = path.join(tmpRoot, 'slides-history')
-  __resetPathsForTesting()
   __resetRegistry()
 })
 
 afterEach(() => {
-  delete process.env.BIG_PPT_SLIDES_PATH
-  delete process.env.BIG_PPT_HISTORY_DIR
-  __resetPathsForTesting()
   __resetRegistry()
-  fs.rmSync(tmpRoot, { recursive: true, force: true })
 })
 
 describe('GET /api/tools', () => {
@@ -250,15 +229,73 @@ describe('POST /api/call-tool', () => {
 describe('POST /api/call-tool — generate_slide_image hybrid vision-aware (端到端)', () => {
   // 1x1 px PNG, 67 字节(magic + IHDR + IDAT + IEND),给 fake generateImage 返足够大的 b64
   const FAKE_PNG_BYTES = Buffer.from([
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG magic
-    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk header
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-    0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89,
-    0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, // IDAT chunk header
-    0x78, 0x9c, 0x62, 0x00, 0x01, 0x00, 0x00, 0x05,
-    0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4,
-    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, // IEND chunk
-    0xae, 0x42, 0x60, 0x82,
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a, // PNG magic
+    0x00,
+    0x00,
+    0x00,
+    0x0d,
+    0x49,
+    0x48,
+    0x44,
+    0x52, // IHDR chunk header
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x00,
+    0x01,
+    0x08,
+    0x06,
+    0x00,
+    0x00,
+    0x00,
+    0x1f,
+    0x15,
+    0xc4,
+    0x89,
+    0x00,
+    0x00,
+    0x00,
+    0x0d,
+    0x49,
+    0x44,
+    0x41,
+    0x54, // IDAT chunk header
+    0x78,
+    0x9c,
+    0x62,
+    0x00,
+    0x01,
+    0x00,
+    0x00,
+    0x05,
+    0x00,
+    0x01,
+    0x0d,
+    0x0a,
+    0x2d,
+    0xb4,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x49,
+    0x45,
+    0x4e,
+    0x44, // IEND chunk
+    0xae,
+    0x42,
+    0x60,
+    0x82,
   ])
   const FAKE_PNG_B64 = FAKE_PNG_BYTES.toString('base64')
 
@@ -288,10 +325,7 @@ describe('POST /api/call-tool — generate_slide_image hybrid vision-aware (端�
     __resetImageJobsForTesting()
   })
 
-  async function pollJobUntilTerminal(
-    jobId: string,
-    timeoutMs = 10_000,
-  ): Promise<ImageJob | null> {
+  async function pollJobUntilTerminal(jobId: string, timeoutMs = 10_000): Promise<ImageJob | null> {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
       const j = getImageJob(jobId)
@@ -314,10 +348,7 @@ describe('POST /api/call-tool — generate_slide_image hybrid vision-aware (端�
     const db = getDb()
     const [d] = await db.select().from(decks).where(eq(decks.id, deckId)).limit(1)
     if (!d || !d.currentVersionId) throw new Error('deck 无 currentVersion')
-    await db
-      .update(deckVersions)
-      .set({ content })
-      .where(eq(deckVersions.id, d.currentVersionId))
+    await db.update(deckVersions).set({ content }).where(eq(deckVersions.id, d.currentVersionId))
     // P0 hotfix(eccf1c3)后 worker readSlides 走 ALS+DB,不再读 fs slides.md;
     // 这里不需要 mirror 到 fs。
   }

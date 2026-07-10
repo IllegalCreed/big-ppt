@@ -6,7 +6,7 @@
  * 边框颜色读 `--ld-color-brand-primary`，宽度按 imageBorder 切 token。
  */
 const props = defineProps<{
-  /** 图片 src（必填）；以 / 开头的绝对路径会自动加 Slidev base 前缀 */
+  /** 图片 src（必填）；以 / 开头的绝对路径会自动加应用 base 前缀 */
   image: string
   /** 图片描述（默认空） */
   alt?: string
@@ -17,8 +17,7 @@ const props = defineProps<{
 }>()
 
 /**
- * Slidev iframe 内 dev 时配了 `--base /api/slidev-preview/`，但 SFC 模板里
- * 硬编码 `<img src="/templates/...">` 不会被 vite 自动加 base，要手工拼。
+ * SFC 模板里的字符串资源路径不会被 Vite 自动添加应用 base，需要手工拼接。
  * http(s):// 外链不动；其他相对路径不动；以 / 开头的绝对路径加 base。
  */
 const resolvedImage = (() => {

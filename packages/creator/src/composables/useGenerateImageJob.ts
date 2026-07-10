@@ -3,7 +3,7 @@
  * Phase 11.6：扩两个状态 fallback-rewrote(出图失败但兜底重写成功) / fallback-failed(兜底也崩)。
  *
  * 用法:tool 工具 exec 返 { jobId, status: 'queued' };useAIChat 立即调 start(jobId)
- * 由本 composable 接管轮询 + 进度展示;done / fallback-rewrote 后 SlidePreview 通过 Slidev HMR 自动刷新。
+ * 由本 composable 接管轮询 + 进度展示；终态成功后刷新 DeckRenderer 数据。
  *
  * 状态机:pending → running → done | fallback-rewrote | fallback-failed | failed | cancelled
  * 进度:running 阶段每次 poll +0.02 上限 0.85;done → 1.0;fallback-rewrote → 1.0(也是成功)
@@ -157,9 +157,7 @@ export function useGenerateImageJob() {
         }
         if (isSuccess(job.state)) {
           // done(出图成功) 或 fallback-rewrote(出图失败但兜底重写成功),
-          // server slides.md 已写入新 imageSrc / 重写后的组件版页;主动调
-          // slideStore.refresh() 把新内容同步给 DeckRenderer(Phase 10.5 后
-          // 没有 Slidev HMR 自动刷新这条路径了)。
+          // 数据库当前版本已写入新 imageSrc / 重写后的组件版页，主动刷新 DeckRenderer。
           // fallback-rewrote 时 errorMsg 含原因,调用方可读 result.value.state
           // 区分给 toast 文案。
           await useSlideStore().refresh()

@@ -87,7 +87,7 @@
 
 **验收条件**（全部满足才算关闭）：
 
-- [x] 前端不再直接 fetch `/api/*` 走 Vite middleware，改为调 agent 服务（本地一命令 `pnpm dev` 起整套：creator :3030 / agent :4000 / slidev :3031）
+- [x] 前端不再直接 fetch `/api/*` 走 Vite middleware，改为调 agent 服务（Phase 16 后 `pnpm dev` 起 creator :3030 + agent :4000）
 - [x] `pnpm test` 可跑，核心逻辑（工具 registry、日志 payload 分片、slides edit similarity、契约 types）有测试覆盖（31 tests）
 - [x] [99-tech-debt.md](../plans/99-tech-debt.md) 里 P1 级别技术债：P1-1（Vite middleware 后端化）/ P1-2（tool registry 骨架）/ P1-3（测试基础设施）/ P1-4（BarChart 等组件迁入）全部清除；P1-5（slides.md 架构升级）按计划留 Phase 4
 
@@ -953,10 +953,10 @@
 
 **验收条件**:
 
-- [ ] PDF 导出耗时 < 20 秒,视觉与预览一致(导出在用户浏览器内跑,所见即所得)
-- [ ] **AI 出图页(`image-content` layout / OSS 大图)截图必须等 img onload 完整,不能截到加载一半的图**
-- [ ] 三种格式(PDF / PNG 序列 / PPTX)均能产生 blob 并触发浏览器 download
-- [ ] 编辑器顶栏「导出」按钮存在,modal 内三选一 radio + 进度条 + 错误兜底 retry
+- [x] PDF 导出耗时 < 20 秒,视觉与预览一致(导出在用户浏览器内跑,所见即所得)
+- [x] **AI 出图页(`image-content` layout / OSS 大图)截图必须等 img onload 完整,不能截到加载一半的图**
+- [x] 三种格式(PDF / PNG 序列 / PPTX)均能产生 blob 并触发浏览器 download
+- [x] 编辑器顶栏「导出」按钮存在,modal 内三选一 radio + 进度条 + 错误兜底 retry
 
 **状态**:**已完成**(2026-05-18,plan 30)
 
@@ -993,11 +993,11 @@
 
 **验收条件**:
 
-- [ ] export `.lumideck` 文件 < 5s 出包(含 N=10 AI 生图 deck)
-- [ ] import 同账号刚 export 的 `.lumideck` → 新 deck 视觉跟原 deck **像素级一致**(包括所有 AI 生图正确显示)
-- [ ] schemaVersion 不在 SUPPORTED_SCHEMA_VERSIONS 时,import 端点返 400 + 友好错误
-- [ ] 跨账号 import 隔离:用户 A 的包用户 B 能 import 成 B 的新 deck,不污染 A
-- [ ] 损坏 zip / 缺 manifest / manifest 字段缺失 → 友好错误不 crash
+- [x] export `.lumideck` 文件 < 5s 出包(含 N=10 AI 生图 deck)
+- [x] import 同账号刚 export 的 `.lumideck` → 新 deck 视觉跟原 deck **像素级一致**(包括所有 AI 生图正确显示)
+- [x] schemaVersion 不在 SUPPORTED_SCHEMA_VERSIONS 时,import 端点返 400 + 友好错误
+- [x] 跨账号 import 隔离:用户 A 的包用户 B 能 import 成 B 的新 deck,不污染 A
+- [x] 损坏 zip / 缺 manifest / manifest 字段缺失 → 友好错误不 crash
 
 **状态**:**已完成**(2026-05-18,plan 31)
 
@@ -1015,26 +1015,22 @@
 
 ## Phase 16：自研 PresentationViewer — Slidev runtime 彻底替代
 
-> **状态**：候选（长期目标）
-> 触发条件：Phase 11 分享链接做完后用 Slidev `slidev build` 临时兜底，但 dev 进程 + 全局 slides.md + slidev-lock 一直是技术债；这条延后处理，等用户量起来或 Slidev 升级再次踩坑（slidev cli 重大不兼容 / vite module cache 错位重现）时启动。
+> **状态**：**已完成**（2026-07-10，[plan 33](../plans/33-phase16-presentation-viewer.md)）
+> Phase 16 同时完成 Phase 15.5 工程守门：GitHub Actions、全包 lint/type-check、bundle budget 与确定性 Playwright 流程。
 
-**问题**（Phase 10.5 落地后剩余的 Slidev runtime 部分）：
+**关闭的问题**（Phase 10.5 落地后剩余的 Slidev runtime 部分）：
 
 - **编辑器 ✅ 已脱钩 Slidev**（DeckRenderer Vue 组件直接渲染）
-- **全屏放映 ❌ 仍依赖 Slidev runtime**：`window.open('/api/slidev-preview/#/page')` 走 agent 反代 → Slidev :3031 → 必须保留 lumideck-slidev pm2 进程 + nginx 反代 + slidev-lock 单实例约束
-- **分享链接（Phase 11 兜底）❌ 也走 Slidev build**：每个 deck build 一次产物归档，多 deck 多目录管理复杂
-- **共同遗留问题**：
-  - Slidev dev 进程偶发卡死（long session vite module cache 错位仍可能复现）
-  - 全屏放映受 slidev-lock 串行约束（A 在放映时 B 抢锁失败）
-  - 部署架构复杂（多一个 Node 进程 + nginx location + 进程监控）
-  - Slidev 版本绑定（升级 Slidev cli 时风险高，Phase 11.6 dogfood 踩坑 13 殷鉴）
+- **全屏放映 ✅ 原生化**：`/decks/:id/present` 直接复用 DeckRenderer，无独立进程、反代或锁
+- **分享链接 ✅ 落地**：`/share/:slug` + `share_links` 生命周期 + share-scoped asset API
+- **共同遗留问题均已关闭**：不存在 Slidev dev 进程、HMR cache、放映锁、额外 nginx location 或 CLI 版本绑定
 
-**目标**：自写一套 PresentationViewer Vue 组件 + 静态托管路由，彻底替代 Slidev runtime。编辑器 fullscreen + 公开分享链接都走它，Slidev cli **仅保留**作为可选 export 工具（PDF / PPTX 转换 fallback）或彻底删除。
+**目标（已达成）**：自研 PresentationViewer + 静态 SPA 路由彻底替代 Slidev runtime。Slidev CLI、主题包、PM2 app 与反向代理均已删除；`packages/slidev` 只保留设计系统源码和 catalog 构建。
 
 **核心思路**：
 
 - **统一渲染口径**：编辑器主视图（DeckRenderer 单页模式）+ 全屏放映模式 + 分享链接公开模式都用**同一份** Vue 组件库（layouts + 公共组件），通过 props / route 切换不同 wrapper（编辑 / 演讲 / 公开浏览）
-- **演讲者壳子组件 `<PresentationMode>`**：复刻 Slidev 核心 UI
+- **演讲者壳子组件 `<PresenterMode>`**：复刻日常演讲核心 UI
   - 键盘 / 鼠标 / 触屏翻页（← → Space 等）+ progress bar + slide counter
   - 演讲者视图（split: 当前页 + 下一页缩略图 + 演讲者备注 + 计时器）
   - 黑屏 / 白屏切换
@@ -1062,20 +1058,20 @@
 
 **验收条件**：
 
-- [ ] 全屏放映 UX 至少跟 Slidev 持平：翻页 + progress + 演讲者视图 + 缩略图 overview
-- [ ] 画笔 / 高亮 drawing 可用（简化版即可，覆盖核心场景）
-- [ ] 分享链接公开访问无需登录，404 / 撤销 / 过期场景文案准确
-- [ ] **多用户同时全屏放映各自的 deck 互不影响**（验证 slidev-lock 彻底删除后无新约束）
-- [ ] 部署架构：pm2 进程从 2 → 1（删 lumideck-slidev），nginx conf 减一段 location
-- [ ] 历史踩坑章节同步清理（CLAUDE.md「已知坑 / Slidev 反代 + HMR」整段删，long session HMR 错位 / Slidev restart 按钮 / proxy auth 等都不再相关）
+- [x] 全屏放映 UX：翻页 + progress + 演讲者视图 + 备注 + 计时器 + 黑白屏 + overview
+- [x] 画笔 / 高亮支持 pointer、颜色、撤销、清空，并同步到观众窗口
+- [x] 分享链接公开访问无需登录，404 / 撤销 / 过期场景文案准确
+- [x] **多用户同时全屏放映各自的 deck 互不影响**，无锁 API/冲突 UI
+- [x] 部署架构：pm2 进程从 2 → 1；nginx 删除 Slidev/Vite locations
+- [x] AGENTS.md / CLAUDE.md / deploy runbook 清理旧 proxy、HMR、restart 与 lock 说明
 
-**预计工作量**：4-6 周（演讲者模式 + drawing + overview 都是从零自写，每个细项小工程量）
+**实施结果**：功能、隔离测试、视觉截图、部署脚本与旧 runtime 删除在同一 Phase 完成。
 
-**风险点**：
+**已处理风险**：
 
-- **drawing 画笔**：自写一套触屏 + 鼠标兼容的 SVG / canvas 画笔不简单（笔触 smooth / 撤销 / 颜色切换），可考虑用现成开源库（`tldraw` / `excalidraw` 简化版）
-- **演讲者视图的多窗口通信**：演讲者在 split 屏右半区操作要同步到观众投影的窗口，跨 tab 通信用 BroadcastChannel API
-- **PDF / PPTX 导出**：Slidev 自带 `slidev export`；自研后导出可能丢，Phase 14（导出）的 plan 需要把这条考虑进去
+- **drawing 画笔**：轻量 SVG + 归一化坐标，支持鼠标/触控 pointer、撤销与清空
+- **多窗口通信**：频道名含 deckId + 随机 channel；发送前深拷 reactive state，避免 structured clone `DataCloneError`
+- **PDF / PPTX 导出**：Phase 14 已先完成完全 client-side 导出，不依赖 Slidev CLI
 
 **不做什么**：
 
@@ -1085,9 +1081,9 @@
 
 **对其他 Phase 的影响**：
 
-- Phase 11（分享链接）落地时可暂用 `slidev build` 兜底，本 Phase 落地后切换到 PresentationViewer，share_links 表 / 路由不变
-- Phase 14（导出）需评估 PDF / PPTX 路径：用 Puppeteer 截图拼装 OR 保留 Slidev cli 仅作导出工具
-- 删 Slidev 后 `packages/slidev/` 包整体可裁剪到只剩 templates + components（layouts 已经被 DeckRenderer 用上）
+- Phase 11 分享范围已在本 Phase 一次落地，没有临时 `slidev build` 双轨
+- Phase 14 导出链路保持不变，与 PresentationViewer 共用 DeckRenderer
+- `packages/slidev/` 已裁剪为 templates + layouts + components + catalog
 
 ---
 
@@ -1100,7 +1096,7 @@
 - **模板生态系统**（模板分两层：第一层 5 个 layout 模板独有 / 第二层内容页部件全部沉到公共组件库；创作者工具链 + 模板市场 + 公共组件库 + 主题色 token 规范）— 详见 [vision.md#远期愿景模板生态系统](./vision.md#远期愿景模板生态系统)。一旦落地，新模板的工作量从"完整一套视觉 + 8 layout + 5 chart"降到"5 个 layout 骨架 + 一份合规 tokens.css"，AI 生成内容页时只决定语义不再决定视觉，用户切模板内容完全无损
 - 分享链接的权限扩展（访客评论、过期策略、访问日志）
 - 嵌入到其他站点（iframe / OEmbed）
-- 自动化 CI/CD 流水线（GitHub Actions 自动部署）
+- 自动化部署流水线（GitHub Actions 当前只做 CI，生产发布仍显式授权后执行）
 - LLM 微调 / 自托管模型（Ollama / vLLM）+ 多 provider 用量统计与成本看板
 - MCP server 健康监控 / SLA 看板
 - **日志系统体系化**(用户量上 50+ 后再做):当前 agent 业务日志走 jsonl 文件(`creator-YYYY-MM-DD.jsonl` 按天 rotate + payload 单文件分子目录),Phase 10 已加 ctx 派生的 userId / deckId 索引字段(`jq 'select(.userId == 5)'` 可过滤),pm2 进程日志走 pm2-logrotate。**当前不足**:跨用户/跨 deck 检索仍要 grep + jq 手撸,无 admin 查询页;`/root/server/lumideck/logs/` 文件无自动清理(creator-*.jsonl 按日期分但永不删);`logs/payloads/<session>/` 子目录会无限堆积。**Phase 17+ 候选改造**:(a) 新增 `agent_events` 表持久化索引行(deckId/userId/sessionId/kind/ts 索引)+ payload 仍落 fs,db 只存路径;(b) admin 查询页(按 user / deck / 时间 / kind 过滤);(c) 加 cron 清理 N 天前的 creator-*.jsonl + payloads/*;(d) 接 Loki / OpenSearch(过早,内部场景过度工程化)

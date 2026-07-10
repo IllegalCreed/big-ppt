@@ -31,13 +31,6 @@ export interface LLMStreamDelta {
   }>
 }
 
-// === /api/read-slides ===
-export interface ReadSlidesResponse {
-  success: boolean
-  content?: string
-  error?: string
-}
-
 /**
  * write_slides 工具的响应类型（HTTP 路由已在 Phase 4 Step 11 删除，现仅用于 tool exec 返回值）。
  */

@@ -5,8 +5,8 @@
  * 不依赖 Slidev runtime 注入 API（$slidev / $nav / useNav / useSlideContext /
  * useDarkMode / useFixedClicks / $clicks）以及 `@slidev/client` import。
  *
- * 为什么要这道闸门：Phase 10.5 计划把 Slidev iframe 形态拆掉，改成 creator SPA
- * 内的 <DeckRenderer> Vue 组件直接 import 这批 layout/component 渲染。一旦未来
+ * 为什么要这道闸门：creator SPA 的 <DeckRenderer> 直接 import 这批
+ * layout/component 渲染。一旦未来
  * 哪个 layout 偷偷引入了 Slidev runtime API，DeckRenderer 就会在运行时报
  * "Cannot read property X of undefined"——此测试在 PR 阶段就把这种回归挡住。
  *
@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 // jsdom env 下 import.meta.url 不一定是 file://，统一用 cwd。
@@ -59,7 +59,7 @@ function listVueFiles(dir: string): string[] {
   return out
 }
 
-describe('Slidev runtime API 依赖防回归（Phase 10.5 spike 前置）', () => {
+describe('设计系统包 runtime 隔离', () => {
   const files = SCAN_DIRS.flatMap((d) => listVueFiles(d))
 
   it('至少扫到 20 个 .vue 文件（兜底：路径写错时直接红）', () => {
@@ -75,7 +75,36 @@ describe('Slidev runtime API 依赖防回归（Phase 10.5 spike 前置）', () =
           hits.push(rel)
         }
       }
-      expect(hits, `命中 ${pattern.name}（破坏 Phase 10.5 spike 前提）：\n${hits.join('\n')}`).toEqual([])
+      expect(
+        hits,
+        `命中 ${pattern.name}（破坏 Phase 10.5 spike 前提）：\n${hits.join('\n')}`,
+      ).toEqual([])
     })
   }
+
+  it('package scripts 与依赖不再启动或打包 Slidev runtime', () => {
+    const pkg = JSON.parse(readFileSync(join(slidevRoot, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+    }
+    expect(pkg.scripts).not.toHaveProperty('dev')
+    expect(pkg.scripts).not.toHaveProperty('preview')
+    expect(pkg.scripts).not.toHaveProperty('export')
+    expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })).not.toEqual(
+      expect.arrayContaining(['@slidev/cli', '@slidev/theme-default', '@slidev/theme-seriph']),
+    )
+  })
+
+  it('runtime 入口与托管配置均已删除', () => {
+    const retiredFiles = [
+      'slides.example.md',
+      'netlify.toml',
+      'vercel.json',
+      'style.css',
+      'scripts/gen-icons.mjs',
+      'pages/imported-slides.md',
+    ]
+    expect(retiredFiles.filter((file) => existsSync(join(slidevRoot, file)))).toEqual([])
+  })
 })

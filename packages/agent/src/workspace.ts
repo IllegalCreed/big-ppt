@@ -3,7 +3,7 @@ import path from 'node:path'
 
 /**
  * 向上找含 `pnpm-workspace.yaml` 的目录作为 monorepo root。
- * 初始化时调一次，失败则抛 —— agent 没有可用 slides.md 无法工作。
+ * 初始化时调一次，失败则抛；模板、日志与 MCP 配置都从该根目录解析。
  */
 function findMonorepoRoot(start: string = process.cwd()): string {
   let dir = path.resolve(start)
@@ -20,8 +20,6 @@ function findMonorepoRoot(start: string = process.cwd()): string {
 
 export interface Paths {
   root: string
-  slidesPath: string
-  historyDir: string
   /** 单模板目录，兼容 Phase 6 之前硬编码 beitou-standard 的路径期望。 */
   templatesDir: string
   /** 多模板根目录，`<templatesRoot>/<templateId>/manifest.json` + `starter.md`。 */
@@ -40,12 +38,6 @@ export function __resetPathsForTesting(): void {
 export function getPaths(): Paths {
   if (cached) return cached
   const root = findMonorepoRoot()
-  const slidesPath = process.env.BIG_PPT_SLIDES_PATH
-    ? path.resolve(process.env.BIG_PPT_SLIDES_PATH)
-    : path.join(root, 'packages/slidev/slides.md')
-  const historyDir = process.env.BIG_PPT_HISTORY_DIR
-    ? path.resolve(process.env.BIG_PPT_HISTORY_DIR)
-    : path.join(root, 'packages/agent/data/slides-history')
   const templatesDir = process.env.BIG_PPT_TEMPLATES_DIR
     ? path.resolve(process.env.BIG_PPT_TEMPLATES_DIR)
     : path.join(root, 'packages/slidev/templates/beitou-standard')
@@ -60,8 +52,6 @@ export function getPaths(): Paths {
     : path.join(root, 'packages/agent/data/mcp.json')
   cached = {
     root,
-    slidesPath,
-    historyDir,
     templatesDir,
     templatesRoot,
     logsDir,

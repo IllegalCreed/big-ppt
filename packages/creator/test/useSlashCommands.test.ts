@@ -20,6 +20,7 @@ function mkStubs(fetchImpl?: (url: string, init?: RequestInit) => Promise<Respon
 
 function mkApi(stubs: Stubs) {
   return useSlashCommands({
+    deckId: 42,
     clearHistory: stubs.clearHistory,
     appendLocalMessage: stubs.appendLocalMessage,
     retryLastUserMessage: stubs.retryLastUserMessage,
@@ -47,8 +48,9 @@ describe('useSlashCommands · commands', () => {
   })
 
   it('/undo 成功时展示 ✅ + message', async () => {
-    stubs = mkStubs(async (url) => {
+    stubs = mkStubs(async (url, init) => {
       expect(url).toBe('/api/restore-slides')
+      expect(new Headers(init?.headers).get('X-Deck-Id')).toBe('42')
       return new Response(JSON.stringify({ success: true, message: '已撤销到第 1 / 2 版' }))
     })
     const api = mkApi(stubs)
@@ -66,8 +68,9 @@ describe('useSlashCommands · commands', () => {
   })
 
   it('/redo 调 /api/redo-slides', async () => {
-    stubs = mkStubs(async (url) => {
+    stubs = mkStubs(async (url, init) => {
       expect(url).toBe('/api/redo-slides')
+      expect(new Headers(init?.headers).get('X-Deck-Id')).toBe('42')
       return new Response(JSON.stringify({ success: true, message: 'redone' }))
     })
     const api = mkApi(stubs)

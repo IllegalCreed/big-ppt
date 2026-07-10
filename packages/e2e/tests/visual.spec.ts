@@ -9,7 +9,8 @@
  * 日常守门：`pnpm -F @big-ppt/e2e test visual.spec.ts`
  *
  * 基线存放：packages/e2e/tests/visual.spec.ts-snapshots/ 目录（Playwright 默认）。
- * 跨机器字体差异会假阳性 → 本项目当前无 CI，基线就在你本地 macOS 上长期维护。
+ * 跨机器字体差异会假阳性，因此像素 diff 使用仓库内 macOS Chromium 基线本地维护；
+ * CI 仍会运行其余全量确定性浏览器流程。
  */
 import { test, expect } from '@playwright/test'
 

@@ -1,16 +1,14 @@
 node_modules
 dist
+.turbo
 .slidev
 .vite-inspect
 .remote-assets
 components.d.ts
-# Slidev cli 运行时生成的入口 HTML（含本地 /@fs/... 绝对路径，不跨机器）
+# Phase 16 前遗留的本地 runtime 产物；不再生成，也不应被提交。
 index.html
+slides.md
 slides.md.bak
 slides-*.md
-# slides.md 是 dev 时被 agent mirror 写入的运行时产物，不进 git。
-# 仓库 track 的是 slides.example.md 骨架；package.json 的 dev script 启动前
-# 自动 cp 一份 slides.md 兜底首次运行。
-slides.md
 *.local
 .DS_Store

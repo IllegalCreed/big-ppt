@@ -1,10 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Hono } from 'hono'
 import { auth } from '../src/routes/auth.js'
-import { authOptional, SESSION_COOKIE, type AuthVars } from '../src/middleware/auth.js'
+import { authOptional, type AuthVars } from '../src/middleware/auth.js'
 import { useTestDb } from './_setup/test-db.js'
 import { createLoggedInUser } from './_setup/factories.js'
-import { __setMasterKeyGetterForTesting, decryptApiKey, encryptApiKey } from '../src/crypto/apikey.js'
+import {
+  __setMasterKeyGetterForTesting,
+  decryptApiKey,
+  encryptApiKey,
+} from '../src/crypto/apikey.js'
 import { getDb, users } from '../src/db/index.js'
 import { eq } from 'drizzle-orm'
 
@@ -25,12 +29,6 @@ function makeApp() {
   app.use('*', authOptional)
   app.route('/api/auth', auth)
   return app
-}
-
-function extractSessionCookie(setCookie: string | null): string | null {
-  if (!setCookie) return null
-  const m = setCookie.match(/lumideck_session=([^;]+)/)
-  return m ? `${SESSION_COOKIE}=${m[1]}` : null
 }
 
 async function postJson(app: Hono, path: string, body: unknown, cookie?: string) {
@@ -64,7 +62,10 @@ describe('routes/auth', () => {
 
   it('register: 邮箱格式非法 → 400', async () => {
     const app = makeApp()
-    const res = await postJson(app, '/api/auth/register', { email: 'not-an-email', password: 'pw123456' })
+    const res = await postJson(app, '/api/auth/register', {
+      email: 'not-an-email',
+      password: 'pw123456',
+    })
     expect(res.status).toBe(400)
   })
 
@@ -77,13 +78,19 @@ describe('routes/auth', () => {
   it('register: 邮箱重复 → 409', async () => {
     const app = makeApp()
     await postJson(app, '/api/auth/register', { email: 'dup@a.com', password: 'pw123456' })
-    const res = await postJson(app, '/api/auth/register', { email: 'dup@a.com', password: 'pw123456' })
+    const res = await postJson(app, '/api/auth/register', {
+      email: 'dup@a.com',
+      password: 'pw123456',
+    })
     expect(res.status).toBe(409)
   })
 
   it('register: 成功 → 201 + Set-Cookie', async () => {
     const app = makeApp()
-    const res = await postJson(app, '/api/auth/register', { email: 'new@a.com', password: 'pw123456' })
+    const res = await postJson(app, '/api/auth/register', {
+      email: 'new@a.com',
+      password: 'pw123456',
+    })
     expect(res.status).toBe(201)
     const setCookie = res.headers.get('set-cookie')
     expect(setCookie).toContain('lumideck_session=')
@@ -106,7 +113,10 @@ describe('routes/auth', () => {
   it('login: 成功 → 200 + Set-Cookie', async () => {
     const app = makeApp()
     await postJson(app, '/api/auth/register', { email: 'login2@a.com', password: 'pw123456' })
-    const res = await postJson(app, '/api/auth/login', { email: 'login2@a.com', password: 'pw123456' })
+    const res = await postJson(app, '/api/auth/login', {
+      email: 'login2@a.com',
+      password: 'pw123456',
+    })
     expect(res.status).toBe(200)
     expect(res.headers.get('set-cookie')).toContain('lumideck_session=')
   })
@@ -205,6 +215,43 @@ describe('routes/auth', () => {
     expect(decrypted).toEqual({
       activeProvider: 'openai',
       providers: { openai: { apiKey: 'key-original', model: 'gpt-4o' } },
+    })
+  })
+
+  it('llm-settings PUT: 旧 shape 密文迁移，并忽略未配置的非活跃 provider', async () => {
+    const app = makeApp()
+    const { cookie, user } = await createLoggedInUser('llm-legacy-migrate@a.com')
+    const db = getDb()
+    await db
+      .update(users)
+      .set({
+        llmSettings: encryptApiKey(
+          JSON.stringify({
+            provider: 'openai',
+            apiKey: 'legacy-key',
+            model: 'gpt-4o',
+          }),
+        ),
+      })
+      .where(eq(users.id, user.id))
+
+    const res = await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({
+        activeProvider: 'openai',
+        providers: {
+          openai: { apiKey: '', model: 'gpt-5.5' },
+          anthropic: { apiKey: '', model: 'claude-sonnet-4-6' },
+        },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    const [storedUser] = await db.select().from(users).where(eq(users.id, user.id)).limit(1)
+    expect(JSON.parse(decryptApiKey(storedUser!.llmSettings!))).toEqual({
+      activeProvider: 'openai',
+      providers: { openai: { apiKey: 'legacy-key', model: 'gpt-5.5' } },
     })
   })
 
@@ -339,7 +386,11 @@ describe('routes/auth', () => {
     const res = await app.request('/api/auth/llm-settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json', Cookie: cookie },
-      body: JSON.stringify({ provider: 'openai', apiKey: 'sk-x', baseUrl: 'http://127.0.0.1:11434/v1' }),
+      body: JSON.stringify({
+        provider: 'openai',
+        apiKey: 'sk-x',
+        baseUrl: 'http://127.0.0.1:11434/v1',
+      }),
     })
 
     expect(res.status).toBe(400)

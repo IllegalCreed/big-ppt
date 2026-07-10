@@ -102,9 +102,7 @@ export function useSwitchTemplateJob() {
           progressRatio.value = STAGE_RATIO[job.state]
         }
         if (job.state === 'success') {
-          // 切模板成功 → server slides.md 已被新模板内容覆盖；主动调
-          // slideStore.refresh() 把新内容同步给 DeckRenderer。Phase 10.5 前
-          // 靠 Slidev iframe HMR file-watcher 自动刷新，DeckRenderer 时代必须显式拉。
+          // 切模板成功后，主动读取数据库中的当前版本同步 DeckRenderer。
           await useSlideStore().refresh()
           result.value = job
           running.value = false

@@ -9,15 +9,14 @@ const currentPage = ref(1)
 /** 当前编辑器活动的 deckId；refresh() 用它走 deck-scoped 路径拉 DB 当前版本内容。 */
 const activeDeckId = ref<number | null>(null)
 /**
- * LLM 工作中标记。useAIChat 在 status 变化时同步；下游目前只有一些 UI
- * 灰显需要（不再用于 iframe-era 的「重启 Slidev」按钮）。
+ * LLM 工作中标记。useAIChat 在 status 变化时同步，供下游 UI 灰显使用。
  */
 const aiBusy = ref(false)
 
 export function useSlideStore() {
   /**
    * Phase 10.5：复用 DeckRenderer 同款 parseDeck，跟视觉层渲染口径完全一致。
-   * 旧 Slidev iframe 时代用过的「按 \n---\n split」naive 切法会把 frontmatter
+   * 早期用过的「按 \n---\n split」naive 切法会把 frontmatter
    * 的 `---` 也当 slide 分隔符 → totalPages 虚高。
    */
   const parsed = computed(() => parseDeck(content.value))
@@ -54,11 +53,10 @@ export function useSlideStore() {
   /**
    * 从 server 拉最新 deck 内容 → 写 content。
    *
-   * Phase 10.5：走 deck-scoped 端点 `GET /api/decks/:id`，**不**再读 Slidev 全局
-   * slides.md（那条路径仍被 slidev-lock 守，编辑器不抢锁）。
+   * 走 deck-scoped 端点 `GET /api/decks/:id`，读取数据库中的当前版本。
    *
    * 触发点：
-   * - useAIChat session-end：LLM 跑完后同步 server slides.md 写过的最终态
+   * - useAIChat session-end：LLM 跑完后同步 server 写入的最终态
    * - useSwitchTemplateJob 完成：切模板后拉新内容
    * - useGenerateImageJob 完成：image-gen 成功后拉新 imageSrc
    * - VersionTimeline restore：回滚版本后拉新内容

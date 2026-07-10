@@ -191,13 +191,17 @@
 
 **Phase 3.5 已落定 `mcp__<id>__<tool>` 规范**（见 [07-mcp-integration.md](07-mcp-integration.md)）。
 
-### P3-7. Slidev 工具栏图标走离线预生成（UnoCSS 上游 bug 的 workaround）
+### P3-7. Slidev 工具栏图标走离线预生成 ✅（2026-07-10 Phase 16 清）
 
-**位置**：
+**关闭结论**：Phase 16 退役 Slidev runtime，工具栏改为 creator + lucide 图标。离线
+`gen-icons`、`style.css`、`styles/icons.css`、`@iconify-json/*` 和 `.npmrc` hoist 配置均已删除；
+无需继续等待 UnoCSS 上游修复。以下保留为历史诊断记录。
 
-- [packages/slidev/scripts/gen-icons.mjs](../../packages/slidev/scripts/gen-icons.mjs)（离线扫 `@slidev/client` 里的 `i-carbon:*` / `i-ph:*` / `i-svg-spinners:*` class，用显式 async `collections` loader 的 UnoCSS 生成 CSS）
-- [packages/slidev/style.css](../../packages/slidev/style.css)（`@import './styles/icons.css'`，Slidev 项目级全局样式入口）
-- [packages/slidev/styles/icons.css](../../packages/slidev/styles/icons.css)（生成产物，33KB，含 59 个图标的 SVG data URL）
+**历史位置（均已删除）**：
+
+- `packages/slidev/scripts/gen-icons.mjs`
+- `packages/slidev/style.css`
+- `packages/slidev/styles/icons.css`
 - [.npmrc](../../.npmrc) 的 `public-hoist-pattern[]=@iconify-json/*` 配合 iconify 包在根 `node_modules/` 顶层可见
 
 **背景**：pnpm isolated monorepo 下，`@unocss/preset-icons` 66.x 的 `collectionsNodeResolvePath` 自动解析管线彻底失效 —— 即便在 Slidev 之外的裸 Node 脚本里复现仍然 `failed to load icon`。Slidev 的 `setupUnocss` 写死了依赖这条自动路径，其 UI 工具栏（NavControls / 幻灯片导航 / Overview / Presenter 等）所有 `i-carbon:*` 类全部渲染为空。
@@ -213,7 +217,7 @@
 | `presetIcons({})` 零配置                                                 | ❌ `failed to load` | 同上                                         |
 | 用户 `setup/unocss.ts` 加第二个 `presetIcons` 显式 collections           | ❌ loader 不被触发  | UnoCSS 多 preset 合并时（同名）被前者 "认领" |
 
-**当前方案**：离线预生成 → Slidev 全局 style.css @import。优点：确定、零运行时开销、Slidev 升级不影响渲染只需 `pnpm run gen-icons` 重跑。缺点：33KB 死重；新图标需要手动重跑 script。
+**历史方案**：离线预生成 → Slidev 全局 style.css @import。
 
 **复检记录**:
 - **2026-04-26 Phase 8**:已复检 UnoCSS 66.6.8(slidev cli 52.14.2 内嵌版本 = npm 主线最新版 = `npm view unocss version` 显示 66.6.8),**仍未修**;workaround 保留。下次 Phase 11(多实例)/ Phase 14(导出) 时再复检。
@@ -226,7 +230,7 @@
 4. **备用 PR 给 Slidev**：让 `setupUnocss()` 显式传 `collections: { carbon: async loader, ... }` 当 fallback —— 即便 UnoCSS 不修，Slidev 也更鲁棒
 5. **沟通渠道**：GitHub issue / Discord slidev 频道 / Anthony Fu 个人 GitHub（他响应通常一周内）
 
-**清除时机**：上游 UnoCSS 修 + 升级后删除 gen-icons 流程。删除范围：`scripts/gen-icons.mjs` / `style.css` / `styles/` 目录 / `.npmrc` 的 `public-hoist-pattern`（如果其他依赖也不需要） / slidev 的 `@iconify-json/*` dependencies（恢复成 transitive）。
+**实际清除**：Phase 16 随 runtime 一次删除，依赖树减少 300+ packages。
 
 ---
 
@@ -245,11 +249,13 @@
 
 ---
 
-### P3-9. 前端视觉回归无自动化（Phase 3.6 遗留）
+### P3-9. 前端视觉回归无自动化 ✅（Phase 10.5 + Phase 16 清）
 
 **位置**：全局 UI 层
 
-**影响**：Phase 3.6 引入 design tokens 后，任何 token 改动可能波及 20+ 文件的显示；目前仅靠人眼对比截图。Phase 4 将大量增加组件，缺视觉回归工具会让 tokens 调整的代价升高。
+**关闭结论**：`packages/e2e/tests/visual.spec.ts` 已覆盖 2 模板 × 6 layouts 的
+`toHaveScreenshot()` 基线；Phase 16 新增 PresentationViewer 真浏览器 E2E 与桌面/移动截图检查。
+像素基线因字体 AA 仍限定 macOS Chromium，本地运行；CI 运行其余确定性 Playwright 流程并上传报告。
 
 **修复方案**：
 
@@ -257,7 +263,7 @@
 - 关键页面：主视图 / 设置 LLM tab / 设置 MCP tab（三种状态）/ 滑动 divider
 - CI 在 PR 上跑，失败生成 diff 图
 
-**触发时机**：Phase 4 前期，配合"逐页编辑"UI 密度提升一起做
+**维护方式**：模板视觉有意变更时本地 `--update-snapshots`，review 12 张 baseline diff。
 
 ---
 
@@ -311,17 +317,20 @@
 
 ---
 
-### P3-11. Slidev `vite-plugin-vue-server-ref` 客户端 fetch 不带 base 前缀（双层 proxy workaround）
+### P3-11. Slidev `vite-plugin-vue-server-ref` base 前缀 ✅（2026-07-10 Phase 16 清）
+
+**关闭结论**：Slidev runtime 与 `vite-plugin-vue-server-ref` 已删除；creator/agent/nginx 的
+`/@server-ref`、`/@server-reactive` 双层 proxy 同步删除。无需上游 PR。以下为历史记录。
 
 **位置**：
 
 - 上游：[`vite-plugin-vue-server-ref@1.0.0`](https://github.com/antfu/vite-plugin-vue-server-ref)（Anthony Fu 维护）`dist/index.mjs` 生成的 client 代码 `fetch('${prefix + key}', ...)`，`prefix` 是 plugin 配置的 URL 前缀（默认 `/@server-ref/`），写的是绝对路径，没拼 `import.meta.env.BASE_URL`
 - 调用方：`@slidev/client/state/{shared,snapshot,drawings}.ts` 通过 `import serverState from 'server-reactive:nav'` 触发生成 fetch
-- workaround 代码：[packages/creator/vite.config.ts](../../packages/creator/vite.config.ts) proxy `/@server-ref` `/@server-reactive` → agent；[packages/agent/src/index.ts](../../packages/agent/src/index.ts) `SLIDEV_EXTRA_PREFIXES` 数组把这俩绝对前缀也反代到 Slidev:3031
+- 历史 workaround：creator proxy → agent proxy → Slidev :3031
 
 **背景**：Slidev 启动加 `--base /api/slidev-preview/`，HTML / 资源路径都正确加 base，但 `vite-plugin-vue-server-ref` 注入到客户端 bundle 的 `fetch('/@server-reactive/nav', ...)` 用的是绝对路径，没考虑 base。iframe 翻页时这条 POST 就直奔 iframe 自己的 origin（creator dev `localhost:3030`），creator vite proxy 此前只代理 `/api/*`，落空 `404 Not Found`，控制台噪音。功能上**不影响翻页主路径**（只是 nav state 跨 tab / presenter 同步失效）。
 
-**当前 workaround**（2026-04-25 临时修）：
+**历史 workaround**（2026-04-25 临时修）：
 
 - creator vite.config.ts proxy 加 `/@server-ref` `/@server-reactive` → agent
 - agent index.ts 抽 `isSlidevProxyPath()` + `SLIDEV_EXTRA_PREFIXES`，让 `/@server-ref/*` `/@server-reactive/*` 走同一套 cookie 校验 + slidev-proxy 反代到 :3031
@@ -334,10 +343,7 @@
 2. **PR 给 `antfu/vite-plugin-vue-server-ref`**：把 plugin 生成的客户端代码 `fetch('${prefix + key}', ...)` 改为 `fetch(\`\${import.meta.env.BASE_URL.replace(/\\/$/, '')}\${prefix + key}\`, ...)`（注意 BASE_URL 默认 `/`，要 strip 末尾 `/` 防双斜杠）
 3. **Slidev 同步升级**：plugin 修后 Slidev `setupVueServerRef` 不需要改，bump 版本即可
 
-**清除时机**：
-
-- 上游 plugin 升级 + Slidev 升级带过来后，删除 [vite.config.ts](../../packages/creator/vite.config.ts) 里 `/@server-ref` `/@server-reactive` 两条 proxy + [agent/src/index.ts](../../packages/agent/src/index.ts) 里 `SLIDEV_EXTRA_PREFIXES` 常量与 `isSlidevProxyPath()` 抽象
-- 用户决定"最后再提 PR"——Phase 8 全量升级时把这条作为 minor task 一并处理
+**实际清除**：Phase 16 直接移除调用方与 workaround，不再受上游发布节奏约束。
 
 ---
 
@@ -424,7 +430,7 @@
 
 **当前生效门槛**（Phase 9-G 最终值）：
 - global: lines 90 / branches 80 / functions 85 / statements 87
-- 安全关键 per-file（crypto/apikey / slidev-lock / middleware/auth / routes/auth）保留 95+ 高门槛
+- 安全关键 per-file（crypto/apikey / middleware/auth / routes/auth）保留 95+ 高门槛
 
 **触发时机**：本条记录长期保留作为基线决策依据；Phase 11/14 等新增大块代码时可按需重评估
 

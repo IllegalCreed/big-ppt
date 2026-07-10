@@ -1,6 +1,6 @@
 /**
  * Deck 相关路由：CRUD + 版本 + 对话历史。
- * 单实例占用锁相关端点在 routes/lock.ts。
+ * 放映与公开分享契约在 routes/presentation.ts。
  *
  * 所有端点都要求登录；且所有 deckId 操作都会先校验 ownership。
  */
@@ -17,7 +17,6 @@ import {
   type RewriteFn,
 } from '../template-switch-job.js'
 import { rewriteForTemplate } from '../prompts/rewriteForTemplate.js'
-import { getHolder, release } from '../slidev-lock.js'
 import { canonicalToRow, rowToCanonical } from '../llm/chat-row.js'
 import type { CanonicalMessage, CanonicalRole } from '../llm/types.js'
 
@@ -220,11 +219,6 @@ decksRoute.delete('/decks/:id{[0-9]+}', async (c) => {
 
   const db = getDb()
   await db.update(decks).set({ status: 'deleted' }).where(eq(decks.id, deckId))
-  const session = c.get('session')
-  const holder = getHolder()
-  if (session && holder?.deckId === deckId && holder.userId === user.id) {
-    release(session.id)
-  }
   // Phase 11.5：deck 是 soft delete 不触发 FK cascade,显式清 deck_assets BLOB 行
   // 避免 DB 长期膨胀。失败不阻塞响应(asset 留库变孤儿是可恢复的)。
   try {
@@ -299,13 +293,6 @@ decksRoute.post('/decks/:id{[0-9]+}/restore/:vid{[0-9]+}', async (c) => {
   }
   await restoreDeckAnchor(deckId, version.anchorAssetId ?? null)
 
-  // 若当前 session 正占用该 deck，mirror 到 fs，让 Slidev 热重载
-  const session = c.get('session')
-  if (session?.activeDeckId === deckId) {
-    const { mirrorSlidesContent } = await import('../deck/mirror.js')
-    mirrorSlidesContent(version.content)
-  }
-
   return c.json({ version })
 })
 
@@ -313,7 +300,7 @@ decksRoute.post('/decks/:id{[0-9]+}/restore/:vid{[0-9]+}', async (c) => {
 
 /**
  * 发起模板切换：校验通过后创建 job 并异步跑流水，返回 jobId 供前端轮询。
- * 要求 body `{ targetTemplateId, confirmed: true }`，且 deck 当前若被他人占用 Slidev 则 409。
+ * 要求 body `{ targetTemplateId, confirmed: true }`。
  */
 decksRoute.post('/decks/:id{[0-9]+}/switch-template', async (c) => {
   const user = c.get('user')
@@ -337,18 +324,6 @@ decksRoute.post('/decks/:id{[0-9]+}/switch-template', async (c) => {
   const targetTemplateId = body.targetTemplateId?.trim() ?? ''
   const validation = validateSwitchTarget(check.deck.templateId, targetTemplateId)
   if (!validation.ok) return c.json({ error: validation.error }, validation.status)
-
-  // 单实例锁冲突：有人占用此 deck 且不是当前用户 → 拒绝（避免跟 mirror/活跃编辑竞态）
-  const holder = getHolder()
-  if (holder && holder.deckId === deckId && holder.userId !== user.id) {
-    return c.json(
-      {
-        error: '该 deck 正被占用',
-        holder: { userId: holder.userId, email: holder.userEmail },
-      },
-      409,
-    )
-  }
 
   const job = createJob({
     deckId,

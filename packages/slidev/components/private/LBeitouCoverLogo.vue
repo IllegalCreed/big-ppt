@@ -13,7 +13,7 @@ withDefaults(
   { markSize: 44, textSize: 44, invertText: true },
 )
 
-// Slidev dev 配 --base /api/slidev-preview/，硬编 src 不会被 vite 自动加 base
+// 兼容 creator 部署在非根 base 下的模板资源路径。
 const baseUrl = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '')
 </script>
 

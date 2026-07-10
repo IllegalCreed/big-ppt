@@ -60,9 +60,9 @@ export const sessions = mysqlTable(
     userId: int('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** 当前激活的 deck id */
+    /** @deprecated Phase 16 起不再读写，保留列以避免生产 push 执行破坏性 DROP。 */
     activeDeckId: int('active_deck_id'),
-    /** 客户端每 30s 刷新；超时用于单实例锁的释放判定 */
+    /** @deprecated 旧放映锁心跳字段，不再读写。 */
     lastHeartbeatAt: datetime('last_heartbeat_at'),
     expiresAt: datetime('expires_at').notNull(),
     createdAt: timestamp('created_at').default(NOW).notNull(),
@@ -83,9 +83,7 @@ export const decks = mysqlTable(
     /** 与模板体系解耦的"视觉主题变体"占位字段，目前不使用，留给未来（深色/浅色/色板微调） */
     themeId: varchar('theme_id', { length: 64 }).default('default').notNull(),
     /** 模板 id，对应 templates/<template_id>/manifest.json；新建 deck 时 starter.md 来源 */
-    templateId: varchar('template_id', { length: 64 })
-      .default('beitou-standard')
-      .notNull(),
+    templateId: varchar('template_id', { length: 64 }).default('beitou-standard').notNull(),
     /** 指向当前激活的 version；删除 version 时置 NULL（循环 FK，建表时必须可空） */
     currentVersionId: int('current_version_id'),
     /**
@@ -110,6 +108,37 @@ export const decks = mysqlTable(
   (t) => ({
     userStatusIdx: index('decks_user_status_idx').on(t.userId, t.status),
     userTemplateIdx: index('decks_user_template_idx').on(t.userId, t.templateId),
+  }),
+)
+
+/**
+ * Phase 16：公开分享链接。
+ *
+ * 每个 deck 只保留一个当前链接；重新创建会旋转 slug 并覆盖生命周期状态。
+ * userId 冗余用于 owner 管理接口做 SQL-level 复合隔离，避免先读取再判 ownership。
+ */
+export const shareLinks = mysqlTable(
+  'share_links',
+  {
+    id: int('id').autoincrement().primaryKey(),
+    slug: varchar('slug', { length: 64 }).notNull(),
+    deckId: int('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    userId: int('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    expiresAt: datetime('expires_at'),
+    revokedAt: datetime('revoked_at'),
+    accessCount: int('access_count').default(0).notNull(),
+    lastAccessedAt: datetime('last_accessed_at'),
+    createdAt: timestamp('created_at').default(NOW).notNull(),
+    updatedAt: timestamp('updated_at').default(NOW_ON_UPDATE).notNull(),
+  },
+  (t) => ({
+    slugUniq: uniqueIndex('share_links_slug_uniq').on(t.slug),
+    deckUniq: uniqueIndex('share_links_deck_uniq').on(t.deckId),
+    userIdx: index('share_links_user_idx').on(t.userId),
   }),
 )
 
@@ -174,8 +203,6 @@ export const deckChats = mysqlTable(
     deckCreatedIdx: index('deck_chats_deck_created_idx').on(t.deckId, t.createdAt),
   }),
 )
-
-// 单实例占用锁已改为 agent 进程内存（见 src/slidev-lock.ts），不落 DB。
 
 /**
  * Phase 9-F：MCP server per-user 入库（A01 修复）。
@@ -298,6 +325,8 @@ export type Session = typeof sessions.$inferSelect
 export type NewSession = typeof sessions.$inferInsert
 export type Deck = typeof decks.$inferSelect
 export type NewDeck = typeof decks.$inferInsert
+export type ShareLink = typeof shareLinks.$inferSelect
+export type NewShareLink = typeof shareLinks.$inferInsert
 export type DeckVersion = typeof deckVersions.$inferSelect
 export type NewDeckVersion = typeof deckVersions.$inferInsert
 export type DeckChat = typeof deckChats.$inferSelect

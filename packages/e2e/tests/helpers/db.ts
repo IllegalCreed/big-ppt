@@ -32,6 +32,7 @@ export async function truncateAllTables(): Promise<void> {
   const conn = await getPool().getConnection()
   try {
     await conn.query('SET FOREIGN_KEY_CHECKS=0')
+    await conn.query('TRUNCATE TABLE share_links')
     // Phase 13:加 user_assets 清理(quota / list/delete spec 依赖空表)。
     // 注:e2e helper 仍用 TRUNCATE 是因为 Playwright runtime 不走 drizzle prepared
     // statement(纯 mysql2 query),不触发 Aliyun RDS stale-plan bug;agent
@@ -47,17 +48,6 @@ export async function truncateAllTables(): Promise<void> {
     await conn.query('SET FOREIGN_KEY_CHECKS=1')
   } finally {
     conn.release()
-  }
-  // DB session 已清空，同步重置 agent 进程内的内存锁状态，
-  // 防止残留锁导致下一条 present 抢锁遇到 409 冲突（Phase 10.5 起锁仅在 present 路径取）。
-  // Phase 9-D：state-changing POST 受 originCheck 守卫，必须带 Origin（dev 兜底允许 localhost）
-  try {
-    await fetch(`${AGENT_BASE}/api/_test/reset-lock`, {
-      method: 'POST',
-      headers: { Origin: AGENT_BASE },
-    })
-  } catch {
-    // agent 未启动时忽略（本地单元测试场景）
   }
 }
 
@@ -178,8 +168,17 @@ export async function countChatsByDeck(deckId: number): Promise<number> {
 }
 
 /** 列指定 deck 的所有 deck_versions（最新优先,带 content） */
-export async function listVersionsByDeckSql(deckId: number): Promise<
-  Array<{ id: number; deck_id: number; content: string; message: string | null; turn_id: string | null; created_at: Date }>
+export async function listVersionsByDeckSql(
+  deckId: number,
+): Promise<
+  Array<{
+    id: number
+    deck_id: number
+    content: string
+    message: string | null
+    turn_id: string | null
+    created_at: Date
+  }>
 > {
   const [rows] = await getPool().query<mysql.RowDataPacket[]>(
     'SELECT id, deck_id, content, message, turn_id, created_at FROM deck_versions WHERE deck_id = ? ORDER BY id DESC',

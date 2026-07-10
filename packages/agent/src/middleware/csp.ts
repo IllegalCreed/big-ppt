@@ -3,8 +3,7 @@
  *
  * 策略：
  *   - 仅生产模式（NODE_ENV === 'production'）启用
- *   - 仅 Report-Only 模式（不强制），先观察 violation 再切 enforce —— Slidev iframe
- *     内含 inline script + eval（Vue 编译产物 + Vite HMR），CSP 强制易 break
+ *   - 仅 Report-Only 模式（不强制），先观察 violation 再切 enforce
  *   - 不加 report-uri（没收集端）；浏览器 console 仍会报 violation 帮调试
  *
  * Phase 11+ 评估切到 enforce 模式（详 plan 18 设计抉择 #4）。
@@ -12,13 +11,13 @@
 import type { MiddlewareHandler } from 'hono'
 
 const CSP_POLICY = [
-  // default-src self + 允许 inline + eval（Slidev / Vue / Vite 必需）
+  // default-src self + 允许 inline + eval（Vue runtime template compiler 必需）
   "default-src 'self' 'unsafe-inline' 'unsafe-eval'",
   // 图片：data + blob 用于动态生成的缩略图 / chart
   "img-src 'self' data: blob:",
-  // iframe：仅同源（agent 反代的 Slidev 走 /api/slidev-preview/*）
+  // iframe：仅同源
   "frame-src 'self'",
-  // worker：同源（Slidev / Vite 可能用）
+  // worker：同源
   "worker-src 'self' blob:",
   // 字体：data + https（自托管 / Google Fonts 等留接口）
   "font-src 'self' data: https:",

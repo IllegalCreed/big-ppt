@@ -8,10 +8,7 @@
 # 说明:
 #   - HTTPS 证书行由 certbot --nginx 自动注入到此文件后(install-server.sh 跑 certbot 时);
 #     首次 envsubst 出来时这些行不存在,certbot 注入后保留。
-#   - 所有 /api/* 反代到 agent;agent 内部再反代到 Slidev(127.0.0.1:3031)。
-#   - /@vite /@id /@fs /@server-ref /@server-reactive 等 Slidev/Vite 客户端绝对路径
-#     也走 agent 反代(详见 packages/agent/src/index.ts 的 SLIDEV_EXTRA_PREFIXES)。
-#   - WebSocket upgrade 头部全 location 都加,Slidev HMR / agent SSE 都依赖。
+#   - 所有 /api/* 反代到 agent；creator 的公开分享路由由 SPA fallback 承接。
 
 server {
     listen 80;
@@ -52,8 +49,7 @@ server {
     proxy_read_timeout 600s;
     proxy_send_timeout 600s;
 
-    # gzip 压缩(对 Slidev iframe 内 Vite dev module 加载至关重要,
-    # 实测无 gzip 时 925KB index.js 走 12 秒,加 gzip 后 ~250KB ~3 秒)
+    # gzip 压缩静态资源与 API 文本响应
     gzip on;
     gzip_vary on;
     gzip_proxied any;
@@ -78,7 +74,7 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # ── API + Slidev 反代到 agent ────────────────────────────
+    # ── API 反代到 agent ────────────────────────────────────
     location /api/ {
         proxy_pass http://127.0.0.1:${BACKEND_PORT};
         proxy_set_header Host $host;
@@ -86,56 +82,14 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # WebSocket upgrade(Slidev HMR + agent SSE)
+        # HTTP/1.1 + 关闭 buffering，保证 LLM SSE 流及时抵达浏览器。
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        # 流式 LLM 响应不要 buffer
         proxy_buffering off;
     }
 
     # ── 根 healthcheck(/healthz 别名,uptime 监控可单独打这条) ────
     location = /healthz {
         proxy_pass http://127.0.0.1:${BACKEND_PORT};
-        proxy_set_header Host $host;
-    }
-
-    # ── Slidev / Vite 客户端绝对路径(agent 内部反代承接) ─────
-    # 用 ^~ 让正则 location 优先级高于 SPA fallback
-    location ^~ /@vite/ {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-    location ^~ /@id/ {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-    location ^~ /@fs/ {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-    location ^~ /@server-ref/ {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-    location ^~ /@server-reactive/ {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
     }
 }

@@ -137,7 +137,7 @@ test('generate_slide_image stub 模式:同步 jobId → DB asset + slides.md fro
 
   // ── deck_versions:slides-store DB-based 写入 — 验 layout 切到 image-content + imageSrc ─
   // (Phase 10.5 起 slides-store 不再 mirror 到 slides.md,storeUpdateSlide 仅写 deck_versions;
-  //  Slidev iframe 现在也只服务"全屏放映",编辑器主视图走 DeckRenderer 读 DB content。
+  // 编辑器与原生放映都由 DeckRenderer 读取 DB currentVersion content。
   //  历史断言读 SLIDES_FILE 已 obsolete,改读 DB current version。)
   const dbContent = await getCurrentVersionContent(deckId)
   expect(dbContent).toContain('layout: beitou-image-content')

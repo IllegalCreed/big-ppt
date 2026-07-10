@@ -34,7 +34,7 @@ export interface LogEventResult {
 export interface LogEventContext {
   /** 来自 ctx.var.user.id */
   userId: number | null
-  /** 来自 ctx.var.session.activeDeckId */
+  /** 来自 request context 的 activeDeckId */
   deckId: number | null
 }
 

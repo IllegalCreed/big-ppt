@@ -77,21 +77,20 @@ beforeEach(() => {
   fs.mkdirSync(slidevDir, { recursive: true })
   slidesFile = path.join(slidevDir, 'slides.md')
   fs.writeFileSync(slidesFile, FIXTURE_SLIDES, 'utf-8')
-  process.env.BIG_PPT_SLIDES_PATH = slidesFile
-  process.env.BIG_PPT_HISTORY_DIR = path.join(tmpRoot, 'history')
   __resetPathsForTesting()
   __resetImageJobsForTesting()
 })
 
 afterEach(() => {
-  delete process.env.BIG_PPT_SLIDES_PATH
-  delete process.env.BIG_PPT_HISTORY_DIR
   __resetPathsForTesting()
   __resetImageJobsForTesting()
   fs.rmSync(tmpRoot, { recursive: true, force: true })
 })
 
-async function pollUntilDone(jobId: string, timeoutMs = 5000): Promise<ReturnType<typeof getImageJob>> {
+async function pollUntilDone(
+  jobId: string,
+  timeoutMs = 5000,
+): Promise<ReturnType<typeof getImageJob>> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const j = getImageJob(jobId)
@@ -133,7 +132,7 @@ describe('generate_slide_image 工具', () => {
 
   it('slideIndex 不是整数 → 失败', async () => {
     const { user } = await createLoggedInUser('e1@a.com')
-    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
+    const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const result = await runInRequest(
@@ -147,7 +146,7 @@ describe('generate_slide_image 工具', () => {
 
   it('prompt 缺失 → 失败', async () => {
     const { user } = await createLoggedInUser('e2@a.com')
-    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
+    const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const result = await runInRequest(
@@ -161,7 +160,7 @@ describe('generate_slide_image 工具', () => {
 
   it('slideIndex 超过页数 → 失败 + slides.md 不变', async () => {
     const { user } = await createLoggedInUser('e3@a.com')
-    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
+    const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const before = fs.readFileSync(slidesFile, 'utf-8')
@@ -176,7 +175,7 @@ describe('generate_slide_image 工具', () => {
 
   it('跨用户 deck → 失败', async () => {
     const { user: a } = await createLoggedInUser('owner@a.com')
-    const { deck } = await createDeckDirect(a.id, "D", FIXTURE_SLIDES)
+    const { deck } = await createDeckDirect(a.id, 'D', FIXTURE_SLIDES)
     const { user: b } = await createLoggedInUser('intruder@a.com')
     await setImageLlmSettings(b.id, { provider: 'openai', apiKey: 'sk-x' })
 
@@ -193,7 +192,7 @@ describe('generate_slide_image 工具', () => {
     delete process.env.BIG_PPT_TEST_IMAGE_MODE
     try {
       const { user } = await createLoggedInUser('nokey@a.com')
-      const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
+      const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
       const result = await runInRequest(
         { userId: user.id, sessionId: null, activeDeckId: deck.id, turnId: null },
         () => runTool({ slideIndex: 2, prompt: 'p', fallbackSummary: 's' }),
@@ -208,7 +207,7 @@ describe('generate_slide_image 工具', () => {
 
   it('Phase 11.6 dogfood 后:fallbackSummary 缺失 → 工具拒收', async () => {
     const { user } = await createLoggedInUser('nofallback@a.com')
-    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
+    const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const result = await runInRequest(
@@ -222,7 +221,7 @@ describe('generate_slide_image 工具', () => {
 
   it('Phase 11.6 dogfood 后:fallbackSummary 全空白字符串 → 工具拒收(trim 后非空才算)', async () => {
     const { user } = await createLoggedInUser('emptyfb@a.com')
-    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
+    const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const result = await runInRequest(
@@ -236,7 +235,7 @@ describe('generate_slide_image 工具', () => {
 
   it('happy path:同步立返 jobId 且 slides.md/DB 暂未变;stub 跑完后 DB+slides.md 都更新', async () => {
     const { user } = await createLoggedInUser('happy@a.com')
-    const { deck } = await createDeckDirect(user.id, "D", FIXTURE_SLIDES)
+    const { deck } = await createDeckDirect(user.id, 'D', FIXTURE_SLIDES)
     await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
 
     const before = fs.readFileSync(slidesFile, 'utf-8')
@@ -505,10 +504,7 @@ heading: 第三页标题
       })
       const { getDb, decks } = await import('../src/db/index.js')
       const { eq } = await import('drizzle-orm')
-      await getDb()
-        .update(decks)
-        .set({ anchorAssetId: anchor.id })
-        .where(eq(decks.id, deck.id))
+      await getDb().update(decks).set({ anchorAssetId: anchor.id }).where(eq(decks.id, deck.id))
 
       await setImageLlmSettings(user.id, { provider: 'openai', apiKey: 'sk-x' })
       const result = await runInRequest(
@@ -641,10 +637,7 @@ heading: 第三页标题
           await new Promise((r) => setTimeout(r, 500))
           const { getDb, decks } = await import('../src/db/index.js')
           const { eq } = await import('drizzle-orm')
-          await getDb()
-            .update(decks)
-            .set({ anchorSkipped: true })
-            .where(eq(decks.id, deck.id))
+          await getDb().update(decks).set({ anchorSkipped: true }).where(eq(decks.id, deck.id))
         })()
         await unlockPromise
         // 此后工具下一轮 polling(每 1.5s)会发现 anchorSkipped=true → break → 继续派 job
@@ -675,10 +668,7 @@ heading: 第三页标题
       const { getDb, decks } = await import('../src/db/index.js')
       const { eq } = await import('drizzle-orm')
       // 模拟脏数据:B 的 deck.anchor_asset_id 指向 A 的 asset
-      await getDb()
-        .update(decks)
-        .set({ anchorAssetId: assetA.id })
-        .where(eq(decks.id, deckB.id))
+      await getDb().update(decks).set({ anchorAssetId: assetA.id }).where(eq(decks.id, deckB.id))
 
       await setImageLlmSettings(b.id, { provider: 'openai', apiKey: 'sk-x' })
       const result = await runInRequest(

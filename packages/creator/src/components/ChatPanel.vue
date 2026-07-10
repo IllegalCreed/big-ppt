@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, h, onUnmounted, ref } from 'vue'
+import { computed, h, inject, onUnmounted, ref } from 'vue'
 import { Bubble, Sender, Suggestion } from '@antdv-next/x'
 import type { SenderRef } from '@antdv-next/x'
-import { useAIChat } from '../composables/useAIChat'
+import { DECK_CHAT_CONTEXT, useAIChat } from '../composables/useAIChat'
 import { useMoodBoardPicker } from '../composables/useMoodBoardPicker'
 import { useSlashCommands } from '../composables/useSlashCommands'
 import { useUploads } from '../composables/useUploads'
@@ -46,7 +46,14 @@ const inputPlaceholder = computed(() =>
 )
 
 // 斜杠指令（/clear / /retry / /undo / /redo / /log / /help）
-const slash = useSlashCommands({ clearHistory, appendLocalMessage, retryLastUserMessage })
+const deckContext = inject(DECK_CHAT_CONTEXT)
+if (!deckContext) throw new Error('ChatPanel 必须挂载在 DeckEditorCanvas 内')
+const slash = useSlashCommands({
+  deckId: deckContext.deckId,
+  clearHistory,
+  appendLocalMessage,
+  retryLastUserMessage,
+})
 
 function handleSlashSelect(value: string) {
   senderRef.value?.clear()

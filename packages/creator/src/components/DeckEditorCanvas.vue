@@ -20,6 +20,7 @@ import {
   LogOut,
   Palette,
   Settings,
+  Share2,
   Sparkles,
 } from 'lucide-vue-next'
 import SlidePreview from './SlidePreview.vue'
@@ -46,6 +47,7 @@ const TemplatePickerModal = defineAsyncComponent(() => import('./TemplatePickerM
 const VersionTimeline = defineAsyncComponent(() => import('./VersionTimeline.vue'))
 const AssetManagerPanel = defineAsyncComponent(() => import('./AssetManagerPanel.vue'))
 const ExportModal = defineAsyncComponent(() => import('./ExportModal.vue'))
+const ShareModal = defineAsyncComponent(() => import('./ShareModal.vue'))
 const AnchorPickerModal = defineAsyncComponent(() => import('./AnchorPickerModal.vue'))
 const UndoToast = defineAsyncComponent(() => import('./UndoToast.vue'))
 
@@ -202,6 +204,7 @@ const showTimeline = ref(false)
 const showTemplatePicker = ref(false)
 const showAssetsPanel = ref(false)
 const showExport = ref(false)
+const showShare = ref(false)
 
 // Phase 14:Export 弹窗 payload。用 computed 包,避免 template inline 对象
 // 每次 render 重建的反模式;ExportModal 内 onConfirm 点击时读到的就是当下最新的
@@ -233,9 +236,8 @@ function onTemplateSwitched(payload: {
   // 通知父组件 refetch deck + currentVersion，新 templateId 会随 deck 一起回流
   emit('template-switched')
 
-  // 不主动调 slideStore.refresh()：backend 已 mirrorSlidesContent 写入新 slides.md，
-  // dev Slidev 的 vite HMR 自己会把新内容推到 iframe，前端再 refresh 等于让 iframe
-  // 整体 reload 一次，撞 Slidev 自身 reload 窗口反而 502/闪烁。
+  // 后端切换任务完成后主动读取数据库中的新版本，让 DeckRenderer 立即更新。
+  void slideStore.refresh()
 
   undoToast.value = {
     visible: true,
@@ -257,12 +259,11 @@ function onUndoFromToast(snapshotVersionId: number) {
 }
 
 function onTimelineRestored() {
-  // 回滚成功后强制 iframe 重载，Slidev 会读到新的 slides.md
-  slideStore.refresh()
+  void slideStore.refresh()
 }
 
 async function onLogout() {
-  emit('exit-to-list') // 先释放锁再跳 login
+  emit('exit-to-list')
   setTimeout(() => {
     void logout().then(() => {
       window.location.href = '/login'
@@ -420,6 +421,15 @@ onUnmounted(() => {
         <button
           type="button"
           class="icon-btn"
+          title="分享"
+          aria-label="分享"
+          @click="showShare = true"
+        >
+          <Share2 :size="18" :stroke-width="1.8" />
+        </button>
+        <button
+          type="button"
+          class="icon-btn"
           title="导出"
           aria-label="导出"
           @click="showExport = true"
@@ -467,6 +477,12 @@ onUnmounted(() => {
     <SettingsModal v-if="showSettings" v-model:open="showSettings" />
     <AssetManagerPanel v-if="showAssetsPanel" v-model:open="showAssetsPanel" />
     <ExportModal v-if="showExport" v-model:open="showExport" :deck="exportDeckPayload" />
+    <ShareModal
+      v-if="showShare"
+      v-model:open="showShare"
+      :deck-id="deck.id"
+      :deck-title="displayTitle"
+    />
     <TemplatePickerModal
       v-if="showTemplatePicker"
       v-model:open="showTemplatePicker"

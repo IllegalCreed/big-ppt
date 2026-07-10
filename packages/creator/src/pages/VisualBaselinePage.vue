@@ -15,6 +15,7 @@ import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
 const route = useRoute()
 const template = computed(() => String(route.params.template))
 const layout = computed(() => String(route.params.layout))
+const thumbnailMode = computed(() => route.query.thumbnail === '1')
 
 /**
  * 每种 layout 的最小 frontmatter（layout name + 必填字段）。
@@ -27,7 +28,7 @@ const fixtures: Record<string, (tpl: string) => string> = {
   'section-title': (tpl) => `layout: ${tpl}-section-title\nchapterNumber: 1\nchapterTitle: 数据`,
   content: (tpl) => `layout: ${tpl}-content\nheading: 内容页标题`,
   'image-content': (tpl) =>
-    `layout: ${tpl}-image-content\nheading: 图文页\nimageSrc: /templates/${tpl}-standard/thumbnail.png`,
+    `layout: ${tpl}-image-content\nheading: 图文页\nimageSrc: /templates/${tpl}-standard/assets/cover.png`,
   'back-cover': (tpl) => `layout: ${tpl}-back-cover\nmessage: 谢谢观看`,
 }
 
@@ -42,8 +43,8 @@ const markdown = computed(() => {
 </script>
 
 <template>
-  <div class="visual-baseline-root">
-    <DeckRenderer :markdown="markdown" :template-id="template" />
+  <div class="visual-baseline-root" :class="{ 'thumbnail-mode': thumbnailMode }">
+    <DeckRenderer :markdown="markdown" :template-id="template" :allow-upscale="thumbnailMode" />
   </div>
 </template>
 
@@ -53,5 +54,12 @@ const markdown = computed(() => {
   width: 960px;
   padding: 0;
   background: #fff;
+}
+.visual-baseline-root.thumbnail-mode {
+  width: 1280px;
+  height: 720px;
+}
+.visual-baseline-root.thumbnail-mode :deep(.deck-renderer) {
+  padding: 0;
 }
 </style>

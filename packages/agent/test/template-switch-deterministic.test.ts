@@ -25,7 +25,6 @@ import {
   type RewriteFn,
   tryDeterministicSwitch,
 } from '../src/template-switch-job.js'
-import { __resetForTesting as resetSlidevLock } from '../src/slidev-lock.js'
 import { getManifest } from '../src/templates/registry.js'
 
 useTestDb()
@@ -95,7 +94,6 @@ beforeEach(() => {
   __resetPathsForTesting()
   __resetTemplateRegistryForTesting()
   __resetJobsForTesting()
-  resetSlidevLock()
   __setRewriteFnForTesting(null)
 })
 
@@ -104,7 +102,6 @@ afterEach(() => {
   __resetPathsForTesting()
   __resetTemplateRegistryForTesting()
   __resetJobsForTesting()
-  resetSlidevLock()
   __setRewriteFnForTesting(null)
   fs.rmSync(tmpRoot, { recursive: true, force: true })
 })

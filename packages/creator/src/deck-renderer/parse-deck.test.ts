@@ -101,4 +101,29 @@ describe('parseDeck', () => {
     expect(slides[0]?.frontmatter).not.toHaveProperty('title')
     expect(slides[0]?.frontmatter).not.toHaveProperty('transition')
   })
+
+  it('提取末尾 HTML comment 为演讲者备注并从正文移除', () => {
+    const md = [
+      '---',
+      'layout: beitou-content',
+      'heading: Roadmap',
+      '---',
+      '',
+      '正文内容',
+      '',
+      '<!--',
+      '先讲结论，再解释风险。',
+      '-->',
+    ].join('\n')
+
+    const { slides } = parseDeck(md)
+    expect(slides[0]?.body).toBe('正文内容')
+    expect(slides[0]?.notes).toBe('先讲结论，再解释风险。')
+  })
+
+  it('正文中间的 HTML comment 不误判为演讲者备注', () => {
+    const { slides } = parseDeck('# A\n\n<!-- inline -->\n\n后续正文')
+    expect(slides[0]?.notes).toBe('')
+    expect(slides[0]?.body).toContain('<!-- inline -->')
+  })
 })

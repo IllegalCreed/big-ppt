@@ -2,10 +2,8 @@
  * Request context middleware（必须挂在 authOptional 之后）：
  * 把 ctx.user / ctx.session 包进 AsyncLocalStorage，下游 slides-store 能读到 activeDeckId。
  *
- * Phase 10.5：activeDeckId 来源优先级：
- *   1. 请求头 `X-Deck-Id`（前端编辑器场景每次显式带，编辑器不抢锁后此为主源）
- *   2. session.activeDeckId（向后兼容；Phase 10.5 起编辑器永不设置，仅 release 写 null）
- * 解析失败时取 null。
+ * activeDeckId 只来自显式请求头 `X-Deck-Id`。解析失败时取 null；session 中的
+ * 旧字段不再参与 deck 选择，避免跨标签页隐式共享状态。
  */
 import type { MiddlewareHandler } from 'hono'
 import { runInRequest } from '../context.js'
@@ -25,7 +23,7 @@ export const requestContextMiddleware: MiddlewareHandler<{ Variables: AuthVars }
     {
       userId: user?.id ?? null,
       sessionId: session?.id ?? null,
-      activeDeckId: headerDeckId ?? session?.activeDeckId ?? null,
+      activeDeckId: headerDeckId,
       turnId: null,
     },
     async () => {

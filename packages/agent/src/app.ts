@@ -2,8 +2,8 @@
  * Phase 7D：Hono app 装配抽出。
  *
  * 拆分目的：让 creator 集成测 / 未来其他工具 in-process 用 `app.fetch(req)` 调用业务路由，
- * 不必通过 HTTP/端口走真实网络。生产入口 `index.ts` import 此 app 并接到原生 http server 之上，
- * 同时附带 Slidev 反向代理 + WebSocket upgrade 等运行时能力。
+ * 不必通过 HTTP/端口走真实网络。生产入口 `index.ts` import 此 app 并交给
+ * `@hono/node-server` 监听端口。
  *
  * 此文件只做"路由 + 中间件装配"，不做副作用：
  *   - 不调 `registerLocalTools()`（生产/测试各自决定何时调）
@@ -23,14 +23,13 @@ import { mcp as mcpRoute } from './routes/mcp.js'
 import { auth } from './routes/auth.js'
 import { decksRoute } from './routes/decks.js'
 import { decksArchiveRoute } from './routes/decks-archive.js'
-import { lockRoute } from './routes/lock.js'
 import { healthz } from './routes/healthz.js'
 import { imageLlmSettingsRoute } from './routes/image-llm-settings.js'
 import { assetsRoute } from './routes/assets.js'
 import { uploads } from './routes/uploads.js'
 import { imageJobsRoute } from './routes/image-jobs.js'
 import { moodBoardRoute } from './routes/mood-board.js'
-import { slidevRestartRoute } from './routes/slidev-restart.js'
+import { presentationRoute } from './routes/presentation.js'
 import { authOptional, type AuthVars } from './middleware/auth.js'
 import { requestContextMiddleware } from './middleware/request-context.js'
 import { originCheck } from './middleware/origin-check.js'
@@ -60,7 +59,6 @@ app.route('/api', decksRoute)
 // Phase 15 Task 31-B:.lumideck 归档导出。独立子路由文件,避免改已 800+ 行的 decks.ts,
 // 也方便 Task C 扩 import 路由时单点 mount。
 app.route('/api', decksArchiveRoute)
-app.route('/api', lockRoute)
 app.route('/api/llm', llm)
 // Phase 12.5 Task D：model dropdown 调它拿 pi-ai 内置的 model 列表。
 // 显式 mount 在 /api/llm/models 路径，**不**跟 /api/llm 的 sub-router 合并 ——
@@ -83,4 +81,4 @@ app.route('/api/uploads', uploads)
 app.route('/api', imageJobsRoute)
 // Phase 11.8: mood-board / anchor 两端点。显式 path 不带 wildcard mw,沿用 imageJobsRoute 套路
 app.route('/api', moodBoardRoute)
-app.route('/api', slidevRestartRoute)
+app.route('/api', presentationRoute)

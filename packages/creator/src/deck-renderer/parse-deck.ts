@@ -25,6 +25,8 @@ export interface Slide {
   frontmatter: Record<string, unknown>
   /** frontmatter 之后的 markdown 原文，未做 markdown→HTML 编译。 */
   body: string
+  /** Slidev 风格演讲者备注：取 body 末尾的 HTML comment 内容。 */
+  notes: string
 }
 
 export interface ParsedDeck {
@@ -74,6 +76,19 @@ function looksLikeFrontmatter(chunk: string): boolean {
   )
 }
 
+function splitNotes(body: string): { body: string; notes: string } {
+  const matches = [...body.matchAll(/<!--([\s\S]*?)-->/g)]
+  const last = matches[matches.length - 1]
+  if (!last || last.index === undefined) return { body: body.trim(), notes: '' }
+
+  const after = body.slice(last.index + last[0].length)
+  if (after.trim() !== '') return { body: body.trim(), notes: '' }
+  return {
+    body: `${body.slice(0, last.index)}${after}`.trim(),
+    notes: (last[1] ?? '').trim(),
+  }
+}
+
 export function parseDeck(markdown: string): ParsedDeck {
   // 顶格 --- 行作为分隔符；保留前后空块以便后续按位置配对。
   const blocks = markdown.split(/^---\s*$/m)
@@ -92,21 +107,23 @@ export function parseDeck(markdown: string): ParsedDeck {
         if (parsed && typeof parsed === 'object') fm = parsed as Record<string, unknown>
       } catch {
         // YAML 解析失败时静默降级，整块当 body
-        slides.push({ layout: 'default', frontmatter: {}, body: chunk.trim() })
+        const fallback = splitNotes(chunk)
+        slides.push({ layout: 'default', frontmatter: {}, ...fallback })
         i++
         continue
       }
       const body = i + 1 < blocks.length ? (blocks[i + 1] ?? '').trim() : ''
+      const content = splitNotes(body)
       slides.push({
         layout: typeof fm.layout === 'string' ? fm.layout : 'default',
         frontmatter: fm,
-        body,
+        ...content,
       })
       i += 2
     } else {
       const body = chunk.trim()
       if (body !== '') {
-        slides.push({ layout: 'default', frontmatter: {}, body })
+        slides.push({ layout: 'default', frontmatter: {}, ...splitNotes(body) })
       }
       i++
     }

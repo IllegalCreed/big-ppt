@@ -25,11 +25,7 @@ defineProps<{
         <h1 v-if="heading" class="image-content-title">{{ heading }}</h1>
       </LBtHeader>
       <div class="image-content-body">
-        <!--
-          关键:imageSrc 是 agent 绝对路径(/api/assets/<uuid>),
-          不要包 templateAsset() —— 那会加 --base 前缀变成
-          /api/slidev-preview/api/assets/...,直接 404。
-        -->
+        <!-- imageSrc 是 agent 绝对 API 路径，不要作为模板静态资源改写。 -->
         <img
           :src="imageSrc"
           :alt="heading || ''"

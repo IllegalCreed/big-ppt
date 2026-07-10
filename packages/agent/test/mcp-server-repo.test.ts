@@ -5,7 +5,7 @@
  * 之前是 JsonFileRepo 全用户共享单文件 → 跨用户凭据共享漏洞。
  * 改为 DB 表 user_mcp_servers，组合唯一索引 (userId, serverId)。
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { eq, and } from 'drizzle-orm'
 import { DrizzleRepo } from '../src/mcp-server-repo/drizzle-repo.js'
 import { PRESET_MCP_SERVERS } from '../src/mcp-server-repo/presets.js'

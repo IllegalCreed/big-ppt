@@ -5,11 +5,8 @@ import { useDecks, type Deck, type DeckVersion } from '../composables/useDecks'
 import DeckEditorCanvas from '../components/DeckEditorCanvas.vue'
 import { ApiError } from '../api/client'
 
-// Phase 10.5：编辑器进入流程完全去抢锁。
-// 旧版：activate-deck → 占锁 → heartbeat 30s → onBeforeUnmount release
-// 新版：纯 GET deck 元数据 + currentVersion，多用户并发零排队
-// 锁仅在「全屏放映」（SlidePreview.present()）触发；
-// OccupiedWaitingPage 不再在路由层展示，挪到 present 失败时 SlidePreview 内 banner。
+// 编辑器进入只读取 deck 元数据与 currentVersion。原生放映页不依赖全局运行时，
+// 多个用户可同时编辑和放映各自的 deck。
 
 const route = useRoute()
 const router = useRouter()

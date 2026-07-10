@@ -24,8 +24,7 @@ export default defineConfig({
   timeout: 30_000,
   expect: {
     timeout: 10_000,
-    // Phase 10.5 Task 25-E-1：visual regression 容差。本地 macOS 跑出 baseline
-    // 后续比对；跨机器（不同字体 AA）必假阳性，本项目当前无 CI，本地基线即可。
+    // 视觉基线当前为 macOS Chromium；CI 跑其余确定性浏览器流程，本地跑像素 diff。
     toHaveScreenshot: {
       maxDiffPixelRatio: 0.02,
       threshold: 0.2,
@@ -73,11 +72,6 @@ export default defineConfig({
         // 老 spec 不测 anchor 流程,polling 会让它们 30s timeout。全局 disable 让老 spec 自然
         // 跑;anchor-image-flow.spec.ts 自己测真 POST /anchor /skip 路由不依赖 polling 行为。
         BIG_PPT_TEST_DISABLE_ANCHOR_POLL: '1',
-        // 让 e2e 的 mirror 写到 tmp 而非 packages/slidev/slides.md，
-        // 避免你 dev 跑着的 :3031 slidev HMR 被 e2e 切模板搞乱（root cause：
-        // 大改 frontmatter 触发 slidev cli full reload，dev iframe 闪/状态错乱）。
-        // e2e spec 都断 DB + UI selector 不验 iframe 渲染，写哪都不影响通过率。
-        BIG_PPT_SLIDES_PATH: '/tmp/lumideck-e2e-slides.md',
         // Phase 9-E：e2e 共享同一个 webServer，rate-limit 跨 spec 累计撞 5/15min/IP
         // 上限会让 register/login spec 挂；测试场景下统一禁用。
         RATE_LIMIT_ENABLED: 'false',
@@ -102,6 +96,7 @@ export default defineConfig({
       env: {
         CREATOR_PORT: String(CREATOR_PORT),
         AGENT_ORIGIN: `http://localhost:${AGENT_PORT}`,
+        DISABLE_VUE_DEVTOOLS: '1',
       },
     },
   ],

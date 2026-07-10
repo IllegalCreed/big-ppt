@@ -12,7 +12,7 @@ export interface McpToolDef {
 }
 
 export class McpSession {
-  private client: unknown = null
+  private client: Client | null = null
   tools: McpToolDef[] = []
   status: McpServerStatus = { state: 'disabled' }
 
@@ -34,13 +34,13 @@ export class McpSession {
       const transport = new StreamableHTTPClientTransport(new URL(urlCheck.url), {
         requestInit: { headers: this.config.headers },
       })
-      const client: any = new Client(
+      const client = new Client(
         { name: 'big-ppt-agent', version: '0.1.0' },
         { capabilities: {} },
       )
       await client.connect(transport)
-      const res: { tools: McpToolDef[] } = await client.listTools()
-      this.tools = res.tools ?? []
+      const res = await client.listTools()
+      this.tools = (res.tools ?? []) as McpToolDef[]
       this.client = client
       this.status = {
         state: 'ok',
@@ -62,10 +62,10 @@ export class McpSession {
       })
     }
     try {
-      const res: {
+      const res = (await this.client.callTool({ name, arguments: args })) as {
         content?: Array<{ type: string; text?: string; mimeType?: string }>
         isError?: boolean
-      } = await (this.client as any).callTool({ name, arguments: args })
+      }
       const parts: string[] = []
       for (const item of res.content ?? []) {
         if (item.type === 'text') parts.push(item.text ?? '')
@@ -84,7 +84,7 @@ export class McpSession {
 
   async close(): Promise<void> {
     try {
-      await (this.client as any)?.close?.()
+      await this.client?.close()
     } catch {
       // 主动关连接的失败都忽略,下一次 connect 会自建新 client
     }

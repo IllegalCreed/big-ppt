@@ -76,14 +76,9 @@ if [ ! -f "${FULL_TEMPLATE}" ]; then
     echo "ERROR: ${FULL_TEMPLATE} 不存在" >&2
     exit 1
 fi
-export DOMAIN WEB_ROOT BACKEND_PORT
-envsubst '${DOMAIN} ${WEB_ROOT} ${BACKEND_PORT}' < "${FULL_TEMPLATE}" > "${NGINX_CONF}"
-
-echo "==> nginx -t(full)"
-nginx -t
-
-echo "==> systemctl reload nginx"
-systemctl reload nginx
+DOMAIN="${DOMAIN}" WEB_ROOT="${WEB_ROOT}" BACKEND_PORT="${BACKEND_PORT}" \
+    MONOREPO_ROOT="${MONOREPO_ROOT}" \
+    "${MONOREPO_ROOT}/deploy/scripts/apply-nginx.sh"
 
 # ── 4. crontab 加每日 DB 备份 ─────────────
 BACKUP_SCRIPT="${MONOREPO_ROOT}/deploy/scripts/db-backup.sh"

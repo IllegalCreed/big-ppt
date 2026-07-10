@@ -1,5 +1,5 @@
 /**
- * Deck 域 API 封装：列表 / CRUD / 版本 / 回滚 / 锁状态 / 聊天历史。
+ * Deck 域 API 封装：列表 / CRUD / 版本 / 回滚 / 聊天历史。
  *
  * 状态故意不做全局单例——每个页面自己 ref 数据，避免隐式共享的惊讶。
  * 要跨组件共享时通过 props / provide-inject，不共享 module-level state。
@@ -45,26 +45,6 @@ export type DeckChat = {
   content: string
   toolCallId: string | null
   createdAt: string
-}
-
-export type LockHolderWire = {
-  sessionId: string
-  userId: number | null
-  email: string | null
-  deckId: number | null
-  deckTitle: string | null
-  lockedAt: string | Date
-  lastHeartbeatAt: string | Date
-}
-
-export type LockStatus =
-  | { locked: false }
-  | { locked: true; holder: LockHolderWire; isMe: boolean }
-
-/** occupied 冲突时后端返回的 body */
-export type ActivateConflict = {
-  error: 'occupied'
-  holder: LockHolderWire
 }
 
 export type SwitchJobState =
@@ -213,27 +193,4 @@ export function useDecks() {
     getImageJob,
     cancelImageJob,
   }
-}
-
-/**
- * Phase 10.5 起编辑器不再抢 Slidev 锁，本 composable 仅给「全屏放映」流程兜底。
- * activate-deck 路由已删（D-2），仅保留 release / heartbeat / lock-status：
- *   - release：放映 tab 关闭 / 用户主动停止放映时调
- *   - heartbeat：放映期保持心跳延长 5min 超时（当前未接入，留待优化）
- *   - status：查锁状态（OccupiedWaitingPage 等待页轮询用）
- */
-export function useDeckLock() {
-  async function release() {
-    await api.post('/api/release-deck')
-  }
-
-  async function heartbeat() {
-    return api.post<{ ok: true; heldByMe: boolean }>('/api/heartbeat')
-  }
-
-  async function status() {
-    return api.get<LockStatus>('/api/lock-status')
-  }
-
-  return { release, heartbeat, status }
 }

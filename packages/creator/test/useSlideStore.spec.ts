@@ -1,9 +1,8 @@
 /**
  * Phase 10.5：useSlideStore.refresh() 端点变更回归测试。
  *
- * 历史：spike→落地切换后第一版 refresh() 仍 fetch '/api/read-slides'，被
- * slidev-lock 守 403（编辑器去抢锁 → 持锁=false）。修复改成走
- * `GET /api/decks/:id` 拿 currentVersion.content。
+ * 历史：第一版 refresh() 仍读取旧全局 `/api/read-slides`。当前必须走
+ * `GET /api/decks/:id` 获取 currentVersion.content。
  *
  * 本测试守门：refresh() 必须用 activeDeckId 拼端点 + 取 currentVersion.content
  * 写到 slideStore.content。

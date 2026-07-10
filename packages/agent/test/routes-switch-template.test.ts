@@ -21,7 +21,6 @@ import { getDb, decks, deckVersions } from '../src/db/index.js'
 import { __resetTemplateRegistryForTesting } from '../src/templates/registry.js'
 import { __resetPathsForTesting } from '../src/workspace.js'
 import { __resetJobsForTesting, type RewriteFn } from '../src/template-switch-job.js'
-import { __resetForTesting as resetSlidevLock, tryAcquire } from '../src/slidev-lock.js'
 
 useTestDb()
 
@@ -122,7 +121,6 @@ beforeEach(() => {
   __resetPathsForTesting()
   __resetTemplateRegistryForTesting()
   __resetJobsForTesting()
-  resetSlidevLock()
   __setRewriteFnForTesting(null)
 })
 
@@ -131,7 +129,6 @@ afterEach(() => {
   __resetPathsForTesting()
   __resetTemplateRegistryForTesting()
   __resetJobsForTesting()
-  resetSlidevLock()
   __setRewriteFnForTesting(null)
   fs.rmSync(tmpRoot, { recursive: true, force: true })
 })
@@ -200,28 +197,6 @@ describe('POST /api/decks/:id/switch-template', () => {
     expect(res.status).toBe(400)
   })
 
-  it('deck 被他人占用 → 409', async () => {
-    const app = makeApp()
-    const a = await createLoggedInUser('a@a.com')
-    const b = await createLoggedInUser('b@a.com')
-    const { deck } = await createDeckDirect(b.user.id, 'Bowned')
-    // a 占用 b 的 deck 的锁（模拟跨用户占用；逻辑上不太可能，但锁检查只看 holder.userId != me.id）
-    tryAcquire({
-      sessionId: a.sid,
-      userId: a.user.id,
-      userEmail: 'a@a.com',
-      deckId: deck.id,
-      deckTitle: 'Bowned',
-    })
-    const res = await postJson(
-      app,
-      `/api/decks/${deck.id}/switch-template`,
-      { targetTemplateId: 'alpha', confirmed: true },
-      b.cookie,
-    )
-    expect(res.status).toBe(409)
-  })
-
   it('成功路径：state 穿过 snapshotting→migrating→success；deck_versions +2 且 template_id 更新', async () => {
     const app = makeApp()
     const { user, cookie } = await createLoggedInUser()
@@ -233,11 +208,6 @@ describe('POST /api/decks/:id/switch-template', () => {
     __setRewriteFnForTesting(rewriteFn)
 
     const db = getDb()
-    const [{ count: beforeCount }] = (await db
-      .select({ count: deckVersions.id })
-      .from(deckVersions)
-      .where(eq(deckVersions.deckId, deck.id))) as any
-    // ^ 粗略：实际我们用下面 .length 统计
     const beforeRows = await db.select().from(deckVersions).where(eq(deckVersions.deckId, deck.id))
     expect(beforeRows.length).toBe(1)
 

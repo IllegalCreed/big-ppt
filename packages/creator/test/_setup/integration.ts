@@ -8,7 +8,7 @@
  *  - cookie jar：自动把 Set-Cookie 回写下次请求的 Cookie 头（模拟浏览器 credentials: 'include' 行为）
  *  - `setupIntegration()`：在 spec 顶部调一次，挂 useTestDb（beforeEach reset 5 表 + afterAll close pool）
  *
- * 5 个 UI spec（DeckEditorCanvas / UndoToast / VersionTimeline / TemplatePickerModal / OccupiedWaitingPage）
+ * UI spec（DeckEditorCanvas / UndoToast / VersionTimeline / TemplatePickerModal 等）
  * 不 import 此文件，仍走 _setup/msw.ts。LLM / MCP 仍 mock（外部 cost）。
  */
 import path from 'node:path'

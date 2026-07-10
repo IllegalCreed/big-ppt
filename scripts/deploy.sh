@@ -124,8 +124,9 @@ deploy_ecosystem() {
     rsync -az --delete \
         "${PROJECT_ROOT}/deploy/" \
         "${SERVER_USER}@${SERVER_HOST}:${REMOTE_MONOREPO}/deploy/"
-    # 远端确保脚本可执行(rsync 有时不保留 mode)
+    # 远端确保脚本可执行(rsync 有时不保留 mode)，并安全应用最新 nginx 模板。
     ssh "${SERVER_USER}@${SERVER_HOST}" "chmod +x ${REMOTE_MONOREPO}/deploy/scripts/*.sh"
+    ssh "${SERVER_USER}@${SERVER_HOST}" "DOMAIN='${DOMAIN}' WEB_ROOT='${REMOTE_WEB}' BACKEND_PORT='4000' MONOREPO_ROOT='${REMOTE_MONOREPO}' ${REMOTE_MONOREPO}/deploy/scripts/apply-nginx.sh"
     log_info "ecosystem ✓"
 }
 
@@ -142,7 +143,7 @@ deploy_creator() {
     log_info "creator ✓"
 }
 
-# ── 部署:backend(agent dist + slidev 源码 + monorepo lockfile) ─────
+# ── 部署:backend(agent dist + 设计系统源码 + monorepo lockfile) ─────
 deploy_backend() {
     ensure_remote_dirs
     log_info "同步 monorepo backend → ${REMOTE_MONOREPO}/"
@@ -157,7 +158,6 @@ deploy_backend() {
         --exclude 'packages/agent/coverage/' \
         --exclude 'packages/creator/' \
         --exclude 'packages/e2e/' \
-        --exclude 'packages/slidev/slides.md' \
         --exclude 'packages/slidev/dist/' \
         --exclude 'packages/slidev/coverage/' \
         --exclude 'logs/' \
@@ -172,6 +172,9 @@ deploy_backend() {
     # 远端:装依赖 + 推 schema + reload pm2
     ssh "${SERVER_USER}@${SERVER_HOST}" "set -euo pipefail
         cd ${REMOTE_MONOREPO}
+
+        # Phase 16:清掉旧 runtime 在远端留下的入口文件，设计系统包不再读取它们。
+        rm -f packages/slidev/slides.md packages/slidev/slides.md.bak packages/slidev/index.html
 
         echo '==> pnpm install --frozen-lockfile'
         pnpm install --frozen-lockfile 2>&1 | tail -8
@@ -191,6 +194,10 @@ deploy_backend() {
 
         echo '==> pm2 startOrReload ecosystem(GIT_SHA=${DEPLOY_GIT_SHA})'
         GIT_SHA='${DEPLOY_GIT_SHA}' pm2 startOrReload ${REMOTE_MONOREPO}/deploy/ecosystem.config.cjs --update-env
+
+        echo '==> 删除已退役的 Slidev runtime 进程'
+        pm2 delete lumideck-slidev >/dev/null 2>&1 || true
+        pm2 save --force >/dev/null
 
         echo '==> pm2 status'
         pm2 list
@@ -240,8 +247,6 @@ healthcheck() {
                 rm -f "${body_file}"
                 return 0
             fi
-        elif [[ "${result}" == *'"status":"degraded"'* ]]; then
-            failure_reason="status=degraded(Slidev 尚未就绪)"
         fi
 
         log_warn "HTTP ${http_code}(attempt ${attempt}/${HEALTHCHECK_ATTEMPTS}): ${failure_reason}"

@@ -15,8 +15,6 @@ import type { TemplateManifest } from '@big-ppt/shared'
 import { getDb, decks, deckVersions } from './db/index.js'
 import { getManifest } from './templates/registry.js'
 import { analyzeDeckPurity } from './templates/analyzeDeckPurity.js'
-import { mirrorSlidesContent } from './deck/mirror.js'
-import { getHolder } from './slidev-lock.js'
 
 export type SwitchJobState = 'pending' | 'snapshotting' | 'migrating' | 'success' | 'failed'
 
@@ -232,14 +230,6 @@ export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise
         anchorSkipped: false,
       })
       .where(eq(decks.id, job.deckId))
-
-    // Phase 7D fix（2026-04-25）：DB 改完同步 mirror 到 packages/slidev/slides.md，
-    // 否则 Slidev 仍读旧文件，前端预览看不到切换效果。仅在当前实例锁正持有此 deck 时
-    // mirror，避免 background job 误覆盖别人正在编辑的 slides.md。
-    const holder = getHolder()
-    if (holder && holder.deckId === job.deckId) {
-      mirrorSlidesContent(rewritten)
-    }
 
     mutateJob(jobId, {
       state: 'success',

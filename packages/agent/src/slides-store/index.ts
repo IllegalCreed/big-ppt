@@ -7,8 +7,7 @@
  * 在 B 的回复里 echo,造成跨用户跨 deck 数据泄漏。
  *
  * 修复:所有读写都从 ALS `RequestContext` 拿 (userId, activeDeckId),走
- * `deck_versions.content` + `decks.currentVersionId`。`slides.md` 只在 `POST /api/present/:id`
- * 抢锁时由 `mirror.ts` 单文件 mirror(给 Slidev SPA 放映 tab 用),slides-store 本身完全脱钩。
+ * `deck_versions.content` + `decks.currentVersionId`。Phase 16 起不再存在 `slides.md` runtime mirror。
  *
  * 没有 ALS activeDeckId / userId → throw `NoActiveDeckError`,工具层 catch 后友好返错给 LLM,
  * 不再静默 fallback 读全局 slides.md。
@@ -32,7 +31,7 @@ export { NoActiveDeckError } from './errors.js'
  * 写回 → 后写覆盖先写(lost update)。生产 deck#30 实测:10 个 job 全 done,但第 11 页
  * 生成的 asset 未被最终内容引用——被别的 slide 的 job 覆盖丢了。
  *
- * agent 是单实例(与 slidev-lock 同前提),用进程内 promise 链把同一 deck 的 mutation 串起来:
+ * agent 是单实例，用进程内 promise 链把同一 deck 的 mutation 串起来:
  * 每个 op 等前一个 op 完全落库后才开始「读→改→写」,读到的必是最新内容,杜绝覆盖。
  * 不同 deck 用各自独立的链,互不阻塞。链尾自清理防 map 无限增长。
  *

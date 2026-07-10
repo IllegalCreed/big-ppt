@@ -9,6 +9,7 @@ export interface SlashCommand {
 }
 
 export interface SlashCommandsDeps {
+  deckId: number
   clearHistory: () => void
   appendLocalMessage: (content: string) => void
   retryLastUserMessage: () => void
@@ -37,7 +38,9 @@ export function useSlashCommands(deps: SlashCommandsDeps): UseSlashCommandsRetur
   const fetchFn = deps.fetcher ?? ((...args: Parameters<typeof fetch>) => fetch(...args))
 
   async function callApi<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await fetchFn(path, init)
+    const headers = new Headers(init?.headers)
+    headers.set('X-Deck-Id', String(deps.deckId))
+    const res = await fetchFn(path, { ...init, headers })
     return (await res.json()) as T
   }
 
@@ -99,7 +102,7 @@ export function useSlashCommands(deps: SlashCommandsDeps): UseSlashCommandsRetur
     {
       value: 'undo',
       label: '/undo',
-      description: '撤销上一轮对话对 slides.md 的修改',
+      description: '撤销上一轮对话对演示文稿的修改',
       run: async () => {
         try {
           const data = await callApi<RestoreSlidesResponse>('/api/restore-slides', {

@@ -2,19 +2,19 @@
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
-> 项目品牌：**Lumideck · 幻光千叶**。基于 Slidev 的 AI 演示文稿生成平台。
+> 项目品牌：**Lumideck · 幻光千叶**。兼容 Slidev 风格 markdown、由自研 DeckRenderer 驱动的 AI 演示文稿平台。
 
 ## 文档定位（动手前先认清归属）
 
 本仓库实行严格的五层文档分工，**修改任何文档前确认对应层级**：
 
-| 文档                        | 定位                                               |
-| --------------------------- | -------------------------------------------------- |
-| `AGENTS.md`（本文件）       | 工程指南：技术栈、命令、架构、约定、坑             |
-| `docs/requirements/vision.md` | 产品形态 + 商业模式畅想（不写技术）                |
-| `docs/requirements/requirements.md` | 功能/需求点头脑风暴                          |
-| `docs/requirements/roadmap.md`      | 需求分阶段落地规划（high-level 目标 + 验收）   |
-| `docs/plans/NN-*.md`        | 具体 Phase 的实施技术细节（类名、SDK、schema），新建 plan 套用 [`_TEMPLATE.md`](docs/plans/_TEMPLATE.md) |
+| 文档                                | 定位                                                                                                     |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `AGENTS.md`（本文件）               | 工程指南：技术栈、命令、架构、约定、坑                                                                   |
+| `docs/requirements/vision.md`       | 产品形态 + 商业模式畅想（不写技术）                                                                      |
+| `docs/requirements/requirements.md` | 功能/需求点头脑风暴                                                                                      |
+| `docs/requirements/roadmap.md`      | 需求分阶段落地规划（high-level 目标 + 验收）                                                             |
+| `docs/plans/NN-*.md`                | 具体 Phase 的实施技术细节（类名、SDK、schema），新建 plan 套用 [`_TEMPLATE.md`](docs/plans/_TEMPLATE.md) |
 
 **反模式**：把 `--ld-*` token CSS、组件类名、SDK 名写进 vision/roadmap；把"商业模式"写进 AGENTS.md。
 
@@ -22,17 +22,18 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 **硬约束**：模板的视觉 / prompt 元数据**必须**跟模板源文件放同一目录或同一包，**不能**散落到 agent 等消费方。
 
-| 模板元数据 | 唯一归属位置 |
-| --- | --- |
-| 视觉 token 色值 / 字体 / 间距 | `packages/slidev/templates/<id>/tokens.css` |
-| layout 列表 / frontmatter schema / bodyGuidance / promptPersona | `packages/slidev/templates/<id>/manifest.json` |
-| 公共组件 prompt 元数据（描述 / props / slotCapacity / 用法示例） | `packages/slidev/components/<category>/<Name>.meta.ts` |
-| AI 出图色板 / 风格 invariants（generate_slide_image 用） | `packages/slidev/templates/<id>/manifest.json` 的 `imageGenStyle` 字段 |
-| 任何"模板独有"的 prompt 引导 / 视觉默认值 | `packages/slidev/templates/<id>/manifest.json` 或同目录配套文件 |
+| 模板元数据                                                       | 唯一归属位置                                                           |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 视觉 token 色值 / 字体 / 间距                                    | `packages/slidev/templates/<id>/tokens.css`                            |
+| layout 列表 / frontmatter schema / bodyGuidance / promptPersona  | `packages/slidev/templates/<id>/manifest.json`                         |
+| 公共组件 prompt 元数据（描述 / props / slotCapacity / 用法示例） | `packages/slidev/components/<category>/<Name>.meta.ts`                 |
+| AI 出图色板 / 风格 invariants（generate_slide_image 用）         | `packages/slidev/templates/<id>/manifest.json` 的 `imageGenStyle` 字段 |
+| 任何"模板独有"的 prompt 引导 / 视觉默认值                        | `packages/slidev/templates/<id>/manifest.json` 或同目录配套文件        |
 
 agent 端**只**通过 `getManifest(templateId)` 或 import workspace 包读这些数据，**不维护任何映射表**。
 
 **反模式（严禁）**：
+
 - ❌ 在 `packages/agent/` 下写 `Record<templateId, {palette, ...}>` 之类的硬编表（数据漂移、加新模板要改两处）
 - ❌ 在 agent 提示词里 hardcode 颜色 / 字体 / 风格关键词（只能从 manifest 拼装）
 - ❌ 公共组件 prompt 描述放 agent（必须 `<Name>.meta.ts` 跟组件 sibling，详见 Phase 11.6 commit `1addc80`）
@@ -45,7 +46,7 @@ agent 端**只**通过 `getManifest(templateId)` 或 import workspace 包读这�
 
 ```bash
 pnpm install                              # 首次安装（bcrypt 在 onlyBuiltDependencies，会编译）
-pnpm dev                                  # turbo 并发起 creator(:3030) + agent(:4000) + slidev(:3031)
+pnpm dev                                  # turbo 并发起 creator(:3030) + agent(:4000)
 pnpm build                                # turbo 全量 build
 pnpm lint                                 # 每包独立 lint
 pnpm format                               # prettier 一次性格式化全仓
@@ -55,11 +56,11 @@ pnpm type-check                           # 全包 tsc --noEmit
 ### 测试与覆盖率
 
 ```bash
-pnpm test                                 # 全量单测（agent + creator + shared）
+pnpm test                                 # 全量单测（agent + creator + shared + slidev 设计系统）
 pnpm -F @big-ppt/agent test:coverage      # agent 门槛 lines 90 / branches 85；安全模块 95/90 per-file
 pnpm -F @big-ppt/creator test:coverage    # creator 门槛 lines 75 / branches 65
-pnpm -F @big-ppt/agent vitest run path/to/file.test.ts  # 跑单个文件
-pnpm -F @big-ppt/agent vitest run -t "test name"        # 按测试名过滤
+pnpm --dir packages/agent exec dotenv -e .env.test.local -- vitest run path/to/file.test.ts
+pnpm --dir packages/agent exec dotenv -e .env.test.local -- vitest run -t "test name"
 
 pnpm -F @big-ppt/e2e install-browsers     # 首次装 Chromium
 pnpm -F @big-ppt/e2e test                 # Playwright E2E（真浏览器 + 真后端 + lumideck_test 库）
@@ -100,13 +101,13 @@ FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confir
 
 ### 包与端口
 
-| 包               | 角色                                                                  | 端口 |
-| ---------------- | --------------------------------------------------------------------- | ---- |
+| 包                 | 角色                                                                              | 端口 |
+| ------------------ | --------------------------------------------------------------------------------- | ---- |
 | `packages/creator` | Vue 3 前端 SPA：登录/注册、deck 列表、编辑器、ChatPanel + SlidePreview + Settings | 3030 |
-| `packages/agent`   | Hono 后端：Auth、Deck CRUD、LLM 代理、工具执行、MCP、Slidev 反代鉴权          | 4000 |
-| `packages/slidev`  | Slidev 演示框架（生产绑 127.0.0.1，由 agent 反代；模板 + 公共图表组件）         | 3031 |
-| `packages/shared`  | 前后端契约 TypeScript types（直接 import 源文件，不打包）                     | —    |
-| `packages/e2e`     | Playwright 端到端                                                          | —    |
+| `packages/agent`   | Hono 后端：Auth、Deck/Share CRUD、LLM 代理、工具执行、MCP                         | 4000 |
+| `packages/slidev`  | 纯设计系统 workspace 包：模板、layout、公共图表组件与 prompt catalog              | —    |
+| `packages/shared`  | 前后端契约 TypeScript types（直接 import 源文件，不打包）                         | —    |
+| `packages/e2e`     | Playwright 端到端                                                                 | —    |
 
 ### 请求流向
 
@@ -116,33 +117,29 @@ FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confir
    ├─ /api/*           ──Vite proxy──▶  agent :4000  ──▶ MySQL (lumideck_dev)
    │ (含 X-Deck-Id              │
    │  by 编辑器 fetch)           ├─ HttpOnly session cookie
-   │                            ├─ slides-store 写 packages/slidev/slides.md（仅放映路径用到）
-   │                            ├─ activeDeckId 来源：X-Deck-Id header 优先（Phase 10.5）
+   │                            ├─ slides-store 读写 deck_versions.content
+   │                            ├─ activeDeckId 只来自显式 X-Deck-Id header
    │                            └─ tool registry（本地工具 + MCP 远端工具）
    │
-   │  ── 编辑器主视图（Phase 10.5 起）：
-   │     creator SPA 内 <DeckRenderer> 直接渲染 markdown，**不走 Slidev 反代**
-   │
-   └─ /api/slidev-preview/*  ──proxy──▶  agent :4000  ──reverse-proxy──▶  slidev :3031
-       (window.open 新 tab                  │
-        全屏放映场景)                       └─ slidev-proxy-auth：仅锁持有者放行（403）
+   └─ creator SPA 内 <DeckRenderer> 统一渲染编辑、放映、演讲者视图、导出与公开分享
+      └─ 同浏览器观众/演讲者窗口用 deckId + 随机 channel 的 BroadcastChannel 同步
 ```
 
 ### 关键模块（agent）
 
-- `src/app.ts`：Hono app 装配，**只做路由 + middleware**，不带启动副作用。生产入口 `src/index.ts` 引用 app，再接 `http.createServer` 提供 Slidev 反代 + WebSocket upgrade。集成测靠 `app.fetch(req)` in-process 调用，无需走端口
+- `src/app.ts`：Hono app 装配，**只做路由 + middleware**，不带启动副作用。生产入口 `src/index.ts` 交给 `@hono/node-server`；集成测靠 `app.fetch(req)` in-process 调用
 - `src/middleware/auth.ts`：`authOptional` 解 session cookie → `ctx.var.user`；`requireAuth` 闸门
-- `src/middleware/request-context.ts`：把 user/session/activeDeckId 包进 `AsyncLocalStorage`，下游 `slides-store` / 工具读。**Phase 10.5 起 activeDeckId 来源**：优先 `X-Deck-Id` header（编辑器每次 fetch 显式带），fallback `session.activeDeckId`（向后兼容，Phase 10.5 起此字段实际永远 null）
-- `src/slidev-lock.ts`：**单实例占用锁是 agent 进程内存对象**（不是 DB 表），心跳 30s，超时 5min 释放。**Phase 10.5 起锁的 acquire 点改为 `POST /api/present/:id`**（全屏放映按钮触发），原 `POST /api/activate-deck` 路由已删；编辑器进入不抢锁，多用户并发零排队
-- `src/slidev-proxy-auth.ts`：Slidev 反代鉴权，仅锁持有者能访问 `/api/slidev-preview/*`（全屏放映 SPA tab 走这条）
+- `src/middleware/request-context.ts`：把 user/session/activeDeckId 包进 `AsyncLocalStorage`；activeDeckId 只读 `X-Deck-Id`，不从 session 隐式继承
+- `src/routes/presentation.ts`：owner presentation 契约、分享链接生命周期与 public share-scoped asset；公开响应 `no-store`，asset SQL 同时约束 slug + deckId + assetId
 - `src/tools/`：本地工具注册表；命名规范 `mcp__<serverId>__<toolName>`；`switch_template` 可注入 `RewriteFn` DI 便于测试
 - `src/db/`：Drizzle schema；开发期用 `drizzle-kit push` 不写 migration
 
 ### 关键模块（creator / 编辑器）
 
 - `src/deck-renderer/`：Phase 10.5 起编辑器主视图。`DeckRenderer.vue` 接 markdown + templateId + currentPage prop → `parseDeck()` 切页 → `<component :is="layout">` 动态查找 layout（**手工 `app.component()` 注册**，见 `register-layouts.ts`，因为 unplugin-vue-components 看不到 `:is` 动态字符串）；body markdown 走 `compile-body.ts` 的 `marked + Vue.compile` 运行时编译让 `<TwoCol>` 等 Vue 标签解析
-- 响应式缩放：`DeckRenderer` 用 ResizeObserver 算 scale，slide-frame `aspect-ratio: 16/9` + `max-width: 960px`，slide-canvas `transform: scale()` 等比缩放到容器宽度（永远 ≤ 1，无放大）
-- `src/composables/useSlideStore.ts`：单例 store。`activeDeckId` + `content` 模块作用域；`refresh()` 走 `GET /api/decks/:id` 取 currentVersion.content（**不**读 `/api/read-slides`，那条路径属于 Slidev 放映场景，仍受 slidev-lock 守）；`pages` / `totalPages` 复用 `parseDeck` 跟 DeckRenderer 口径一致
+- 响应式缩放：`DeckRenderer` 用 ResizeObserver 算 scale；编辑器默认封顶 960×540，放映通过 `allowUpscale` 填满受约束的 16:9 容器
+- `src/presentation/`：`PresentationViewer` / `PresenterMode` / overview / SVG drawing；窗口同步只用带随机 channel 的 `BroadcastChannel`，不落 DB、不建后端全局状态
+- `src/composables/useSlideStore.ts`：单例 store。`refresh()` 走 `GET /api/decks/:id` 取 currentVersion.content；`pages` / `totalPages` 复用 `parseDeck`
 
 ### 关键约定（前端）
 
@@ -156,11 +153,11 @@ FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confir
 
 `packages/agent/` 下三层 env，每层都有 `.example`（入库占位符）+ `.local`（gitignored 真实值）：
 
-| 层级        | local 文件                          | 触发命令                |
-| ----------- | ----------------------------------- | ----------------------- |
-| development | `.env.development.local`            | `pnpm dev`              |
-| test        | `.env.test.local`                   | `pnpm test`             |
-| production  | `.env.production.local`             | `pnpm start`            |
+| 层级        | local 文件               | 触发命令     |
+| ----------- | ------------------------ | ------------ |
+| development | `.env.development.local` | `pnpm dev`   |
+| test        | `.env.test.local`        | `pnpm test`  |
+| production  | `.env.production.local`  | `pnpm start` |
 
 另有 `.env.create-db.local`（脚本专用，gitignored）+ `.env.create-db.example`（入库）。
 
@@ -181,6 +178,7 @@ FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confir
 **为什么**：dev server 的 stdout 不持久化，关掉终端就丢；用户 dogfood 反馈「图没出来 / 任务卡住」时事后无从排查。落盘 JSONL 长期保留供 grep / 分析。Phase 11.6 dogfood 期间已踩过这坑（用户报"两张图没生成"，dev 终端日志已翻飞）。
 
 **必须落盘的事件**：
+
 - **异步 worker 状态转移**：`image-gen-job` / `template-switch-job` / `regenerate-image-pages` 等的 enqueued / running / success / failed / fallback / cancelled
 - **外部 API 调用结果**：OpenAI image / 主 LLM completion 的成功 + 失败 + 重试 + 限速
 - **用户主动操作的 audit-worthy 副作用**：删 deck / 切模板 / 上传 asset / 切换 LLM 配置等
@@ -191,9 +189,12 @@ FORCE=1 pnpm deploy:all                   # CI / 自动化：跳过交互 confir
 
 ```ts
 logServerEvent({
-  category: 'image-gen',  // 模块名,grep 友好
-  event: 'gen-failed',     // state transition / milestone
-  jobId, deckId, userId, slideIndex,  // 业务字段任意附加
+  category: 'image-gen', // 模块名,grep 友好
+  event: 'gen-failed', // state transition / milestone
+  jobId,
+  deckId,
+  userId,
+  slideIndex, // 业务字段任意附加
   errorMsg: e.message,
 })
 ```
@@ -201,6 +202,7 @@ logServerEvent({
 **配套实践**：保留 `console.log` 给 dev 终端实时反馈（mirror 模式）—— 既给开发者看又落盘。`logServerEvent` 内部自带 try/catch，文件写失败被吞掉不影响业务流。
 
 **事后排查方式**：
+
 ```bash
 grep '"event":"gen-failed"' logs/server-*.jsonl   # 找所有失败事件
 grep '"jobId":"abc12345"' logs/server-*.jsonl     # 追踪某 job 全生命周期
@@ -213,12 +215,11 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - creator 集成测（`useAuth` / `useDecks` / `useSwitchTemplateJob`）走 `app.fetch` shim 进真后端：`test/_setup/integration.ts` 替换 `globalThis.fetch` 为 `app.fetch`，cookie jar 透传
 - creator UI 单测保留 MSW，不改造
 - E2E webServer 启动时通过 `BIG_PPT_TEST_REWRITE_MODE=skeleton` 让 `rewriteForTemplate` 跳 LLM 直接读 starter，避免 E2E 烧 token
-- Slidev 在 `_test/reset-lock` 路由解 lock 跨测试污染（仅 test env 暴露）
 
-## Slidev 包的特殊点
+## 设计系统包的特殊点
 
-- `packages/slidev/slides.md` **是运行时产物**（gitignored），骨架在 `slides.example.md`，`pnpm dev` 自动 copy
-- 切换 deck 时 agent 改写 `slides.md`，Slidev HMR 自动推；前端**不**调 `slideStore.refresh()`，让 Slidev 自己处理
+- `packages/slidev` 名称为历史兼容，Phase 16 起**不是 runtime**：没有 dev server、CLI、端口或 `slides.md`
+- `build` 只编译 `components/_catalog` 的 NodeNext `.js` 产物，供生产 agent 读取 prompt metadata
 - 模板分两套：`templates/beitou-standard/`（北投）+ `templates/jingyeda-standard/`（竞业达）；硬切无 alias
 - 公共组件库（`packages/slidev/components/{grid,decoration,block,private}/`）读 `--ld-*` token（4 类 26 项，spec 见 [TOKENS.md](packages/slidev/components/TOKENS.md)）按当前模板取色；模板私有 `--bt-*` / `--jyd-*` 仅供 layer-1 layout 内部装饰使用，不对外暴露
 
@@ -232,7 +233,6 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 
 - **bcrypt** 在 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies`，初装时会编译；CI 慢一点正常
 - **`@antdv-next/x`** 0.3 Slot warning bug 已在 1.0 通过 API 重构间接修复（2026-04-26 Phase 8 清 P3-1）；**该包 npm `latest` dist-tag 仍指向 beta**（1.0.2-beta.1），升级时显式锁版本号（`pnpm up "@antdv-next/x@1.0.1"`），不跟 latest（[plan 17](docs/plans/17-phase8-deps-upgrade.md) 踩坑 6）
-- **UnoCSS presetIcons** 有图标解析 bug（P3-7），用 `scripts/gen-icons.mjs` workaround；2026-04-26 Phase 8 复检 v66.6.8 仍未修，下次 Phase 11/14 复检（详见 [plan 06-monorepo](docs/plans/06-phase3-monorepo-agent.md) 踩坑 1）
 - **`drizzle-kit push`** 改 schema 后，dev 与 test 库都要 push（`db:push` + `db:push:test`）；生产部署用 `db:push:prod` 推到 RDS lumideck 库（plan 19）
 - **drizzle-orm 0.45 mysql-core 没原生 mediumBlob/longBlob**:加二进制大字段时用 `customType<{data: Buffer; driverData: Buffer}>({dataType: () => 'mediumblob'})` 自定义,drizzle-kit push 会正确 emit MySQL `mediumblob` 列定义。同套路适用 LONGBLOB / TINYBLOB / 任何标准 SQL 列类型（[plan 20](docs/plans/20-phase11.5-image-content.md) 踩坑 2）
 - **monorepo 内部 ts 包用 ESM `from './x.js'` 风格,生产部署前必须先 build 出 .js**：dev/tsx 模式可以直接读 .ts,但 prod node 解析后,内部 import `./x.js` 找不到真实 .js 文件 → ERR_MODULE_NOT_FOUND。已踩中两次：`packages/shared`（plan 19 踩坑 4）和 `packages/slidev/components/_catalog`（Phase 11.6 引入 `.meta.ts` 配套元数据时漏配 build,2026-05-06 部署直接 502）。**通用规则**：任何 workspace 包通过 `package.json` exports 暴露 `.ts` + 内部用 NodeNext `.js` 后缀 import 的,都必须配 `tsc` build 把 `.ts` → `.js` 落盘共存,**并把这一步加进 `scripts/deploy.sh build_agent()`**;exports 字段 `import` 指 `.js`、`types` 指 `.ts`;emit 产物加 `.gitignore`
@@ -244,24 +244,16 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 
 ### Hono 路由
 
-- **Hono sub-router 内 `sub.use('*', mw)` 通过 `app.route('/api', sub)` 挂载后，`*` 会泄漏到 /api/* 所有路径**：sub-router 单测里 `*` 看似只匹配 sub 自己的 path，但通过 route() 挂到前缀下后，wildcard 会拦截整个前缀的所有请求，影响其他 sub-router 的公开端点。改成显式 path 列举（`sub.use('/path-a', mw)` / `sub.use('/path-b', mw)`），或用 `sub.use(['/path-a','/path-b'], mw)` 数组形式。**单测无法复现**——必须有 `app.fetch()` 真路由 mount 集成测才能 catch（[plan 18](docs/plans/18-phase9-security-audit.md) Phase 9-B/9-C）
+- **Hono sub-router 内 `sub.use('*', mw)` 通过 `app.route('/api', sub)` 挂载后，`*` 会泄漏到 /api/\* 所有路径**：sub-router 单测里 `*` 看似只匹配 sub 自己的 path，但通过 route() 挂到前缀下后，wildcard 会拦截整个前缀的所有请求，影响其他 sub-router 的公开端点。改成显式 path 列举（`sub.use('/path-a', mw)` / `sub.use('/path-b', mw)`），或用 `sub.use(['/path-a','/path-b'], mw)` 数组形式。**单测无法复现**——必须有 `app.fetch()` 真路由 mount 集成测才能 catch（[plan 18](docs/plans/18-phase9-security-audit.md) Phase 9-B/9-C）
 
-### Slidev 反代 + HMR
+### DeckRenderer / PresentationViewer
 
-> **Phase 10.5 后语境**（plan 25 落地）：编辑器主视图换成 creator SPA 内的 `<DeckRenderer>` Vue 组件，**不**走 Slidev 反代。下列条目仅作用于「全屏放映」`window.open('/api/slidev-preview/...')` 新 tab 加载 Slidev SPA 的场景。**long session HMR 缓存错位的触发面已消失**（编辑期间 Slidev iframe 不存在），但 dev Slidev 进程偶发卡死仍可能影响放映 tab，「重启 Slidev 演讲进程」按钮保留在 SlidePreview toolbar 内兜底。
-
-- **Slidev 仅 agent 反代访问**：原生端口 `:3031` 必须绑 loopback,不能直接对外（详见 [plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 1-2）
-- **agent 跨进程 fetch slidev 用 `localhost` 不要用 `127.0.0.1`**：slidev v52 + Vite 5+ 默认只 bind `[::1]`(IPv6 loopback),`SLIDEV_ORIGIN=http://127.0.0.1:3031` 会 ECONNREFUSED;`localhost` 走 OS resolver 自动选可达协议族（[plan 19](docs/plans/19-phase10-production-deploy.md) 踩坑 6）
-- **Slidev dev 启动必须带 `--base /api/slidev-preview/`**：否则 HTML 内绝对路径 `/@vite/client` 等全 404（[plan 10](docs/plans/10-phase5-user-deck-versions.md) 踩坑 2）
-- **`slides.md` 锁的 acquire 点 = `POST /api/present/:id`**（Phase 10.5 起；编辑器进入不抢锁）：放映按钮触发；dev agent 重启自动复位（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) Task D-1）
-
-### DeckRenderer / 编辑器（Phase 10.5）
-
-- **`<component :is="动态字符串">` unplugin-vue-components 看不见**：必须手工 `app.component()` 注册到全局（`src/deck-renderer/register-layouts.ts`）。新加 layout / 公共组件时**两处都要改**：slidev 包加 .vue + .meta.ts + 同步 _catalog/index.ts，creator 加 register-layouts.ts 一行 import + 一行注册（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) Task B-2 → fix 提交 `94cf8f4`）
+- **`<component :is="动态字符串">` unplugin-vue-components 看不见**：必须手工 `app.component()` 注册到全局（`src/deck-renderer/register-layouts.ts`）。新加 layout / 公共组件时**两处都要改**：slidev 包加 .vue + .meta.ts + 同步 \_catalog/index.ts，creator 加 register-layouts.ts 一行 import + 一行注册（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) Task B-2 → fix 提交 `94cf8f4`）
 - **layouts 用 `${BASE_URL}/templates/<id>/x.png` 取资源**：creator 必须保留 `public/templates` 软链 → `../../slidev/templates`，vite build 时符号链接目标会被拷进 dist，rsync 一并部署（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) 执行期偏离 #1）
 - **`slideStore.totalPages` / `pages` 必须复用 `parseDeck()`**：不能用 naive `content.split(/\n---\n/)` —— 那会把 frontmatter 的 `---` 也算成 slide 分隔符（实测北投 starter 切出 6 页而非 5 页）。视觉层 + 状态层用同一份切页算法（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) 执行期偏离 fix `621ef98`）
-- **`useSlideStore.refresh()` 走 deck-scoped 路径**：fetch `GET /api/decks/:id` 取 currentVersion.content；**不**读 `/api/read-slides`（那条受 slidev-lock 守门，编辑器去抢锁后必然 403）。编辑器进入由 SlidePreview onMounted 调 `slideStore.initDeck(deckId, initialContent)` 绑定 deckId + 写初始内容（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) 执行期偏离 fix `7379506`）
-- **LLM 工具调用必须在 fetch 时带 `X-Deck-Id` header**：Phase 10.5 删 activate-deck 后 `session.activeDeckId` 永远是 null；middleware 改成优先读 `X-Deck-Id` header 覆写 ALS activeDeckId（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) 执行期偏离 fix `f5f2972`）。前端 `useAIChat.executeTool()` + 其他将来需要 deck context 的 fetch 都得带这个 header
+- **`useSlideStore.refresh()` 走 deck-scoped 路径**：fetch `GET /api/decks/:id` 取 currentVersion.content；编辑器进入由 SlidePreview 调 `initDeck(deckId, initialContent)`
+- **所有 deck-scoped 工具与 undo/redo 请求必须带 `X-Deck-Id`**：middleware 不读 legacy `session.activeDeckId`；缺 header 直接拒绝，SQL 再校验 userId + deckId
+- **BroadcastChannel 不能发送 Vue reactive Proxy**：drawings/state 发消息前深拷成 plain object，否则真浏览器抛 `DataCloneError`；频道名必须含 deckId + 随机 channel，避免不同演讲会话串扰（[plan 33](docs/plans/33-phase16-presentation-viewer.md)）
 - **body markdown 编译用 `vue/dist/vue.esm-bundler.js`**：vite alias 切到带 runtime compiler 的 Vue 构建版本（+50KB gzip），让 `marked → HTML → Vue.compile(html)` 链路能在浏览器跑（[plan 25](docs/plans/25-phase10.5-deck-renderer.md) Task A-2）
 
 ### 测试基建
@@ -269,7 +261,7 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - **集成测共享 lumideck_test 库**：`vitest.config.ts` 必须 `fileParallelism: false`（同包内串行）+ 根 `package.json` 的 `pnpm test` 用 `turbo run test --concurrency=1`（跨包 turbo 也强制串行,否则 agent + creator 集成测同时连库撞 TRUNCATE）。用 `pnpm test` 一次跑全 monorepo 时这条是必须的（[plan 11](docs/plans/11-phase5-tests-and-env-split.md) 踩坑 1 / [plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 7D-C / Phase 11.7 顺手补 turbo concurrency）
 - **任何 `__set*ForTesting` testing seam 用 module-level mutable state 的，必须配 `afterAll(() => __set...(null))` 复位**：seam 注入后不还原会让模块缓存把 fake/fixed 值漏到后续测试文件（vitest 不 reset 模块缓存）。Phase 12.7 Task H 跑全套时观察到 routes-auth / mcp-server-repo / llm-models 2-9 个 case 偶发 fail，定位是 `chat-turn.test.ts` `beforeAll(__setMasterKeyGetterForTesting(FIXED_KEY))` 缺 afterAll 复位 → master key 跨文件污染；旧 test 同样缺还原但碰巧不撞，新加用 seam 的 test 必须自带 afterAll 还原 ([plan 28](docs/plans/28-phase12.7-pi-agent-core.md) 踩坑 6)
 - **in-process `app.fetch(req)` 测 SSE abort + cancel 时序跟生产 undici 偏**：abort 路径单测只验 wire（agent.abort() 被调用），slot 释放走 happy path 隐式覆盖；不要断言「slot 已释放」之类时序敏感状态。Phase 12 Task E + Phase 12.7 Task F 均踩 ([plan 28](docs/plans/28-phase12.7-pi-agent-core.md) 踩坑 4)
-- **进程内 stateful 模块**（如 slidev-lock）必须在 test env 暴露 reset hook（如 `_test/reset-lock`），否则跨 case 污染（[plan 14](docs/plans/14-phase7c-template-ui.md) 踩坑 6）
+- **进程内 stateful 模块**（如 per-deck write chain / registry cache）必须有 test reset hook，否则跨 case 污染
 - **fs 写入路径在 test env 下必须接受 env 覆盖**到临时目录，否则跑测试会污染 dev 数据（[plan 09](docs/plans/09-phase4-edit-iterate.md) 踩坑 3 / [plan 15](docs/plans/15-phase7d-e2e-and-undo-fix.md) 踩坑 7）
 - **依赖外部不稳定能力的工具走 DI seam**：如 `rewriteForTemplate` 用 `RewriteFn` interface DI 注入，测试时 mock 跑完整状态机不烧 token（[plan 12](docs/plans/12-phase6-template-architecture.md) 踩坑 2）
 - **Vue Test Utils 不跨 Teleport 边界 query**：用到 `<Teleport>` 的组件单测必须加 `disableTeleport` prop（[plan 14](docs/plans/14-phase7c-template-ui.md) 踩坑 2）
@@ -315,7 +307,7 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - **改 schema / DB / ALS 全局字段时 grep readers 必须覆盖 createAgent / factory 等 "新增 reader"**：Phase 12 Task F 漏 grep 6 个 llm_settings 消费者已上 AGENTS.md，Phase 12.7 Task E 再踩——thinkingEnabled → thinkingLevel migration plumb 到 parseLlmSettings / GET-llm-settings / PUT-llm-settings 三处 safeParse 入口，**漏了** Task C 刚加的 createAgent.resolveThinkingLevel 直接读 rawSettings.advanced.<provider>.thinkingEnabled。两份升级穿插时 reader 增量比想象多 ([plan 28](docs/plans/28-phase12.7-pi-agent-core.md) 踩坑 2)
 - **schema enum 限制升级时 legacy 自由字符串 row 会 migration 全失败**：Phase 12 把 `provider` 字段从「自由 string」变成 12-canonical-enum,prod 4 个老用户 `provider:"custom"` migrate-llm-settings.mjs 跑 zod 校验阶段全 failed → migration 报「迁移后 zod 校验失败」吐 4 行。**临时解** 直接 SQL UPDATE 让这些 row `llm_settings=NULL` 强迫用户重配。**正解** migration 设计带 admin-override pre-map(按 baseUrl host 推断 openai-compat / anthropic-compat) 或 schema 留 `Other` 兜底允许 passthrough。未来扩 enum 限制(thinkingLevel / 任何 provider-like enum) 必须考虑老 string row 怎么收尾 (2026-05-16 Phase 12.7 prod 部署踩)
 - **出图 provider 对「非标准 size」+「图生图(带 input_image)」不可靠,凡依赖它按请求 size 返图的逻辑都要实测校验兜底**:OpenAI 官方 image 只吃固定档位(1024²/1536×1024/1024×1536/auto),我们请求的 1280x624(2.051,贴 layout body 区)靠中转宽容才成;**中转偶发不认 size 按自己默认返图**(生产实测 1280x624 请求→16:9 的 1672x941)。**且 hybrid 锚图模式输出比例跟着锚图走**(生产 deck#30:锚图 2.051→出图全 2.051 满铺 / 锚图 1.5→出图全 16:9 被裁)。三层防御:①mood-board `generateSizedImage` 出候选后校验 AR 不符重抽(保锚图恒 2.051)②image-gen worker 落库前 `readImageDimensions` 校验 vs 请求 size,不符 `logServerEvent` 落 `size-mismatch` ③`*-image-content` layout 默认 `object-fit:contain` 整图必显、比例不符留边不裁(matched 时 ≡ cover 满铺)(2026-07 dogfood)
-- **slides-store mutation 是「读整份 content→改→写回」,fire-and-forget worker 并发调必须 per-deck 串行化**:image-gen worker 并发限流 3,多个几乎同时调 `updateSlide` 各基于同一旧快照写回 → 后写覆盖先写(lost update;生产 deck#30:10 job 全 done 但第 11 页生成的 asset 未被最终内容引用、被别的 slide 覆盖丢了,job 自身看是 done 故队列不报错、静默数据丢失)。修法:进程内 `Map<deckId,Promise>` 链把同 deck 的 mutation 串起来(agent 单实例,与 slidev-lock 同前提;`.then` 在注册点捕获 ALS 上下文,故 fn 内 `getCurrentDeckContent()` 读的仍是本 deck)。**任何 fire-and-forget worker 对同一行/文档 read-modify-write 都要串行化或乐观锁**(2026-07 dogfood,commit `fa93351`)
+- **slides-store mutation 是「读整份 content→改→写回」,fire-and-forget worker 并发调必须 per-deck 串行化**:image-gen worker 并发限流 3,多个几乎同时调 `updateSlide` 各基于同一旧快照写回 → 后写覆盖先写(lost update)。修法:进程内 `Map<deckId,Promise>` 链把同 deck 的 mutation 串起来；`.then` 在注册点捕获 ALS 上下文。**多实例部署前必须升级成 DB 乐观锁/事务**(2026-07 dogfood,commit `fa93351`)
 
 ### 安全
 
@@ -328,7 +320,7 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 - **chart / 布局 / 媒体类公共组件 fallback 必须中性**（不写死任何模板的主色），模板独有视觉由 layout 或 token 注入（[plan 13](docs/plans/13-phase7-template-rename.md) 踩坑 2）
 - **`--ld-*` token 不要在 `:root` 同时声明多套模板**：`global.css` 同时 `@import` 两套 tokens.css 时，后导入的会覆盖前者（jingyeda 覆盖 beitou → 所有 deck 都用错色）。正确做法是在每套模板的 layer-1 layout 根元素挂 `.beitou-template` / `.jingyeda-template` class，把 `--ld-*` override 写到该 class scope 里（[plan 16](docs/plans/16-phase75-template-layering.md) 踩坑）
 - **markdown-it 不允许 prop 字面量跨行**：组件标签里写 `:rows='[[...],\n[...]]'` / `:sections='[{...},\n{...}]'`，markdown 解析会把跨行的 `]` / `}` 当段落分隔符截断 —— 单个数组 / 对象字面量必须**单行写完**，组件标签自身可多行（[plan 16](docs/plans/16-phase75-template-layering.md) 踩坑）
-- **Slidev `--base` 前缀对绝对路径资源失效**：组件里 hardcode `/templates/X/y.png` 不会自动加 `--base /api/slidev-preview/` 前缀，dev 跑 404；用 `useTemplateAsset()` helper 或 `import.meta.env.BASE_URL` 拼前缀（[plan 16](docs/plans/16-phase75-template-layering.md) 踩坑）
+- **SFC 字符串资源路径不会自动带 Vite base**：组件里 hardcode `/templates/X/y.png` 在非根部署会 404；用 `useTemplateAsset()` 或 `import.meta.env.BASE_URL` 拼前缀（[plan 16](docs/plans/16-phase75-template-layering.md)）
 - **CSS `em` 是相对自身 font-size，不是父级**：组件根上同时写 `width: 8em; font-size: 3.6em` 会让宽度变成 8 × 72px = 576px（撑出屏幕），而不是预期的 8 × 20px = 160px。把 font-size 挂到子元素上（[plan 16](docs/plans/16-phase75-template-layering.md) 踩坑）
 
 ## Skills 与 Hooks（自动行为）
@@ -340,4 +332,4 @@ jq 'select(.category=="image-gen" and .event=="cancelled")' logs/server-2026-04-
 
 ## 阶段进展
 
-详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–10 ✅(2026-04-27 lumideck.illegalscreed.cn 上线),Phase 11.5(AI 图片内容页 / `generate_slide_image` 工具) ✅(2026-04-30),Phase 11.6 + 11.7 ✅,Phase 10.5(Slidev 解耦 / DeckRenderer / 锁语义归位) ✅(2026-05-12,plan 25),Phase 12(多 LLM Provider 原生接口) ✅(2026-05-13,plan 26),Phase 12.5(切到 pi-ai 0.74.0) ✅(2026-05-15,plan 27),Phase 12.7(pi-agent-core 上移 backend agent runtime) ✅(2026-05-16,plan 28),Phase 13(文件上传 + 引用 + 用户级 Asset 管理) ✅(2026-05-16,plan 29),**Phase 14(导出 PDF / PNG 序列 zip / PPTX) ✅(2026-05-18,plan 30)** —— 完全 client-side(html2canvas + jsPDF + pptxgenjs browser bundle + jszip),用户浏览器内 mount 隐藏 ExportRenderer 1920×1080 截 DeckRenderer 静态视图,backend **零改动**;`waitForRenderStable` 5 条 settle(`img.complete && naturalWidth>0` + `document.fonts.ready` + animations.finished + 2×rAF + 500ms)规避 Slidev 自带 export image-onload race bug;顶栏「导出」按钮 + Modal 单选格式 + 同步进度条。Phase 13.5 MCP catalog 暂搁置(服务器资源 + vision 已由主 LLM 多模态解,见 memory `phase13.5-mcp-catalog-deferred`)。**Phase 15(归档数据包 export + import `.lumideck`) ✅(2026-05-18,plan 31)** —— backend `GET /api/decks/:id/export-archive` 拉 deck_assets BLOB + jszip STORE 压成 zip,`POST /api/decks/import` 接 multipart 100MB cap + parseArchive 6 步 validate(magic-bytes / manifest schema / templateId whitelist / asset 字节 size 匹配)+ DB transaction 4 步原子(decks INSERT → asset INSERTs new uuid → version INSERT rewrite asset url → currentVersionId UPDATE);包内 manifest.json + content.md + assets/<uuid>.<ext>;**不包** user_assets / deck_versions 历史;schemaVersion 兼容表硬编 `SUPPORTED_SCHEMA_VERSIONS=[1]` 不做 auto migration;前端编辑器导出 modal 加第 4 个 `.lumideck` radio,deck 列表页加「导入」按钮 + 隐藏 file input;round-trip E2E 真测 create+export+删原+import → 新 deck title 含「(导入)」+ asset byte-equal。下一步:Phase 16 自研 PresentationViewer / Phase 17+ Markdown 粘贴导入 + PPTX 导入。
+详见 [`docs/requirements/roadmap.md`](docs/requirements/roadmap.md)。当前进度：Phase 1–10 ✅(2026-04-27 lumideck.illegalscreed.cn 上线),Phase 11.5(AI 图片内容页 / `generate_slide_image` 工具) ✅(2026-04-30),Phase 11.6 + 11.7 ✅,Phase 10.5(Slidev 解耦 / DeckRenderer / 锁语义归位) ✅(2026-05-12,plan 25),Phase 12(多 LLM Provider 原生接口) ✅(2026-05-13,plan 26),Phase 12.5(切到 pi-ai 0.74.0) ✅(2026-05-15,plan 27),Phase 12.7(pi-agent-core 上移 backend agent runtime) ✅(2026-05-16,plan 28),Phase 13(文件上传 + 引用 + 用户级 Asset 管理) ✅(2026-05-16,plan 29),**Phase 14(导出 PDF / PNG 序列 zip / PPTX) ✅(2026-05-18,plan 30)** —— 完全 client-side(html2canvas + jsPDF + pptxgenjs browser bundle + jszip),用户浏览器内 mount 隐藏 ExportRenderer 1920×1080 截 DeckRenderer 静态视图,backend **零改动**;`waitForRenderStable` 5 条 settle(`img.complete && naturalWidth>0` + `document.fonts.ready` + animations.finished + 2×rAF + 500ms)规避 Slidev 自带 export image-onload race bug;顶栏「导出」按钮 + Modal 单选格式 + 同步进度条。Phase 13.5 MCP catalog 暂搁置(服务器资源 + vision 已由主 LLM 多模态解,见 memory `phase13.5-mcp-catalog-deferred`)。**Phase 15(归档数据包 export + import `.lumideck`) ✅(2026-05-18,plan 31)** —— backend `GET /api/decks/:id/export-archive` 拉 deck_assets BLOB + jszip STORE 压成 zip,`POST /api/decks/import` 接 multipart 100MB cap + parseArchive 6 步 validate(magic-bytes / manifest schema / templateId whitelist / asset 字节 size 匹配)+ DB transaction 4 步原子(decks INSERT → asset INSERTs new uuid → version INSERT rewrite asset url → currentVersionId UPDATE);包内 manifest.json + content.md + assets/<uuid>.<ext>;**不包** user_assets / deck_versions 历史;schemaVersion 兼容表硬编 `SUPPORTED_SCHEMA_VERSIONS=[1]` 不做 auto migration;前端编辑器导出 modal 加第 4 个 `.lumideck` radio,deck 列表页加「导入」按钮 + 隐藏 file input;round-trip E2E 真测 create+export+删原+import → 新 deck title 含「(导入)」+ asset byte-equal。**Phase 16(PresentationViewer + 公开分享 + Slidev runtime 退役) ✅(2026-07-10,plan 33)** —— 原生放映、演讲者备注/计时/黑白屏/overview/画笔与 BroadcastChannel 同步全部落地；公开分享具备过期、撤销和 share-scoped asset 隔离；生产收敛为 creator 静态站点 + 单 agent 进程。下一步:Phase 17+ Markdown 粘贴导入 + PPTX 导入。

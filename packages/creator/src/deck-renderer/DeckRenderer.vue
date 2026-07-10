@@ -34,8 +34,10 @@ const props = withDefaults(
     templateId: string
     /** 1-indexed；undefined = 多页平铺（编辑视图列表 / 印刷预览用） */
     currentPage?: number
+    /** 放映模式允许画布随受约束的 16:9 容器放大；编辑器/导出默认封顶 960px。 */
+    allowUpscale?: boolean
   }>(),
-  { currentPage: undefined },
+  { currentPage: undefined, allowUpscale: false },
 )
 
 const parsed = computed(() => parseDeck(props.markdown))
@@ -60,7 +62,7 @@ function recompute(): void {
   if (available <= 0) return
   // slide-frame 已经被 max-width: DESIGN_WIDTH 锁住，实际渲染宽度是
   // min(available, DESIGN_WIDTH)；scale 跟着这个真实宽度，永远 ≤ 1（不放大字）
-  const frameWidth = Math.min(available, DESIGN_WIDTH)
+  const frameWidth = props.allowUpscale ? available : Math.min(available, DESIGN_WIDTH)
   scale.value = frameWidth / DESIGN_WIDTH
 }
 
@@ -83,7 +85,7 @@ onBeforeUnmount(() => {
   <div
     ref="rendererRef"
     class="deck-renderer"
-    :class="`template-${templateId}`"
+    :class="[`template-${templateId}`, { 'allow-upscale': allowUpscale }]"
     :style="{
       '--slide-scale': scale,
       '--design-width': `${DESIGN_WIDTH}px`,
@@ -134,6 +136,9 @@ onBeforeUnmount(() => {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
   background: #fff;
   overflow: hidden;
+}
+.deck-renderer.allow-upscale .slide-frame {
+  max-width: none;
 }
 .slide-canvas {
   position: absolute;

@@ -199,7 +199,7 @@ describe('eventsToSSEStream 异常路径', () => {
   it('非 Error 抛(plain string) → message 字段走 String(e) fallback', async () => {
     async function* throwsString(): AsyncIterable<CanonicalEvent> {
       yield { type: 'text.delta', text: 'before' }
-      throw 'plain string error' // eslint-disable-line @typescript-eslint/only-throw-error
+      throw 'plain string error'
     }
     const stream = eventsToSSEStream(throwsString())
     const output = await collectDecoded(stream)
@@ -214,7 +214,7 @@ describe('eventsToSSEStream 异常路径', () => {
   it('第一个 event 就 throw → 只有一个 error event', async () => {
     async function* throwsImmediately(): AsyncIterable<CanonicalEvent> {
       throw new Error('immediate boom')
-      yield { type: 'text.delta', text: 'never' } // eslint-disable-line no-unreachable
+      yield { type: 'text.delta', text: 'never' }
     }
     const stream = eventsToSSEStream(throwsImmediately())
     const output = await collectDecoded(stream)

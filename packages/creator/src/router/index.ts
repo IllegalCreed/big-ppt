@@ -28,6 +28,18 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresDeckRenderer: true },
     },
     {
+      path: '/decks/:id(\\d+)/present',
+      name: 'deck-presentation',
+      component: () => import('../pages/PresentationPage.vue'),
+      meta: { requiresAuth: true, requiresDeckRenderer: true },
+    },
+    {
+      path: '/share/:slug',
+      name: 'share-presentation',
+      component: () => import('../pages/SharePresentationPage.vue'),
+      meta: { requiresDeckRenderer: true },
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('../pages/LoginPage.vue'),
@@ -59,6 +71,9 @@ const router = createRouter({
 let bootstrapped = false
 
 router.beforeEach(async (to) => {
+  // 视觉入口不依赖 agent；公开分享也不应被 /auth/me 的网络状态阻塞。
+  if (to.name === 'visual-baseline' || to.name === 'share-presentation') return
+
   const { isLoggedIn, fetchMe } = useAuth()
 
   // 首次进入：拉一次 /me，后续用内存状态

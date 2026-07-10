@@ -1,44 +1,33 @@
 /**
- * Phase 10：/healthz + /api/healthz 增强版测试。
- *
- * 三场景：
- *   1. happy（DB up + slidev up）→ 200 + status:'ok'
- *   2. slidev down（DB up）→ 200 + status:'degraded'，agent 仍可服务
- *   3. DB down → 503 + status:'down'
+ * /healthz + /api/healthz DB 探活测试。
  *
  * /api/healthz 与 /healthz 是同一 sub-router 的两个挂载点，行为一致；
  * mount-integration 测试覆盖路径级别的存在性。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { app } from '../src/app.js'
 import { useTestDb } from './_setup/test-db.js'
 
 useTestDb()
 
 describe('GET /healthz', () => {
-  // 把所有出去的 fetch（slidev probe）默认 mock 成 200，避免测试机上没起 slidev 时一直 ok=false
-  beforeEach(() => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 200 }))
-  })
-
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('happy：DB up + slidev up → 200 + status:ok', async () => {
+  it('DB up → 200 + status:ok', async () => {
     const res = await app.fetch(new Request('http://test/healthz'))
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
       status: string
       service: string
-      checks: { db: { ok: boolean }; slidev: { ok: boolean } }
+      checks: { db: { ok: boolean } }
       gitSha: string
       uptimeSec: number
     }
     expect(body.status).toBe('ok')
     expect(body.service).toBe('big-ppt-agent')
     expect(body.checks.db.ok).toBe(true)
-    expect(body.checks.slidev.ok).toBe(true)
     expect(typeof body.uptimeSec).toBe('number')
     expect(body.uptimeSec).toBeGreaterThanOrEqual(0)
   })
@@ -55,21 +44,6 @@ describe('GET /healthz', () => {
       if (previous === undefined) delete process.env.GIT_SHA
       else process.env.GIT_SHA = previous
     }
-  })
-
-  it('Slidev 不通时 → 200 + status:degraded（agent 仍服务）', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'))
-
-    const res = await app.fetch(new Request('http://test/healthz'))
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as {
-      status: string
-      checks: { db: { ok: boolean }; slidev: { ok: boolean; error?: string } }
-    }
-    expect(body.status).toBe('degraded')
-    expect(body.checks.db.ok).toBe(true)
-    expect(body.checks.slidev.ok).toBe(false)
-    expect(body.checks.slidev.error).toContain('ECONNREFUSED')
   })
 
   it('DB 不通时 → 503 + status:down', async () => {

@@ -14,7 +14,6 @@ import {
   validateSwitchTarget,
 } from '../../template-switch-job.js'
 import { rewriteForTemplate } from '../../prompts/rewriteForTemplate.js'
-import { getHolder } from '../../slidev-lock.js'
 
 export const switchTemplateTool: ToolDef = {
   name: 'switch_template',
@@ -65,15 +64,6 @@ export const switchTemplateTool: ToolDef = {
     const validation = validateSwitchTarget(deck.templateId, targetTemplateId)
     if (!validation.ok) {
       return JSON.stringify({ success: false, error: validation.error })
-    }
-
-    const holder = getHolder()
-    if (holder && holder.deckId === deckId && holder.userId !== ctx.userId) {
-      return JSON.stringify({
-        success: false,
-        error: 'deck 正被占用',
-        holder: { userId: holder.userId, email: holder.userEmail },
-      })
     }
 
     const job = createJob({

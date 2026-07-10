@@ -43,7 +43,6 @@ beforeEach(async () => {
   const templatesRoot = path.join(slidevDir, 'templates')
   const templatesDir = path.join(templatesRoot, 'beitou-standard')
   fs.mkdirSync(templatesDir, { recursive: true })
-  fs.writeFileSync(path.join(slidevDir, 'slides.md'), '# unused (slides-store DB-based)\n')
   fs.writeFileSync(path.join(templatesDir, 'cover.md'), '<cover>cover</cover>\n')
   fs.writeFileSync(path.join(templatesDir, 'README.md'), 'USAGE\n')
   fs.writeFileSync(
@@ -79,7 +78,6 @@ beforeEach(async () => {
     }),
   )
   fs.writeFileSync(path.join(templatesDir, 'starter.md'), '---\nlayout: cover\nmainTitle: x\n---\n')
-  process.env.BIG_PPT_SLIDES_PATH = path.join(slidevDir, 'slides.md')
   process.env.BIG_PPT_TEMPLATES_DIR = templatesDir
   process.env.BIG_PPT_TEMPLATES_ROOT = templatesRoot
   __resetPathsForTesting()
@@ -98,7 +96,6 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
-  delete process.env.BIG_PPT_SLIDES_PATH
   delete process.env.BIG_PPT_TEMPLATES_DIR
   delete process.env.BIG_PPT_TEMPLATES_ROOT
   __resetPathsForTesting()
@@ -161,7 +158,10 @@ describe('registerLocalTools', () => {
   })
 
   it('edit_slides 唯一替换', async () => {
-    await inCtx(async () => await getTool('edit_slides')!.exec({ old_string: '请填写标题', new_string: '改后标题' }))
+    await inCtx(
+      async () =>
+        await getTool('edit_slides')!.exec({ old_string: '请填写标题', new_string: '改后标题' }),
+    )
     const out = await inCtx(() => getTool('read_slides')!.exec({}) as Promise<string>)
     expect(out).toContain('改后标题')
     expect(out).not.toContain('请填写标题')
@@ -170,7 +170,9 @@ describe('registerLocalTools', () => {
   it('edit_slides old_string > 300 char 拒收', async () => {
     const tool = getTool('edit_slides')!
     const longText = 'x'.repeat(301)
-    const raw = await inCtx(() => tool.exec.call(tool, { old_string: longText, new_string: 'short' }))
+    const raw = await inCtx(() =>
+      tool.exec.call(tool, { old_string: longText, new_string: 'short' }),
+    )
     const parsed = JSON.parse(raw)
     expect(parsed.success).toBe(false)
     expect(parsed.error).toMatch(/长度.*300/)
@@ -185,7 +187,8 @@ describe('registerLocalTools', () => {
 
   it('read_template 白名单只接 DESIGN.md / starter.md', () => {
     const tool = getTool('read_template')!
-    const props = (tool.parameters as { properties: Record<string, { enum?: string[] }> }).properties
+    const props = (tool.parameters as { properties: Record<string, { enum?: string[] }> })
+      .properties
     expect(props.name?.enum).toEqual(['DESIGN.md', 'starter.md'])
   })
 
@@ -214,12 +217,13 @@ describe('registerLocalTools', () => {
     })
 
     it('update_slide 不带 layout 字段 → 跳过校验,通过', async () => {
-      await inCtx(async () =>
-        await getTool('create_slide')!.exec({
-          index: 'end',
-          layout: 'beitou-image-content',
-          frontmatter: { heading: '原标题' },
-        }),
+      await inCtx(
+        async () =>
+          await getTool('create_slide')!.exec({
+            index: 'end',
+            layout: 'beitou-image-content',
+            frontmatter: { heading: '原标题' },
+          }),
       )
       const tool = getTool('update_slide')!
       const raw = await inCtx(() => tool.exec.call(tool, { index: 2, body: '新正文' }))
@@ -239,20 +243,26 @@ describe('registerLocalTools', () => {
 
   describe('integer args 宽容 coerce', () => {
     beforeEach(async () => {
-      await inCtx(async () =>
-        await getTool('write_slides')!.exec({
-          content: '---\nlayout: cover\nmainTitle: 请填写标题\nsubtitle: 请填写副标题\ndate: YYYY/MM/DD\n---\n\n# P1\n\n---\nlayout: content\n---\n\n# P2\n',
-        }),
+      await inCtx(
+        async () =>
+          await getTool('write_slides')!.exec({
+            content:
+              '---\nlayout: cover\nmainTitle: 请填写标题\nsubtitle: 请填写副标题\ndate: YYYY/MM/DD\n---\n\n# P1\n\n---\nlayout: content\n---\n\n# P2\n',
+          }),
       )
     })
 
     it('create_slide 接受字符串 "end" 和字符串 "2"', async () => {
       const r1 = JSON.parse(
-        await inCtx(() => getTool('create_slide')!.exec({ index: 'end', layout: 'content', body: 'new' })),
+        await inCtx(() =>
+          getTool('create_slide')!.exec({ index: 'end', layout: 'content', body: 'new' }),
+        ),
       )
       expect(r1.success).toBe(true)
       const r2 = JSON.parse(
-        await inCtx(() => getTool('create_slide')!.exec({ index: '2', layout: 'content', body: 'middle' })),
+        await inCtx(() =>
+          getTool('create_slide')!.exec({ index: '2', layout: 'content', body: 'middle' }),
+        ),
       )
       expect(r2.success).toBe(true)
     })
@@ -270,7 +280,9 @@ describe('registerLocalTools', () => {
     })
 
     it('reorder_slides 接受字符串元素数组 ["2","1"]', async () => {
-      const r = JSON.parse(await inCtx(() => getTool('reorder_slides')!.exec({ order: ['2', '1'] })))
+      const r = JSON.parse(
+        await inCtx(() => getTool('reorder_slides')!.exec({ order: ['2', '1'] })),
+      )
       expect(r.success).toBe(true)
     })
 

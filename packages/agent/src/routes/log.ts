@@ -3,6 +3,7 @@ import type { LogPayload } from '@big-ppt/shared'
 import { getLatestSession, handleLogEvent } from '../logger/index.js'
 import { requireAuth, type AuthVars } from '../middleware/auth.js'
 import { createRateLimit, userOrIpKey } from '../middleware/rate-limit.js'
+import { getRequestContext } from '../context.js'
 
 export const log = new Hono<{ Variables: AuthVars }>()
 
@@ -22,13 +23,11 @@ log.use('/log-event', logEventLimit)
 log.post('/log-event', async (c) => {
   try {
     const raw = (await c.req.json()) as LogPayload
-    // requireAuth 已挂在前面,user 必非空;deckId 来自 session.activeDeckId(可能 null,
-    // 若用户尚未 activate 任何 deck —— 比如刚登录还在 deck 列表页)
+    // requireAuth 已挂在前面,user 必非空;deckId 由可选 X-Deck-Id 注入 ALS。
     const user = c.get('user')!
-    const session = c.get('session')!
     const result = handleLogEvent(raw, {
       userId: user.id,
-      deckId: session.activeDeckId,
+      deckId: getRequestContext().activeDeckId,
     })
     return c.json(result)
   } catch (err) {
