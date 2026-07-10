@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PresentationPayload } from '@big-ppt/shared'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api, ApiError } from '../api/client'
 import PresentationViewer from '../presentation/PresentationViewer.vue'
@@ -59,17 +59,32 @@ function routeFor(view: 'audience' | 'presenter', page: number): string {
   }).href
 }
 
+function presentationWindowName(view: 'audience' | 'presenter'): string {
+  return `lumideck-${view}-${deckId.value}-${channelId.value}`
+}
+
 function openPresenter(page: number): void {
-  window.open(routeFor('presenter', page), '_blank')
+  window.open(
+    routeFor('presenter', page),
+    presentationWindowName('presenter'),
+    'popup=yes,width=1440,height=900',
+  )
 }
 
 function openAudience(page: number): void {
-  window.open(routeFor('audience', page), '_blank')
+  window.open(
+    routeFor('audience', page),
+    presentationWindowName('audience'),
+    'popup=yes,width=1280,height=720',
+  )
 }
 
 function exit(): void {
-  window.close()
-  if (!window.closed) void router.push(`/decks/${deckId.value}`)
+  if (window.opener && !window.opener.closed) {
+    window.close()
+    return
+  }
+  void router.push(`/decks/${deckId.value}`)
 }
 
 onMounted(() => {
@@ -77,6 +92,16 @@ onMounted(() => {
 })
 
 watch(deckId, () => void load())
+
+watchEffect(() => {
+  if (state.value.kind !== 'ready') return
+  const role = isPresenter.value ? '演讲者视图' : '观众窗口'
+  document.title = `${role} · ${state.value.presentation.title}`
+})
+
+onBeforeUnmount(() => {
+  document.title = 'Lumideck · 幻光千叶'
+})
 </script>
 
 <template>

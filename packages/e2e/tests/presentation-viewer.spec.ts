@@ -145,7 +145,7 @@ async function expectViewerReady(page: Page): Promise<void> {
   await expect(page.locator('.slide-canvas').first()).toBeVisible({ timeout: 10_000 })
 }
 
-test('编辑器放映 → overview → 演讲者窗口 → 页码/黑屏/画笔跨窗口同步', async ({
+test('双屏放映自动分配演讲者与观众窗口，并由演讲者同步翻页/黑屏/画笔', async ({
   page,
   context,
   baseURL,
@@ -153,31 +153,35 @@ test('编辑器放映 → overview → 演讲者窗口 → 页码/黑屏/画笔�
   const owner = await createUserAndDeck('presenter')
   await installSession(context, owner.api, baseURL!)
   await page.goto(`/decks/${owner.deckId}`)
-  await expect(page.getByRole('button', { name: '放映', exact: true })).toBeVisible({
+  await expect(page.getByRole('button', { name: '双屏放映', exact: true })).toBeVisible({
     timeout: 15_000,
   })
 
   const audiencePromise = page.waitForEvent('popup')
-  await page.getByRole('button', { name: '放映', exact: true }).click()
+  await page.getByRole('button', { name: '双屏放映', exact: true }).click()
   const audience = await audiencePromise
+  await expect(page.locator('[data-presenter-mode]')).toBeVisible({ timeout: 15_000 })
   await expectViewerReady(audience)
-  await expect(audience).toHaveURL(new RegExp(`/decks/${owner.deckId}/present\\?`))
-  await expect(audience.getByText('1 / 3')).toBeVisible()
+  expect(context.pages()).toHaveLength(2)
+
+  const presenterUrl = new URL(page.url())
+  const audienceUrl = new URL(audience.url())
+  expect(presenterUrl.searchParams.get('view')).toBe('presenter')
+  expect(audienceUrl.searchParams.get('view')).toBeNull()
+  expect(presenterUrl.searchParams.get('channel')).toBe(audienceUrl.searchParams.get('channel'))
+  await expect(page).toHaveTitle(/演讲者视图/)
+  await expect(audience).toHaveTitle(/观众窗口/)
+  await expect(page.getByText('开场先说明新版放映不再依赖 Slidev。')).toBeVisible()
+
+  await page.getByRole('button', { name: '打开观众窗口' }).click()
+  await expect.poll(() => context.pages().length).toBe(2)
+
+  await page.getByRole('button', { name: '下一页' }).click()
+  await expect(audience.getByText('2 / 3')).toBeVisible()
 
   await audience.getByRole('button', { name: '幻灯片总览' }).click()
   await expect(audience.getByRole('dialog', { name: '幻灯片总览' })).toBeVisible()
-  await audience.getByRole('button', { name: '跳转到第 2 页' }).click()
-  await expect(audience.getByText('2 / 3')).toBeVisible()
-
-  await audience.getByRole('button', { name: '上一页' }).click()
-  const presenterPromise = audience.waitForEvent('popup')
-  await audience.getByRole('button', { name: '演讲者视图' }).click()
-  const presenter = await presenterPromise
-  await expect(presenter.locator('[data-presenter-mode]')).toBeVisible({ timeout: 15_000 })
-  await expect(presenter.getByText('开场先说明新版放映不再依赖 Slidev。')).toBeVisible()
-
-  await presenter.getByRole('button', { name: '下一页' }).click()
-  await expect(audience.getByText('2 / 3')).toBeVisible()
+  await audience.getByRole('button', { name: '关闭总览' }).click()
 
   await audience.getByRole('button', { name: '浅色界面' }).click()
   await expect(audience.locator('[data-presentation-viewer]')).toHaveClass(/ui-theme-light/)
@@ -186,20 +190,20 @@ test('编辑器放映 → overview → 演讲者窗口 → 页码/黑屏/画笔�
   await audience.getByRole('button', { name: '深色界面' }).click()
   await expect(audience.locator('[data-presentation-viewer]')).toHaveClass(/ui-theme-dark/)
 
-  await presenter.keyboard.press('b')
+  await page.keyboard.press('b')
   await expect(audience.locator('.blackout.black')).toBeVisible()
-  await presenter.keyboard.press('b')
+  await page.keyboard.press('b')
   await expect(audience.locator('.blackout')).toHaveCount(0)
 
-  await audience.getByRole('button', { name: '画笔', exact: true }).click()
-  const layer = audience.locator('[data-drawing-layer]')
+  await page.getByRole('button', { name: '画笔', exact: true }).click()
+  const layer = page.locator('.current-stage [data-drawing-layer]')
   const box = await layer.boundingBox()
   expect(box).toBeTruthy()
-  await audience.mouse.move(box!.x + box!.width * 0.3, box!.y + box!.height * 0.3)
-  await audience.mouse.down()
-  await audience.mouse.move(box!.x + box!.width * 0.7, box!.y + box!.height * 0.6, { steps: 5 })
-  await audience.mouse.up()
-  await expect(presenter.locator('.current-stage polyline')).toHaveCount(1)
+  await page.mouse.move(box!.x + box!.width * 0.3, box!.y + box!.height * 0.3)
+  await page.mouse.down()
+  await page.mouse.move(box!.x + box!.width * 0.7, box!.y + box!.height * 0.6, { steps: 5 })
+  await page.mouse.up()
+  await expect(audience.locator('.slide-shell polyline')).toHaveCount(1)
 
   await owner.api.dispose()
 })

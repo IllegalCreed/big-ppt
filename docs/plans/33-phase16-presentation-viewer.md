@@ -24,6 +24,7 @@ Slidev dev server、反向代理、单实例锁及相关部署配置。`packages
 8. **owner presentation API 仍显式存在**：虽然 `GET /api/decks/:id` 已含内容，仍提供 `/presentation` 稳定契约，让演示页面不依赖编辑器的版本列表响应。
 9. **`/undo`、`/redo` 改为 header-scoped DB 操作**：删除锁后由 `X-Deck-Id` 注入 ALS；`/read-slides` 随 Slidev mirror 一起删除。
 10. **CI 先落地再扩功能**：Phase 16 的每一批提交都必须经过 MySQL 单测、类型、lint、bundle budget 与 Playwright 无密钥流程。
+11. **双屏入口只申请一个弹窗**：编辑器点击「双屏放映」后，新开具名观众窗口，当前标签页进入演讲者视图；两端共享随机 channel。具名窗口可被演讲者重新聚焦或在关闭后重开，避免不断生成重复观众窗口，也规避一次点击申请两个弹窗被浏览器拦截。
 
 ---
 
@@ -75,6 +76,7 @@ Slidev dev server、反向代理、单实例锁及相关部署配置。`packages
 
 - `PresenterMode.vue` 显示当前页、下一页、备注、计时器与控制栏。
 - `BroadcastChannel` 同步 page、blackout 和 drawing；实现 hello/state 握手覆盖窗口启动时序。
+- 编辑器「双屏放映」新开观众窗口并在当前标签页进入演讲者视图；翻页、黑/白屏和绘画均从演讲者端驱动并在观众端验收。
 
 ### Task 16-C：公开分享
 

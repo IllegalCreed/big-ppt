@@ -1,16 +1,17 @@
 <!--
-  Phase 16：编辑器主视图预览 + creator 原生放映入口。
+  Phase 16：编辑器主视图预览 + creator 原生双屏放映入口。
 
   iframe 时代 → DeckRenderer。结构：
-    - 顶部 toolbar：翻页 / 全屏放映
+    - 顶部 toolbar：翻页 / 双屏放映
       (Phase 15 落地后导出走顶栏「导出」modal,SlidePreview 不再带 export 按钮)
     - 内容区：<DeckRenderer> 单页模式（currentPage 跟 slideStore 联动）
 
-  放映直接打开 `/decks/:id/present`，复用 DeckRenderer，不请求单实例锁。
+  双屏放映新开观众窗口，当前编辑器标签页进入演讲者视图；两个页面共享随机 channel。
 -->
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
-import { ChevronLeft, ChevronRight, Play } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, MonitorUp } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSlideStore } from '../composables/useSlideStore'
 import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
 
@@ -22,6 +23,7 @@ const props = defineProps<{
 }>()
 
 const slideStore = useSlideStore()
+const router = useRouter()
 const presentError = ref<string | null>(null)
 
 // 绑定 deckId 到 slideStore + 写入初始内容；
@@ -66,8 +68,28 @@ function onKey(e: KeyboardEvent) {
 
 function present() {
   presentError.value = null
-  const url = `/decks/${props.deckId}/present?page=${slideStore.currentPage.value}`
-  if (!window.open(url, '_blank')) presentError.value = '浏览器阻止了放映窗口，请允许弹出窗口后重试'
+  const page = slideStore.currentPage.value
+  const channel = globalThis.crypto.randomUUID()
+  const audienceUrl = router.resolve({
+    name: 'deck-presentation',
+    params: { id: props.deckId },
+    query: { page, channel },
+  }).href
+  const audienceWindowName = `lumideck-audience-${props.deckId}-${channel}`
+  const audience = window.open(
+    audienceUrl,
+    audienceWindowName,
+    'popup=yes,width=1280,height=720',
+  )
+  if (!audience) {
+    presentError.value = '浏览器阻止了观众窗口，请允许弹出窗口后重试'
+    return
+  }
+  void router.push({
+    name: 'deck-presentation',
+    params: { id: props.deckId },
+    query: { page, channel, view: 'presenter' },
+  })
 }
 </script>
 
@@ -102,9 +124,15 @@ function present() {
             <ChevronRight :size="16" :stroke-width="1.8" />
           </button>
         </div>
-        <button type="button" class="cta-btn" title="全屏放映" @click="present">
-          <Play :size="14" :stroke-width="2" fill="currentColor" />
-          <span>放映</span>
+        <button
+          type="button"
+          class="cta-btn"
+          title="打开观众窗口并进入演讲者视图"
+          aria-label="双屏放映"
+          @click="present"
+        >
+          <MonitorUp :size="15" :stroke-width="2" />
+          <span>双屏放映</span>
         </button>
       </div>
     </div>
