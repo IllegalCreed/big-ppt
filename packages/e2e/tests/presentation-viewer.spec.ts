@@ -205,6 +205,10 @@ test('双屏放映自动分配演讲者与观众窗口，并由演讲者同步�
   await page.mouse.up()
   await expect(audience.locator('.slide-shell polyline')).toHaveCount(1)
 
+  await page.getByRole('button', { name: '橡皮擦' }).click()
+  await page.mouse.click(box!.x + box!.width * 0.5, box!.y + box!.height * 0.45)
+  await expect(audience.locator('.slide-shell polyline')).toHaveCount(0)
+
   await owner.api.dispose()
 })
 

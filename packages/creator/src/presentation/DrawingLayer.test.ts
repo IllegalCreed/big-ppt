@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import DrawingLayer from './DrawingLayer.vue'
+import type { DrawingStroke } from './types'
 
 describe('DrawingLayer', () => {
   it('pointer 输入转换为稳定 viewBox 坐标并产出 stroke', async () => {
@@ -49,5 +50,50 @@ describe('DrawingLayer', () => {
       )
     await wrapper.vm.$nextTick()
     expect(wrapper.emitted('update:strokes')).toBeUndefined()
+  })
+
+  it('橡皮擦拖过笔迹时删除命中的整条 stroke，并保留远处笔迹', async () => {
+    const strokes: DrawingStroke[] = [
+      {
+        id: 'hit',
+        tool: 'pen',
+        color: '#ef4444',
+        width: 4,
+        points: [
+          { x: 500, y: 200 },
+          { x: 500, y: 360 },
+        ],
+      },
+      {
+        id: 'keep',
+        tool: 'highlighter',
+        color: '#facc15',
+        width: 24,
+        points: [
+          { x: 500, y: 480 },
+          { x: 600, y: 480 },
+        ],
+      },
+    ]
+    const wrapper = mount(DrawingLayer, {
+      props: { strokes, enabled: true, tool: 'eraser' },
+    })
+    const svg = wrapper.get('svg').element
+    Object.defineProperty(svg, 'getBoundingClientRect', {
+      value: () => ({ left: 0, top: 0, width: 500, height: 281.25 }),
+    })
+
+    svg.dispatchEvent(
+      new MouseEvent('pointerdown', { bubbles: true, button: 0, clientX: 50, clientY: 140.625 }),
+    )
+    svg.dispatchEvent(
+      new MouseEvent('pointermove', { bubbles: true, clientX: 450, clientY: 140.625 }),
+    )
+    svg.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    const events = wrapper.emitted('update:strokes') ?? []
+    const remaining = events[events.length - 1]?.[0] as DrawingStroke[]
+    expect(remaining.map((stroke) => stroke.id)).toEqual(['keep'])
   })
 })

@@ -144,6 +144,10 @@ describe('PresenterMode', () => {
     await wrapper.get('button[aria-label="选择画笔颜色 #38bdf8"]').trigger('click')
     expect(wrapper.get('button[aria-label="选择画笔颜色 #38bdf8"]').classes()).toContain('active')
 
+    await wrapper.get('button[aria-label="橡皮擦"]').trigger('click')
+    expect(drawing().attributes('data-enabled')).toBe('true')
+    expect(drawing().attributes('data-tool')).toBe('eraser')
+
     wrapper.getComponent(DrawingLayerStub).vm.$emit('update:strokes', [
       {
         id: 'stroke-1',
@@ -162,7 +166,7 @@ describe('PresenterMode', () => {
     await wrapper.get('button[aria-label="撤销笔迹"]').trigger('click')
     expect(wrapper.get('button[aria-label="清空本页笔迹"]').attributes()).toHaveProperty('disabled')
 
-    await wrapper.get('button[aria-label="关闭画笔"]').trigger('click')
+    await wrapper.get('button[aria-label="指针"]').trigger('click')
     expect(drawing().attributes('data-enabled')).toBe('false')
 
     wrapper.unmount()

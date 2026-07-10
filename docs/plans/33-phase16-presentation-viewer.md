@@ -17,7 +17,7 @@ Slidev dev server、反向代理、单实例锁及相关部署配置。`packages
 1. **先并行上线新放映链路，验收后再删旧 runtime**：新路由全量 E2E 通过前保留旧代码，避免无法回退；同一 Phase 内完成删除，不把双轨状态留到下一阶段。
 2. **渲染唯一口径是 `DeckRenderer`**：编辑器、观众窗口、演讲者预览、overview 和公开分享都传同一份 markdown/templateId，不复制 layout 解析器。
 3. **演讲会话用 `BroadcastChannel`，channel id 放 query**：消息只在同浏览器同 origin 内传播，按 deckId + 随机 channel 隔离；不落 DB，不引入进程级共享状态。
-4. **画笔用轻量 SVG pointer-event 实现**：只做笔、高亮、颜色、粗细、撤销和清空；坐标归一化到 0–1，跨不同窗口尺寸仍能同步。不引入完整白板 SDK。
+4. **画笔用轻量 SVG pointer-event 实现**：只做笔、高亮、颜色、粗细、整条笔迹橡皮擦、撤销和清空；坐标归一化到 0–1，跨不同窗口尺寸仍能同步。不引入完整白板 SDK。
 5. **分享链接返回明确生命周期错误**：不存在为 404，过期/撤销为 410，并带稳定 code；公开页面据此显示准确文案。
 6. **公开图片走 share-scoped asset API**：公开 presentation payload 把 `/api/assets/:id` 改写为 `/api/share/:slug/assets/:id`；asset 查询同时约束 share、deck 与 asset，撤销后立即失效且禁止缓存。
 7. **每个 deck 只有一个当前分享链接**：`share_links.deck_id` 唯一；重新创建会旋转 slug 并覆盖过期/撤销状态，避免历史链接重新复活。
@@ -86,7 +86,7 @@ Slidev dev server、反向代理、单实例锁及相关部署配置。`packages
 
 ### Task 16-D：画笔与旧 runtime 退役
 
-- `DrawingLayer.vue` 支持 pen/highlighter、颜色、粗细、撤销、清空。
+- `DrawingLayer.vue` 支持 pen/highlighter、颜色、粗细、整条笔迹擦除、撤销、清空。
 - 删除 slidev lock/proxy/restart/mirror 路径和测试。
 - PM2 从两进程减为 agent 单进程；nginx 删除 Vite/Slidev locations；healthz 只检查 DB。
 - `packages/slidev` 删除 runtime scripts 与 CLI/theme/icon workaround，只保留设计系统构建和测试。
@@ -120,7 +120,7 @@ Slidev dev server、反向代理、单实例锁及相关部署配置。`packages
 ## 验收条件映射
 
 - [x] 翻页、progress、演讲者视图、备注、计时器、黑白屏、overview 全部可用。
-- [x] 画笔与高亮支持 pointer 输入、撤销和清空，并同步到观众窗口。
+- [x] 画笔、高亮和整条笔迹橡皮擦支持 pointer 输入、撤销和清空，并同步到观众窗口。
 - [x] 分享链接公开访问；不存在、过期、撤销状态准确。
 - [x] 两个用户同时放映不同 deck，均成功且无锁 API/冲突 UI。
 - [x] production PM2 只有 `lumideck-agent`；nginx 无 Slidev/Vite 反代 location。

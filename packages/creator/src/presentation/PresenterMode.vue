@@ -7,6 +7,7 @@ import {
   Eraser,
   ExternalLink,
   Highlighter,
+  MousePointer2,
   Moon,
   Pause,
   Pencil,
@@ -20,7 +21,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
 import { parseDeck } from '../deck-renderer/parse-deck'
 import DrawingLayer from './DrawingLayer.vue'
-import type { DrawingStroke, DrawingTool, PresentationUiTheme } from './types'
+import type { DrawingMode, DrawingStroke, PresentationUiTheme } from './types'
 import { usePresentationSession } from './usePresentationSession'
 
 const props = withDefaults(
@@ -50,7 +51,7 @@ const elapsedSeconds = ref(0)
 const timerRunning = ref(true)
 const uiTheme = ref<PresentationUiTheme>('dark')
 const drawingEnabled = ref(false)
-const drawingTool = ref<DrawingTool>('pen')
+const drawingTool = ref<DrawingMode>('pen')
 const drawingColor = ref('#ef4444')
 const currentSlide = computed(() => parsed.value.slides[session.currentPage.value - 1] ?? null)
 const nextPage = computed(() => Math.min(totalPages.value, session.currentPage.value + 1))
@@ -81,7 +82,7 @@ function resetTimer(): void {
   elapsedSeconds.value = 0
 }
 
-function activateDrawingTool(tool: DrawingTool): void {
+function activateDrawingTool(tool: DrawingMode): void {
   drawingEnabled.value = true
   drawingTool.value = tool
 }
@@ -247,12 +248,22 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="icon-btn"
-          :class="{ active: !drawingEnabled }"
-          title="关闭画笔"
-          aria-label="关闭画笔"
-          @click="drawingEnabled = false"
+          :class="{ active: drawingEnabled && drawingTool === 'eraser' }"
+          title="橡皮擦"
+          aria-label="橡皮擦"
+          @click="activateDrawingTool('eraser')"
         >
           <Eraser :size="17" />
+        </button>
+        <button
+          type="button"
+          class="icon-btn"
+          :class="{ active: !drawingEnabled }"
+          title="指针（停止标注）"
+          aria-label="指针"
+          @click="drawingEnabled = false"
+        >
+          <MousePointer2 :size="17" />
         </button>
         <button
           v-for="color in ['#ef4444', '#facc15', '#22c55e', '#38bdf8']"
@@ -263,6 +274,7 @@ onBeforeUnmount(() => {
           :style="{ background: color }"
           :title="`选择 ${color}`"
           :aria-label="`选择画笔颜色 ${color}`"
+          :disabled="drawingTool === 'eraser'"
           @click="drawingColor = color"
         />
         <button
@@ -535,6 +547,11 @@ onBeforeUnmount(() => {
 
 .color-swatch.active {
   border-color: var(--presentation-fg);
+}
+
+.color-swatch:disabled {
+  cursor: default;
+  opacity: 0.35;
 }
 
 .theme-toggle {
