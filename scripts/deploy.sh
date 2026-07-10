@@ -5,7 +5,7 @@
 #
 # 参数(必传,无参数打 help 不部署):
 #   creator    — 仅 build + 部署 creator(SPA 静态文件到 /var/www/lumideck/)
-#   backend    — 仅 build agent + 同步 monorepo + 远端 pnpm install + db:push:prod + pm2 reload
+#   backend    — build agent + 同步 monorepo + 远端 pnpm install + db:push:prod + pm2 reload + healthz
 #   ecosystem  — 仅同步 deploy/ 配置(ecosystem.config.cjs / nginx 模板 / 脚本)
 #   healthz    — 仅打 healthz 端点,不部署
 #   all        — ecosystem + creator + backend + healthz(完整部署)
@@ -28,6 +28,10 @@ SERVER_USER="${SERVER_USER:-root}"
 DOMAIN="${DOMAIN:-lumideck.illegalscreed.cn}"
 REMOTE_WEB="/var/www/lumideck"
 REMOTE_MONOREPO="/root/server/lumideck"
+HEALTHCHECK_URL="${HEALTHCHECK_URL:-https://${DOMAIN}/api/healthz}"
+HEALTHCHECK_ATTEMPTS="${HEALTHCHECK_ATTEMPTS:-10}"
+HEALTHCHECK_RETRY_SECONDS="${HEALTHCHECK_RETRY_SECONDS:-3}"
+HEALTHCHECK_TIMEOUT_SECONDS="${HEALTHCHECK_TIMEOUT_SECONDS:-10}"
 
 # 路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,6 +45,22 @@ NC='\033[0m'
 log_info()  { echo -e "${GREEN}[INFO]${NC}  $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+resolve_git_sha() {
+    local sha="${GIT_SHA:-}"
+    if [ -z "${sha}" ] && command -v git >/dev/null 2>&1; then
+        sha="$(git -C "${PROJECT_ROOT}" rev-parse --verify HEAD 2>/dev/null || true)"
+    fi
+
+    # 只允许 git hex，避免把任意环境变量插进远端 shell。
+    if [[ "${sha}" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+        echo "${sha}"
+    else
+        echo "unknown"
+    fi
+}
+
+DEPLOY_GIT_SHA="$(resolve_git_sha)"
 
 # ── 工具 ────────────────────────────────────
 check_ssh() {
@@ -169,8 +189,8 @@ deploy_backend() {
             exit 2
         }
 
-        echo '==> pm2 startOrReload ecosystem'
-        pm2 startOrReload ${REMOTE_MONOREPO}/deploy/ecosystem.config.cjs --update-env
+        echo '==> pm2 startOrReload ecosystem(GIT_SHA=${DEPLOY_GIT_SHA})'
+        GIT_SHA='${DEPLOY_GIT_SHA}' pm2 startOrReload ${REMOTE_MONOREPO}/deploy/ecosystem.config.cjs --update-env
 
         echo '==> pm2 status'
         pm2 list
@@ -180,29 +200,63 @@ deploy_backend() {
 
 # ── healthcheck ─────────────────────────────
 healthcheck() {
-    log_info "Healthcheck → https://${DOMAIN}/api/healthz"
-    local result http_code
+    local expected_git_sha="${1:-${EXPECTED_GIT_SHA:-}}"
+    local result="" http_code="000" failure_reason="" attempt body_file
 
-    # curl -w 取 HTTP 状态码,-o 输出 body 到 /tmp
-    http_code=$(curl -sS -w '%{http_code}' -o /tmp/lumideck-healthz.json \
-        --max-time 10 \
-        "https://${DOMAIN}/api/healthz" || echo '000')
-
-    log_info "HTTP ${http_code}"
-    if [ -f /tmp/lumideck-healthz.json ]; then
-        result=$(cat /tmp/lumideck-healthz.json)
-        echo "${result}" | head -c 600
-        echo ""
-    fi
-
-    if echo "${result:-}" | grep -q '"status":"ok"'; then
-        log_info "healthz: status=ok ✓"
-    elif echo "${result:-}" | grep -q '"status":"degraded"'; then
-        log_warn "healthz: status=degraded(检查 slidev 进程)"
-    else
-        log_error "healthz 不通,远端跑 pm2 logs lumideck-agent 排查"
+    if ! [[ "${HEALTHCHECK_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "HEALTHCHECK_ATTEMPTS 必须是正整数"
         return 1
     fi
+    if ! [[ "${HEALTHCHECK_RETRY_SECONDS}" =~ ^[0-9]+$ ]]; then
+        log_error "HEALTHCHECK_RETRY_SECONDS 必须是非负整数"
+        return 1
+    fi
+    if ! [[ "${HEALTHCHECK_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+        log_error "HEALTHCHECK_TIMEOUT_SECONDS 必须是正整数"
+        return 1
+    fi
+
+    body_file="$(mktemp /tmp/lumideck-healthz.XXXXXX)"
+    log_info "Healthcheck → ${HEALTHCHECK_URL}"
+
+    for ((attempt = 1; attempt <= HEALTHCHECK_ATTEMPTS; attempt++)); do
+        : > "${body_file}"
+        if ! http_code=$(curl -sS -w '%{http_code}' -o "${body_file}" \
+            --max-time "${HEALTHCHECK_TIMEOUT_SECONDS}" \
+            "${HEALTHCHECK_URL}"); then
+            http_code="000"
+        fi
+        result="$(cat "${body_file}" 2>/dev/null || true)"
+        failure_reason="status 未就绪"
+
+        if [ "${http_code}" = "200" ] && [[ "${result}" == *'"status":"ok"'* ]]; then
+            if [ -n "${expected_git_sha}" ] && \
+                [[ "${result}" != *"\"gitSha\":\"${expected_git_sha}\""* ]]; then
+                failure_reason="gitSha 尚未切到 ${expected_git_sha}"
+            else
+                log_info "HTTP ${http_code}(attempt ${attempt}/${HEALTHCHECK_ATTEMPTS})"
+                printf '%s\n' "${result:0:600}"
+                log_info "healthz: status=ok${expected_git_sha:+, gitSha=${expected_git_sha}} ✓"
+                rm -f "${body_file}"
+                return 0
+            fi
+        elif [[ "${result}" == *'"status":"degraded"'* ]]; then
+            failure_reason="status=degraded(Slidev 尚未就绪)"
+        fi
+
+        log_warn "HTTP ${http_code}(attempt ${attempt}/${HEALTHCHECK_ATTEMPTS}): ${failure_reason}"
+        if [ "${attempt}" -lt "${HEALTHCHECK_ATTEMPTS}" ] && \
+            [ "${HEALTHCHECK_RETRY_SECONDS}" -gt 0 ]; then
+            sleep "${HEALTHCHECK_RETRY_SECONDS}"
+        fi
+    done
+
+    if [ -n "${result}" ]; then
+        printf '%s\n' "${result:0:600}"
+    fi
+    rm -f "${body_file}"
+    log_error "healthz 在 ${HEALTHCHECK_ATTEMPTS} 次尝试后仍未就绪,远端跑 pm2 logs lumideck-agent 排查"
+    return 1
 }
 
 # ── 主路由 ──────────────────────────────────
@@ -213,10 +267,10 @@ Lumideck 部署脚本(Phase 10)
 用法: $0 <creator|backend|ecosystem|healthz|all>
 
   creator    SPA build + 部署到 ${REMOTE_WEB}
-  backend    agent dist + monorepo 同步 + 远端 pnpm install + db:push:prod + pm2 reload
+  backend    agent dist + monorepo 同步 + 远端 pnpm install + db:push:prod + pm2 reload + healthz
              ⚠️  会改远端代码 + DB schema + 重启进程,前置 confirm
   ecosystem  同步 deploy/ 配置文件(ecosystem.config.cjs / nginx 模板 / 远端脚本)
-  healthz    打 https://${DOMAIN}/api/healthz 看状态(只读)
+  healthz    打 ${HEALTHCHECK_URL} 看状态(只读)
   all        以上全部按顺序跑(完整部署,前置 confirm)
 
 环境变量:
@@ -224,6 +278,11 @@ Lumideck 部署脚本(Phase 10)
   SERVER_USER   默认 ${SERVER_USER}
   DOMAIN        默认 ${DOMAIN}
   FORCE=1       跳过 confirm 提示(CI / 自动化用)
+  HEALTHCHECK_URL            healthz 地址(默认 ${HEALTHCHECK_URL})
+  HEALTHCHECK_ATTEMPTS       healthz 最大尝试次数(默认 ${HEALTHCHECK_ATTEMPTS})
+  HEALTHCHECK_RETRY_SECONDS  healthz 重试间隔秒数(默认 ${HEALTHCHECK_RETRY_SECONDS})
+  HEALTHCHECK_TIMEOUT_SECONDS 单次 healthz 超时秒数(默认 ${HEALTHCHECK_TIMEOUT_SECONDS})
+  EXPECTED_GIT_SHA           healthz 子目标可选的期望版本
 
 首次部署前:
   1. DNS A 记录 ${DOMAIN} → 服务器 IP
@@ -260,13 +319,14 @@ main() {
             build_agent
             deploy_ecosystem
             deploy_backend
+            healthcheck "${DEPLOY_GIT_SHA}"
             ;;
         ecosystem)
             check_ssh
             deploy_ecosystem
             ;;
         healthz)
-            healthcheck
+            healthcheck "${EXPECTED_GIT_SHA:-}"
             ;;
         all)
             confirm_destructive all
@@ -276,7 +336,7 @@ main() {
             deploy_ecosystem
             deploy_backend
             deploy_creator
-            healthcheck
+            healthcheck "${DEPLOY_GIT_SHA}"
             ;;
         -h|--help|help)
             print_help

@@ -161,9 +161,14 @@ exit
 预期最后看到:
 ```
 [INFO]  HTTP 200
-{"status":"ok","service":"big-ppt-agent","version":"0.1.0","gitSha":"unknown","uptimeSec":...,"checks":{"db":{"ok":true,...},"slidev":{"ok":true,...}}}
-[INFO]  healthz: status=ok ✓
+{"status":"ok","service":"big-ppt-agent","version":"0.1.0","gitSha":"<本次提交 SHA>","uptimeSec":...,"checks":{"db":{"ok":true,...},"slidev":{"ok":true,...}}}
+[INFO]  healthz: status=ok, gitSha=<本次提交 SHA> ✓
 ```
+
+`backend` / `all` 会把本地已提交的 HEAD 注入 PM2，并等待 healthz 返回同一 `gitSha`。
+默认最多尝试 10 次、间隔 3 秒，覆盖 pm2 reload 后的短暂启动窗口；可用
+`HEALTHCHECK_ATTEMPTS`、`HEALTHCHECK_RETRY_SECONDS`、`HEALTHCHECK_TIMEOUT_SECONDS`
+调整。
 
 ### 1.7 浏览器手验
 
@@ -184,7 +189,7 @@ exit
 | 改了什么 | 跑哪个目标 |
 |---------|-----------|
 | creator UI / Vue 组件 | `./scripts/deploy.sh creator` |
-| agent 后端代码 / DB schema | `./scripts/deploy.sh backend` |
+| agent 后端代码 / DB schema | `./scripts/deploy.sh backend`（末尾自动 healthz + gitSha 校验） |
 | nginx 模板 / pm2 ecosystem / 远端脚本 | `./scripts/deploy.sh ecosystem` 然后视情况手 reload nginx / pm2 |
 | 全部 | `./scripts/deploy.sh all` |
 | 只看健康 | `./scripts/deploy.sh healthz` |
@@ -196,6 +201,8 @@ DB schema 变了的部署:`backend` 子目标内部已经跑 `pnpm -F @big-ppt/a
 ## 3. 故障树
 
 ### 3.1 healthz 不通(curl HTTP 502 / 000)
+
+部署脚本会先自动重试；只有达到最大尝试次数仍未恢复才进入以下排查。
 
 ```bash
 ssh root@47.120.26.143 'pm2 list'

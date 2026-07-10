@@ -33,6 +33,14 @@ test.describe('visual regression', () => {
         await canvas.waitFor({ state: 'visible', timeout: 5_000 })
         // 让字体 / 图片完全加载再截图
         await page.waitForLoadState('networkidle')
+
+        if (layout === 'image-content') {
+          const image = canvas.getByRole('img', { name: '图文页' })
+          await expect(image).toBeVisible()
+          await expect(image).toHaveCSS('object-fit', 'contain')
+          expect(await image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0)
+        }
+
         await expect(canvas).toHaveScreenshot(`${template}-${layout}.png`)
       })
     }

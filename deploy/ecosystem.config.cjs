@@ -47,6 +47,8 @@ module.exports = {
       kill_timeout: 5000,
       env: {
         NODE_ENV: 'production',
+        // deploy.sh 从本地已提交 HEAD 注入，healthz 用它确认线上已切到本次版本。
+        GIT_SHA: process.env.GIT_SHA || 'unknown',
       },
     },
   ],

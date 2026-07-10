@@ -43,6 +43,20 @@ describe('GET /healthz', () => {
     expect(body.uptimeSec).toBeGreaterThanOrEqual(0)
   })
 
+  it('返回部署注入的 GIT_SHA，供发布脚本校验版本', async () => {
+    const previous = process.env.GIT_SHA
+    process.env.GIT_SHA = '0123456789abcdef0123456789abcdef01234567'
+
+    try {
+      const res = await app.fetch(new Request('http://test/healthz'))
+      const body = (await res.json()) as { gitSha: string }
+      expect(body.gitSha).toBe(process.env.GIT_SHA)
+    } finally {
+      if (previous === undefined) delete process.env.GIT_SHA
+      else process.env.GIT_SHA = previous
+    }
+  })
+
   it('Slidev 不通时 → 200 + status:degraded（agent 仍服务）', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'))
 
