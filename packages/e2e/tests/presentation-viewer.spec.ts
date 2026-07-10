@@ -108,9 +108,16 @@ test('编辑器放映 → overview → 演讲者窗口 → 页码/黑屏/画笔�
   await presenter.getByRole('button', { name: '下一页' }).click()
   await expect(audience.getByText('2 / 3')).toBeVisible()
 
-  await presenter.getByRole('button', { name: '观众窗口黑屏' }).click()
+  await audience.getByRole('button', { name: '浅色界面' }).click()
+  await expect(audience.locator('[data-presentation-viewer]')).toHaveClass(/ui-theme-light/)
+  await expect(audience.locator('.slide-canvas').first()).toBeVisible()
+  await expect(audience.locator('.blackout')).toHaveCount(0)
+  await audience.getByRole('button', { name: '深色界面' }).click()
+  await expect(audience.locator('[data-presentation-viewer]')).toHaveClass(/ui-theme-dark/)
+
+  await presenter.keyboard.press('b')
   await expect(audience.locator('.blackout.black')).toBeVisible()
-  await presenter.getByRole('button', { name: '观众窗口黑屏' }).click()
+  await presenter.keyboard.press('b')
   await expect(audience.locator('.blackout')).toHaveCount(0)
 
   await audience.getByRole('button', { name: '画笔', exact: true }).click()
@@ -207,6 +214,10 @@ test('移动端放映工具栏可横向访问且页面无布局溢出', async ({
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`/decks/${owner.deckId}/present`)
   await expectViewerReady(page)
+  await page.getByRole('button', { name: '浅色界面' }).click()
+  await expect(page.locator('[data-presentation-viewer]')).toHaveClass(/ui-theme-light/)
+  await expect(page.locator('.slide-canvas').first()).toBeVisible()
+  await expect(page.locator('.blackout')).toHaveCount(0)
 
   const metrics = await page.evaluate(() => {
     const toolbar = document.querySelector<HTMLElement>('.viewer-toolbar')

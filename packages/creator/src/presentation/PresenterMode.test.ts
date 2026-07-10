@@ -85,13 +85,21 @@ describe('PresenterMode', () => {
     await nextTick()
     expect(wrapper.text()).toContain('1 / 2')
 
+    const presenter = wrapper.get('[data-presenter-mode]')
+    expect(presenter.classes()).toContain('ui-theme-dark')
+    await wrapper.get('button[aria-label="浅色界面"]').trigger('click')
+    expect(presenter.classes()).toContain('ui-theme-light')
+    expect(wrapper.get('[data-page="1"]').exists()).toBe(true)
+
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b' }))
     await nextTick()
-    expect(wrapper.get('button[aria-label="观众窗口黑屏"]').classes()).toContain('active')
-
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }))
     await nextTick()
-    expect(wrapper.get('button[aria-label="观众窗口白屏"]').classes()).toContain('active')
+    expect(presenter.classes()).toContain('ui-theme-light')
+    expect(wrapper.get('[data-page="1"]').exists()).toBe(true)
+
+    await wrapper.get('button[aria-label="深色界面"]').trigger('click')
+    expect(presenter.classes()).toContain('ui-theme-dark')
 
     await wrapper.get('button[aria-label="打开观众窗口"]').trigger('click')
     await wrapper.get('button[aria-label="退出演讲者视图"]').trigger('click')

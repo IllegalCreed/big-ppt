@@ -1,5 +1,6 @@
 export type BlackoutMode = 'none' | 'black' | 'white'
 export type DrawingTool = 'pen' | 'highlighter'
+export type PresentationUiTheme = 'dark' | 'light'
 
 export interface DrawingPoint {
   x: number

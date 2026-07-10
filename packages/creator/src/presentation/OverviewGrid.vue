@@ -55,8 +55,8 @@ const emit = defineEmits<{
   z-index: 20;
   display: flex;
   flex-direction: column;
-  background: rgba(14, 16, 18, 0.98);
-  color: #f7f7f5;
+  background: var(--presentation-overview-bg, rgba(14, 16, 18, 0.98));
+  color: var(--presentation-fg, #f7f7f5);
 }
 
 .overview-header {
@@ -65,12 +65,12 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid var(--presentation-border, rgba(255, 255, 255, 0.14));
 }
 
 .overview-count {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--presentation-muted, rgba(255, 255, 255, 0.72));
 }
 
 .icon-btn {
@@ -87,7 +87,7 @@ const emit = defineEmits<{
 }
 
 .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--presentation-hover, rgba(255, 255, 255, 0.12));
 }
 
 .overview-grid {
@@ -107,8 +107,8 @@ const emit = defineEmits<{
   border: 2px solid transparent;
   border-radius: 6px;
   overflow: hidden;
-  background: #24272b;
-  color: #fff;
+  background: var(--presentation-empty-bg, #24272b);
+  color: var(--presentation-fg, #fff);
   cursor: pointer;
   text-align: left;
 }
@@ -139,7 +139,7 @@ const emit = defineEmits<{
   display: block;
   padding: 7px 10px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--presentation-muted, rgba(255, 255, 255, 0.72));
 }
 
 @media (max-width: 640px) {

@@ -20,7 +20,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
 import { parseDeck } from '../deck-renderer/parse-deck'
 import DrawingLayer from './DrawingLayer.vue'
-import type { DrawingStroke, DrawingTool } from './types'
+import type { DrawingStroke, DrawingTool, PresentationUiTheme } from './types'
 import { usePresentationSession } from './usePresentationSession'
 
 const props = withDefaults(
@@ -48,6 +48,7 @@ const session = usePresentationSession({
 
 const elapsedSeconds = ref(0)
 const timerRunning = ref(true)
+const uiTheme = ref<PresentationUiTheme>('dark')
 const drawingEnabled = ref(false)
 const drawingTool = ref<DrawingTool>('pen')
 const drawingColor = ref('#ef4444')
@@ -110,7 +111,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="presenter-mode" data-presenter-mode>
+  <div class="presenter-mode" :class="`ui-theme-${uiTheme}`" data-presenter-mode>
     <header class="presenter-header">
       <div class="header-group">
         <button
@@ -284,26 +285,30 @@ onBeforeUnmount(() => {
         >
           <Trash2 :size="17" />
         </button>
-        <button
-          type="button"
-          class="icon-btn"
-          :class="{ active: session.blackout.value === 'black' }"
-          title="观众窗口黑屏"
-          aria-label="观众窗口黑屏"
-          @click="session.setBlackout(session.blackout.value === 'black' ? 'none' : 'black')"
-        >
-          <Moon :size="17" />
-        </button>
-        <button
-          type="button"
-          class="icon-btn"
-          :class="{ active: session.blackout.value === 'white' }"
-          title="观众窗口白屏"
-          aria-label="观众窗口白屏"
-          @click="session.setBlackout(session.blackout.value === 'white' ? 'none' : 'white')"
-        >
-          <Sun :size="17" />
-        </button>
+        <span class="theme-toggle" role="group" aria-label="界面主题">
+          <button
+            type="button"
+            class="icon-btn"
+            :class="{ active: uiTheme === 'dark' }"
+            title="深色界面"
+            aria-label="深色界面"
+            :aria-pressed="uiTheme === 'dark'"
+            @click="uiTheme = 'dark'"
+          >
+            <Moon :size="17" />
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            :class="{ active: uiTheme === 'light' }"
+            title="浅色界面"
+            aria-label="浅色界面"
+            :aria-pressed="uiTheme === 'light'"
+            @click="uiTheme = 'light'"
+          >
+            <Sun :size="17" />
+          </button>
+        </span>
       </div>
     </footer>
   </div>
@@ -311,14 +316,39 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .presenter-mode {
+  --presentation-bg: #121416;
+  --presentation-surface: #1b1e21;
+  --presentation-fg: #f4f4f2;
+  --presentation-muted: rgba(255, 255, 255, 0.72);
+  --presentation-subtle: rgba(255, 255, 255, 0.55);
+  --presentation-border: rgba(255, 255, 255, 0.1);
+  --presentation-hover: rgba(255, 255, 255, 0.13);
+  --presentation-empty-bg: #24272b;
+  --presentation-notes-fg: rgba(255, 255, 255, 0.82);
+
   width: 100vw;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #121416;
-  color: #f4f4f2;
+  background: var(--presentation-bg);
+  color: var(--presentation-fg);
   font-family: var(--font-sans);
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.presenter-mode.ui-theme-light {
+  --presentation-bg: #eef0f2;
+  --presentation-surface: #ffffff;
+  --presentation-fg: #202326;
+  --presentation-muted: rgba(32, 35, 38, 0.68);
+  --presentation-subtle: rgba(32, 35, 38, 0.5);
+  --presentation-border: rgba(32, 35, 38, 0.14);
+  --presentation-hover: rgba(32, 35, 38, 0.08);
+  --presentation-empty-bg: #dde1e4;
+  --presentation-notes-fg: rgba(32, 35, 38, 0.84);
 }
 
 .presenter-header,
@@ -329,8 +359,8 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   padding: 0 16px;
-  background: #1b1e21;
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--presentation-surface);
+  border-color: var(--presentation-border);
 }
 
 .presenter-header {
@@ -363,7 +393,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--presentation-muted);
 }
 
 .timer,
@@ -380,7 +410,7 @@ onBeforeUnmount(() => {
   width: 78px;
   text-align: center;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--presentation-muted);
 }
 
 .presenter-content {
@@ -416,7 +446,7 @@ onBeforeUnmount(() => {
 
 .pane-label {
   flex: 0 0 auto;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--presentation-subtle);
   font-size: 12px;
 }
 
@@ -450,8 +480,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #24272b;
-  color: rgba(255, 255, 255, 0.45);
+  background: var(--presentation-empty-bg);
+  color: var(--presentation-subtle);
 }
 
 .notes-content {
@@ -459,10 +489,10 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: auto;
   padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--presentation-border);
   border-radius: 6px;
-  background: #1b1e21;
-  color: rgba(255, 255, 255, 0.82);
+  background: var(--presentation-surface);
+  color: var(--presentation-notes-fg);
   font-size: 16px;
   line-height: 1.7;
   white-space: pre-wrap;
@@ -479,14 +509,14 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--presentation-muted);
   cursor: pointer;
 }
 
 .icon-btn:hover:not(:disabled),
 .icon-btn.active {
-  background: rgba(255, 255, 255, 0.13);
-  color: #fff;
+  background: var(--presentation-hover);
+  color: var(--presentation-fg);
 }
 
 .icon-btn:disabled {
@@ -504,7 +534,12 @@ onBeforeUnmount(() => {
 }
 
 .color-swatch.active {
-  border-color: #fff;
+  border-color: var(--presentation-fg);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
 @media (max-width: 900px) {

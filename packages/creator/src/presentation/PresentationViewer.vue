@@ -20,7 +20,7 @@ import DeckRenderer from '../deck-renderer/DeckRenderer.vue'
 import { parseDeck } from '../deck-renderer/parse-deck'
 import DrawingLayer from './DrawingLayer.vue'
 import OverviewGrid from './OverviewGrid.vue'
-import type { BlackoutMode, DrawingStroke, DrawingTool } from './types'
+import type { BlackoutMode, DrawingStroke, DrawingTool, PresentationUiTheme } from './types'
 import { usePresentationSession } from './usePresentationSession'
 
 const props = withDefaults(
@@ -54,6 +54,7 @@ const session = usePresentationSession({
 const rootRef = ref<HTMLElement | null>(null)
 const overviewOpen = ref(false)
 const isFullscreen = ref(false)
+const uiTheme = ref<PresentationUiTheme>('dark')
 const drawingEnabled = ref(false)
 const drawingTool = ref<DrawingTool>('pen')
 const drawingColor = ref('#ef4444')
@@ -169,7 +170,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="rootRef" class="presentation-viewer" data-presentation-viewer>
+  <div
+    ref="rootRef"
+    class="presentation-viewer"
+    :class="`ui-theme-${uiTheme}`"
+    data-presentation-viewer
+  >
     <header class="viewer-toolbar" data-interactive>
       <div class="toolbar-group">
         <button
@@ -274,26 +280,30 @@ onBeforeUnmount(() => {
             <Trash2 :size="17" />
           </button>
         </template>
-        <button
-          type="button"
-          class="icon-btn"
-          :class="{ active: session.blackout.value === 'black' }"
-          title="黑屏"
-          aria-label="黑屏"
-          @click="toggleBlackout('black')"
-        >
-          <Moon :size="17" />
-        </button>
-        <button
-          type="button"
-          class="icon-btn"
-          :class="{ active: session.blackout.value === 'white' }"
-          title="白屏"
-          aria-label="白屏"
-          @click="toggleBlackout('white')"
-        >
-          <Sun :size="17" />
-        </button>
+        <span class="theme-toggle" role="group" aria-label="界面主题">
+          <button
+            type="button"
+            class="icon-btn"
+            :class="{ active: uiTheme === 'dark' }"
+            title="深色界面"
+            aria-label="深色界面"
+            :aria-pressed="uiTheme === 'dark'"
+            @click="uiTheme = 'dark'"
+          >
+            <Moon :size="17" />
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            :class="{ active: uiTheme === 'light' }"
+            title="浅色界面"
+            aria-label="浅色界面"
+            :aria-pressed="uiTheme === 'light'"
+            @click="uiTheme = 'light'"
+          >
+            <Sun :size="17" />
+          </button>
+        </span>
         <button
           type="button"
           class="icon-btn"
@@ -377,15 +387,42 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .presentation-viewer {
+  --presentation-bg: #111315;
+  --presentation-surface: #1b1e21;
+  --presentation-fg: #f7f7f5;
+  --presentation-muted: rgba(255, 255, 255, 0.72);
+  --presentation-subtle: rgba(255, 255, 255, 0.55);
+  --presentation-border: rgba(255, 255, 255, 0.1);
+  --presentation-hover: rgba(255, 255, 255, 0.13);
+  --presentation-progress-track: rgba(255, 255, 255, 0.12);
+  --presentation-overview-bg: rgba(14, 16, 18, 0.98);
+  --presentation-empty-bg: #24272b;
+
   width: 100vw;
   height: 100vh;
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #111315;
-  color: #f7f7f5;
+  background: var(--presentation-bg);
+  color: var(--presentation-fg);
   font-family: var(--font-sans);
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.presentation-viewer.ui-theme-light {
+  --presentation-bg: #eef0f2;
+  --presentation-surface: #ffffff;
+  --presentation-fg: #202326;
+  --presentation-muted: rgba(32, 35, 38, 0.68);
+  --presentation-subtle: rgba(32, 35, 38, 0.5);
+  --presentation-border: rgba(32, 35, 38, 0.14);
+  --presentation-hover: rgba(32, 35, 38, 0.08);
+  --presentation-progress-track: rgba(32, 35, 38, 0.14);
+  --presentation-overview-bg: rgba(238, 240, 242, 0.98);
+  --presentation-empty-bg: #dde1e4;
 }
 
 .viewer-toolbar {
@@ -398,8 +435,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   padding: 0 12px;
-  background: #1b1e21;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--presentation-surface);
+  border-bottom: 1px solid var(--presentation-border);
 }
 
 .toolbar-group {
@@ -422,7 +459,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--presentation-muted);
 }
 
 .page-counter {
@@ -430,7 +467,7 @@ onBeforeUnmount(() => {
   text-align: center;
   font-family: var(--font-mono);
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--presentation-muted);
 }
 
 .icon-btn {
@@ -444,14 +481,14 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.74);
+  color: var(--presentation-muted);
   cursor: pointer;
 }
 
 .icon-btn:hover:not(:disabled),
 .icon-btn.active {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.13);
+  color: var(--presentation-fg);
+  background: var(--presentation-hover);
 }
 
 .icon-btn:disabled {
@@ -465,6 +502,11 @@ onBeforeUnmount(() => {
   margin: 0 4px;
 }
 
+.theme-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
 .color-swatch {
   width: 17px;
   height: 17px;
@@ -475,7 +517,7 @@ onBeforeUnmount(() => {
 }
 
 .color-swatch.active {
-  border-color: #fff;
+  border-color: var(--presentation-fg);
 }
 
 .viewer-stage {
@@ -529,7 +571,7 @@ onBeforeUnmount(() => {
   right: 0;
   bottom: 0;
   height: 4px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--presentation-progress-track);
 }
 
 .progress-value {

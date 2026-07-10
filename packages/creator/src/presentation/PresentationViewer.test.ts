@@ -63,10 +63,19 @@ describe('PresentationViewer', () => {
     expect(wrapper.text()).toContain('1 / 2')
   })
 
-  it('支持黑白屏、overview 和演讲者入口', async () => {
+  it('深浅色开关只改变界面，幻灯片保持可见，并支持 overview 和演讲者入口', async () => {
     const wrapper = mountViewer()
-    await wrapper.get('button[aria-label="黑屏"]').trigger('click')
-    expect(wrapper.get('.blackout.black').exists()).toBe(true)
+    const viewer = wrapper.get('[data-presentation-viewer]')
+    expect(viewer.classes()).toContain('ui-theme-dark')
+
+    await wrapper.get('button[aria-label="浅色界面"]').trigger('click')
+    expect(viewer.classes()).toContain('ui-theme-light')
+    expect(wrapper.find('.blackout').exists()).toBe(false)
+    expect(wrapper.get('[data-page="1"]').exists()).toBe(true)
+
+    await wrapper.get('button[aria-label="深色界面"]').trigger('click')
+    expect(viewer.classes()).toContain('ui-theme-dark')
+    expect(wrapper.find('.blackout').exists()).toBe(false)
 
     await wrapper.get('button[aria-label="幻灯片总览"]').trigger('click')
     expect(wrapper.get('[role="dialog"]').attributes('aria-label')).toBe('幻灯片总览')
