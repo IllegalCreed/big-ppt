@@ -96,6 +96,7 @@ const emit = defineEmits<{
   overflow: auto;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-auto-rows: max-content;
   align-content: start;
   gap: 20px;
   padding: 24px;
@@ -103,6 +104,9 @@ const emit = defineEmits<{
 
 .thumbnail {
   min-width: 0;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
   padding: 0;
   border: 2px solid transparent;
   border-radius: 6px;
@@ -120,6 +124,7 @@ const emit = defineEmits<{
 
 .thumbnail-canvas {
   display: block;
+  flex: 0 0 auto;
   width: 100%;
   aspect-ratio: 16 / 9;
   overflow: hidden;

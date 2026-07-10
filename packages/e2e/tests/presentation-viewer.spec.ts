@@ -40,7 +40,21 @@ message: 谢谢观看
 ---
 `
 
-async function createUserAndDeck(label: string) {
+function createLongPresentationMarkdown(totalPages: number): string {
+  const slides = Array.from({ length: totalPages }, (_, index) => {
+    const page = index + 1
+    const theme = index === 0 ? 'theme: seriph\n' : ''
+    return `${theme}layout: beitou-content
+heading: 第 ${page} 页
+---
+
+## 第 ${page} 页内容`
+  })
+
+  return `---\n${slides.join('\n---\n')}\n`
+}
+
+async function createUserAndDeck(label: string, initialContent = PRESENTATION_MARKDOWN) {
   const api = await pwRequest.newContext({
     baseURL: AGENT_BASE,
     extraHTTPHeaders: { Origin: AGENT_BASE },
@@ -51,12 +65,69 @@ async function createUserAndDeck(label: string) {
   })
   expect(register.status()).toBe(201)
   const created = await api.post('/api/decks', {
-    data: { title: `${label} deck`, initialContent: PRESENTATION_MARKDOWN },
+    data: { title: `${label} deck`, initialContent },
   })
   expect(created.status()).toBe(201)
   const { deck } = await created.json()
   return { api, deckId: deck.id as number, email }
 }
+
+test('多页总览保持 16:9 且在独立容器内滚动', async (
+  { page, context, baseURL },
+  testInfo,
+) => {
+  const owner = await createUserAndDeck('long-overview', createLongPresentationMarkdown(28))
+  await installSession(context, owner.api, baseURL!)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`/decks/${owner.deckId}/present`)
+  await expectViewerReady(page)
+
+  await page.getByRole('button', { name: '幻灯片总览' }).click()
+  await expect(page.getByRole('dialog', { name: '幻灯片总览' })).toBeVisible()
+
+  const metrics = await page.evaluate(() => {
+    const grid = document.querySelector<HTMLElement>('.overview-grid')
+    const thumbnail = document.querySelector<HTMLElement>('.thumbnail')
+    const canvas = document.querySelector<HTMLElement>('.thumbnail-canvas')
+    const number = document.querySelector<HTMLElement>('.thumbnail-number')
+    if (!grid || !thumbnail || !canvas || !number) throw new Error('总览缩略图未渲染')
+
+    const thumbnailRect = thumbnail.getBoundingClientRect()
+    const canvasRect = canvas.getBoundingClientRect()
+    const numberRect = number.getBoundingClientRect()
+    const visibleCanvasHeight = Math.max(
+      0,
+      Math.min(canvasRect.bottom, thumbnailRect.bottom) -
+        Math.max(canvasRect.top, thumbnailRect.top),
+    )
+
+    return {
+      gridClientHeight: grid.clientHeight,
+      gridScrollHeight: grid.scrollHeight,
+      thumbnailHeight: thumbnailRect.height,
+      canvasHeight: canvasRect.height,
+      canvasAspectRatio: canvasRect.width / canvasRect.height,
+      visibleCanvasHeight,
+      numberHeight: numberRect.height,
+    }
+  })
+
+  expect(metrics.canvasAspectRatio).toBeCloseTo(16 / 9, 2)
+  expect(metrics.visibleCanvasHeight).toBeCloseTo(metrics.canvasHeight, 0)
+  expect(metrics.thumbnailHeight).toBeGreaterThanOrEqual(
+    metrics.canvasHeight + metrics.numberHeight,
+  )
+  expect(metrics.gridScrollHeight).toBeGreaterThan(metrics.gridClientHeight)
+
+  await page.screenshot({ path: testInfo.outputPath('long-overview.png'), fullPage: true })
+  const lastSlide = page.getByRole('button', { name: '跳转到第 28 页' })
+  await lastSlide.scrollIntoViewIfNeeded()
+  await expect(lastSlide).toBeVisible()
+  await lastSlide.click()
+  await expect(page.getByText('28 / 28')).toBeVisible()
+
+  await owner.api.dispose()
+})
 
 async function installSession(
   context: BrowserContext,
