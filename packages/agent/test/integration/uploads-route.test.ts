@@ -10,6 +10,7 @@ import { createLoggedInUser } from '../_setup/factories.js'
 import { getDb, userAssets } from '../../src/db/index.js'
 import { uploads } from '../../src/routes/uploads.js'
 import { authOptional, type AuthVars } from '../../src/middleware/auth.js'
+import { __resetQuotaLocksForTesting } from '../../src/uploads/quota.js'
 
 useTestDb()
 
@@ -25,6 +26,7 @@ beforeAll(async () => {
 })
 
 beforeEach(async () => {
+  __resetQuotaLocksForTesting()
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lumideck-uploads-test-'))
   process.env.LUMIDECK_ASSETS_DIR = tmpDir
   process.env.LUMIDECK_QUOTA_PER_USER_BYTES = String(100 * 1024) // 100KB
@@ -192,6 +194,31 @@ describe('POST /api/uploads', () => {
     expect(body.error.message).toMatch(/已用.*请先在「我的素材」清理/)
   })
 
+  it('并发上传在 quota 锁内串行复查,只能放行一个临界文件', async () => {
+    const { cookie, user } = await createLoggedInUser('quota-race@a.com')
+    await getDb().insert(userAssets).values({
+      id: '22222222-2222-2222-2222-222222222222',
+      userId: user.id,
+      filename: 'precooked.pdf',
+      mime: 'application/pdf',
+      sizeBytes: 90 * 1024,
+      sha256: 'b'.repeat(64),
+      storagePath: `${user.id}/22222222-2222-2222-2222-222222222222`,
+      extractStatus: 'done',
+    })
+
+    const fresh = makePdfBytes('z'.repeat(6 * 1024))
+    const [a, b] = await Promise.all([
+      buildApp().fetch(makeRequest(cookie, 'a.pdf', fresh, 'application/pdf')),
+      buildApp().fetch(makeRequest(cookie, 'b.pdf', fresh, 'application/pdf')),
+    ])
+    const statuses = [a.status, b.status].sort()
+    expect(statuses).toEqual([200, 413])
+
+    const rows = await getDb().select().from(userAssets).where(eq(userAssets.userId, user.id))
+    expect(rows.filter((r) => r.filename === 'a.pdf' || r.filename === 'b.pdf')).toHaveLength(1)
+  })
+
   it('不支持的 mime(.exe MZ header) → 415 unsupported-mime', async () => {
     const { cookie } = await createLoggedInUser('exe@a.com')
     const res = await buildApp().fetch(
@@ -289,7 +316,7 @@ describe('GET /api/uploads/:id', () => {
   it('返字节流 + Content-Type 正确', async () => {
     const { cookie } = await createLoggedInUser('get-bytes@a.com')
     const pdf = makePdfBytes('stream-me')
-    const postRes = await buildApp().fetch(makeRequest(cookie, 'doc.pdf', pdf, 'application/pdf'))
+    const postRes = await buildApp().fetch(makeRequest(cookie, '报告.pdf', pdf, 'application/pdf'))
     const { asset } = (await postRes.json()) as { asset: { id: string } }
 
     const getRes = await buildApp().fetch(
@@ -298,6 +325,9 @@ describe('GET /api/uploads/:id', () => {
     expect(getRes.status).toBe(200)
     expect(getRes.headers.get('content-type')).toBe('application/pdf')
     expect(getRes.headers.get('content-length')).toBe(String(pdf.length))
+    expect(getRes.headers.get('content-disposition')).toContain(
+      "filename*=UTF-8''%E6%8A%A5%E5%91%8A.pdf",
+    )
     expect(getRes.headers.get('x-content-type-options')).toBe('nosniff')
 
     const buf = Buffer.from(await getRes.arrayBuffer())

@@ -37,6 +37,8 @@ import { createLoggedInUser, createDeckDirect } from './_setup/factories.js'
 
 useTestDb()
 
+const DB_HISTORY_TIMEOUT_MS = 15_000
+
 function ctxOf(overrides: Partial<RequestContext>): RequestContext {
   return { userId: null, sessionId: null, activeDeckId: null, turnId: null, ...overrides }
 }
@@ -131,6 +133,7 @@ describe('slides-store DB-based(P0 fix)', () => {
   })
 
   describe('undo / redo', () => {
+    // 真 MySQL 历史链测试在 full suite 后半段偶发超过 Vitest 默认 5s。
     it('undo 回到上一版本', async () => {
       const { user } = await createLoggedInUser()
       const { deck } = await createDeckDirect(user.id, 'D', 'v1')
@@ -139,7 +142,7 @@ describe('slides-store DB-based(P0 fix)', () => {
       expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v2')
       await inDeck(user.id, deck.id, () => restoreSlides())
       expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v1')
-    })
+    }, DB_HISTORY_TIMEOUT_MS)
 
     it('undo + redo 走回最新', async () => {
       const { user } = await createLoggedInUser()
@@ -149,7 +152,7 @@ describe('slides-store DB-based(P0 fix)', () => {
       const r = await inDeck(user.id, deck.id, () => redoSlides())
       expect(r.success).toBe(true)
       expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v2')
-    })
+    }, DB_HISTORY_TIMEOUT_MS)
 
     it('连续 undo 一步步往回', async () => {
       const { user } = await createLoggedInUser()
@@ -160,7 +163,7 @@ describe('slides-store DB-based(P0 fix)', () => {
       expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v2')
       await inDeck(user.id, deck.id, () => restoreSlides())
       expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v1')
-    })
+    }, DB_HISTORY_TIMEOUT_MS)
 
     it('undo 到最早 → 再 undo 返 error', async () => {
       const { user } = await createLoggedInUser()
@@ -170,7 +173,7 @@ describe('slides-store DB-based(P0 fix)', () => {
       const r = await inDeck(user.id, deck.id, () => restoreSlides())
       expect(r.success).toBe(false)
       expect(r.error).toMatch(/最早/)
-    })
+    }, DB_HISTORY_TIMEOUT_MS)
 
     it('redo 栈空时返 error', async () => {
       const { user } = await createLoggedInUser()
@@ -179,7 +182,7 @@ describe('slides-store DB-based(P0 fix)', () => {
       const r = await inDeck(user.id, deck.id, () => redoSlides())
       expect(r.success).toBe(false)
       expect(r.error).toMatch(/最新/)
-    })
+    }, DB_HISTORY_TIMEOUT_MS)
 
     it('新写截断 redo 栈', async () => {
       const { user } = await createLoggedInUser()
@@ -193,7 +196,7 @@ describe('slides-store DB-based(P0 fix)', () => {
       expect(hist.ids.length).toBe(2) // [v1, v4]
       const r = await inDeck(user.id, deck.id, () => redoSlides())
       expect(r.success).toBe(false)
-    })
+    }, DB_HISTORY_TIMEOUT_MS)
 
     it('ring buffer 裁掉最旧', async () => {
       process.env.BIG_PPT_HISTORY_MAX = '3'
@@ -210,7 +213,7 @@ describe('slides-store DB-based(P0 fix)', () => {
       expect(await inDeck(user.id, deck.id, () => readSlides())).toBe('v2')
       const r = await inDeck(user.id, deck.id, () => restoreSlides()) // 最旧 v1 已 trim
       expect(r.success).toBe(false)
-    })
+    }, DB_HISTORY_TIMEOUT_MS)
 
     it('undo 返 position', async () => {
       const { user } = await createLoggedInUser()
@@ -220,7 +223,7 @@ describe('slides-store DB-based(P0 fix)', () => {
       const r = await inDeck(user.id, deck.id, () => restoreSlides())
       expect(r.success).toBe(true)
       expect(r.position).toEqual({ index: 2, total: 3 })
-    })
+    }, DB_HISTORY_TIMEOUT_MS)
   })
 
   describe('turn-based aggregation', () => {

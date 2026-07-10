@@ -13,6 +13,7 @@
  * Vitest 4 起 vi.mock 对 dynamic import 不稳定(plan 17 踩坑 2),
  * 单测应用 vi.spyOn(globalThis, 'fetch') 来 mock。
  */
+import { validatePublicHttpUrl } from '../utils/url-safety.js'
 
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1'
 const DEFAULT_PRIMARY_MODEL = 'gpt-5.5'
@@ -88,7 +89,13 @@ export class ImageCancelled extends Error {
  * 401/403 → ImageAuthError 不 fallback。signal aborted → ImageCancelled。
  */
 export async function generateImage(input: ImageGenInput): Promise<ImageGenOutput> {
-  const baseUrl = (input.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
+  const rawBaseUrl = input.baseUrl ?? DEFAULT_BASE_URL
+  const baseUrlCheck = input.baseUrl
+    ? await validatePublicHttpUrl(rawBaseUrl, { label: 'image baseUrl' })
+    : ({ ok: true, url: rawBaseUrl } as const)
+  if (!baseUrlCheck.ok) throw new Error(baseUrlCheck.error)
+
+  const baseUrl = baseUrlCheck.url.replace(/\/+$/, '')
   const primaryModel = input.primaryModel ?? DEFAULT_PRIMARY_MODEL
   const fallbackModel = input.fallbackModel ?? DEFAULT_FALLBACK_MODEL
   // 强制走路 B 的特殊情况:用户在 settings 显式选 gpt-image-* 模型

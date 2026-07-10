@@ -58,6 +58,9 @@ export const switchTemplateTool: ToolDef = {
     if (deck.userId !== ctx.userId) {
       return JSON.stringify({ success: false, error: '无权访问该 deck' })
     }
+    if (deck.status === 'deleted') {
+      return JSON.stringify({ success: false, error: 'deck 已删除' })
+    }
 
     const validation = validateSwitchTarget(deck.templateId, targetTemplateId)
     if (!validation.ok) {

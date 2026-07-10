@@ -88,7 +88,7 @@ export const rewriteSinglePageToComponents: RewriteSinglePageFn = async (input) 
   }
 
   const settings = await loadUserLlmSettings(input.userId)
-  const { url, model } = resolveUpstream(settings)
+  const { url, model } = await resolveUpstream(settings)
   // 强制 OFF 分支:让 LLM 走 layout/组件路径,不主动调 generate_slide_image
   const systemPrompt = buildSystemPrompt({
     templateId: input.templateId,

@@ -83,6 +83,7 @@ async function getCurrentDeckContent(): Promise<string> {
     .select({
       id: decks.id,
       userId: decks.userId,
+      status: decks.status,
       currentVersionId: decks.currentVersionId,
     })
     .from(decks)
@@ -90,6 +91,9 @@ async function getCurrentDeckContent(): Promise<string> {
     .limit(1)
   if (!deck) {
     throw new NoActiveDeckError('当前 deck 不存在或无权访问')
+  }
+  if (deck.status === 'deleted') {
+    throw new NoActiveDeckError('当前 deck 已删除')
   }
   if (!deck.currentVersionId) return ''
   const [version] = await db

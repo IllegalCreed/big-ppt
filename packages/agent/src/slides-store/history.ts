@@ -40,6 +40,7 @@ export interface HistoryActionResult {
 interface DeckGuard {
   id: number
   templateId: string
+  status: string
   currentVersionId: number | null
 }
 
@@ -54,6 +55,7 @@ async function loadDeckGuard(): Promise<DeckGuard> {
     .select({
       id: decks.id,
       templateId: decks.templateId,
+      status: decks.status,
       currentVersionId: decks.currentVersionId,
     })
     .from(decks)
@@ -61,6 +63,9 @@ async function loadDeckGuard(): Promise<DeckGuard> {
     .limit(1)
   if (!deck) {
     throw new NoActiveDeckError('当前 deck 不存在或无权访问')
+  }
+  if (deck.status === 'deleted') {
+    throw new NoActiveDeckError('当前 deck 已删除')
   }
   return deck
 }

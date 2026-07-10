@@ -1131,6 +1131,20 @@ describe('createPiAiAdapter — cfg.baseUrl 覆盖', () => {
     expect(capturedModel?.provider).toBe(fauxModel.provider)
     expect(capturedModel?.baseUrl).toBe('https://relay.example.com/v1')
   })
+
+  it('cfg.baseUrl 指向内网时在 stream 前拒绝', async () => {
+    const adapter = createPiAiAdapter({
+      id: 'openai',
+      apiKey: 'sk-key',
+      baseUrl: 'http://127.0.0.1:11434/v1',
+    })
+    const controller = new AbortController()
+    await expect(async () => {
+      for await (const _evt of adapter.streamChat({ messages: [userText('hi')] }, controller.signal)) {
+        // drain
+      }
+    }).rejects.toThrow(/内网/)
+  })
 })
 
 describe('createPiAiAdapter — resolver 抛错路径', () => {

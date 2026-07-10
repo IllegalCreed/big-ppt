@@ -33,6 +33,9 @@ export async function buildArchive(args: { deckId: number; userId: number }): Pr
   if (!deck || deck.userId !== args.userId) {
     throw new Error('deck-not-found-or-forbidden')
   }
+  if (deck.status === 'deleted') {
+    throw new Error('deck-not-found-or-forbidden')
+  }
 
   // 当前版本内容:没 currentVersion(全空 deck)兜底空串
   const versionId = deck.currentVersionId

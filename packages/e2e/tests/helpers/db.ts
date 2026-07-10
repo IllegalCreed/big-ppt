@@ -8,7 +8,15 @@ import { config as loadEnv } from 'dotenv'
 import mysql from 'mysql2/promise'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const quotaEnvBeforeDotenv = {
+  LUMIDECK_QUOTA_PER_FILE_BYTES: process.env.LUMIDECK_QUOTA_PER_FILE_BYTES,
+  LUMIDECK_QUOTA_PER_USER_BYTES: process.env.LUMIDECK_QUOTA_PER_USER_BYTES,
+}
 loadEnv({ path: resolve(__dirname, '../../../agent/.env.test.local') })
+for (const [key, value] of Object.entries(quotaEnvBeforeDotenv)) {
+  if (value === undefined) delete process.env[key]
+  else process.env[key] = value
+}
 
 let pool: mysql.Pool | null = null
 

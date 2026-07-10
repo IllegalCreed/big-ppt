@@ -5,9 +5,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { fileTypeFromBuffer } from 'file-type'
 import { getDb, userAssets } from '../db/index.js'
 import type { AuthVars } from '../middleware/auth.js'
-import { canUpload, getQuotaLimits, getUsedBytes } from '../uploads/quota.js'
+import { canUpload, getQuotaLimits, getUsedBytes, withUserQuotaLock } from '../uploads/quota.js'
 import { deleteAssetBytes, getAssetBytes, putAssetBytes } from '../uploads/storage.js'
 import { enqueueExtraction } from '../uploads/extractor.js'
+import { contentDisposition } from '../utils/content-disposition.js'
 
 export const uploads = new Hono<{ Variables: AuthVars }>()
 
@@ -64,14 +65,13 @@ uploads.post('/', async (c) => {
   const reportedMime = file.type || 'application/octet-stream'
   const bytes = Buffer.from(await file.arrayBuffer())
 
-  // quota check 在写 disk 前做,避免临时占空间
-  const check = await canUpload(user.id, bytes.length)
-  if (!check.ok) {
+  const { perFile, perUser } = getQuotaLimits()
+  if (bytes.length > perFile) {
     return c.json(
       {
         error: {
-          code: check.reason,
-          message: quotaErrorMessage(check.reason, check.usedBytes, check.limitBytes),
+          code: 'file-too-large',
+          message: quotaErrorMessage('file-too-large', 0, perUser),
         },
       },
       413,
@@ -97,20 +97,43 @@ uploads.post('/', async (c) => {
 
   const assetId = randomUUID()
   const sha256 = createHash('sha256').update(bytes).digest('hex')
-  const storagePath = await putAssetBytes(user.id, assetId, bytes)
   const isImage = finalMime.startsWith('image/')
   const extractStatus = isImage ? 'skipped' : 'pending'
 
-  await getDb().insert(userAssets).values({
-    id: assetId,
-    userId: user.id,
-    filename,
-    mime: finalMime,
-    sizeBytes: bytes.length,
-    sha256,
-    storagePath,
-    extractStatus,
+  const quota = await withUserQuotaLock(user.id, async () => {
+    const check = await canUpload(user.id, bytes.length)
+    if (!check.ok) return check
+
+    try {
+      const storagePath = await putAssetBytes(user.id, assetId, bytes)
+      await getDb().insert(userAssets).values({
+        id: assetId,
+        userId: user.id,
+        filename,
+        mime: finalMime,
+        sizeBytes: bytes.length,
+        sha256,
+        storagePath,
+        extractStatus,
+      })
+    } catch (err) {
+      await deleteAssetBytes(user.id, assetId).catch(() => {})
+      throw err
+    }
+
+    return check
   })
+  if (!quota.ok) {
+    return c.json(
+      {
+        error: {
+          code: quota.reason,
+          message: quotaErrorMessage(quota.reason, quota.usedBytes, quota.limitBytes),
+        },
+      },
+      413,
+    )
+  }
 
   // Phase 13 Task G(close-out):非 image 落 'pending' 后丢进 extractor 队列。
   // 图片类(extractStatus 已 'skipped')无需抽取,跳过。worker 失败/timeout 内部
@@ -131,8 +154,8 @@ uploads.post('/', async (c) => {
       uploadedAt: uploadedAt.toISOString(),
     },
     quota: {
-      usedBytes: check.usedBytes + bytes.length,
-      limitBytes: check.limitBytes,
+      usedBytes: quota.usedBytes + bytes.length,
+      limitBytes: quota.limitBytes,
     },
   })
 })
@@ -186,7 +209,7 @@ uploads.get('/:id', async (c) => {
     headers: {
       'Content-Type': row.mime,
       'Content-Length': String(bytes.length),
-      'Content-Disposition': `inline; filename="${encodeURIComponent(row.filename)}"`,
+      'Content-Disposition': contentDisposition('inline', row.filename),
       'X-Content-Type-Options': 'nosniff',
     },
   })
@@ -205,10 +228,11 @@ uploads.delete('/:id', async (c) => {
     .limit(1)
   if (!row) return c.json({ error: { message: 'not found' } }, 404)
 
-  // storage.deleteAssetBytes 内部对 ENOENT 静默放行,fs 文件缺失下 DB row 仍删干净(幂等)
-  await deleteAssetBytes(user.id, id)
-  await db.delete(userAssets).where(eq(userAssets.id, id))
-
-  const usedBytes = await getUsedBytes(user.id)
+  const usedBytes = await withUserQuotaLock(user.id, async () => {
+    // storage.deleteAssetBytes 内部对 ENOENT 静默放行,fs 文件缺失下 DB row 仍删干净(幂等)
+    await deleteAssetBytes(user.id, id)
+    await db.delete(userAssets).where(eq(userAssets.id, id))
+    return getUsedBytes(user.id)
+  })
   return c.json({ quota: { usedBytes, limitBytes: getQuotaLimits().perUser } })
 })

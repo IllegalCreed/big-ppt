@@ -5,7 +5,11 @@
  * 让 E2E 端到端跑通切换流而无需调外部 LLM。
  */
 import { describe, expect, it, afterEach, vi } from 'vitest'
-import { rewriteForTemplate, validateSlidevMarkdown } from '../src/prompts/rewriteForTemplate.js'
+import {
+  resolveUpstream,
+  rewriteForTemplate,
+  validateSlidevMarkdown,
+} from '../src/prompts/rewriteForTemplate.js'
 import { readStarter } from '../src/templates/registry.js'
 
 describe('rewriteForTemplate', () => {
@@ -40,6 +44,16 @@ describe('rewriteForTemplate', () => {
         userId: 999999,
       }),
     ).rejects.toThrow(/未配置 LLM API Key|llm_settings/i)
+  })
+
+  it('resolveUpstream：拒绝内网 baseUrl', async () => {
+    await expect(
+      resolveUpstream({
+        provider: 'openai',
+        apiKey: 'sk-x',
+        baseUrl: 'http://127.0.0.1:11434/v1',
+      }),
+    ).rejects.toThrow(/内网/)
   })
 })
 

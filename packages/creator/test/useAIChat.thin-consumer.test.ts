@@ -335,6 +335,33 @@ describe('useAIChat (thin consumer)', () => {
     expect(chat.status.value).toBe('idle')
   })
 
+  it('dispose() abort 当前请求并跳过卸载后的 refresh', async () => {
+    let aborted = false
+    chatTurnMock.mockImplementationOnce(async (_req: unknown, opts: { signal?: AbortSignal }) => {
+      return new Promise<Response>((_, reject) => {
+        opts.signal?.addEventListener('abort', () => {
+          aborted = true
+          const e = new Error('aborted')
+          e.name = 'AbortError'
+          reject(e)
+        })
+      })
+    })
+
+    const { chat } = setupChat()
+    const promise = chat.sendMessage('hang')
+    await new Promise((r) => setTimeout(r, 10))
+    chat.dispose()
+    await promise
+    await flushPromises()
+
+    expect(aborted).toBe(true)
+    expect(chat.status.value).toBe('idle')
+    expect(chat.chatMessages.value).toEqual([])
+    expect(listChatsMock).not.toHaveBeenCalled()
+    expect(refreshMock).not.toHaveBeenCalled()
+  })
+
   it('非 abort 错误：status=error + statusText 含错误信息', async () => {
     chatTurnMock.mockRejectedValueOnce(new Error('upstream 500'))
     listChatsMock.mockResolvedValueOnce([])

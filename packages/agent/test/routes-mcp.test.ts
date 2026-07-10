@@ -198,6 +198,20 @@ describe('POST /api/mcp/servers', () => {
     const json = await res.json()
     expect(json.error).toMatch(/只能包含字母、数字/)
   })
+
+  it('POST 拒绝 localhost / 内网 MCP URL', async () => {
+    const res = await buildApp().request(
+      '/api/mcp/servers',
+      authed(cookieA, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'local', displayName: 'Local', url: 'http://127.0.0.1:4000/mcp' }),
+      }),
+    )
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toContain('内网')
+  })
 })
 
 describe('PATCH /api/mcp/servers/:id', () => {

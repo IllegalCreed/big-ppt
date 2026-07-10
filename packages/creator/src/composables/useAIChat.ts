@@ -1,5 +1,16 @@
 /** Phase 12.7 Task G：thin canonical event consumer —— agent loop 由后端 pi-agent-core 接管。 */
-import { computed, inject, ref, shallowRef, watch, type ComputedRef, type InjectionKey, type Ref, type ShallowRef } from 'vue'
+import {
+  computed,
+  inject,
+  ref,
+  shallowRef,
+  watch,
+  type ComputedRef,
+  type InjectionKey,
+  type Ref,
+  type ShallowRef,
+  type WatchStopHandle,
+} from 'vue'
 import {
   decodeSSEStream,
   type CanonicalEvent,
@@ -82,6 +93,7 @@ export interface UseAIChatReturn {
   sendMessage: (userText: string) => Promise<void>
   cancel: () => void
   clearHistory: () => void
+  dispose: () => void
   appendLocalMessage: (content: string) => void
   retryLastUserMessage: () => void
   /**
@@ -136,6 +148,7 @@ export function useAIChat(): UseAIChatReturn {
   const errorMessage = ref('')
 
   let abortController: AbortController | null = null
+  let disposed = false
 
   /**
    * Phase 11.5 / Phase 12.7-G fix:异步 image-gen job 跟踪。
@@ -157,6 +170,7 @@ export function useAIChat(): UseAIChatReturn {
    */
   const imageJobs = shallowRef<Map<string, ImageJobTracking>>(new Map())
   const imageJobPruneTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const imageJobWatchStops = new Map<string, WatchStopHandle>()
 
   const isGenerating = computed(() => status.value === 'sending' || status.value === 'streaming')
 
@@ -251,7 +265,7 @@ export function useAIChat(): UseAIChatReturn {
           //   - 'done' 完整成功 → 5s 后自动消失("啪一下"避免)
           //   - 其他(failed / cancelled / fallback-rewrote / fallback-failed)→ 留着等用户
           //     ✕ dismiss,因为用户需要知道哪页降级了 / 失败了才好决定重出与否
-          stopWatch()
+          stopImageJobWatch(jobId)
           if (!IMAGE_JOB_AUTO_PRUNE_STATES.has(stage)) return
           if (imageJobPruneTimers.has(jobId)) return
           const timer = setTimeout(() => {
@@ -264,6 +278,7 @@ export function useAIChat(): UseAIChatReturn {
         }
       },
     )
+    imageJobWatchStops.set(jobId, stopWatch)
 
     // composable.start 内部 done/fallback-rewrote 已经 slideStore.refresh();
     // failed/cancelled 仅 throw,这里 catch 静默,避免 unhandled rejection。
@@ -278,6 +293,7 @@ export function useAIChat(): UseAIChatReturn {
     instance.start({ jobId }).catch((err) => {
       console.error('[useAIChat] image job tracking failed:', jobId, (err as Error).message)
       // 清理 stale Map 占位 + 任何已挂的 prune timer + watch 自然不会再触发
+      stopImageJobWatch(jobId)
       const pendingTimer = imageJobPruneTimers.get(jobId)
       if (pendingTimer) {
         clearTimeout(pendingTimer)
@@ -287,6 +303,13 @@ export function useAIChat(): UseAIChatReturn {
       next.delete(jobId)
       imageJobs.value = next
     })
+  }
+
+  function stopImageJobWatch(jobId: string): void {
+    const stop = imageJobWatchStops.get(jobId)
+    if (!stop) return
+    stop()
+    imageJobWatchStops.delete(jobId)
   }
 
   function consumeEvent(event: CanonicalEvent): void {
@@ -401,12 +424,16 @@ export function useAIChat(): UseAIChatReturn {
       // 不管成功 / cancel / error 都 refresh：backend agent_end subscribe 已经把
       // 整个 turn (user + assistant + tool messages) 落 deck_chats。streaming 缓冲
       // 在 refresh 后清掉避免和 history 气泡重复显示。
-      await refreshFromBackend()
+      if (!disposed) {
+        await refreshFromBackend()
+      }
       streamingContent.value = ''
       thinkingContent.value = ''
       currentToolExecutions.value = new Map()
       // 工具可能改了 slides.md，session 结束同步一次让 DeckRenderer 拿到新内容
-      slideStore.refresh()
+      if (!disposed) {
+        slideStore.refresh()
+      }
     }
   }
 
@@ -427,9 +454,17 @@ export function useAIChat(): UseAIChatReturn {
     for (const tracking of imageJobs.value.values()) {
       tracking.instance.abort()
     }
+    for (const stop of imageJobWatchStops.values()) stop()
+    imageJobWatchStops.clear()
     for (const timer of imageJobPruneTimers.values()) clearTimeout(timer)
     imageJobPruneTimers.clear()
     imageJobs.value = new Map()
+  }
+
+  function dispose(): void {
+    disposed = true
+    cancel()
+    clearHistory()
   }
 
   function appendLocalMessage(content: string): void {
@@ -454,6 +489,7 @@ export function useAIChat(): UseAIChatReturn {
    * running / pending 行用 cancel 不是 dismiss。本函数只清 Map + timer,不调 backend。
    */
   function dismissImageJob(jobId: string): void {
+    stopImageJobWatch(jobId)
     const timer = imageJobPruneTimers.get(jobId)
     if (timer) {
       clearTimeout(timer)
@@ -479,6 +515,7 @@ export function useAIChat(): UseAIChatReturn {
     sendMessage,
     cancel,
     clearHistory,
+    dispose,
     appendLocalMessage,
     retryLastUserMessage,
     dismissImageJob,

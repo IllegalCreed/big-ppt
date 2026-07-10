@@ -47,8 +47,8 @@ server {
         try_files $uri =404;
     }
 
-    # 上传素材 / LLM 大对话 payload 留 buffer,默认 1m 太小
-    client_max_body_size 20m;
+    # 上传素材 / .lumideck 导入 / LLM 大对话 payload 留 buffer,与后端默认导入上限对齐
+    client_max_body_size 100m;
     proxy_read_timeout 600s;
     proxy_send_timeout 600s;
 

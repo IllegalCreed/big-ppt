@@ -13,7 +13,7 @@
  * 验收点(plan 验收条件镜像):
  * - asset 写入成功
  * - GET /api/assets/<id> owner 200 + image/png
- * - 跨用户访问 → 403,响应不含字节
+ * - 跨用户访问 → 404,响应不含字节
  * - slides.md frontmatter 含 image-content layout + imageSrc
  * - deck 删除后 asset 被清
  * - 未配生图模型时返友好错误
@@ -192,7 +192,7 @@ test('未配生图模型 → 工具返友好错误,不 crash', async ({ page }) 
   expect([200, 401, 403]).toContain(noAuthRes.status())
 })
 
-test('跨用户访问 asset → 403,响应不含字节', async ({ browser }) => {
+test('跨用户访问 asset → 404,响应不含字节', async ({ browser }) => {
   // 用户 A 创 deck + 出图
   const ctxA = await browser.newContext()
   const pageA = await ctxA.newPage()
@@ -263,7 +263,7 @@ test('跨用户访问 asset → 403,响应不含字节', async ({ browser }) => 
   await expect(pageB).toHaveURL(/\/decks(\?.*)?$/, { timeout: 10_000 })
 
   const stealRes = await pageB.request.get(`${AGENT_BASE}/api/assets/${assetId}`)
-  expect(stealRes.status()).toBe(403)
+  expect(stealRes.status()).toBe(404)
   // 响应应是 JSON {error},不带二进制字节
   const ct = stealRes.headers()['content-type'] ?? ''
   expect(ct).toContain('json')

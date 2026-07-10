@@ -37,6 +37,16 @@ const requireLockHolder: import('hono').MiddlewareHandler<{ Variables: AuthVars 
   if (!isHeldBy(session.id)) {
     return c.json({ success: false, error: '需要先 present（全屏放映）占用 Slidev 实例' }, 403)
   }
+  const holder = getHolder()
+  if (!holder) return c.json({ success: false, error: '未持有放映锁' }, 403)
+  const [deck] = await getDb()
+    .select({ id: decks.id, status: decks.status })
+    .from(decks)
+    .where(and(eq(decks.id, holder.deckId), eq(decks.userId, holder.userId)))
+    .limit(1)
+  if (!deck || deck.status === 'deleted') {
+    return c.json({ success: false, error: 'deck 已删除' }, 404)
+  }
   await next()
 }
 slides.use('/read-slides', requireLockHolder)

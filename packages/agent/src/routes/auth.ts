@@ -11,6 +11,7 @@ import { SESSION_COOKIE, SESSION_TTL_MS, type AuthVars } from '../middleware/aut
 import { encryptApiKey, decryptApiKey } from '../crypto/apikey.js'
 import { createRateLimit } from '../middleware/rate-limit.js'
 import { errorResponse } from '../utils/error-response.js'
+import { validatePublicHttpUrl } from '../utils/url-safety.js'
 import {
   ActiveProviderIdSchema,
   getActiveProviderConfig,
@@ -376,7 +377,14 @@ async function saveNewShape(
     }
     const item: { apiKey: string; model?: string; baseUrl?: string } = { apiKey: resolvedKey }
     if (entry.model !== undefined) item.model = entry.model.trim() || undefined
-    if (entry.baseUrl !== undefined) item.baseUrl = entry.baseUrl.trim() || undefined
+    if (entry.baseUrl !== undefined) {
+      const baseUrl = entry.baseUrl.trim()
+      if (baseUrl) {
+        const urlCheck = await validatePublicHttpUrl(baseUrl, { label: `${idCheck.data} baseUrl` })
+        if (!urlCheck.ok) return c.json({ error: urlCheck.error }, 400)
+        item.baseUrl = urlCheck.url
+      }
+    }
     merged[idCheck.data] = item
   }
 
@@ -489,7 +497,12 @@ async function saveLegacyShape(
   const provider: ActiveProviderId = providerCheck.data
 
   const model = body.model?.trim() || undefined
-  const baseUrl = body.baseUrl?.trim() || undefined
+  let baseUrl = body.baseUrl?.trim() || undefined
+  if (baseUrl) {
+    const urlCheck = await validatePublicHttpUrl(baseUrl, { label: `${provider} baseUrl` })
+    if (!urlCheck.ok) return c.json({ error: urlCheck.error }, 400)
+    baseUrl = urlCheck.url
+  }
 
   const nextSettings = migrateLegacySettings({ provider, apiKey, baseUrl, model })
   const encrypted = encryptApiKey(JSON.stringify(nextSettings))

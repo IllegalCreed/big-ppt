@@ -230,7 +230,7 @@ const defaultMainLlmCaller: MainLlmCaller = async ({ userId, systemPrompt, userP
     return STUB_SAMPLES_JSON
   }
   const settings = await loadUserLlmSettings(userId)
-  const { url, model } = resolveUpstream(settings)
+  const { url, model } = await resolveUpstream(settings)
   const release = await acquireLlmSlot(userId)
   try {
     const resp = await fetch(url, {

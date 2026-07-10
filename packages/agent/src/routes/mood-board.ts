@@ -6,7 +6,7 @@
  *   per-deck 限 3 次(进程内存 Map,重启清零,严格一致性不重要)。
  *
  * - POST /api/decks/:id/anchor
- *   body { assetId }。选定锚图 → asset.purpose='anchor' + 同 deck 其它 candidate=discarded
+ *   body { assetId }。选定锚图 → asset.purpose='anchor',同批其它 candidate 保留供重选
  *   + decks.anchor_asset_id 写入。IDOR guard 三条件:asset 必须 deckId + userId 匹配 +
  *   purpose 当前 = 'mood-board-candidate'(防用户伪造 assetId 偷把任意行变 anchor)。
  *
@@ -45,6 +45,8 @@ async function getOwnedDeck(userId: number, deckId: number) {
   if (!deck) return { ok: false as const, status: 404 as const, error: 'deck 不存在' }
   if (deck.userId !== userId)
     return { ok: false as const, status: 403 as const, error: '无权访问该 deck' }
+  if (deck.status === 'deleted')
+    return { ok: false as const, status: 404 as const, error: 'deck 已删除' }
   return { ok: true as const, deck }
 }
 

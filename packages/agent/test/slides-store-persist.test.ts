@@ -57,6 +57,24 @@ describe('slides-store/history.appendHistoryDb', () => {
     expect(rows.every((r) => !r.content.includes('cross-user-attack'))).toBe(true)
   })
 
+  it('deleted deck guard:不能继续 append 新版本', async () => {
+    const { user } = await createLoggedInUser('deleted-history@a.com')
+    const { deck } = await createDeckDirect(user.id)
+    await getDb().update(decks).set({ status: 'deleted' }).where(eq(decks.id, deck.id))
+
+    await expect(
+      runInRequest(ctxOf({ userId: user.id, activeDeckId: deck.id }), () =>
+        appendHistoryDb('should-not-write', 'write'),
+      ),
+    ).rejects.toThrow(NoActiveDeckError)
+
+    const rows = await getDb()
+      .select({ content: deckVersions.content })
+      .from(deckVersions)
+      .where(eq(deckVersions.deckId, deck.id))
+    expect(rows.every((r) => !r.content.includes('should-not-write'))).toBe(true)
+  })
+
   it('同 content → 跳过不插', async () => {
     const { user } = await createLoggedInUser()
     const { deck, initialVersionId } = await createDeckDirect(user.id)

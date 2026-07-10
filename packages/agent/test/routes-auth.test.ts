@@ -333,6 +333,19 @@ describe('routes/auth', () => {
     expect(await res.json()).toMatchObject({ error: expect.stringContaining('不支持的 provider') })
   })
 
+  it('llm-settings PUT: 拒绝内网 baseUrl', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser('llm-local-base-url@a.com')
+    const res = await app.request('/api/auth/llm-settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ provider: 'openai', apiKey: 'sk-x', baseUrl: 'http://127.0.0.1:11434/v1' }),
+    })
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining('内网') })
+  })
+
   it('llm-settings PUT: 接受老 shape body → 入库新 shape;同次 GET 返回新 shape + 老兼容字段', async () => {
     const app = makeApp()
     const { cookie, user } = await createLoggedInUser('llm-shape-bridge@a.com')

@@ -91,6 +91,17 @@ export async function getAsset(
   return row ?? null
 }
 
+/** 取 asset 行(包含 BLOB),把 userId ownership guard 推进 SQL WHERE。 */
+export async function getAssetForUser(id: string, userId: number): Promise<AssetRow | null> {
+  const db = getDb()
+  const [row] = await db
+    .select()
+    .from(deckAssets)
+    .where(and(eq(deckAssets.id, id), eq(deckAssets.userId, userId)))
+    .limit(1)
+  return row ?? null
+}
+
 /**
  * 删除指定 deck 的所有 asset 行。
  * 配合 routes/decks.ts 的 soft delete:soft delete 不触发 cascade,需显式调本函数。

@@ -37,3 +37,23 @@ export async function canUpload(userId: number, newFileSize: number): Promise<Qu
   }
   return { ok: true, usedBytes, limitBytes: perUser }
 }
+
+const quotaChains = new Map<number, Promise<unknown>>()
+
+export function withUserQuotaLock<T>(userId: number, fn: () => Promise<T>): Promise<T> {
+  const prev = quotaChains.get(userId) ?? Promise.resolve()
+  const result = prev.then(fn, fn)
+  const tail = result.then(
+    () => {},
+    () => {},
+  )
+  quotaChains.set(userId, tail)
+  void tail.then(() => {
+    if (quotaChains.get(userId) === tail) quotaChains.delete(userId)
+  })
+  return result
+}
+
+export function __resetQuotaLocksForTesting(): void {
+  quotaChains.clear()
+}

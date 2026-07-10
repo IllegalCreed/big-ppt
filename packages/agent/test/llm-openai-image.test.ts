@@ -207,6 +207,22 @@ describe('llm/openai-image generateImage', () => {
     expect(out.modelUsed).toBe('gpt-image-2')
   })
 
+  it('baseUrl 指向内网时在 fetch 前拒绝', async () => {
+    const fetchSpy = mockFetch(async () => {
+      throw new Error('should not fetch')
+    })
+    await expect(
+      generateImage({
+        prompt: 'a',
+        size: '1280x720',
+        signal: new AbortController().signal,
+        apiKey: 'sk',
+        baseUrl: 'http://127.0.0.1:11434/v1',
+      }),
+    ).rejects.toThrow(/内网/)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('hybrid vision-aware:有 baseImageBase64 → 路 A payload input 是 content array 含 input_image', async () => {
     let capturedBody: { input?: Array<Record<string, unknown>> } | null = null
     mockFetch(async (url, init) => {

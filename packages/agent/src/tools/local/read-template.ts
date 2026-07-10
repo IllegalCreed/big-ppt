@@ -46,6 +46,9 @@ export const readTemplateTool: ToolDef = {
     if (deck.userId !== ctx.userId) {
       return JSON.stringify({ success: false, error: '无权访问该 deck' })
     }
+    if (deck.status === 'deleted') {
+      return JSON.stringify({ success: false, error: 'deck 已删除' })
+    }
 
     const name = typeof args.name === 'string' ? args.name : ''
     if (!ALLOWED_NAMES.includes(name as (typeof ALLOWED_NAMES)[number])) {

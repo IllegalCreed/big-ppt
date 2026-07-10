@@ -255,9 +255,9 @@ async function onLogout() {
 // 设计抉择(实施期偏离 plan 32 抉择 6):**不**自动阻塞 SSE 流,因为 backend
 // agent loop 在 backend,frontend 无法真"暂停 LLM 派发"。改成:
 //   (a) 顶栏总是显示"选风格"按钮(image LLM 已配时);用户主动触发
-//   (b) onMounted 检测 anchor=null + image LLM 已配 → 自动 open 一次
-// 让用户在第一次发 prompt 之前就选好 anchor;modal 弹出与 LLM 调 generate_slide_image
-// 的时序竞赛中,用户选完 anchor 的 30-60s 区间内大部分图都能拿到 anchor。
+//   (b) write_slides 成功后再自动 open,避免 starter 骨架生成泛泛样张
+// modal 弹出与 LLM 调 generate_slide_image 的时序竞赛中,用户选完 anchor 的
+// 30-60s 区间内大部分图都能拿到 anchor。
 const moodBoardPicker = useMoodBoardPicker()
 const hasImageLlm = ref(false)
 const hasMainLlm = ref(false)

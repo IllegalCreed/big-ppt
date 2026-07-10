@@ -17,7 +17,7 @@ import {
   type RewriteFn,
 } from '../template-switch-job.js'
 import { rewriteForTemplate } from '../prompts/rewriteForTemplate.js'
-import { getHolder } from '../slidev-lock.js'
+import { getHolder, release } from '../slidev-lock.js'
 import { canonicalToRow, rowToCanonical } from '../llm/chat-row.js'
 import type { CanonicalMessage, CanonicalRole } from '../llm/types.js'
 
@@ -41,6 +41,7 @@ async function getOwnedDeck(userId: number, deckId: number) {
   const [deck] = await db.select().from(decks).where(eq(decks.id, deckId)).limit(1)
   if (!deck) return { ok: false as const, status: 404 as const, error: 'deck 不存在' }
   if (deck.userId !== userId) return { ok: false as const, status: 403 as const, error: '无权访问该 deck' }
+  if (deck.status === 'deleted') return { ok: false as const, status: 404 as const, error: 'deck 已删除' }
   return { ok: true as const, deck }
 }
 
@@ -219,6 +220,11 @@ decksRoute.delete('/decks/:id{[0-9]+}', async (c) => {
 
   const db = getDb()
   await db.update(decks).set({ status: 'deleted' }).where(eq(decks.id, deckId))
+  const session = c.get('session')
+  const holder = getHolder()
+  if (session && holder?.deckId === deckId && holder.userId === user.id) {
+    release(session.id)
+  }
   // Phase 11.5：deck 是 soft delete 不触发 FK cascade,显式清 deck_assets BLOB 行
   // 避免 DB 长期膨胀。失败不阻塞响应(asset 留库变孤儿是可恢复的)。
   try {

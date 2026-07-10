@@ -146,6 +146,7 @@ export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise
     const [deck] = await db.select().from(decks).where(eq(decks.id, job.deckId)).limit(1)
     if (!deck) throw new Error('deck 不存在')
     if (deck.userId !== job.userId) throw new Error('deck 所有权校验失败')
+    if (deck.status === 'deleted') throw new Error('deck 已删除')
 
     // 查当前 content 作为 snapshot 源
     let currentContent = ''

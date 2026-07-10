@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.29.2",
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "pnpm -F @big-ppt/shared build && turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test --concurrency=1",
     "lint": "turbo run lint",

@@ -14,6 +14,7 @@ import { getActiveProviderConfig } from '../llm/settings.js'
 import { buildSystemPrompt } from './buildSystemPrompt.js'
 import { readStarter } from '../templates/registry.js'
 import { acquireLlmSlot } from '../middleware/llm-semaphore.js'
+import { validatePublicHttpUrl } from '../utils/url-safety.js'
 
 /** Phase 11.6 起被 rewriteSinglePageToComponents 复用 */
 export interface LlmSettings {
@@ -34,11 +35,15 @@ const PROVIDER_BASE: Record<string, { baseURL: string; defaultModel: string }> =
   },
 }
 
-export function resolveUpstream(settings: LlmSettings): { url: string; model: string } {
+export async function resolveUpstream(settings: LlmSettings): Promise<{ url: string; model: string }> {
   const provider = settings.provider ?? 'zhipu'
-  const base = settings.baseUrl
-    ? settings.baseUrl.replace(/\/$/, '')
-    : (PROVIDER_BASE[provider]?.baseURL ?? PROVIDER_BASE.zhipu!.baseURL)
+  let base = PROVIDER_BASE[provider]?.baseURL ?? PROVIDER_BASE.zhipu!.baseURL
+  if (settings.baseUrl) {
+    const urlCheck = await validatePublicHttpUrl(settings.baseUrl, { label: `${provider} baseUrl` })
+    if (!urlCheck.ok) throw new Error(urlCheck.error)
+    base = urlCheck.url
+  }
+  base = base.replace(/\/+$/, '')
   const model =
     settings.model ??
     PROVIDER_BASE[provider]?.defaultModel ??
@@ -118,7 +123,7 @@ export async function rewriteForTemplate(args: {
   }
 
   const settings = await loadUserLlmSettings(args.userId)
-  const { url, model } = resolveUpstream(settings)
+  const { url, model } = await resolveUpstream(settings)
   // Phase 11.6：切模板期间强制走 OFF 决策树。
   // 即使用户配了 image LLM,切模板的目的是把旧 deck 重写成新模板的同等版本,
   // 不应在切模板期重新生图(imageSrc 由调用方透传,layout 名前缀替换由 LLM 完成)。

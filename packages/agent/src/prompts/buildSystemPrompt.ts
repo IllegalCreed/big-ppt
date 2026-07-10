@@ -413,11 +413,11 @@ export async function buildSystemPromptForDeck(
 ): Promise<string> {
   const db = getDb()
   const [deck] = await db
-    .select({ templateId: decks.templateId })
+    .select({ templateId: decks.templateId, status: decks.status })
     .from(decks)
     .where(and(eq(decks.id, deckId), eq(decks.userId, userId)))
     .limit(1)
-  if (!deck) {
+  if (!deck || deck.status === 'deleted') {
     throw new Error(`[buildSystemPromptForDeck] deck 不存在或非所有者: deckId=${deckId}`)
   }
   const imageGenEnabled = !!(await getImageLlmSettings(userId))

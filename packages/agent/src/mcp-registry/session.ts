@@ -2,6 +2,7 @@
 import type { McpServerConfig, McpServerStatus } from '@big-ppt/shared'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { validatePublicHttpUrl } from '../utils/url-safety.js'
 
 /** MCP 会话的最小抽象:connect -> listTools -> callTool -> close */
 export interface McpToolDef {
@@ -25,7 +26,12 @@ export class McpSession {
       // 但 Vitest 4 下 dynamic import 第二次调用会绕过 vi.mock 拿到真 SDK 模块
       // (实测多 server 场景失败:第二个 server 用真 Client → "_transport.send is
       // not a function")。production 等价(ESM module 缓存),改 static 仅让测试稳定。
-      const transport = new StreamableHTTPClientTransport(new URL(this.config.url), {
+      const urlCheck = await validatePublicHttpUrl(this.config.url, {
+        label: `MCP server ${this.config.id} URL`,
+      })
+      if (!urlCheck.ok) throw new Error(urlCheck.error)
+
+      const transport = new StreamableHTTPClientTransport(new URL(urlCheck.url), {
         requestInit: { headers: this.config.headers },
       })
       const client: any = new Client(

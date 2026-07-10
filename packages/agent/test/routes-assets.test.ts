@@ -4,7 +4,7 @@
  * 关键覆盖:
  * - 401 未登录
  * - 200 owner 拿到字节 + 正确头
- * - 403 跨用户(响应不泄露字节)
+ * - 404 跨用户(不泄露 asset id 是否存在)
  * - 404 不存在
  * - Cache-Control 含 private 防 CDN 缓存
  */
@@ -68,7 +68,7 @@ describe('routes/assets', () => {
     expect(buf.equals(TINY_PNG)).toBe(true)
   })
 
-  it('GET /api/assets/:id：跨用户 → 403,响应不含字节', async () => {
+  it('GET /api/assets/:id：跨用户 → 404,响应不含字节', async () => {
     const app = makeApp()
     const { user: a } = await createLoggedInUser('a@a.com')
     const { deck } = await createDeckDirect(a.id)
@@ -81,7 +81,7 @@ describe('routes/assets', () => {
 
     const { cookie: bCookie } = await createLoggedInUser('b@b.com')
     const res = await app.request(`/api/assets/${id}`, { headers: { Cookie: bCookie } })
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(404)
     // 响应应是 JSON {error},不带二进制字节
     const ct = res.headers.get('content-type') ?? ''
     expect(ct).toContain('json')

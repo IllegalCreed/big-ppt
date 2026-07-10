@@ -20,6 +20,8 @@ import { __resetPathsForTesting } from '../src/workspace.js'
 import { forceRelease, tryAcquire } from '../src/slidev-lock.js'
 import { useTestDb } from './_setup/test-db.js'
 import { createLoggedInUser, createDeckDirect } from './_setup/factories.js'
+import { getDb, decks } from '../src/db/index.js'
+import { eq } from 'drizzle-orm'
 
 useTestDb()
 
@@ -80,11 +82,23 @@ describe('routes/slides 持锁守卫', () => {
 
   it('登录且持锁 GET /read-slides → 200 + slides.md mirror 原文', async () => {
     const { user, sid, cookie } = await createLoggedInUser()
-    const acq = tryAcquire({ sessionId: sid, userId: user.id, userEmail: user.email, deckId: 1, deckTitle: 't' })
+    const { deck } = await createDeckDirect(user.id, 'D')
+    const acq = tryAcquire({ sessionId: sid, userId: user.id, userEmail: user.email, deckId: deck.id, deckTitle: 't' })
     expect(acq.ok).toBe(true)
     const res = await makeApp().request('/api/read-slides', { headers: { Cookie: cookie } })
     expect(res.status).toBe(200)
     expect(await res.text()).toBe('# locked mirror content\n')
+  })
+
+  it('登录且持锁但 deck 已删除 → read-slides 404', async () => {
+    const { user, sid, cookie } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id, 'Deleted while locked')
+    await getDb().update(decks).set({ status: 'deleted' }).where(eq(decks.id, deck.id))
+    const acq = tryAcquire({ sessionId: sid, userId: user.id, userEmail: user.email, deckId: deck.id, deckTitle: 't' })
+    expect(acq.ok).toBe(true)
+
+    const res = await makeApp().request('/api/read-slides', { headers: { Cookie: cookie } })
+    expect(res.status).toBe(404)
   })
 
   it('登录且持锁 POST /restore-slides → 无历史时 404', async () => {

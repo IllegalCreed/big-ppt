@@ -14,6 +14,7 @@ import { agentMessageToCanonical, canonicalToAgentMessage } from './agent-messag
 import { loadDeckChatHistory } from './history-loader.js'
 import { buildSystemPromptForDeck, buildUserAssetsInventory } from '../../prompts/buildSystemPrompt.js'
 import { logServerEvent } from '../../logger/server-log.js'
+import { validatePublicHttpUrl } from '../../utils/url-safety.js'
 
 export interface CreateAgentOpts {
   userId: number
@@ -46,7 +47,14 @@ export async function createAgent(opts: CreateAgentOpts): Promise<Agent> {
   const normalizedSettings = normalizeThinkingFields(rawSettings) as Record<string, unknown>
   const thinkingLevel = resolveThinkingLevel(normalizedSettings, cfg.provider)
 
-  const model = resolveModelForProvider(cfg.provider, cfg.model, cfg.baseUrl)
+  let safeBaseUrl = cfg.baseUrl
+  if (safeBaseUrl) {
+    const urlCheck = await validatePublicHttpUrl(safeBaseUrl, { label: `${cfg.provider} baseUrl` })
+    if (!urlCheck.ok) throw new Error(urlCheck.error)
+    safeBaseUrl = urlCheck.url
+  }
+
+  const model = resolveModelForProvider(cfg.provider, cfg.model, safeBaseUrl)
   const tools = await buildToolsForUser(opts.userId)
   const baseSystemPrompt = await buildSystemPromptForDeck(opts.deckId, opts.userId)
   // Phase 13 Task E: 拼用户素材清单(空则跳过,不附冗余段)

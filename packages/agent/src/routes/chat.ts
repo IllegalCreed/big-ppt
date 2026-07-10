@@ -43,11 +43,12 @@ chat.post('/turn', async (c) => {
 
   // 验权:用户拥有该 deck(防止跨用户读改他人 deck)
   const [deck] = await getDb()
-    .select({ id: decks.id })
+    .select({ id: decks.id, status: decks.status })
     .from(decks)
     .where(and(eq(decks.id, deckId), eq(decks.userId, user.id)))
     .limit(1)
   if (!deck) return c.json({ error: { message: 'deck not found' } }, 404)
+  if (deck.status === 'deleted') return c.json({ error: { message: 'deck not found' } }, 404)
 
   // 拿 LLM slot:超过 per-user 并发上限会 await 排队;超过队列超时才 reject。
   let release: () => void

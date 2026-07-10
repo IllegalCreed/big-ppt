@@ -120,6 +120,18 @@ describe('routes/image-llm-settings', () => {
     expect(res.status).toBe(400)
   })
 
+  it('PUT：拒绝内网 baseUrl', async () => {
+    const app = makeApp()
+    const { cookie } = await createLoggedInUser('image-ssrf@a.com')
+    const res = await putJson(
+      app,
+      { provider: 'openai', apiKey: 'sk-image', baseUrl: 'http://127.0.0.1:11434/v1' },
+      cookie,
+    )
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: expect.stringMatching(/内网/) })
+  })
+
   it('GET：有设置 → 返回 provider/baseUrl/model + hasApiKey=true,不泄漏 apiKey', async () => {
     const app = makeApp()
     const { cookie } = await createLoggedInUser('view@a.com')

@@ -33,6 +33,7 @@ import { parseArchive } from '../archive/parse-archive.js'
 import { rewriteAssetUrls } from '../archive/rewrite-asset-urls.js'
 import { ArchiveError } from '../archive/errors.js'
 import { logServerEvent } from '../logger/server-log.js'
+import { contentDisposition } from '../utils/content-disposition.js'
 import { getManifest } from '../templates/registry.js'
 import type { AuthVars } from '../middleware/auth.js'
 import type { ImportArchiveResponse } from '@big-ppt/shared'
@@ -56,6 +57,7 @@ decksArchiveRoute.get('/decks/:id{[0-9]+}/export-archive', async (c) => {
   const [deck] = await db.select().from(decks).where(eq(decks.id, deckId)).limit(1)
   if (!deck) return c.json({ error: 'deck 不存在' }, 404)
   if (deck.userId !== user.id) return c.json({ error: '无权访问该 deck' }, 403)
+  if (deck.status === 'deleted') return c.json({ error: 'deck 已删除' }, 404)
 
   try {
     const buf = await buildArchive({ deckId, userId: user.id })
@@ -70,13 +72,6 @@ decksArchiveRoute.get('/decks/:id{[0-9]+}/export-archive', async (c) => {
     // 文件名:safe(title) + 时间戳防覆盖。`.lumideck` 是 .zip 别名,内容是合法 zip。
     const safeName = deck.title.replace(/[\\/:*?"<>|]/g, '_')
     const filename = `${safeName}-${Date.now()}.lumideck`
-    // RFC 6266 + RFC 8187:HTTP header value 不允许非 ASCII 字符,中文 / emoji
-    // title 走原始 filename= 会导致 Chrome 下载乱码、跨浏览器行为不一致。
-    // 双 filename 写法:filename* 是 modern client 优先读的 UTF-8 percent-encoded
-    // 版本,filename= ASCII fallback 留给古早 client(把非 ASCII 全替成 _)。
-    const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_')
-    const encodedFilename = encodeURIComponent(filename)
-
     // Node Buffer 的 underlying ArrayBufferLike 在新 TS 下不兼容 BodyInit 期望的
     // ArrayBuffer,复制到全新 ArrayBuffer-backed Uint8Array(跟 routes/assets.ts 同套路)。
     const u8 = new Uint8Array(buf.length)
@@ -86,7 +81,7 @@ decksArchiveRoute.get('/decks/:id{[0-9]+}/export-archive', async (c) => {
       headers: {
         'Content-Type': 'application/zip',
         'Content-Length': String(buf.length),
-        'Content-Disposition': `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`,
+        'Content-Disposition': contentDisposition('attachment', filename),
         'X-Content-Type-Options': 'nosniff',
       },
     })

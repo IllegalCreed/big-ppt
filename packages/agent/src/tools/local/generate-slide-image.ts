@@ -307,6 +307,9 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   if (deck.userId !== ctx.userId) {
     return JSON.stringify({ success: false, error: '无权访问该 deck' })
   }
+  if (deck.status === 'deleted') {
+    return JSON.stringify({ success: false, error: 'deck 已删除' })
+  }
 
   /**
    * Phase 11.8 真阻塞:用户配过 image LLM + deck 还没决策 anchor 时,工具入口

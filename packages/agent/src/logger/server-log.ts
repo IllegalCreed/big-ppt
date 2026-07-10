@@ -16,6 +16,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { getPaths } from '../workspace.js'
+import { safeForLog } from '../utils/redact.js'
 
 export interface ServerEventBase {
   /** 模块 / 业务类别,grep 友好。如 'image-gen' / 'template-switch' / 'rewrite-for-template' */
@@ -62,10 +63,10 @@ export function logServerEvent(payload: ServerEvent): void {
   try {
     const { logsDir } = getPaths()
     ensureDir(logsDir)
-    const line = JSON.stringify({
+    const line = JSON.stringify(safeForLog({
       ts: new Date().toISOString(),
       ...payload,
-    })
+    }))
     fs.appendFileSync(currentLogFile(), `${line}\n`)
   } catch {
     // 日志失败不应阻塞业务;最多丢一条事件

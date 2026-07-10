@@ -7,7 +7,7 @@
  * 两个 env 都在 playwright.config.ts webServer.env 设好,本 spec 不烧 token。
  *
  * 覆盖:
- *  (a) 完整闭环:配 image LLM → 建 deck → 自动弹 modal → 选第 1 张 → DB 验 anchor_asset_id +
+ *  (a) 完整闭环:配 image LLM → 建 deck → 点选风格 → 选第 1 张 → DB 验 anchor_asset_id +
  *      asset.purpose='anchor' + 其它 candidate=discarded
  *  (b) 跳过路径:开 modal → 点跳过 → modal 关 + deck.anchor_asset_id 仍 null
  *  (c) 工具透传:配 anchor 后调 generate_slide_image → job 透传 baseImage(anchor BLOB)
@@ -16,9 +16,7 @@
  */
 import { test, expect } from '@playwright/test'
 import mysql from 'mysql2/promise'
-
-const AGENT_PORT = Number(process.env.AGENT_PORT ?? 4100)
-const AGENT_BASE = `http://localhost:${AGENT_PORT}`
+import { AGENT_BASE, disposeDb, truncateAllTables } from './helpers/db'
 
 let db: mysql.Connection
 
@@ -29,6 +27,10 @@ test.beforeAll(async () => {
 })
 test.afterAll(async () => {
   await db?.end()
+  await disposeDb()
+})
+test.beforeEach(async () => {
+  await truncateAllTables()
 })
 
 async function configureImageLlm(page: import('@playwright/test').Page) {
@@ -75,15 +77,21 @@ async function createDeck(page: import('@playwright/test').Page, title: string):
   return Number(page.url().match(/\/decks\/(\d+)/)![1])
 }
 
+async function openAnchorPicker(page: import('@playwright/test').Page): Promise<void> {
+  const button = page.locator('[data-anchor-picker-btn]')
+  await expect(button).toBeVisible({ timeout: 10_000 })
+  await button.click()
+  await expect(page.locator('[data-anchor-picker-modal]')).toBeVisible({ timeout: 30_000 })
+}
+
 test.describe('Phase 11.8 anchor 选样闭环', () => {
-  test('配 image+main LLM → 建 deck → 自动弹 modal → 选定 → DB 验 anchor_asset_id 写入', async ({
+  test('配 image+main LLM → 建 deck → 点选风格 → 选定 → DB 验 anchor_asset_id 写入', async ({
     page,
   }) => {
     await registerAndConfigure(page)
     const deckId = await createDeck(page, 'anchor happy-path')
 
-    // 编辑器加载完成 + onMounted 探查 LLM + 自动 openPicker
-    await expect(page.locator('[data-anchor-picker-modal]')).toBeVisible({ timeout: 30_000 })
+    await openAnchorPicker(page)
 
     // 3 张候选缩略图渲染
     const cards = page.locator('[data-candidate-id]')
@@ -105,7 +113,7 @@ test.describe('Phase 11.8 anchor 选样闭环', () => {
     )
     expect(deckRow!.anchor_asset_id).toBe(targetAssetId)
 
-    // DB 验证:asset.purpose = 'anchor';其它两个 candidate purpose = 'mood-board-discarded'
+    // DB 验证:asset.purpose = 'anchor';其它两个候选保留为 candidate,方便重开 modal 重选
     const [assets] = await db.execute<mysql.RowDataPacket[]>(
       `SELECT id, purpose FROM deck_assets WHERE deck_id = ? ORDER BY created_at`,
       [deckId],
@@ -115,7 +123,7 @@ test.describe('Phase 11.8 anchor 选样闭环', () => {
     expect(map[targetAssetId!]).toBe('anchor')
     const others = assets.map((a) => a.id).filter((id) => id !== targetAssetId)
     for (const oid of others) {
-      expect(map[oid]).toBe('mood-board-discarded')
+      expect(map[oid]).toBe('mood-board-candidate')
     }
   })
 
@@ -123,11 +131,11 @@ test.describe('Phase 11.8 anchor 选样闭环', () => {
     await registerAndConfigure(page)
     const deckId = await createDeck(page, 'anchor skip-path')
 
-    await expect(page.locator('[data-anchor-picker-modal]')).toBeVisible({ timeout: 30_000 })
+    await openAnchorPicker(page)
     await expect(page.locator('[data-candidate-id]')).toHaveCount(3, { timeout: 60_000 })
 
     // 点 "跳过本次" 按钮
-    await page.locator('[data-skip-bottom]').click()
+    await page.locator('[data-primary-action][data-mode="skip"]').click()
     await expect(page.locator('[data-anchor-picker-modal]')).toBeHidden({ timeout: 5_000 })
 
     // DB 验证:deck.anchor_asset_id 仍 null;3 个 candidate 行仍存在(purpose='mood-board-candidate')
@@ -151,7 +159,7 @@ test.describe('Phase 11.8 anchor 选样闭环', () => {
     await registerAndConfigure(page)
     const deckId = await createDeck(page, 'anchor tool inject')
 
-    await expect(page.locator('[data-anchor-picker-modal]')).toBeVisible({ timeout: 30_000 })
+    await openAnchorPicker(page)
     await expect(page.locator('[data-candidate-id]')).toHaveCount(3, { timeout: 60_000 })
 
     const targetAssetId = await page
@@ -198,8 +206,7 @@ test.describe('Phase 11.8 anchor 选样闭环', () => {
       )
       .toMatch(/done|fallback-rewrote/)
 
-    // worker 完成后 deck_assets 应有:3 candidates + 1 anchor 选定中的(purpose 切到 anchor)
-    // + 1 普通生图产物(purpose=null,刚 generate_slide_image 产出的)
+    // worker 完成后 deck_assets 应有:1 anchor + 2 同批候选 + 1 普通生图产物(purpose=null)
     const [assets] = await db.execute<mysql.RowDataPacket[]>(
       `SELECT id, purpose FROM deck_assets WHERE deck_id = ? ORDER BY created_at`,
       [deckId],
@@ -210,9 +217,9 @@ test.describe('Phase 11.8 anchor 选样闭环', () => {
       acc[k] = (acc[k] ?? 0) + 1
       return acc
     }, {})
-    // 选定的那张 anchor + 2 张 discarded + 1 张刚生成的普通(purpose=null)
+    // 选定的那张 anchor + 2 张仍可重选的 candidate + 1 张刚生成的普通(purpose=null)
     expect(purposeCount['anchor']).toBe(1)
-    expect(purposeCount['mood-board-discarded']).toBe(2)
+    expect(purposeCount['mood-board-candidate']).toBe(2)
     expect(purposeCount['null']).toBe(1)
 
     // **anchor 仍是当时选定的 assetId**

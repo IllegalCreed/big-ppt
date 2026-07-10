@@ -14,6 +14,7 @@ import {
   setImageLlmSettings,
 } from '../db/image-llm-settings.js'
 import { errorResponse } from '../utils/error-response.js'
+import { validatePublicHttpUrl } from '../utils/url-safety.js'
 
 type ImageLlmProvider = ImageLlmSettings['provider']
 const SUPPORTED_PROVIDERS: readonly ImageLlmProvider[] = ['openai'] as const
@@ -74,8 +75,13 @@ imageLlmSettingsRoute.put('/image-llm-settings', async (c) => {
   if (!apiKey) return c.json({ error: 'apiKey 为空' }, 400)
 
   // baseUrl:body 字段未提供(undefined)→ 保留旧值;提供(包括空串)→ 用户意图清空或更新
-  const baseUrl =
+  let baseUrl =
     body.baseUrl === undefined ? prev?.baseUrl : body.baseUrl.trim() || undefined
+  if (baseUrl) {
+    const urlCheck = await validatePublicHttpUrl(baseUrl, { label: `${provider} image baseUrl` })
+    if (!urlCheck.ok) return c.json({ error: urlCheck.error }, 400)
+    baseUrl = urlCheck.url
+  }
   const model =
     body.model === undefined ? prev?.model : body.model.trim() || undefined
 

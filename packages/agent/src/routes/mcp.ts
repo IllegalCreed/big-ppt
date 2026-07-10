@@ -14,6 +14,7 @@ import { getRegistry } from '../mcp-registry/index.js'
 import { requireAuth, type AuthVars } from '../middleware/auth.js'
 import { getDb, users } from '../db/index.js'
 import { getActiveProviderConfig } from '../llm/settings.js'
+import { validatePublicHttpUrl } from '../utils/url-safety.js'
 
 export const mcp = new Hono<{ Variables: AuthVars }>()
 
@@ -147,6 +148,11 @@ mcp.post('/mcp/servers', async (c) => {
       const resp: MutateMcpServerResponse = { success: false, error: 'id 只能包含字母、数字、- 和 _' }
       return c.json(resp, 400)
     }
+    const urlCheck = await validatePublicHttpUrl(body.url, { label: 'MCP server URL' })
+    if (!urlCheck.ok) {
+      const resp: MutateMcpServerResponse = { success: false, error: urlCheck.error }
+      return c.json(resp, 400)
+    }
     const userId = c.get('user')!.id
     const repo = getRepo()
     const existing = await repo.get(userId, body.id)
@@ -163,7 +169,7 @@ mcp.post('/mcp/servers', async (c) => {
       id: body.id,
       displayName: body.displayName,
       description: body.description ?? '',
-      url: body.url,
+      url: urlCheck.url,
       headers: sanitized,
       enabled: false,
       preset: false,

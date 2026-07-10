@@ -115,6 +115,15 @@ describe('McpRegistry.initialize', () => {
     expect(listRegistryTools(TEST_USER_ID)).toEqual([])
   })
 
+  it('历史配置里已有内网 URL 时连接前拒绝,不触发 SDK connect', async () => {
+    const repo = new FakeRepo([mkConfig({ url: 'http://127.0.0.1:11434/mcp' })])
+    const registry = new McpRegistry(repo as any, TEST_USER_ID)
+    await registry.initialize()
+    expect(mocks.connectDefault).not.toHaveBeenCalled()
+    expect(registry.getStatus('srv').state).toBe('error')
+    expect(registry.getStatus('srv').error).toMatch(/内网/)
+  })
+
   it('一个 server connect 失败不影响其他 server', async () => {
     mocks.connectPerUrl.set('https://bad.example/mcp', () => {
       throw new Error('401 Unauthorized')

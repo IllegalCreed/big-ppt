@@ -104,4 +104,25 @@ describe('logServerEvent', () => {
     )
     expect(parsed.ts).toBe('2020-01-01T00:00:00Z')
   })
+
+  it('写盘前自动脱敏敏感字段并截断超大 payload', () => {
+    logServerEvent({
+      category: 'agent',
+      event: 'failed',
+      apiKey: 'sk-secret',
+      headers: { Authorization: 'Bearer secret-token' },
+      nested: { refreshToken: 'refresh-secret' },
+      huge: 'x'.repeat(70 * 1024),
+    })
+
+    const parsed = JSON.parse(
+      fs.readFileSync(__getCurrentServerLogFileForTesting(), 'utf-8').trim(),
+    )
+    const json = JSON.stringify(parsed)
+    expect(json).not.toContain('sk-secret')
+    expect(json).not.toContain('secret-token')
+    expect(json).not.toContain('refresh-secret')
+    expect(parsed.__truncated).toBe(true)
+    expect(parsed.preview).toContain('[REDACTED]')
+  })
 })

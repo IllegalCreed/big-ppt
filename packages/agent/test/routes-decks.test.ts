@@ -278,6 +278,32 @@ describe('routes/decks', () => {
     expect(rows.find((d: { id: number }) => d.id === deck.id)).toBeUndefined()
   })
 
+  it('deleted deck: detail / update / versions / chats 均返回 404,不能被恢复成 active', async () => {
+    const app = makeApp()
+    const { user, cookie } = await createLoggedInUser()
+    const { deck } = await createDeckDirect(user.id, 'Deleted Tombstone')
+    await getDb().update(decks).set({ status: 'deleted' }).where(eq(decks.id, deck.id))
+
+    const detail = await app.request(`/api/decks/${deck.id}`, { headers: { Cookie: cookie } })
+    expect(detail.status).toBe(404)
+
+    const update = await app.request(`/api/decks/${deck.id}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ status: 'active' }),
+    })
+    expect(update.status).toBe(404)
+
+    const versions = await app.request(`/api/decks/${deck.id}/versions`, { headers: { Cookie: cookie } })
+    expect(versions.status).toBe(404)
+
+    const chats = await app.request(`/api/decks/${deck.id}/chats`, { headers: { Cookie: cookie } })
+    expect(chats.status).toBe(404)
+
+    const [row] = await getDb().select().from(decks).where(eq(decks.id, deck.id)).limit(1)
+    expect(row?.status).toBe('deleted')
+  })
+
   it('DELETE /decks/:id: Phase 11.5 同步清 deck_assets BLOB 行', async () => {
     const app = makeApp()
     const { user, cookie } = await createLoggedInUser()

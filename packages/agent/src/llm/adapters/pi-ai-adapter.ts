@@ -62,6 +62,7 @@ import type {
   TokenUsage,
 } from '../types.js'
 import { LLMError } from '../errors.js'
+import { validatePublicHttpUrl } from '../../utils/url-safety.js'
 
 type PiAssistantBlock = PiTextContent | PiThinkingContent | PiToolCall
 type PiUserContent = PiTextContent | PiImageContent
@@ -196,8 +197,15 @@ export function createPiAiAdapter(cfg: ProviderConfig): LLMProvider {
       //
       // Task E smoke test 强依赖此逻辑：controller 的 3 把 key 全是 duckcoding.ai
       // 中转 key，没有 baseUrl override 就跑不通。
-      const model: PiModel<PiApi> = cfg.baseUrl
-        ? { ...baseModel, baseUrl: cfg.baseUrl }
+      let safeBaseUrl = cfg.baseUrl
+      if (safeBaseUrl) {
+        const urlCheck = await validatePublicHttpUrl(safeBaseUrl, { label: `${providerId} baseUrl` })
+        if (!urlCheck.ok) throw new Error(urlCheck.error)
+        safeBaseUrl = urlCheck.url
+      }
+
+      const model: PiModel<PiApi> = safeBaseUrl
+        ? { ...baseModel, baseUrl: safeBaseUrl }
         : baseModel
       const piContext = canonicalToPiContext(req)
       const piOptions: { apiKey?: string; signal?: AbortSignal; maxTokens?: number } = {

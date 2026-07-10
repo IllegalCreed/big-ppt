@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
+import { computed, h, onUnmounted, ref } from 'vue'
 import { Bubble, Sender, Suggestion } from '@antdv-next/x'
 import type { SenderRef } from '@antdv-next/x'
 import { useAIChat } from '../composables/useAIChat'
@@ -24,10 +24,13 @@ const {
   sendMessage,
   cancel,
   clearHistory,
+  dispose,
   appendLocalMessage,
   retryLastUserMessage,
   dismissImageJob,
 } = useAIChat()
+
+onUnmounted(dispose)
 
 const senderRef = ref<SenderRef | null>(null)
 
