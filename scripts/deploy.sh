@@ -187,9 +187,23 @@ deploy_backend() {
         chmod 755 /var/lumideck /var/lumideck/user-assets || true
 
         echo '==> drizzle-kit push:prod(幂等,无 schema 变化为 no-op)'
-        pnpm -F @big-ppt/agent db:push:prod 2>&1 | tail -10 || {
-            echo 'WARN: db:push:prod 失败,检查 .env.production.local 与 DB 连通性'
+        pnpm -F @big-ppt/agent db:push:prod 2>&1 | tee /tmp/lumideck-dbpush.log | tail -10 || {
+            echo 'ERROR: db:push:prod 非零退出,检查 .env.production.local 与 DB 连通性'
             exit 2
+        }
+        # drizzle-kit 已知坑(2026-07-14 Phase 17 实锤):非 TTY 下弹交互确认
+        # (如给有数据的表加唯一索引)会崩溃但 exit 0,上面的 || 拦不住 → 抓签名兜底
+        if grep -q 'Interactive prompts require a TTY' /tmp/lumideck-dbpush.log; then
+            echo 'ERROR: schema diff 含需交互确认的风险变更,非 TTY 无法继续。'
+            echo '       先手工 DDL(幂等 guard,绝不 truncate,见 docs/runbooks/deploy.md),再重跑部署。'
+            exit 2
+        fi
+
+        echo '==> 校验 DB schema 与代码一致(pm2 reload 前置门,防新代码旧 schema 裂窗)'
+        pnpm -F @big-ppt/agent db:verify:prod || {
+            echo 'ERROR: DB schema 落后于代码,中止 reload(旧进程保持运行,线上不受影响)。'
+            echo '       手工补齐缺失的表/列/索引后重跑部署。'
+            exit 3
         }
 
         echo '==> pm2 startOrReload ecosystem(GIT_SHA=${DEPLOY_GIT_SHA})'

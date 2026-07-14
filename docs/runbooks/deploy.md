@@ -81,10 +81,12 @@ FORCE=1 pnpm deploy:all
 2. 同步 `deploy/`，运行 `apply-nginx.sh`；该脚本先备份现有配置，`nginx -t` 失败会回滚。
 3. 同步后端 monorepo，排除 `.env.*.local`、日志、素材与测试产物。
 4. 远端 `pnpm install --frozen-lockfile`。
-5. `drizzle-kit push:prod`。
-6. `pm2 startOrReload` 注入本次 `GIT_SHA`，删除旧 `lumideck-slidev` 进程并 `pm2 save`。
-7. rsync creator 静态文件。
-8. healthz 轮询，要求 `status=ok` 且 `gitSha` 精确匹配本次 commit。
+5. `drizzle-kit push:prod`，输出落 `/tmp/lumideck-dbpush.log` 并 grep 非 TTY 交互崩溃签名。
+6. `db:verify:prod` schema 一致性门：对比 dist schema 与 information_schema 的表/列/索引，
+   缺失即中止（exit 3），**pm2 不 reload、旧进程继续跑**。
+7. `pm2 startOrReload` 注入本次 `GIT_SHA`，删除旧 `lumideck-slidev` 进程并 `pm2 save`。
+8. rsync creator 静态文件。
+9. healthz 轮询，要求 `status=ok` 且 `gitSha` 精确匹配本次 commit。
 
 拆分部署：
 
@@ -124,6 +126,22 @@ drizzle-kit 0.31 可能在 nullable → NOT NULL 时遗漏 DEFAULT。每次改 s
 ```sql
 SHOW COLUMNS FROM share_links LIKE 'access_count';
 ```
+
+## 带风险 schema 变更的部署（先手工 DDL）
+
+drizzle-kit push 遇「有数据的表加唯一索引」等风险变更会弹交互确认，非 TTY 下崩溃且
+exit 0（2026-07-14 Phase 17 实锤）。部署脚本会 grep 崩溃签名 + `db:verify:prod` 拦住，
+但**正确姿势是部署前先手工补 DDL**：
+
+1. SSH 到部署机，在 `packages/agent` 下写一次性 `.mjs`（mysql2 + `DATABASE_URL`），
+   每条 DDL 带存在性 guard（`SHOW TABLES LIKE` / `SHOW COLUMNS LIKE`），用完即删。
+2. 绝不选 truncate；加唯一索引时若新列全 NULL，MySQL 唯一索引允许多 NULL，直接
+   `ALTER TABLE ... ADD UNIQUE KEY` 零风险。
+3. 补完跑 `pnpm -F @big-ppt/agent db:verify:prod` 确认绿，再执行正常部署
+   （此时 push 为 no-op，不再弹确认）。
+
+任何时候可单独核验：`ssh` 到部署机跑 `db:verify:prod`，或本地跑 `db:verify` /
+`db:verify:test` 对 dev / test 库做同样检查（脚本读 `dist/db/schema.js`，先 build）。
 
 期望 `Null=NO`、`Default=0`。
 
