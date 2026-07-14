@@ -2,7 +2,7 @@
 /** Phase 12.7 Task G：单次 tool execution 状态块 —— pending/running/done/error 四态 + 折叠详情。 */
 import { computed } from 'vue'
 import type { ToolExecutionStateName } from '../composables/useAIChat'
-import { useMoodBoardPicker } from '../composables/useMoodBoardPicker'
+import { useImageStyleLibrary } from '../composables/useImageStyleLibrary'
 
 const props = defineProps<{
   toolName: string
@@ -17,25 +17,30 @@ const props = defineProps<{
  * 显示「执行中」会让用户误以为 OpenAI 已经在烧 token。实际此刻 OpenAI 还
  * 没被调用过,只是 worker promise 卡在 polling loop。
  *
- * 启发式判断:picker modal 开着 = 用户尚在决策 = backend tool 大概率在 polling。
- * 改文案让用户不慌(等用户选完 anchor / 取消后 modal 自动关,文案立刻切回「执行中」)。
+ * Phase 17 后 modal open 与首次决策解耦，必须读显式 decisionPending，普通浏览
+ * 风格库或后台探索不能误显示成等待。
  */
-const picker = useMoodBoardPicker()
+const styleLibrary = useImageStyleLibrary()
 const isWaitingForAnchorDecision = computed(
   () =>
     props.toolName === 'generate_slide_image' &&
     props.state === 'running' &&
-    picker.open.value,
+    styleLibrary.decisionPending.value,
 )
 
 const stateLabel = computed(() => {
   if (isWaitingForAnchorDecision.value) return '等待视觉风格选定'
   switch (props.state) {
-    case 'pending': return '排队中'
-    case 'running': return '执行中'
-    case 'done': return '完成'
-    case 'error': return '失败'
-    default: return ''
+    case 'pending':
+      return '排队中'
+    case 'running':
+      return '执行中'
+    case 'done':
+      return '完成'
+    case 'error':
+      return '失败'
+    default:
+      return ''
   }
 })
 
@@ -74,8 +79,7 @@ const hasDetails = computed(() => Boolean(props.argsPreview || props.resultPrevi
  */
 .tool-execution-block {
   font-size: var(--fs-sm, var(--ld-font-size-sm, 12px));
-  padding: var(--space-2, var(--ld-space-2, 6px))
-    var(--space-3, var(--ld-space-3, 10px));
+  padding: var(--space-2, var(--ld-space-2, 6px)) var(--space-3, var(--ld-space-3, 10px));
   border-radius: var(--radius-sm, var(--ld-radius-sm, 4px));
   background: var(--color-bg-subtle, var(--ld-bg-subtle, #f5f5f5));
   margin: var(--space-1, var(--ld-space-1, 4px)) 0;
@@ -134,8 +138,7 @@ const hasDetails = computed(() => Boolean(props.argsPreview || props.resultPrevi
   font-size: var(--fs-xs, var(--ld-font-size-xs, 11px));
   overflow-x: auto;
   margin-top: var(--space-1, var(--ld-space-1, 4px));
-  padding: var(--space-1, var(--ld-space-1, 4px))
-    var(--space-2, var(--ld-space-2, 6px));
+  padding: var(--space-1, var(--ld-space-1, 4px)) var(--space-2, var(--ld-space-2, 6px));
   background: var(--color-bg-surface, var(--ld-bg-page, #fff));
   border-radius: var(--radius-sm, var(--ld-radius-sm, 3px));
   white-space: pre-wrap;

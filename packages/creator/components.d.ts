@@ -11,7 +11,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    AnchorPickerModal: typeof import('./src/components/AnchorPickerModal.vue')['default']
     App: typeof import('./src/components/App.vue')['default']
     AssetManagerPanel: typeof import('./src/components/AssetManagerPanel.vue')['default']
     BarChart: typeof import('./../slidev/components/block/BarChart.vue')['default']
@@ -27,6 +26,8 @@ declare module 'vue' {
     ExportModal: typeof import('./src/components/ExportModal.vue')['default']
     ExportRenderer: typeof import('./src/components/ExportRenderer.vue')['default']
     ImageJobsPanel: typeof import('./src/components/ImageJobsPanel.vue')['default']
+    ImageStyleCard: typeof import('./src/components/ImageStyleCard.vue')['default']
+    ImageStyleLibraryModal: typeof import('./src/components/ImageStyleLibraryModal.vue')['default']
     ImageText: typeof import('./../slidev/components/grid/ImageText.vue')['default']
     JingyedaBackCover: typeof import('./../slidev/layouts/jingyeda/jingyeda-back-cover.vue')['default']
     JingyedaContent: typeof import('./../slidev/layouts/jingyeda/jingyeda-content.vue')['default']

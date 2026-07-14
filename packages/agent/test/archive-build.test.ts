@@ -10,10 +10,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
-import {
-  CURRENT_SCHEMA_VERSION,
-  type ArchiveManifest,
-} from '@big-ppt/shared'
+import { CURRENT_SCHEMA_VERSION, type ArchiveManifestV2 } from '@big-ppt/shared'
 import { getDb, decks } from '../src/db/index.js'
 import { eq } from 'drizzle-orm'
 import { buildArchive } from '../src/archive/build-archive.js'
@@ -60,7 +57,7 @@ describe('buildArchive', () => {
     // 解 zip 校字段
     const zip = await JSZip.loadAsync(buf)
     const manifestStr = await zip.file('manifest.json')!.async('string')
-    const manifest: ArchiveManifest = JSON.parse(manifestStr)
+    const manifest: ArchiveManifestV2 = JSON.parse(manifestStr)
 
     expect(manifest.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(manifest.lumideckVersion).toBe('0.1.0')
@@ -71,12 +68,42 @@ describe('buildArchive', () => {
     expect(manifest.deck.templateId).toBe(deck.templateId)
     expect(manifest.deck.createdAt).toBe(deck.createdAt.toISOString())
     expect(manifest.deck.updatedAt).toBe(deck.updatedAt.toISOString())
+    expect(manifest.deck.anchorAssetId).toBeNull()
+    expect(manifest.deck.anchorSkipped).toBe(false)
 
     // assets 顺序未约束,按 id 排序对比
     const sortedManifestAssets = [...manifest.assets].sort((a, b) => a.id.localeCompare(b.id))
     const sortedExpected = [
-      { id: id1, mimeType: 'image/png', bytesSize: png1.length, prompt: 'a cat', model: 'gpt-image-1' },
-      { id: id2, mimeType: 'image/png', bytesSize: png2.length, prompt: null, model: null },
+      {
+        id: id1,
+        mimeType: 'image/png',
+        bytesSize: png1.length,
+        prompt: 'a cat',
+        model: 'gpt-image-1',
+        style: null,
+        purpose: null,
+        styleSource: null,
+        styleSourceId: null,
+        stylePalettePolicy: null,
+        stylePrompt: null,
+        imageWidth: null,
+        imageHeight: null,
+      },
+      {
+        id: id2,
+        mimeType: 'image/png',
+        bytesSize: png2.length,
+        prompt: null,
+        model: null,
+        style: null,
+        purpose: null,
+        styleSource: null,
+        styleSourceId: null,
+        stylePalettePolicy: null,
+        stylePrompt: null,
+        imageWidth: null,
+        imageHeight: null,
+      },
     ].sort((a, b) => a.id.localeCompare(b.id))
     expect(sortedManifestAssets).toEqual(sortedExpected)
 
@@ -95,22 +122,37 @@ describe('buildArchive', () => {
     const { user } = await createTestUser('empty@a.com')
     const db = getDb()
     await db.insert(decks).values({ userId: user.id, title: 'Empty Deck' })
-    const [deck] = await db
-      .select()
-      .from(decks)
-      .where(eq(decks.userId, user.id))
-      .limit(1)
+    const [deck] = await db.select().from(decks).where(eq(decks.userId, user.id)).limit(1)
     expect(deck).toBeDefined()
     expect(deck!.currentVersionId).toBeNull()
 
     const buf = await buildArchive({ deckId: deck!.id, userId: user.id })
     const zip = await JSZip.loadAsync(buf)
-    const manifest: ArchiveManifest = JSON.parse(
-      await zip.file('manifest.json')!.async('string'),
-    )
+    const manifest: ArchiveManifestV2 = JSON.parse(await zip.file('manifest.json')!.async('string'))
     expect(manifest.assets).toEqual([])
     const content = await zip.file('content.md')!.async('string')
     expect(content).toBe('')
+  })
+
+  it('当前 anchor 若仍是探索 staging，中间态不入包且安全降级为 free', async () => {
+    const { user } = await createTestUser('staging-anchor@a.com')
+    const { deck } = await createDeckDirect(user.id, 'Staging', '# x')
+    const { id } = await createAsset({
+      deckId: deck.id,
+      userId: user.id,
+      mimeType: 'image/png',
+      data: fakePng(3),
+      purpose: 'mood-board-staging',
+    })
+    await getDb().update(decks).set({ anchorAssetId: id }).where(eq(decks.id, deck.id))
+
+    const zip = await JSZip.loadAsync(await buildArchive({ deckId: deck.id, userId: user.id }))
+    const manifest = JSON.parse(
+      await zip.file('manifest.json')!.async('string'),
+    ) as ArchiveManifestV2
+    expect(manifest.assets).toEqual([])
+    expect(manifest.deck.anchorAssetId).toBeNull()
+    expect(manifest.deck.anchorSkipped).toBe(true)
   })
 
   it('跨用户访问 → 抛 deck-not-found-or-forbidden', async () => {

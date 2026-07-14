@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "editorial-illustration",
+  "name": "编辑插画",
+  "description": "杂志感人物与场景插画，亲和但克制，适合叙事和观点表达。",
+  "category": "illustration",
+  "tags": ["人物", "杂志", "叙事"],
+  "order": 20,
+  "stylePrompt": "Contemporary editorial illustration with simplified human figures, confident organic silhouettes, subtle print texture, restrained detail, and magazine-quality visual storytelling.",
+  "palettePolicy": "template",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

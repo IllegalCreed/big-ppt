@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "flat-infographic",
+  "name": "扁平信息图",
+  "description": "清晰几何块面、数据卡片与简洁图标，适合结构化商务表达。",
+  "category": "business",
+  "tags": ["商务", "信息图", "清晰"],
+  "order": 10,
+  "stylePrompt": "Clean flat infographic illustration with crisp geometric panels, simplified business icons, consistent bold outlines, generous negative space, and a structured editorial hierarchy.",
+  "palettePolicy": "template",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

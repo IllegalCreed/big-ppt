@@ -19,7 +19,7 @@
  */
 import path from 'node:path'
 import fs from 'node:fs'
-import type { ImageGenStyle } from '@big-ppt/shared'
+import type { ImageGenStyle, ImageStylePalettePolicy } from '@big-ppt/shared'
 import type { ToolDef } from '../registry.js'
 import { getRequestContext } from '../../context.js'
 import { getDb, decks } from '../../db/index.js'
@@ -32,11 +32,7 @@ import {
   type ImageJobInput,
   type RunImageJobDeps,
 } from '../../image-gen-job.js'
-import {
-  generateImage,
-  type ImageGenInput,
-  type ImageGenOutput,
-} from '../../llm/openai-image.js'
+import { generateImage, type ImageGenInput, type ImageGenOutput } from '../../llm/openai-image.js'
 import { createAsset, getAsset } from '../../db/deck-assets.js'
 import { updateSlide as storeUpdateSlide, readSlides } from '../../slides-store/index.js'
 import { parseSlides } from '../../slides-store/pages.js'
@@ -71,8 +67,7 @@ export function __setGenerateImageForTesting(fn: GenerateImageFn | null): void {
  * 在 test 内 fetch /skip 走真路径仍能 verify anchor 决策语义。
  */
 let anchorPollingEnabled =
-  process.env.NODE_ENV !== 'production' &&
-  process.env.BIG_PPT_TEST_DISABLE_ANCHOR_POLL === '1'
+  process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_DISABLE_ANCHOR_POLL === '1'
     ? false
     : true
 export function __setAnchorPollingForTesting(enabled: boolean): void {
@@ -133,10 +128,12 @@ function resolveImageSize(manifest: { imageGenSize?: { width: number; height: nu
  * 出图。之前 hardcoded medium 跟用户挑的 anchor 风格(isometric / watercolor /
  * hand-drawn 等)正面冲突,LLM 被 prompt 文字压倒,生成跟 anchor 无关的 flat 图。
  */
-function buildStructuredImagePrompt(
+export function buildStructuredImagePrompt(
   userPrompt: string,
   style: ImageGenStyle,
   hasAnchor: boolean,
+  anchorStylePrompt?: string,
+  palettePolicy: ImageStylePalettePolicy = 'reference',
 ): string {
   const paletteList = style.palette.join(', ')
   const lines = [
@@ -158,10 +155,20 @@ function buildStructuredImagePrompt(
       ``,
       `2. **Otherwise** (the user's request describes only the SUBJECT / content with no style words) → **replicate the attached reference image's visual style EXACTLY:**`,
       `   - Match the reference's rendering technique (isometric / flat / watercolor / hand-drawn / ink-wash / 3D / line-art / whichever it actually is — look at it and copy that exact medium)`,
-      `   - Match the reference's palette, lighting, level of detail, line weight, brush / shading style`,
+      `   - Match the reference's lighting, level of detail, line weight, brush / shading style`,
       `   - The new image should look like a sibling page from the same deck as the reference — same hand, same medium, same mood`,
       `   - Do NOT default to "flat infographic" or "modern corporate illustration" unless the reference itself is that style`,
       `   - The subject is different but the LOOK must be identical`,
+    )
+    if (anchorStylePrompt?.trim()) {
+      lines.push(
+        `   - Reference style instruction (technique only; never copy its old business subject): ${anchorStylePrompt.trim()}`,
+      )
+    }
+    lines.push(
+      palettePolicy === 'template'
+        ? `   - **Palette policy: TEMPLATE.** Copy the reference's medium / line work / lighting / texture, but recolor the result to the template brand palette below. The brand palette wins every color conflict.`
+        : `   - **Palette policy: REFERENCE.** Match the reference's actual palette; it may override the template brand palette below when they conflict.`,
     )
   } else {
     // 没 anchor:统一优先级语义 —— 用户 prompt 明确指定风格 > 扁平默认。
@@ -177,7 +184,7 @@ function buildStructuredImagePrompt(
 
   lines.push(
     `Composition/framing: wide 16:9 body-only layout. The slide's own header bar with the Chinese title sits ABOVE this image, so do NOT add any title / banner / large decorative text strip inside the image itself.`,
-    `Color palette: anchor on these brand colors — ${paletteList}. Use these tones cohesively; do not introduce off-palette saturated colors.${hasAnchor ? ' (Reference image\'s actual palette takes priority if conflict.)' : ''}`,
+    `Color palette: anchor on these brand colors — ${paletteList}. Use these tones cohesively; do not introduce off-palette saturated colors.${hasAnchor ? (palettePolicy === 'template' ? ' (Template brand palette is mandatory and takes priority over reference colors.)' : " (Reference image's actual palette takes priority if conflict.)") : ''}`,
     ``,
     `Internal labels: if the diagram needs labels inside boxes / nodes / chart axes, they must be in **Chinese only** (例如「检索器」「向量库」「核心模块」), **never English**. If labels would feel forced or unnatural, omit them entirely — the slide's external Chinese header already provides context.`,
     ``,
@@ -199,22 +206,18 @@ function buildStructuredImagePrompt(
  * 状态机 + slide layout 回到组件版,不需要真制造 OpenAI 失败。
  */
 function shouldUseStub(): boolean {
-  return (
-    process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_IMAGE_MODE === 'stub'
-  )
+  return process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_IMAGE_MODE === 'stub'
 }
 
 function shouldForceFallback(): boolean {
-  return (
-    process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_IMAGE_MODE === 'fallback'
-  )
+  return process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_IMAGE_MODE === 'fallback'
 }
 
+/** AI explore takes 3-5 minutes in production; keep the compatibility wait above that ceiling. */
+export const STYLE_DECISION_POLL_TIMEOUT_MS = 360_000
+
 function readStubBytes(): Buffer {
-  const fixturePath = path.join(
-    process.cwd(),
-    'packages/agent/test/fixtures/test-image.png',
-  )
+  const fixturePath = path.join(process.cwd(), 'packages/agent/test/fixtures/test-image.png')
   if (fs.existsSync(fixturePath)) return fs.readFileSync(fixturePath)
   // 兜底:cwd 不是 monorepo 根时,从模块相对路径推
   const fallback = path.join(import.meta.dirname ?? '', '../../../test/fixtures/test-image.png')
@@ -324,26 +327,21 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
    *   - deck.anchorSkipped 转 true(用户跳过) → 走 text-only 老路径
    * 超时(POLL_TIMEOUT_MS):返 friendly error 给 LLM,LLM 自决策(通常 stop turn)。
    */
-  const POLL_TIMEOUT_MS = 180_000 // 3 分钟
   const POLL_INTERVAL_MS = 1_500
   if (anchorPollingEnabled) {
     const imageSettings = await getImageLlmSettings(ctx.userId)
     if (imageSettings && deck.anchorAssetId === null && !deck.anchorSkipped) {
       const startedAt = Date.now()
       while (true) {
-        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+        if (Date.now() - startedAt > STYLE_DECISION_POLL_TIMEOUT_MS) {
           return JSON.stringify({
             success: false,
             error:
-              '用户尚未选择 AI 生图风格(超时 3 分钟)。请提示用户去编辑器顶栏「调色板」按钮选风格,或点 modal 内"跳过本次"按钮后重试。本轮 turn 建议停止派发更多 generate_slide_image。',
+              '用户尚未选择 AI 生图风格(超时 6 分钟)。当前风格与候选均已保留；请提示用户打开风格库选择预设、应用 AI 探索结果，或选择自由发挥后重试。本轮 turn 建议停止派发更多 generate_slide_image。',
           })
         }
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
-        const [refreshed] = await db
-          .select()
-          .from(decks)
-          .where(eq(decks.id, deckId))
-          .limit(1)
+        const [refreshed] = await db.select().from(decks).where(eq(decks.id, deckId)).limit(1)
         if (!refreshed) {
           return JSON.stringify({ success: false, error: 'deck 已被删除' })
         }
@@ -382,6 +380,8 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
    */
   let baseImageBase64: string | undefined
   let baseImageMime: string | undefined
+  let anchorStylePrompt: string | undefined
+  let anchorPalettePolicy: ImageStylePalettePolicy = 'reference'
   try {
     const parsed = parseSlides(await readSlides())
     if (slideIndex > parsed.pages.length) {
@@ -410,6 +410,8 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
         if (asset && asset.data.length > 0) {
           baseImageBase64 = asset.data.toString('base64')
           baseImageMime = asset.mimeType || 'image/png'
+          anchorStylePrompt = asset.stylePrompt ?? asset.style ?? undefined
+          anchorPalettePolicy = asset.stylePalettePolicy === 'template' ? 'template' : 'reference'
         }
       }
     }
@@ -427,6 +429,8 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
       if (anchor && anchor.data.length > 0) {
         baseImageBase64 = anchor.data.toString('base64')
         baseImageMime = anchor.mimeType || 'image/png'
+        anchorStylePrompt = anchor.stylePrompt ?? anchor.style ?? undefined
+        anchorPalettePolicy = anchor.stylePalettePolicy === 'template' ? 'template' : 'reference'
       }
     }
   } catch (err) {
@@ -453,7 +457,13 @@ async function runTool(args: Record<string, unknown>): Promise<string> {
   // hasAnchor 决定 prompt medium 段:有 anchor 时强制复制 reference 风格,不硬编 flat infographic
   const templateStyle = manifest.imageGenStyle ?? FALLBACK_IMAGE_STYLE
   const hasAnchor = !!baseImageBase64
-  const finalPrompt = buildStructuredImagePrompt(userPrompt, templateStyle, hasAnchor)
+  const finalPrompt = buildStructuredImagePrompt(
+    userPrompt,
+    templateStyle,
+    hasAnchor,
+    anchorStylePrompt,
+    anchorPalettePolicy,
+  )
   // Phase 11.8: size 跟模板包同源,从 manifest.imageGenSize 读;缺省走通用 fallback。
   // 每个模板对应一个独立的内容页 layout(beitou-image-content / jingyeda-image-content
   // 等),其实际显示区域不同,生图比例应跟它对齐,object-fit:cover 时上下不裁。

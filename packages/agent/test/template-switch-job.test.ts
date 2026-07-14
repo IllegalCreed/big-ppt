@@ -15,6 +15,7 @@ import {
   __resetJobsForTesting,
 } from '../src/template-switch-job.js'
 import { getDb, decks, deckVersions } from '../src/db/index.js'
+import { createAsset } from '../src/db/deck-assets.js'
 import { useTestDb } from './_setup/test-db.js'
 import { createLoggedInUser, createDeckDirect } from './_setup/factories.js'
 import { __resetTemplateRegistryForTesting } from '../src/templates/registry.js'
@@ -52,6 +53,7 @@ beforeEach(() => {
       logos: { primary: 'l.png' },
       promptPersona: 'p',
       starterSlidesPath: 'starter.md',
+      imageGenSize: { width: 1280, height: 624 },
       layouts: [
         {
           name: 'cover',
@@ -153,11 +155,7 @@ describe('runSwitchJob 边界分支', () => {
     const { user } = await createLoggedInUser('b@a.com')
     const db = getDb()
     await db.insert(decks).values({ userId: user.id, title: 'NoVer' })
-    const [created] = await db
-      .select()
-      .from(decks)
-      .where(eq(decks.userId, user.id))
-      .limit(1)
+    const [created] = await db.select().from(decks).where(eq(decks.userId, user.id)).limit(1)
     // 故意不建 version（currentVersionId 为 null）
     const job = createJob({
       deckId: created!.id,
@@ -190,5 +188,73 @@ describe('runSwitchJob 边界分支', () => {
     const finalJob = getJob(job.id)!
     expect(finalJob.state).toBe('failed')
     expect(finalJob.error).toContain('LLM 返回空内容')
+  })
+
+  it('Phase 17:目标图幅兼容时切模板保留 anchor 与已决策状态', async () => {
+    const { user } = await createLoggedInUser('style-compatible@a.com')
+    const { deck } = await createDeckDirect(user.id, 'KeepStyle')
+    const anchor = await createAsset({
+      deckId: deck.id,
+      userId: user.id,
+      mimeType: 'image/png',
+      data: Buffer.from('style'),
+      purpose: 'style-preset-anchor',
+      styleSource: 'system',
+      styleSourceId: 'flat-infographic',
+      stylePalettePolicy: 'template',
+      imageWidth: 1280,
+      imageHeight: 624,
+    })
+    await getDb()
+      .update(decks)
+      .set({ anchorAssetId: anchor.id, anchorSkipped: true })
+      .where(eq(decks.id, deck.id))
+    const job = createJob({
+      deckId: deck.id,
+      userId: user.id,
+      from: 'beitou-standard',
+      to: 'alpha',
+    })
+    await runSwitchJob(job.id, async () => '---\nlayout: cover\nmainTitle: X\n---\n')
+    expect(getJob(job.id)?.state).toBe('success')
+    const [after] = await getDb()
+      .select({ anchorAssetId: decks.anchorAssetId, anchorSkipped: decks.anchorSkipped })
+      .from(decks)
+      .where(eq(decks.id, deck.id))
+      .limit(1)
+    expect(after).toEqual({ anchorAssetId: anchor.id, anchorSkipped: true })
+  })
+
+  it('Phase 17:目标图幅不兼容才清 anchor 并回到 undecided', async () => {
+    const { user } = await createLoggedInUser('style-incompatible@a.com')
+    const { deck } = await createDeckDirect(user.id, 'ClearStyle')
+    const anchor = await createAsset({
+      deckId: deck.id,
+      userId: user.id,
+      mimeType: 'image/png',
+      data: Buffer.from('style'),
+      purpose: 'anchor',
+      styleSource: 'explore',
+      imageWidth: 1,
+      imageHeight: 1,
+    })
+    await getDb()
+      .update(decks)
+      .set({ anchorAssetId: anchor.id, anchorSkipped: true })
+      .where(eq(decks.id, deck.id))
+    const job = createJob({
+      deckId: deck.id,
+      userId: user.id,
+      from: 'beitou-standard',
+      to: 'alpha',
+    })
+    await runSwitchJob(job.id, async () => '---\nlayout: cover\nmainTitle: X\n---\n')
+    expect(getJob(job.id)?.state).toBe('success')
+    const [after] = await getDb()
+      .select({ anchorAssetId: decks.anchorAssetId, anchorSkipped: decks.anchorSkipped })
+      .from(decks)
+      .where(eq(decks.id, deck.id))
+      .limit(1)
+    expect(after).toEqual({ anchorAssetId: null, anchorSkipped: false })
   })
 })

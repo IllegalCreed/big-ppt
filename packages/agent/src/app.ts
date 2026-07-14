@@ -30,6 +30,8 @@ import { uploads } from './routes/uploads.js'
 import { imageJobsRoute } from './routes/image-jobs.js'
 import { moodBoardRoute } from './routes/mood-board.js'
 import { presentationRoute } from './routes/presentation.js'
+import { imageStylePresetsRoute } from './routes/image-style-presets.js'
+import { styleLibraryRoute } from './routes/style-library.js'
 import { authOptional, type AuthVars } from './middleware/auth.js'
 import { requestContextMiddleware } from './middleware/request-context.js'
 import { originCheck } from './middleware/origin-check.js'
@@ -82,3 +84,7 @@ app.route('/api', imageJobsRoute)
 // Phase 11.8: mood-board / anchor 两端点。显式 path 不带 wildcard mw,沿用 imageJobsRoute 套路
 app.route('/api', moodBoardRoute)
 app.route('/api', presentationRoute)
+// Phase 17: public, read-only system image-style catalog and validated image assets.
+app.route('/api', imageStylePresetsRoute)
+// Phase 17: authenticated deck/user image-style library. Handlers enforce auth explicitly.
+app.route('/api', styleLibraryRoute)

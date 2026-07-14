@@ -49,55 +49,55 @@
 
 ### 新增
 
-| 文件 | 职责 |
-| ---- | ---- |
-| `packages/agent/src/db/schema.ts` `userAssets` 表段 | per-user 上传 asset 元数据 |
-| `packages/agent/src/uploads/storage.ts` | fs put / get / delete 抽象 + `LUMIDECK_ASSETS_DIR` env 解析 |
-| `packages/agent/src/uploads/quota.ts` | per-user quota sum + 检查超 cap |
-| `packages/agent/src/uploads/extractor.ts` | extractor worker(类 image-gen-job 套路)+ 5 type routing |
-| `packages/agent/src/uploads/parsers/pdf.ts` | pdf-parse wrapper(maxPages=50) |
-| `packages/agent/src/uploads/parsers/docx.ts` | mammoth wrapper |
-| `packages/agent/src/uploads/parsers/xlsx.ts` | xlsx wrapper(限 N 行 N 列) |
-| `packages/agent/src/uploads/parsers/text.ts` | MD/TXT 直读 + 编码检测 |
-| `packages/agent/src/uploads/multi-modal.ts` | `SUPPORTED_MULTI_MODAL_MODELS` set + `isMultiModalLLM` 函数 |
-| `packages/agent/src/routes/uploads.ts` | POST/GET/DELETE `/api/uploads` |
-| `packages/agent/src/tools/local/list-uploaded-files.ts` | agent tool 实现 |
-| `packages/agent/src/tools/local/read-uploaded-file.ts` | agent tool 实现 + multi-modal 检测 |
-| `packages/agent/test/integration/uploads-route.test.ts` | uploads 路由集成测 |
-| `packages/agent/test/integration/uploads-extractor.test.ts` | 5 parser 真文件 fixture 集成测 |
-| `packages/agent/src/uploads/__tests__/multi-modal.test.ts` | isMultiModalLLM 单测 |
-| `packages/agent/src/tools/local/__tests__/list-uploaded-files.test.ts` | tool 单测 |
-| `packages/agent/src/tools/local/__tests__/read-uploaded-file.test.ts` | tool 单测 |
-| `packages/creator/src/composables/useUploads.ts` | upload / list / delete API client |
-| `packages/creator/src/components/UploadButton.vue` | ChatPanel sender 区 paperclip + 拖拽 zone |
-| `packages/creator/src/components/UploadProgress.vue` | 上传进度 chip |
-| `packages/creator/src/components/AssetManagerPanel.vue` | 「我的素材」抽屉/modal |
-| `packages/creator/test/UploadButton.test.ts` | 组件测 |
-| `packages/creator/test/AssetManagerPanel.test.ts` | 组件测 |
-| `packages/creator/test/useUploads.test.ts` | composable 单测 |
-| `packages/e2e/tests/file-upload-flow.spec.ts` | E2E 拖拽上传 → list → AI read → 回答引用 |
-| `packages/e2e/tests/assets-quota.spec.ts` | E2E 超 quota / 超单文件 friendly error |
-| `packages/agent/test/fixtures/sample.pdf` | parser 测试用 fixture |
-| `packages/agent/test/fixtures/sample.docx` | 同上 |
-| `packages/agent/test/fixtures/sample.xlsx` | 同上 |
-| `packages/agent/test/fixtures/sample.png` | 同上 |
-| `packages/agent/test/fixtures/sample.md` | 同上 |
-| `docs/plans/29-phase13-file-upload-assets.md` | 本文件 |
+| 文件                                                                   | 职责                                                        |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `packages/agent/src/db/schema.ts` `userAssets` 表段                    | per-user 上传 asset 元数据                                  |
+| `packages/agent/src/uploads/storage.ts`                                | fs put / get / delete 抽象 + `LUMIDECK_ASSETS_DIR` env 解析 |
+| `packages/agent/src/uploads/quota.ts`                                  | per-user quota sum + 检查超 cap                             |
+| `packages/agent/src/uploads/extractor.ts`                              | extractor worker(类 image-gen-job 套路)+ 5 type routing     |
+| `packages/agent/src/uploads/parsers/pdf.ts`                            | pdf-parse wrapper(maxPages=50)                              |
+| `packages/agent/src/uploads/parsers/docx.ts`                           | mammoth wrapper                                             |
+| `packages/agent/src/uploads/parsers/xlsx.ts`                           | xlsx wrapper(限 N 行 N 列)                                  |
+| `packages/agent/src/uploads/parsers/text.ts`                           | MD/TXT 直读 + 编码检测                                      |
+| `packages/agent/src/uploads/multi-modal.ts`                            | `SUPPORTED_MULTI_MODAL_MODELS` set + `isMultiModalLLM` 函数 |
+| `packages/agent/src/routes/uploads.ts`                                 | POST/GET/DELETE `/api/uploads`                              |
+| `packages/agent/src/tools/local/list-uploaded-files.ts`                | agent tool 实现                                             |
+| `packages/agent/src/tools/local/read-uploaded-file.ts`                 | agent tool 实现 + multi-modal 检测                          |
+| `packages/agent/test/integration/uploads-route.test.ts`                | uploads 路由集成测                                          |
+| `packages/agent/test/integration/uploads-extractor.test.ts`            | 5 parser 真文件 fixture 集成测                              |
+| `packages/agent/src/uploads/__tests__/multi-modal.test.ts`             | isMultiModalLLM 单测                                        |
+| `packages/agent/src/tools/local/__tests__/list-uploaded-files.test.ts` | tool 单测                                                   |
+| `packages/agent/src/tools/local/__tests__/read-uploaded-file.test.ts`  | tool 单测                                                   |
+| `packages/creator/src/composables/useUploads.ts`                       | upload / list / delete API client                           |
+| `packages/creator/src/components/UploadButton.vue`                     | ChatPanel sender 区 paperclip + 拖拽 zone                   |
+| `packages/creator/src/components/UploadProgress.vue`                   | 上传进度 chip                                               |
+| `packages/creator/src/components/AssetManagerPanel.vue`                | 「我的素材」抽屉/modal                                      |
+| `packages/creator/test/UploadButton.test.ts`                           | 组件测                                                      |
+| `packages/creator/test/AssetManagerPanel.test.ts`                      | 组件测                                                      |
+| `packages/creator/test/useUploads.test.ts`                             | composable 单测                                             |
+| `packages/e2e/tests/file-upload-flow.spec.ts`                          | E2E 拖拽上传 → list → AI read → 回答引用                    |
+| `packages/e2e/tests/assets-quota.spec.ts`                              | E2E 超 quota / 超单文件 friendly error                      |
+| `packages/agent/test/fixtures/sample.pdf`                              | parser 测试用 fixture                                       |
+| `packages/agent/test/fixtures/sample.docx`                             | 同上                                                        |
+| `packages/agent/test/fixtures/sample.xlsx`                             | 同上                                                        |
+| `packages/agent/test/fixtures/sample.png`                              | 同上                                                        |
+| `packages/agent/test/fixtures/sample.md`                               | 同上                                                        |
+| `docs/plans/29-phase13-file-upload-assets.md`                          | 本文件                                                      |
 
 ### 修改
 
-| 文件 | 改动 |
-| ---- | ---- |
-| `packages/agent/src/db/schema.ts` | 加 userAssets 表 |
-| `packages/agent/src/app.ts` | mount `/api/uploads` |
-| `packages/agent/src/tools/registry.ts` | 注册 list_uploaded_files + read_uploaded_file |
-| `packages/agent/src/llm/agent/index.ts` | createAgent systemPrompt 注入 user assets inventory |
-| `packages/agent/src/prompts/buildSystemPrompt.ts` | 加 `buildUserAssetsInventory(userId)` helper |
-| `packages/agent/package.json` | 加 `pdf-parse` / `mammoth` / `xlsx` / `multer`(或 `formidable`)/ `file-type` 依赖 |
+| 文件                                                                                             | 改动                                                                                   |
+| ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `packages/agent/src/db/schema.ts`                                                                | 加 userAssets 表                                                                       |
+| `packages/agent/src/app.ts`                                                                      | mount `/api/uploads`                                                                   |
+| `packages/agent/src/tools/registry.ts`                                                           | 注册 list_uploaded_files + read_uploaded_file                                          |
+| `packages/agent/src/llm/agent/index.ts`                                                          | createAgent systemPrompt 注入 user assets inventory                                    |
+| `packages/agent/src/prompts/buildSystemPrompt.ts`                                                | 加 `buildUserAssetsInventory(userId)` helper                                           |
+| `packages/agent/package.json`                                                                    | 加 `pdf-parse` / `mammoth` / `xlsx` / `multer`(或 `formidable`)/ `file-type` 依赖      |
 | `packages/agent/.env.example` + .env.development.local + .env.test.local + .env.production.local | 加 LUMIDECK_ASSETS_DIR / LUMIDECK_QUOTA_PER_USER_BYTES / LUMIDECK_QUOTA_PER_FILE_BYTES |
-| `packages/creator/src/components/ChatPanel.vue` | sender 区嵌 UploadButton + 拖拽 zone |
-| `packages/creator/src/components/DeckEditorHeader.vue`(或顶栏所在组件) | 加「我的素材」按钮 → 开 AssetManagerPanel |
-| `scripts/deploy.sh` | 部署期 `mkdir -p /var/lumideck/user-assets && chown` |
+| `packages/creator/src/components/ChatPanel.vue`                                                  | sender 区嵌 UploadButton + 拖拽 zone                                                   |
+| `packages/creator/src/components/DeckEditorHeader.vue`(或顶栏所在组件)                           | 加「我的素材」按钮 → 开 AssetManagerPanel                                              |
+| `scripts/deploy.sh`                                                                              | 部署期 `mkdir -p /var/lumideck/user-assets && chown`                                   |
 
 ### 删除
 
@@ -113,28 +113,37 @@
 // packages/agent/src/db/schema.ts
 import { mysqlTable, varchar, int, text, timestamp, mysqlEnum, index } from 'drizzle-orm/mysql-core'
 
-export const userAssets = mysqlTable('user_assets', {
-  id: varchar('id', { length: 36 }).primaryKey(),  // uuid v4
-  userId: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  filename: varchar('filename', { length: 255 }).notNull(),
-  mime: varchar('mime', { length: 100 }).notNull(),
-  sizeBytes: int('size_bytes').notNull(),
-  sha256: varchar('sha256', { length: 64 }).notNull(),  // dedup hint,不强制 unique
-  storagePath: varchar('storage_path', { length: 500 }).notNull(),  // ${userId}/${id} 相对 LUMIDECK_ASSETS_DIR
-  extractedText: text('extracted_text'),
-  extractStatus: mysqlEnum('extract_status', ['pending', 'running', 'done', 'failed', 'skipped']).default('pending').notNull(),
-  extractErrorMsg: text('extract_error_msg'),
-  uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
-}, (t) => ({
-  byUser: index('idx_user_assets_user_id').on(t.userId),
-  byUserSha: index('idx_user_assets_user_sha').on(t.userId, t.sha256),
-}))
+export const userAssets = mysqlTable(
+  'user_assets',
+  {
+    id: varchar('id', { length: 36 }).primaryKey(), // uuid v4
+    userId: int('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    filename: varchar('filename', { length: 255 }).notNull(),
+    mime: varchar('mime', { length: 100 }).notNull(),
+    sizeBytes: int('size_bytes').notNull(),
+    sha256: varchar('sha256', { length: 64 }).notNull(), // dedup hint,不强制 unique
+    storagePath: varchar('storage_path', { length: 500 }).notNull(), // ${userId}/${id} 相对 LUMIDECK_ASSETS_DIR
+    extractedText: text('extracted_text'),
+    extractStatus: mysqlEnum('extract_status', ['pending', 'running', 'done', 'failed', 'skipped'])
+      .default('pending')
+      .notNull(),
+    extractErrorMsg: text('extract_error_msg'),
+    uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    byUser: index('idx_user_assets_user_id').on(t.userId),
+    byUserSha: index('idx_user_assets_user_sha').on(t.userId, t.sha256),
+  }),
+)
 
 export type UserAsset = typeof userAssets.$inferSelect
 export type NewUserAsset = typeof userAssets.$inferInsert
 ```
 
 drizzle push:
+
 ```bash
 pnpm -F @big-ppt/agent db:push       # dev
 pnpm -F @big-ppt/agent db:push:test  # test
@@ -150,6 +159,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 **目的**:落表 + fs 抽象 + quota 算法,后续 Task 才有基建可用。
 
 **Files**:
+
 - Modify: `packages/agent/src/db/schema.ts`(加 userAssets 表)
 - Create: `packages/agent/src/uploads/storage.ts`
 - Create: `packages/agent/src/uploads/quota.ts`
@@ -165,11 +175,13 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 - [ ] **Step 5**:跑测 + commit
 
 **验收**:
+
 - storage 5 单测(put/get/delete/missing/path 安全)+ quota 4 单测(空 / 单文件超 / 总超 / 边界)全过
 - type-check 干净
 - dev + test 库 schema 推完
 
 **风险**:
+
 - fs.mkdir recursive 在 Linux + macOS 行为是否一致 — 用 `{ recursive: true }` 兼容
 - LUMIDECK_ASSETS_DIR 不存在或权限 — put 时 throw clear error,deploy 脚本兜底 mkdir
 
@@ -180,6 +192,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 **目的**:POST/GET/DELETE `/api/uploads` 端到端跑通,带 quota check + magic-bytes mime 检测 + 集成测覆盖 boundary。
 
 **Files**:
+
 - Create: `packages/agent/src/routes/uploads.ts`
 - Modify: `packages/agent/src/app.ts`(mount)
 - Create: `packages/agent/test/integration/uploads-route.test.ts`
@@ -215,11 +228,13 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 - [ ] **Step 8**:跑测 + commit
 
 **验收**:
+
 - 9~12 集成测全过
 - type-check + lint 干净
 - 真 fixture 文件能跑通完整链路
 
 **风险**:
+
 - multipart 解析在 Hono 上的边角 — 用 Hono `c.req.parseBody()` 看是否够用,不够换 formidable
 - file-type 包对部分 mime 检测不准 — fallback 看 filename 后缀
 
@@ -230,6 +245,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 **目的**:后台 extractor worker queue + 5 type parser + 真文件 fixture 验证。
 
 **Files**:
+
 - Create: `packages/agent/src/uploads/extractor.ts`
 - Create: `packages/agent/src/uploads/parsers/pdf.ts`
 - Create: `packages/agent/src/uploads/parsers/docx.ts`
@@ -263,11 +279,13 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 - [ ] **Step 9**:跑测 + commit
 
 **验收**:
+
 - 8~12 集成测全过
 - 5 fixture 文件抽出来内容跟预期匹配
 - worker timeout / 失败兜底正常
 
 **风险**:
+
 - pdf-parse 大文件吃 RAM — maxPages=50 缓解 + timeout 兜底
 - xlsx 包大(几 MB)— 静态 import + tree-shaking 看是否 OK
 - 编码检测:用 chardet 或 iconv-lite 简单 fallback
@@ -279,6 +297,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 **目的**:tool registry 加两个新工具,read_uploaded_file 检测主 LLM multi-modal 能力。
 
 **Files**:
+
 - Create: `packages/agent/src/tools/local/list-uploaded-files.ts`
 - Create: `packages/agent/src/tools/local/read-uploaded-file.ts`
 - Create: `packages/agent/src/uploads/multi-modal.ts`
@@ -312,10 +331,12 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 - [ ] **Step 6**:跑测 + commit
 
 **验收**:
+
 - 12~16 单测全过
 - multi-modal detect 对 12 个 provider 各自至少 1 known model 全验
 
 **风险**:
+
 - 主 LLM model id 命名不稳定(用户配 "gpt-5.5-experimental" 之类)— SUPPORTED set 加宽松前缀匹配兜底
 - ALS userId 拿不到(测试场景)— 测试用 explicit context injection
 
@@ -326,6 +347,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 **目的**:createAgent factory 在 systemPrompt 末尾自动拼当前用户的 file inventory,让 agent 主动看到用户传了啥。
 
 **Files**:
+
 - Modify: `packages/agent/src/prompts/buildSystemPrompt.ts`(加 `buildUserAssetsInventory` helper)
 - Modify: `packages/agent/src/llm/agent/index.ts`(createAgent 调 helper 拼 prompt)
 - Modify: `packages/agent/src/llm/agent/__tests__/agent.test.ts`(单测扩)
@@ -336,6 +358,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
   - 查 user_assets WHERE user_id = ?
   - 算 multi-modal 能力 boolean
   - 返字符串:
+
     ```
     用户当前上传的参考素材(共 N 个,总 X MB):
     - report.pdf (PDF, 1.2MB, 已抽 8200 字)
@@ -345,6 +368,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
     工具:list_uploaded_files / read_uploaded_file(id, mode='text'|'image')
     当前主 LLM: zhipu/glm-5.1 — ✗ 不支持图片,只能读 text 类素材
     ```
+
 - [ ] **Step 2**:createAgent index.ts 在 buildSystemPromptForDeck 之后 append `buildUserAssetsInventory` 结果到 systemPrompt
 - [ ] **Step 3**:更新 createAgent 单测覆盖:
   - 无 assets → inventory 段不输出
@@ -353,10 +377,12 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 - [ ] **Step 4**:跑测 + commit
 
 **验收**:
+
 - agent.test.ts 新增 3~5 测全过
 - systemPrompt snapshot 符合预期
 
 **风险**:
+
 - file inventory 太长占用 system prompt token — 设上限,只显示最近 N 个 + summary 截短
 - 用户上传 100 个文件时 token 爆 — 列表压缩成「共 N 个,XX MB」让 agent 自己调 list 工具拿明细
 
@@ -367,6 +393,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 **目的**:ChatPanel 加 paperclip + 拖拽上传 + 上传进度;顶栏加「我的素材」入口;AssetManagerPanel 抽屉显示列表 + 容量条 + 删除。
 
 **Files**:
+
 - Create: `packages/creator/src/composables/useUploads.ts`
 - Create: `packages/creator/src/components/UploadButton.vue`
 - Create: `packages/creator/src/components/UploadProgress.vue`
@@ -397,11 +424,13 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 - [x] **Step 8**:跑测 + commit(我的 frontend 文件被 Task B 的 parallel commit `f723a54` 顺带带上落库,内容完整、测试 22/22 过;commit message 误挂 Task B 标签但 diff 全是 creator/ 下文件,后续在 Task G close-out 章节说明这次 parallel commit 撞车经历)
 
 **验收**:
+
 - 11~16 组件 + 单测全过
 - type-check 干净
 - 手测 dev 拖拽 + 「我的素材」面板 OK
 
 **风险**:
+
 - multi-modal frontend mirror 跟 backend 不同步 — backend 是 source of truth,frontend 仅 hint;真鉴权在 read_uploaded_file image tool 内
 - 拖拽事件冒泡 — sender 内的子元素(input)拦截 drop,要明确 handler 范围
 - 多文件并发上传 — 串行 fetch 简化,不做 batch 一上传几十个
@@ -413,6 +442,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 **目的**:Playwright 端到端验拖拽上传 → 列表 → AI read → 回答含文件引用;plan close-out 三章节填完 + roadmap Phase 13 ✅ + CLAUDE.md 提炼。
 
 **Files**:
+
 - Create: `packages/e2e/tests/file-upload-flow.spec.ts`
 - Create: `packages/e2e/tests/assets-quota.spec.ts`
 - Modify: `packages/e2e/tests/helpers/db.ts`(加 user_assets 相关 helper)
@@ -434,12 +464,14 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 - [x] **Step 10**:final push origin
 
 **验收**:
+
 - 2 E2E spec 全过(quota 场景必跑;file-upload-flow 真打需 GLM_TEST_KEY)
 - 全套 agent + creator test 不退步
 - roadmap + CLAUDE.md + plan 29 三章节填完
 - prod healthz 200
 
 **风险**:
+
 - E2E real-key 真打慢 — 设 test.setTimeout(180_000)
 - prod 部署引入 user_assets 新表 + LUMIDECK_ASSETS_DIR env,deploy 脚本需同步 mkdir
 - 老用户(无任何 asset)inventory 段省略,prompt 干净
@@ -466,7 +498,7 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 
 - ❌ 音频文件(ASR / 转录)— Phase 13.x 候选
 - ❌ 视频文件 — Phase 16+ 候选
-- ❌ PPTX 导入 — Phase 15 单独
+- ❌ PPTX 外部格式导入 — 2026-07-11 产品决策：永久不做
 - ❌ 品牌 asset 持久化(跨 deck 复用 logo / 配色)— Phase 13.5 候选
 - ❌ Vision LLM 独立配置(Settings 第 4 tab)— 走主 LLM 多模态直传
 - ❌ OSS / S3 远程存储 — 产品化时再迁
@@ -532,17 +564,18 @@ pnpm -F @big-ppt/agent db:push:prod  # prod (deploy 时自动)
 
 ## 测试数量落地(关闭后追加)
 
-| 指标 | 起点(Phase 12.7 + dogfood + testing-sprint 后) | 终点(Phase 13 完) | 增量 |
-| ---- | ---- | ---- | ---- |
-| agent unit (含集成) | 878(76 files,6 skip) | 946(81 files,6 skip) | +68 / +5 file |
-| creator unit | 223(25 files) | 245(29 files) | +22 / +4 file |
-| shared unit | 3(1 file) | 3(1 file) | 维持 |
-| smoke test | 6(3 files, 默认 skip) | 6(3 files,默认 skip) | 维持 |
-| E2E specs | 22 files | 24 files | +2(file-upload-flow + assets-quota) |
-| coverage lines | agent 90 / creator 75 | 同 | 维持 |
-| coverage branch | agent 80 / creator 65 | 同 | 维持 |
-| 新 uploads / parser per-file coverage | — | ≥ 90/85 | — |
+| 指标                                  | 起点(Phase 12.7 + dogfood + testing-sprint 后) | 终点(Phase 13 完)    | 增量                                |
+| ------------------------------------- | ---------------------------------------------- | -------------------- | ----------------------------------- |
+| agent unit (含集成)                   | 878(76 files,6 skip)                           | 946(81 files,6 skip) | +68 / +5 file                       |
+| creator unit                          | 223(25 files)                                  | 245(29 files)        | +22 / +4 file                       |
+| shared unit                           | 3(1 file)                                      | 3(1 file)            | 维持                                |
+| smoke test                            | 6(3 files, 默认 skip)                          | 6(3 files,默认 skip) | 维持                                |
+| E2E specs                             | 22 files                                       | 24 files             | +2(file-upload-flow + assets-quota) |
+| coverage lines                        | agent 90 / creator 75                          | 同                   | 维持                                |
+| coverage branch                       | agent 80 / creator 65                          | 同                   | 维持                                |
+| 新 uploads / parser per-file coverage | —                                              | ≥ 90/85              | —                                   |
 
 **E2E 新加 2 specs 跑通**:
+
 - `assets-quota.spec.ts` 3/3 case 全过(per-file 413 + per-user 413 + AssetManagerPanel 删除)— 不需要真 LLM
 - `file-upload-flow.spec.ts` 1/1 case 全过(GLM_TEST_KEY 注入后真打)— 完整链路:注册 → 建 deck → 配 GLM key → 上传 .md → 等 extractor done(30s 内) → chat 引用 → 断言 assistant 回复含文件内 `PhaseThirteenSecretToken2026` deterministic token

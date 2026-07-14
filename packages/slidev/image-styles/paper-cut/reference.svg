@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="624" viewBox="0 0 1280 624">
+  <defs><filter id="paperShadow"><feDropShadow dx="0" dy="12" stdDeviation="9" flood-color="#4d3d39" flood-opacity=".22"/></filter></defs>
+  <rect width="1280" height="624" fill="#f6eadc"/>
+  
+    <g filter="url(#paperShadow)">
+      <path d="M0 486c158-142 286-165 430-68 158 107 296 88 420-55 118-137 252-156 430-58v319H0z" fill="#315b6d"/>
+      <path d="M0 522c174-92 338-89 492 10 140 90 308 61 456-58 98-78 206-84 332-22v172H0z" fill="#5e9b83"/>
+      <path d="M0 560c206-68 386-40 540 58h740v6H0z" fill="#e3b852"/>
+      <circle cx="930" cy="212" r="118" fill="#f3cb69"/>
+      <path d="M150 394l206-268 188 268z" fill="#d56d5d"/>
+      <path d="M356 394L596 90l238 304z" fill="#dcaea4"/>
+      <path d="M596 394l132-168 130 168z" fill="#f2e1cf"/>
+    </g>
+    <g fill="#f8f1e7"><path d="M985 105c44 10 72 34 84 72-38-22-72-22-104 0 8-33 15-56 20-72z"/><path d="M1080 162c38 8 64 28 76 58-34-18-64-16-92 4 5-26 10-47 16-62z"/></g>
+  
+</svg>

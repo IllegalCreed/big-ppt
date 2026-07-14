@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "editorial-collage",
+  "name": "编辑拼贴",
+  "description": "纸张叠贴、网点纹理和大胆裁切，适合观点、趋势与文化内容。",
+  "category": "illustration",
+  "tags": ["拼贴", "杂志", "趋势"],
+  "order": 110,
+  "stylePrompt": "Editorial paper collage with torn geometric layers, halftone print texture, bold cropping, tactile paper overlap, restrained photographic abstraction, and contemporary magazine art direction.",
+  "palettePolicy": "reference",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

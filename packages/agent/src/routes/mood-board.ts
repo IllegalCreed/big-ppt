@@ -18,12 +18,11 @@ import { type AuthVars } from '../middleware/auth.js'
 import { getDb, decks, deckVersions, deckAssets } from '../db/index.js'
 import { generateMoodBoard, MoodBoardGenError } from '../mood-board/index.js'
 import {
-  markAsAnchor,
   listAnchorAndCandidates,
-  discardCurrentMoodBoard,
-  clearAnchorKeepCandidates,
+  replaceMoodBoardCandidatesAfterSuccess,
 } from '../db/deck-assets.js'
 import { logServerEvent } from '../logger/server-log.js'
+import { applyImageStyle, selectFreeImageStyle } from '../style-library/service.js'
 
 export const moodBoardRoute = new Hono<{ Variables: AuthVars }>()
 
@@ -77,29 +76,16 @@ moodBoardRoute.post('/decks/:id{[0-9]+}/mood-board/generate', async (c) => {
     const [v] = await db
       .select({ content: deckVersions.content })
       .from(deckVersions)
-      .where(
-        and(
-          eq(deckVersions.id, check.deck.currentVersionId),
-          eq(deckVersions.deckId, deckId),
-        ),
-      )
+      .where(and(eq(deckVersions.id, check.deck.currentVersionId), eq(deckVersions.deckId, deckId)))
       .limit(1)
     deckContent = v?.content ?? ''
   }
   if (!deckContent.trim()) {
-    return c.json(
-      { error: 'deck 内容为空,请先生成大纲后再选风格' },
-      400,
-    )
+    return c.json({ error: 'deck 内容为空,请先生成大纲后再选风格' }, 400)
   }
 
   // 计数 +1(先增后跑,防并发请求同时通过限频检查)
   generateCountByDeck.set(deckId, prevCount + 1)
-
-  // Phase 11.8 dogfood:换一批前把同 deck 现存的 mood-board 候选 + 当前 anchor 标 discarded
-  // 避免历史堆积让 GET /candidates 拉超 3 条。前提是 frontend 已强制用户"先取消才能换",
-  // 但这里 backend 仍 defense-in-depth 清理,保证状态机一致。
-  await discardCurrentMoodBoard(deckId)
 
   try {
     const { candidates, retried, diversityDegraded } = await generateMoodBoard({
@@ -108,6 +94,14 @@ moodBoardRoute.post('/decks/:id{[0-9]+}/mood-board/generate', async (c) => {
       deckContent,
       templateId: check.deck.templateId,
     })
+    // Phase 17: legacy synchronous endpoint remains temporarily compatible, but no longer
+    // destroys the current anchor/old candidates before a 3-5 minute external call. Only a
+    // fully successful new batch replaces prior non-active candidates.
+    await replaceMoodBoardCandidatesAfterSuccess(
+      deckId,
+      user.id,
+      candidates.map((candidate) => candidate.assetId),
+    )
     return c.json({
       candidates: candidates.map((c) => ({
         assetId: c.assetId,
@@ -166,16 +160,12 @@ moodBoardRoute.post('/decks/:id{[0-9]+}/anchor', async (c) => {
     return c.json({ error: '无权访问该 asset' }, 403)
   }
   if (asset.purpose !== 'mood-board-candidate') {
-    return c.json(
-      { error: '该 asset 不是当前 deck 的有效候选(可能已被丢弃或已选定)' },
-      400,
-    )
+    return c.json({ error: '该 asset 不是当前 deck 的有效候选(可能已被丢弃或已选定)' }, 400)
   }
 
-  await markAsAnchor(deckId, assetId)
-  // Phase 11.8 真阻塞:选定 anchor 也算"已决策",set anchorSkipped=true,工具入口
-  // polling block 就能解锁(它检测 anchor_asset_id 写入或 anchorSkipped=true 任一即放行)。
-  await db.update(decks).set({ anchorSkipped: true }).where(eq(decks.id, deckId))
+  // Phase 17: legacy endpoint delegates to the same deck-row-locked transaction as the
+  // unified style-library apply endpoint. This also commits anchorSkipped atomically.
+  await applyImageStyle(user.id, deckId, { source: 'explore', id: assetId })
 
   logServerEvent({
     category: 'mood-board',
@@ -264,7 +254,7 @@ moodBoardRoute.post('/decks/:id{[0-9]+}/anchor/clear', async (c) => {
   const check = await getOwnedDeck(user.id, deckId)
   if (!check.ok) return c.json({ error: check.error }, check.status)
 
-  await clearAnchorKeepCandidates(deckId)
+  await selectFreeImageStyle(user.id, deckId)
 
   logServerEvent({
     category: 'mood-board',

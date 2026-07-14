@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="624" viewBox="0 0 1280 624">
+  <defs>
+    <filter id="wash"><feTurbulence type="fractalNoise" baseFrequency=".015" numOctaves="3" seed="8" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="34"/><feGaussianBlur stdDeviation="8"/></filter>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".7" numOctaves="2" seed="3"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .08 0"/></filter></defs>
+  <rect width="1280" height="624" fill="#fbf8f0"/>
+  
+    <g filter="url(#wash)" opacity=".72">
+      <ellipse cx="332" cy="300" rx="236" ry="174" fill="#e99b91"/>
+      <ellipse cx="624" cy="246" rx="246" ry="176" fill="#efcb77"/>
+      <ellipse cx="852" cy="332" rx="264" ry="190" fill="#6eb6ac"/>
+      <ellipse cx="1050" cy="220" rx="142" ry="126" fill="#719ac0"/>
+    </g>
+    <path d="M155 414c148-154 268-94 378-168 128-86 202 38 304 0 116-44 181-11 286 104" fill="none" stroke="#375d68" stroke-width="10" stroke-linecap="round" opacity=".62"/>
+    <g fill="#375d68" opacity=".7"><circle cx="155" cy="414" r="13"/><circle cx="533" cy="246" r="13"/><circle cx="837" cy="246" r="13"/><circle cx="1123" cy="350" r="13"/></g>
+    <rect width="1280" height="624" filter="url(#grain)" opacity=".5"/>
+  
+</svg>

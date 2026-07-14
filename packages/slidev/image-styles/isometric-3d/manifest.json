@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "isometric-3d",
+  "name": "等距 3D",
+  "description": "等距视角模块、平台和流程关系，空间感强且适合复杂系统。",
+  "category": "dimensional",
+  "tags": ["3D", "等距", "系统"],
+  "order": 40,
+  "stylePrompt": "Polished isometric 3D illustration built from modular platforms and blocks, consistent 30-degree perspective, soft ambient shadows, clean edges, and readable spatial relationships.",
+  "palettePolicy": "template",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

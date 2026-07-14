@@ -24,7 +24,7 @@ import {
   Sparkles,
 } from 'lucide-vue-next'
 import SlidePreview from './SlidePreview.vue'
-import { useMoodBoardPicker } from '../composables/useMoodBoardPicker'
+import { useImageStyleLibrary } from '../composables/useImageStyleLibrary'
 import { api } from '../api/client'
 import { useDecks, type Deck, type DeckChat, type DeckVersion } from '../composables/useDecks'
 import { DECK_CHAT_CONTEXT, type DeckChatContext } from '../composables/useAIChat'
@@ -48,7 +48,7 @@ const VersionTimeline = defineAsyncComponent(() => import('./VersionTimeline.vue
 const AssetManagerPanel = defineAsyncComponent(() => import('./AssetManagerPanel.vue'))
 const ExportModal = defineAsyncComponent(() => import('./ExportModal.vue'))
 const ShareModal = defineAsyncComponent(() => import('./ShareModal.vue'))
-const AnchorPickerModal = defineAsyncComponent(() => import('./AnchorPickerModal.vue'))
+const ImageStyleLibraryModal = defineAsyncComponent(() => import('./ImageStyleLibraryModal.vue'))
 const UndoToast = defineAsyncComponent(() => import('./UndoToast.vue'))
 
 const props = defineProps<{
@@ -58,6 +58,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'exit-to-list': []
   'template-switched': []
+  'style-changed': []
   'title-updated': [payload: { title: string }]
 }>()
 
@@ -139,14 +140,12 @@ const chatCtx: DeckChatContext = {
   templateId: props.deck.templateId,
   initialHistory: [],
   onWriteSlidesCompleted: () => {
-    // Phase 11.8 trigger-timing fix:write_slides 成功 → 此刻 deck 内容已被主 LLM
-    // 写成真实业务大纲,适合喂给 mood-board prompt。仅在「image LLM 已配 + 没选过
-    // anchor + 没主动跳过」时弹一次,避免每轮 write_slides 都骚扰。
+    // write_slides 成功后进入首次风格决策。风格库只加载预设，绝不自动 AI 探索。
     if (!hasImageLlm.value) return
     if (props.deck.anchorAssetId) return
     if (props.deck.anchorSkipped) return
-    if (moodBoardPicker.open.value) return
-    void moodBoardPicker.openPicker(props.deck.id)
+    if (imageStyleLibrary.open.value) return
+    void imageStyleLibrary.openLibrary(props.deck.id, { decisionPending: true })
   },
 }
 provide(DECK_CHAT_CONTEXT, chatCtx)
@@ -271,15 +270,10 @@ async function onLogout() {
   }, 100)
 }
 
-// Phase 11.8: 重选风格按钮 + 自动弹 modal。
-// 设计抉择(实施期偏离 plan 32 抉择 6):**不**自动阻塞 SSE 流,因为 backend
-// agent loop 在 backend,frontend 无法真"暂停 LLM 派发"。改成:
-//   (a) 顶栏总是显示"选风格"按钮(image LLM 已配时);用户主动触发
-//   (b) write_slides 成功后再自动 open,避免 starter 骨架生成泛泛样张
-// modal 弹出与 LLM 调 generate_slide_image 的时序竞赛中,用户选完 anchor 的
-// 30-60s 区间内大部分图都能拿到 anchor。
-const moodBoardPicker = useMoodBoardPicker()
-const isAnchorPickerOpen = moodBoardPicker.open
+// Phase 17:预设优先的风格库。open 只是 UI 是否展示，decisionPending 才表示
+// generate_slide_image 正在等待首次风格决策。
+const imageStyleLibrary = useImageStyleLibrary()
+const isImageStyleLibraryOpen = imageStyleLibrary.open
 const hasImageLlm = ref(false)
 const hasMainLlm = ref(false)
 
@@ -294,38 +288,36 @@ async function probeLlmSettings(): Promise<void> {
     hasImageLlm.value = !!img.hasApiKey
     hasMainLlm.value = !!main.hasApiKey
   } catch {
-    // 静默 — 没探到就不显示按钮
+    // 静默：风格库入口仍可用；只有 AI 探索会按探测结果提示配置模型。
   }
 }
 
-const canPickAnchor = computed(() => hasImageLlm.value && hasMainLlm.value)
-
-async function openAnchorPicker(): Promise<void> {
-  await moodBoardPicker.openPicker(props.deck.id)
+async function openImageStyleLibrary(): Promise<void> {
+  await imageStyleLibrary.openLibrary(props.deck.id)
 }
 
-// anchor 选定后 → 让父刷一下 deck 元数据(同 template-switched 套路),并清空 picker state
+// apply / free 都会改 deck 的 anchor 元数据；用专用事件刷新，避免再借 template-switched。
 watch(
-  () => moodBoardPicker.selectedAssetId.value,
-  (assetId) => {
-    if (assetId) {
-      // 触发父 refetch:Deck.anchorAssetId 字段会更新,顶栏按钮 label / 自动弹判断都跟着变
-      emit('template-switched')
-    }
+  () => imageStyleLibrary.mutationRevision.value,
+  (revision, previous) => {
+    if (revision > previous) emit('style-changed')
   },
 )
+
+// 设置弹窗关闭后重新探测，避免刚保存模型配置仍被 AI 探索页判定为“未配置”。
+watch(showSettings, (isOpen, wasOpen) => {
+  if (wasOpen && !isOpen) void probeLlmSettings()
+})
 
 onMounted(async () => {
   void loadInitialChats()
   await probeLlmSettings()
-  // 注意:**不**在 onMounted 自动弹 anchor picker —— 进编辑器时 deck 只有 starter
-  // 骨架(几句占位文字),主 LLM 看不到真实业务大纲,出的 mood-board prompt 全是
-  // 泛泛废话。真正触发时机由 useAIChat 监听 write_slides tool_execution.end 后
-  // emit 'anchor-picker-needed' 事件,DeckEditorCanvas 接到后才弹 modal。
+  // 不在 onMounted 自动打扰用户；首次提示仍由 write_slides 成功事件触发。
 })
 
 onUnmounted(() => {
   if (highlightTimer) clearTimeout(highlightTimer)
+  imageStyleLibrary.leaveDeck(props.deck.id)
 })
 </script>
 
@@ -399,13 +391,12 @@ onUnmounted(() => {
           <Layers :size="18" :stroke-width="1.8" />
         </button>
         <button
-          v-if="canPickAnchor"
           type="button"
           class="icon-btn"
-          :title="deck.anchorAssetId ? '重选 AI 生图风格' : '选 AI 生图风格(让 22 页风格统一)'"
+          :title="deck.anchorAssetId ? '重选配图风格' : '选择配图风格'"
           :aria-label="deck.anchorAssetId ? '重选风格' : '选风格'"
-          data-anchor-picker-btn
-          @click="openAnchorPicker"
+          data-image-style-library-btn
+          @click="openImageStyleLibrary"
         >
           <Palette :size="18" :stroke-width="1.8" />
         </button>
@@ -508,7 +499,12 @@ onUnmounted(() => {
       @close="showTimeline = false"
       @restored="onTimelineRestored"
     />
-    <AnchorPickerModal v-if="isAnchorPickerOpen" />
+    <ImageStyleLibraryModal
+      v-if="isImageStyleLibraryOpen"
+      :has-image-llm="hasImageLlm"
+      :has-main-llm="hasMainLlm"
+      @open-settings="showSettings = true"
+    />
   </div>
 </template>
 

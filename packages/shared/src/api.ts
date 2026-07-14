@@ -1,6 +1,7 @@
 import type { ChatMessage, ToolCall } from './chat.js'
 import type { LLMTool } from './tools.js'
 import type { LogPayload } from './log.js'
+import type { ImageStylePalettePolicy } from './image-style-manifest.js'
 
 /**
  * API 契约：creator ↔ agent（HTTP + SSE）。
@@ -284,6 +285,100 @@ export interface SetAnchorRequest {
 export interface SetAnchorResponse {
   ok: true
   anchorAssetId: string
+}
+
+// === Phase 17 image style library ===
+
+export type ImageStyleSource = 'system' | 'user' | 'explore'
+
+/**
+ * Unified card shape returned by the deck-scoped style library.
+ * `stylePrompt` and filesystem paths are intentionally never exposed.
+ */
+export interface ImageStyleLibraryPreset {
+  id: string
+  source: 'system' | 'user'
+  name: string
+  description: string
+  category: string
+  tags: string[]
+  order: number
+  palettePolicy: ImageStylePalettePolicy
+  previewUrl: string
+  compatible: boolean
+  createdAt?: string
+  lastUsedAt?: string | null
+}
+
+export interface GeneratedImageStyleCandidate extends MoodBoardCandidate {
+  source: 'explore'
+  palettePolicy: ImageStylePalettePolicy
+  previewUrl: string
+  compatible: boolean
+  /** Present when this exact candidate has already been saved to the user's library. */
+  savedPresetId?: string
+}
+
+export type ActiveImageStyle =
+  | {
+      mode: 'preset'
+      styleSource: 'system' | 'user'
+      styleSourceId: string
+      anchorAssetId: string
+      stylePalettePolicy: ImageStylePalettePolicy
+    }
+  | {
+      mode: 'generated'
+      styleSource: 'explore'
+      styleSourceId: string
+      anchorAssetId: string
+      stylePalettePolicy: ImageStylePalettePolicy
+    }
+  | { mode: 'free' }
+  | { mode: 'undecided' }
+
+export type ImageStyleDrawStateName = 'idle' | 'running' | 'failed' | 'done'
+
+export interface ImageStyleDrawState {
+  state: ImageStyleDrawStateName
+  jobId: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  error: string | null
+}
+
+export interface ImageStyleLibraryResponse {
+  presets: {
+    system: ImageStyleLibraryPreset[]
+    user: ImageStyleLibraryPreset[]
+  }
+  generatedCandidates: GeneratedImageStyleCandidate[]
+  active: ActiveImageStyle
+  draw: ImageStyleDrawState
+  remainingExplorations: number
+}
+
+export interface ApplyImageStyleRequest {
+  source: ImageStyleSource
+  id: string
+}
+
+export interface ApplyImageStyleResponse {
+  active: Extract<ActiveImageStyle, { mode: 'preset' | 'generated' }>
+}
+
+export interface SaveImageStylePresetRequest {
+  assetId: string
+  name?: string
+}
+
+export interface SaveImageStylePresetResponse {
+  preset: ImageStyleLibraryPreset
+}
+
+export interface ExploreImageStylesResponse {
+  jobId: string
+  state: 'running'
 }
 
 export type { ChatMessage, ToolCall, LLMTool, LogPayload }

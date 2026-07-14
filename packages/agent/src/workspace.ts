@@ -24,6 +24,8 @@ export interface Paths {
   templatesDir: string
   /** 多模板根目录，`<templatesRoot>/<templateId>/manifest.json` + `starter.md`。 */
   templatesRoot: string
+  /** 系统配图风格包根目录，`<imageStylesRoot>/<styleId>/manifest.json` + 图片资产。 */
+  imageStylesRoot: string
   logsDir: string
   mcpConfigPath: string
 }
@@ -44,6 +46,9 @@ export function getPaths(): Paths {
   const templatesRoot = process.env.BIG_PPT_TEMPLATES_ROOT
     ? path.resolve(process.env.BIG_PPT_TEMPLATES_ROOT)
     : path.join(root, 'packages/slidev/templates')
+  const imageStylesRoot = process.env.BIG_PPT_IMAGE_STYLES_ROOT
+    ? path.resolve(process.env.BIG_PPT_IMAGE_STYLES_ROOT)
+    : path.join(root, 'packages/slidev/image-styles')
   const logsDir = process.env.BIG_PPT_LOGS_DIR
     ? path.resolve(process.env.BIG_PPT_LOGS_DIR)
     : path.join(root, 'logs')
@@ -54,6 +59,7 @@ export function getPaths(): Paths {
     root,
     templatesDir,
     templatesRoot,
+    imageStylesRoot,
     logsDir,
     mcpConfigPath,
   }

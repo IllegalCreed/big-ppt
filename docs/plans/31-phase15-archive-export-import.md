@@ -1,8 +1,8 @@
 # Phase 15 — 归档数据包 export + import(`.lumideck`)实施文档
 
-> **状态**:待启动
+> **状态**:已完成（2026-05-18）
 > **前置阶段**:[plan 30 Phase 14 导出 (PDF/PNG/PPTX)](30-phase14-export.md) / [plan 29 Phase 13 文件上传](29-phase13-file-upload-assets.md)
-> **后续阶段**:Phase 16 自研 PresentationViewer / Phase 17+ Markdown 粘贴导入 + PPTX 导入
+> **后续阶段**:Phase 16 自研 PresentationViewer；Markdown / PPTX 外部格式导入已于 2026-07-11 永久取消
 > **路线图**:[roadmap.md Phase 15](../requirements/roadmap.md#phase-15归档数据包-export--importlumideck)
 > **执行子技能**:`superpowers:subagent-driven-development`(Task B / C 可并行起 2 agent,**必走 git worktree**;Task A / D / E 串行)
 
@@ -51,6 +51,7 @@
    - Why:已有 `imageSrc: /api/assets/<uuid>` 在 frontmatter 内,这条正则在生产已经稳定运行;import 后建好新 asset map(old-uuid → new-uuid)即可全文 replace
 
 9. **Manifest schema 字段**:
+
    ```json
    {
      "schemaVersion": 1,
@@ -74,6 +75,7 @@
      ]
    }
    ```
+
    - Why 不包 `versions[]` 历史:dogfood 期 import 只关心"还原当前可看的 deck",历史版本属 audit,不在备份语义;且历史版本可能有 broken intermediate state(模板切换中途的 markdown)
    - Why 包 `prompt` / `model`:让 Phase 12「按新模板色板重新生成 AI 图」工具在 import 后仍能跑(无 prompt = skip)
    - Why 包 `assets[]` index 而不是直接扫包目录:让 import 端先校验 manifest 与包目录文件名一一对应(detect 部分丢包损坏)
@@ -115,44 +117,44 @@
 
 ### 新增
 
-| 文件 | 职责 |
-| ---- | ---- |
-| `packages/shared/src/archive.ts` | `ArchiveManifest` interface + `SUPPORTED_SCHEMA_VERSIONS = [1] as const` + `CURRENT_SCHEMA_VERSION = 1` + `ArchiveAssetEntry` / `ArchiveDeckMeta` 子类型;前后端共享 source of truth |
-| `packages/agent/src/archive/build-archive.ts` | `buildArchive(deckId, userId): Promise<Buffer>` — DB 拉 deck + currentVersion + deck_assets → jszip 生成包 → return Buffer |
-| `packages/agent/src/archive/parse-archive.ts` | `parseArchive(zipBuffer: Buffer): Promise<{ manifest, content, assets: Map<id, Buffer> }>` — jszip 解 + manifest schemaVersion / 字段 / 文件存在性 / mime 一致性 各步 validate,失败抛 typed error |
-| `packages/agent/src/archive/mime-ext.ts` | `mimeToExt(mime: string): string` + `extFromMime` 映射(image/png → png 等);default `bin` |
-| `packages/agent/src/archive/rewrite-asset-urls.ts` | `rewriteAssetUrls(markdown: string, idMap: Map<oldId, newId>): string` — 全文正则 replace `/api/assets/<oldId>` → `/api/assets/<newId>` |
-| `packages/agent/src/archive/errors.ts` | `ArchiveError` typed error class(`code: 'schema-mismatch' / 'manifest-invalid' / 'asset-missing' / 'asset-corrupt' / 'not-a-zip' / 'oversized'` + `userMessage` 中文)|
-| `packages/agent/src/routes/decks-archive.ts` | Hono sub-router:`GET /decks/:id/export-archive` + `POST /decks/import`;auth 鉴权 + ownership(export)+ multipart(import) |
-| `packages/agent/test/archive-build.test.ts` | 单测:fake deck + 2 assets → buildArchive → 解压 zip 校 manifest 字段 + content.md 全等 + assets/ 文件名 + 内容 byte-equal |
-| `packages/agent/test/archive-parse.test.ts` | 单测:happy + schemaVersion 不支持 / manifest 缺字段 / asset 缺失 / mime 不匹配 / not-zip 各分支 |
-| `packages/agent/test/archive-rewrite.test.ts` | 单测:rewrite asset urls 单图 / 多图 / 无图 / id 不在 map / 重复出现各 case |
-| `packages/agent/test/archive-mime-ext.test.ts` | 单测:5 个 mime 映射 + unknown fallback bin |
-| `packages/agent/test/routes-decks-archive.test.ts` | 集成测:走 `app.fetch()` — export happy / 越权 403 / 不存在 deck 404 / import happy / schema 400 / corrupt 400 / size 413 / **round-trip(create + assets → export → 删原 deck → import → assert content + asset count 一致)** |
-| `packages/creator/src/composables/useImport.ts` | `useImport().importArchive(file: File)` — multipart POST `/api/decks/import` → 返 `{ deckId, title }`;reactive `importing / error` state |
-| `packages/creator/src/composables/__tests__/useImport.test.ts` | 单测:happy / 网络错误 / size 413 / schema 400 各 case |
-| `packages/creator/src/pages/__tests__/DeckListPage.test.ts`(若已有则扩,否则新建) | 单测:import 按钮可见 / file input 触发 / loading 状态 / 错误显示 |
-| `packages/e2e/tests/archive-export.spec.ts` | E2E:编辑器内点导出 → 选 .lumideck → 等下载 → 断 size > 100 bytes + ext `.lumideck` + zip magic |
-| `packages/e2e/tests/archive-roundtrip.spec.ts` | E2E:创建 deck → export .lumideck → 删原 deck → deck 列表点导入 → 等跳转新 deck → 断标题含「(导入)」+ 内容渲染 |
+| 文件                                                                             | 职责                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/archive.ts`                                                 | `ArchiveManifest` interface + `SUPPORTED_SCHEMA_VERSIONS = [1] as const` + `CURRENT_SCHEMA_VERSION = 1` + `ArchiveAssetEntry` / `ArchiveDeckMeta` 子类型;前后端共享 source of truth                                          |
+| `packages/agent/src/archive/build-archive.ts`                                    | `buildArchive(deckId, userId): Promise<Buffer>` — DB 拉 deck + currentVersion + deck_assets → jszip 生成包 → return Buffer                                                                                                   |
+| `packages/agent/src/archive/parse-archive.ts`                                    | `parseArchive(zipBuffer: Buffer): Promise<{ manifest, content, assets: Map<id, Buffer> }>` — jszip 解 + manifest schemaVersion / 字段 / 文件存在性 / mime 一致性 各步 validate,失败抛 typed error                            |
+| `packages/agent/src/archive/mime-ext.ts`                                         | `mimeToExt(mime: string): string` + `extFromMime` 映射(image/png → png 等);default `bin`                                                                                                                                     |
+| `packages/agent/src/archive/rewrite-asset-urls.ts`                               | `rewriteAssetUrls(markdown: string, idMap: Map<oldId, newId>): string` — 全文正则 replace `/api/assets/<oldId>` → `/api/assets/<newId>`                                                                                      |
+| `packages/agent/src/archive/errors.ts`                                           | `ArchiveError` typed error class(`code: 'schema-mismatch' / 'manifest-invalid' / 'asset-missing' / 'asset-corrupt' / 'not-a-zip' / 'oversized'` + `userMessage` 中文)                                                        |
+| `packages/agent/src/routes/decks-archive.ts`                                     | Hono sub-router:`GET /decks/:id/export-archive` + `POST /decks/import`;auth 鉴权 + ownership(export)+ multipart(import)                                                                                                      |
+| `packages/agent/test/archive-build.test.ts`                                      | 单测:fake deck + 2 assets → buildArchive → 解压 zip 校 manifest 字段 + content.md 全等 + assets/ 文件名 + 内容 byte-equal                                                                                                    |
+| `packages/agent/test/archive-parse.test.ts`                                      | 单测:happy + schemaVersion 不支持 / manifest 缺字段 / asset 缺失 / mime 不匹配 / not-zip 各分支                                                                                                                              |
+| `packages/agent/test/archive-rewrite.test.ts`                                    | 单测:rewrite asset urls 单图 / 多图 / 无图 / id 不在 map / 重复出现各 case                                                                                                                                                   |
+| `packages/agent/test/archive-mime-ext.test.ts`                                   | 单测:5 个 mime 映射 + unknown fallback bin                                                                                                                                                                                   |
+| `packages/agent/test/routes-decks-archive.test.ts`                               | 集成测:走 `app.fetch()` — export happy / 越权 403 / 不存在 deck 404 / import happy / schema 400 / corrupt 400 / size 413 / **round-trip(create + assets → export → 删原 deck → import → assert content + asset count 一致)** |
+| `packages/creator/src/composables/useImport.ts`                                  | `useImport().importArchive(file: File)` — multipart POST `/api/decks/import` → 返 `{ deckId, title }`;reactive `importing / error` state                                                                                     |
+| `packages/creator/src/composables/__tests__/useImport.test.ts`                   | 单测:happy / 网络错误 / size 413 / schema 400 各 case                                                                                                                                                                        |
+| `packages/creator/src/pages/__tests__/DeckListPage.test.ts`(若已有则扩,否则新建) | 单测:import 按钮可见 / file input 触发 / loading 状态 / 错误显示                                                                                                                                                             |
+| `packages/e2e/tests/archive-export.spec.ts`                                      | E2E:编辑器内点导出 → 选 .lumideck → 等下载 → 断 size > 100 bytes + ext `.lumideck` + zip magic                                                                                                                               |
+| `packages/e2e/tests/archive-roundtrip.spec.ts`                                   | E2E:创建 deck → export .lumideck → 删原 deck → deck 列表点导入 → 等跳转新 deck → 断标题含「(导入)」+ 内容渲染                                                                                                                |
 
 ### 修改
 
-| 文件 | 改动摘要 |
-| ---- | -------- |
-| `packages/shared/src/index.ts` | 加 `export * from './archive.js'` 一行 |
-| `packages/agent/src/app.ts` | mount `decks-archive` 路由(`app.route('/api', decksArchiveRoute)`);注意**不要**塞进 decksRoute 因为 wildcard 中间件触发面不同 |
-| `packages/agent/.env.example` | 加 `LUMIDECK_IMPORT_MAX_BYTES=104857600`(100MB)注释说明 |
-| `packages/agent/.env.development.local.example` / `.env.test.local.example` / `.env.production.local.example` | 同步加 env 默认值占位 |
-| `packages/creator/src/composables/useExport.ts` | `ExportFormat` union 加 `'lumideck'`;`exportDeck` 内 `format === 'lumideck'` 走新分支:`fetch('/api/decks/:id/export-archive')` 拿 blob → `triggerDownload`(不走 capturePages 链路) |
-| `packages/creator/src/components/ExportModal.vue` | 加第 4 个 radio `format-lumideck`:`label "归档包 (.lumideck)" + hint "≈ 3 秒 · 给其他 Lumideck 用户导入用"`;time estimate 文本同步;进度条 lumideck 时显示 "正在打包..." 而非「第 X/N 页」 |
-| `packages/creator/src/pages/DeckListPage.vue` | 顶栏「新建 Deck」按钮旁加「导入」按钮 + 隐藏 `<input type="file" accept=".lumideck">`;点击触发文件选择 → `useImport().importArchive(file)` → 成功跳转新 deck;loading 状态 + 错误显示 |
-| `docs/requirements/roadmap.md` Phase 15 段落 | close-out 时回写"已落地" + 链接 |
-| `CLAUDE.md` 已知坑 | 实施期发现的可复用坑提炼到此 |
+| 文件                                                                                                          | 改动摘要                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/index.ts`                                                                                | 加 `export * from './archive.js'` 一行                                                                                                                                                    |
+| `packages/agent/src/app.ts`                                                                                   | mount `decks-archive` 路由(`app.route('/api', decksArchiveRoute)`);注意**不要**塞进 decksRoute 因为 wildcard 中间件触发面不同                                                             |
+| `packages/agent/.env.example`                                                                                 | 加 `LUMIDECK_IMPORT_MAX_BYTES=104857600`(100MB)注释说明                                                                                                                                   |
+| `packages/agent/.env.development.local.example` / `.env.test.local.example` / `.env.production.local.example` | 同步加 env 默认值占位                                                                                                                                                                     |
+| `packages/creator/src/composables/useExport.ts`                                                               | `ExportFormat` union 加 `'lumideck'`;`exportDeck` 内 `format === 'lumideck'` 走新分支:`fetch('/api/decks/:id/export-archive')` 拿 blob → `triggerDownload`(不走 capturePages 链路)        |
+| `packages/creator/src/components/ExportModal.vue`                                                             | 加第 4 个 radio `format-lumideck`:`label "归档包 (.lumideck)" + hint "≈ 3 秒 · 给其他 Lumideck 用户导入用"`;time estimate 文本同步;进度条 lumideck 时显示 "正在打包..." 而非「第 X/N 页」 |
+| `packages/creator/src/pages/DeckListPage.vue`                                                                 | 顶栏「新建 Deck」按钮旁加「导入」按钮 + 隐藏 `<input type="file" accept=".lumideck">`;点击触发文件选择 → `useImport().importArchive(file)` → 成功跳转新 deck;loading 状态 + 错误显示      |
+| `docs/requirements/roadmap.md` Phase 15 段落                                                                  | close-out 时回写"已落地" + 链接                                                                                                                                                           |
+| `CLAUDE.md` 已知坑                                                                                            | 实施期发现的可复用坑提炼到此                                                                                                                                                              |
 
 ### 删除
 
-| 文件 | 原因 |
-| ---- | ---- |
+| 文件 | 原因                   |
+| ---- | ---------------------- |
 | —    | 本 Phase 纯增量,无删除 |
 
 ### **不**改动(关键澄清)
@@ -182,6 +184,7 @@
 **操作**:
 
 1. 新建 `packages/shared/src/archive.ts`:
+
    ```ts
    /** Phase 15 归档数据包 manifest schema 单一来源。
     * 升级 schemaVersion 时:append SUPPORTED_SCHEMA_VERSIONS + bump CURRENT_SCHEMA_VERSION
@@ -193,29 +196,30 @@
    export const CURRENT_SCHEMA_VERSION: SupportedSchemaVersion = 1
 
    export interface ArchiveAssetEntry {
-     id: string             // uuid (= deck_assets.id)
-     mimeType: string       // e.g. "image/png"
-     bytesSize: number      // 跟 assets/<id>.<ext> 实际字节一致(parse 端会校)
-     prompt: string | null  // 出图 prompt,null 表示用户嵌图
-     model: string | null   // 出图模型,如 "gpt-image-1"
+     id: string // uuid (= deck_assets.id)
+     mimeType: string // e.g. "image/png"
+     bytesSize: number // 跟 assets/<id>.<ext> 实际字节一致(parse 端会校)
+     prompt: string | null // 出图 prompt,null 表示用户嵌图
+     model: string | null // 出图模型,如 "gpt-image-1"
    }
 
    export interface ArchiveDeckMeta {
-     originalDeckId: number     // 源 deck id(import 不复用,纯审计)
+     originalDeckId: number // 源 deck id(import 不复用,纯审计)
      title: string
-     templateId: string         // 'beitou-standard' 等
-     createdAt: string          // ISO 8601
-     updatedAt: string          // ISO 8601
+     templateId: string // 'beitou-standard' 等
+     createdAt: string // ISO 8601
+     updatedAt: string // ISO 8601
    }
 
    export interface ArchiveManifest {
      schemaVersion: SupportedSchemaVersion
-     lumideckVersion: string    // 当前实例 version,如 "0.1.0";仅审计用
-     exportedAt: string         // ISO 8601
+     lumideckVersion: string // 当前实例 version,如 "0.1.0";仅审计用
+     exportedAt: string // ISO 8601
      deck: ArchiveDeckMeta
      assets: ArchiveAssetEntry[]
    }
    ```
+
 2. 改 `packages/shared/src/index.ts`:加 `export * from './archive.js'`
 3. 新建 `packages/agent/src/archive/mime-ext.ts`:
    ```ts
@@ -230,6 +234,7 @@
    }
    ```
 4. 新建 `packages/agent/src/archive/errors.ts`:
+
    ```ts
    export type ArchiveErrorCode =
      | 'not-a-zip'
@@ -243,13 +248,18 @@
      | 'db-failure'
 
    export class ArchiveError extends Error {
-     constructor(public code: ArchiveErrorCode, public userMessage: string, cause?: unknown) {
+     constructor(
+       public code: ArchiveErrorCode,
+       public userMessage: string,
+       cause?: unknown,
+     ) {
        super(userMessage)
        this.name = 'ArchiveError'
        if (cause !== undefined) (this as { cause?: unknown }).cause = cause
      }
    }
    ```
+
 5. 新建 `packages/agent/src/archive/rewrite-asset-urls.ts`:
    ```ts
    const ASSET_ID_RE = /\/api\/assets\/([0-9a-f-]{36})/g
@@ -267,11 +277,13 @@
 7. 跑 `pnpm -F @big-ppt/agent type-check` + `pnpm -F @big-ppt/agent vitest run test/archive-rewrite.test.ts test/archive-mime-ext.test.ts`
 
 **验证方法**:
+
 - shared build emit `.js`:`ls packages/shared/src/archive.js`(在 .gitignore 内)
 - agent type-check + 单测全绿
 - import 路径 `@big-ppt/shared` 在 agent / creator 两边都能解 ArchiveManifest type
 
 **风险**:
+
 - **shared 包 NodeNext 必 build**(CLAUDE.md 已知坑):本 Phase agent 部署前必须 `pnpm -F @big-ppt/shared build`,否则 ERR_MODULE_NOT_FOUND;`scripts/deploy.sh build_agent` 已在 plan 19 加 shared build 步,本 Phase 不需改部署脚本,但要在 CI / 本地手动 build 一次跑测
 - 跨 workspace TS types 用 `import type { X } from '@big-ppt/shared'` 单向 re-export(已知坑 plan 26);agent / creator 都按这套路写,不反向
 
@@ -286,6 +298,7 @@
 **操作**:
 
 1. 新建 `packages/agent/src/archive/build-archive.ts`:
+
    ```ts
    import JSZip from 'jszip'
    import { getDb, decks, deckVersions, deckAssets } from '../db/index.js'
@@ -319,7 +332,7 @@
          createdAt: deck.createdAt.toISOString(),
          updatedAt: deck.updatedAt.toISOString(),
        },
-       assets: assets.map(a => ({
+       assets: assets.map((a) => ({
          id: a.id,
          mimeType: a.mimeType,
          bytesSize: a.bytesSize,
@@ -339,7 +352,9 @@
      return zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' })
    }
    ```
+
 2. 新建 `packages/agent/src/routes/decks-archive.ts`:
+
    ```ts
    import { Hono } from 'hono'
    import { eq } from 'drizzle-orm'
@@ -362,7 +377,13 @@
 
      try {
        const buf = await buildArchive({ deckId, userId: user.id })
-       logServerEvent({ category: 'archive-export', event: 'success', deckId, userId: user.id, bytesSize: buf.length })
+       logServerEvent({
+         category: 'archive-export',
+         event: 'success',
+         deckId,
+         userId: user.id,
+         bytesSize: buf.length,
+       })
 
        const safeName = deck.title.replace(/[\\/:*?"<>|]/g, '_')
        const filename = `${safeName}-${Date.now()}.lumideck`
@@ -377,11 +398,18 @@
          },
        })
      } catch (err) {
-       logServerEvent({ category: 'archive-export', event: 'failed', deckId, userId: user.id, errorMsg: (err as Error).message })
+       logServerEvent({
+         category: 'archive-export',
+         event: 'failed',
+         deckId,
+         userId: user.id,
+         errorMsg: (err as Error).message,
+       })
        return c.json({ error: '导出失败,请稍后重试' }, 500)
      }
    })
    ```
+
 3. 改 `packages/agent/src/app.ts`:`import { decksArchiveRoute } from './routes/decks-archive.js'` + `app.route('/api', decksArchiveRoute)`
    - **不**塞进 decksRoute 内部:避免 wildcard middleware 泄漏(CLAUDE.md 已知坑「Hono sub-router wildcard 泄漏」);保持单独子路由更安全 + 集成测可独立 mount 测
 4. 单测 `packages/agent/test/archive-build.test.ts`:
@@ -397,10 +425,12 @@
 6. **日志规范**:export success / failed 都走 `logServerEvent` 落 `logs/server-*.jsonl`(CLAUDE.md「后端日志规范」要求)
 
 **验证方法**:
+
 - `pnpm -F @big-ppt/agent vitest run test/archive-build.test.ts test/routes-decks-archive.test.ts -t export`
 - 手测:`pnpm dev` → 浏览器登录 → 在 ChatPanel 创个含 AI 图的 deck → 直接 `curl --cookie 'session=...' http://localhost:4000/api/decks/<id>/export-archive -o test.lumideck && unzip -l test.lumideck` 看包结构
 
 **风险**:
+
 - **MEDIUMBLOB N 张图一次性 load 到内存可能爆**:MEDIUMBLOB 上限 16MB / 张 × N=20 张 = 320MB Buffer 累计;但 dogfood 期单 deck 实测 N < 10、单图 < 2MB,30MB 内可控;**Phase 17+ 改造点**:若用户量大改 archiver 真 streaming(jszip Buffer 替成 archiver pipe to ReadableStream)
 - **`u8 = new Uint8Array(buf)` 复制开销**:30MB 复制约 5ms,忽略;但若 N 张图后 Buffer 已经 100MB+,该复制是浪费;可优化为 `Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength)` 共享底层;**先按 plan 写,close-out 测大 deck 后定**
 - **Hono sub-router wildcard 泄漏**(CLAUDE.md 已知坑):本路由不写 `decksArchiveRoute.use('*', ...)`,只用显式 path,无 risk
@@ -416,6 +446,7 @@
 **操作**:
 
 1. 新建 `packages/agent/src/archive/parse-archive.ts`:
+
    ```ts
    import JSZip from 'jszip'
    import { SUPPORTED_SCHEMA_VERSIONS, type ArchiveManifest } from '@big-ppt/shared'
@@ -451,8 +482,10 @@
      }
 
      // 3. schemaVersion 在 SUPPORTED 列表内
-     if (typeof manifest.schemaVersion !== 'number' ||
-         !(SUPPORTED_SCHEMA_VERSIONS as readonly number[]).includes(manifest.schemaVersion)) {
+     if (
+       typeof manifest.schemaVersion !== 'number' ||
+       !(SUPPORTED_SCHEMA_VERSIONS as readonly number[]).includes(manifest.schemaVersion)
+     ) {
        throw new ArchiveError(
          'schema-unsupported',
          `数据包版本 ${manifest.schemaVersion} 不被当前 Lumideck 支持,请用新版重新导出`,
@@ -460,8 +493,11 @@
      }
 
      // 4. manifest 必填字段齐(deck.title / deck.templateId / assets array)
-     if (!manifest.deck || typeof manifest.deck.title !== 'string' ||
-         typeof manifest.deck.templateId !== 'string') {
+     if (
+       !manifest.deck ||
+       typeof manifest.deck.title !== 'string' ||
+       typeof manifest.deck.templateId !== 'string'
+     ) {
        throw new ArchiveError('manifest-invalid', 'manifest.json deck 字段不完整')
      }
      if (!Array.isArray(manifest.assets)) {
@@ -481,7 +517,8 @@
        }
        const filename = `assets/${entry.id}.${mimeToExt(entry.mimeType)}`
        const file = zip.file(filename)
-       if (!file) throw new ArchiveError('asset-missing', `数据包损坏: asset ${entry.id} 在包内未找到`)
+       if (!file)
+         throw new ArchiveError('asset-missing', `数据包损坏: asset ${entry.id} 在包内未找到`)
        const buf = Buffer.from(await file.async('arraybuffer'))
        if (buf.length !== entry.bytesSize) {
          throw new ArchiveError(
@@ -497,6 +534,7 @@
    ```
 
 2. 扩 `packages/agent/src/routes/decks-archive.ts`:加 `POST /decks/import`:
+
    ```ts
    import { randomUUID } from 'node:crypto'
    import { desc } from 'drizzle-orm'
@@ -535,10 +573,21 @@
        parsed = await parseArchive(buf)
      } catch (err) {
        if (err instanceof ArchiveError) {
-         logServerEvent({ category: 'archive-import', event: 'parse-failed', userId: user.id, errorCode: err.code, errorMsg: err.userMessage })
+         logServerEvent({
+           category: 'archive-import',
+           event: 'parse-failed',
+           userId: user.id,
+           errorCode: err.code,
+           errorMsg: err.userMessage,
+         })
          return c.json({ error: err.userMessage, code: err.code }, 400)
        }
-       logServerEvent({ category: 'archive-import', event: 'parse-failed', userId: user.id, errorMsg: (err as Error).message })
+       logServerEvent({
+         category: 'archive-import',
+         event: 'parse-failed',
+         userId: user.id,
+         errorMsg: (err as Error).message,
+       })
        return c.json({ error: '数据包损坏' }, 400)
      }
 
@@ -553,16 +602,19 @@
            title: newTitle,
            templateId: parsed.manifest.deck.templateId,
          })
-         const [created] = await tx.select({ id: decks.id })
-           .from(decks).where(eq(decks.userId, user.id))
-           .orderBy(desc(decks.id)).limit(1)
+         const [created] = await tx
+           .select({ id: decks.id })
+           .from(decks)
+           .where(eq(decks.userId, user.id))
+           .orderBy(desc(decks.id))
+           .limit(1)
          if (!created) throw new Error('deck 回查失败')
 
          // 建 idMap:每张原 asset 用新 uuid 重插
          const idMap = new Map<string, string>()
          for (const [oldId, bytes] of parsed.assets.entries()) {
            const newId = randomUUID()
-           const meta = parsed.manifest.assets.find(a => a.id === oldId)!
+           const meta = parsed.manifest.assets.find((a) => a.id === oldId)!
            await tx.insert(deckAssets).values({
              id: newId,
              deckId: created.id,
@@ -585,23 +637,38 @@
            templateId: parsed.manifest.deck.templateId,
            authorId: user.id,
          })
-         const [firstVer] = await tx.select({ id: deckVersions.id })
-           .from(deckVersions).where(eq(deckVersions.deckId, created.id))
-           .orderBy(desc(deckVersions.id)).limit(1)
+         const [firstVer] = await tx
+           .select({ id: deckVersions.id })
+           .from(deckVersions)
+           .where(eq(deckVersions.deckId, created.id))
+           .orderBy(desc(deckVersions.id))
+           .limit(1)
          if (!firstVer) throw new Error('version 回查失败')
 
-         await tx.update(decks)
+         await tx
+           .update(decks)
            .set({ currentVersionId: firstVer.id })
            .where(eq(decks.id, created.id))
 
          return { deckId: created.id, title: newTitle }
        })
      } catch (err) {
-       logServerEvent({ category: 'archive-import', event: 'db-failed', userId: user.id, errorMsg: (err as Error).message })
+       logServerEvent({
+         category: 'archive-import',
+         event: 'db-failed',
+         userId: user.id,
+         errorMsg: (err as Error).message,
+       })
        return c.json({ error: '还原失败,请重试' }, 500)
      }
 
-     logServerEvent({ category: 'archive-import', event: 'success', userId: user.id, deckId: result.deckId, assetCount: parsed.assets.size })
+     logServerEvent({
+       category: 'archive-import',
+       event: 'success',
+       userId: user.id,
+       deckId: result.deckId,
+       assetCount: parsed.assets.size,
+     })
      return c.json(result, 201)
    })
    ```
@@ -623,10 +690,12 @@
    - **Round-trip 测试**(关键!):createTestUser + createDeckDirect(含 2 个 deck_asset)→ export-archive 拿 buffer → 删原 deck → 用同一 user import → 校新 deck 跟原 deck 的 markdown(asset url 部分需要 rewrite 但其余 byte-equal)+ asset count 一致 + asset bytes 一致(读 deck_assets 表 BLOB)
 
 **验证方法**:
+
 - `pnpm -F @big-ppt/agent vitest run test/archive-parse.test.ts test/routes-decks-archive.test.ts`
 - 手测:export 一个含图 deck → 在 deck 列表点导入 → 新 deck 跳转 → 检查 AI 图仍可见(URL 应该是新 uuid)
 
 **风险**:
+
 - **Aliyun RDS prepared-statement stale plan**(CLAUDE.md 已知坑):测试 setup 已经从 `TRUNCATE` 改 `DELETE FROM`,本 Phase test setup 沿用 `useTestDb()` 不动 → 无 risk
 - **db.transaction MySQL implicit commit**:DDL 语句(`CREATE TABLE` 等)会触发 implicit commit;本 Phase 全是 DML(INSERT / UPDATE),drizzle transaction 套 mysql2 的 connection-scoped transaction 应可回滚;**但**先验:transaction 中途抛 throw 后,新 deck 行不应该残留(测一个 case:mock idMap 抛错 → 校 deck 表 count 仍是 0)
 - **multipart parseBody 内存峰值**:Hono `c.req.parseBody()` 把整文件 load 到内存;100MB 限 + Buffer.from 复制一次 → 峰值 ~200MB;Node v22 默认 heap 1.5GB,可接受;但**大量并发 import 时风险**,本期不解,记 Phase 17+
@@ -685,10 +754,12 @@
 4. 单测改 `packages/creator/src/components/__tests__/ExportModal.test.ts`:加 radio `data-test="format-lumideck"` 切换 + 进度条文本断言
 
 **验证方法**:
+
 - `pnpm -F @big-ppt/creator vitest run src/composables/__tests__/useExport.test.ts src/components/__tests__/ExportModal.test.ts`
 - 手测:dev mode → 编辑器顶栏导出 → 选 .lumideck → 下载条出现 + 文件 ext `.lumideck`
 
 **风险**:
+
 - **fetch 跟项目惯例**:CLAUDE.md「前端约定」要求 API 调用走 `packages/creator/src/api/` 不直接 fetch;但 useExport 已有先例(直接 fetch /api/...),follow 同套路;后续 Phase 可重构提到 api/archive.ts
 - **CSP / 跨域**:同源,无 risk
 - **`<input type="file">` 触发的 download blob URL revoke**:triggerDownload 已经 `setTimeout(() => URL.revokeObjectURL(url), 0)`,无 leak
@@ -704,6 +775,7 @@
 **操作**:
 
 1. 新建 `packages/creator/src/composables/useImport.ts`:
+
    ```ts
    import { ref } from 'vue'
 
@@ -740,6 +812,7 @@
      return { importing, error, importArchive }
    }
    ```
+
 2. 改 `packages/creator/src/pages/DeckListPage.vue`:
    - script 加:
      ```ts
@@ -747,7 +820,9 @@
      import { Upload } from 'lucide-vue-next'
      const { importing, error: importError, importArchive } = useImport()
      const fileInput = ref<HTMLInputElement | null>(null)
-     function onImportClick() { fileInput.value?.click() }
+     function onImportClick() {
+       fileInput.value?.click()
+     }
      async function onFileChange(e: Event) {
        const target = e.target as HTMLInputElement
        const file = target.files?.[0]
@@ -785,11 +860,13 @@
 7. 改 `docs/requirements/roadmap.md` Phase 15 段落(close-out 时):标 ✅ + 链接 plan 31
 
 **验证方法**:
+
 - `pnpm -F @big-ppt/creator vitest run src/composables/__tests__/useImport.test.ts src/pages/__tests__/DeckListPage.test.ts`
 - `pnpm -F @big-ppt/e2e test --grep archive`
 - 手测:登录 → export deck → 退出登录注册另一个账号 → 登录 → 列表页点导入 → 选 .lumideck → 跳新 deck → 看图
 
 **风险**:
+
 - **多账号 cookie 隔离**:E2E 跨账号场景在 playwright 用两个 `browser.newContext()` 实现;round-trip 测可以**同一账号**先 delete 再 import 避免复杂度
 - **VueTestUtils 不跨 Teleport**(CLAUDE.md 已知坑):DeckListPage 自身不用 Teleport(无 modal),但 import error 显示用 plain `<p>` 不用 modal 简化测试
 - **`<input type="file" accept=".lumideck">` 浏览器不识别 `.lumideck`**:`accept` 只是 hint,浏览器不强制;OS 文件选择器会以「兼容」模式显示;**反正提交 server 也会重新 magic-bytes 校验**,不必担心 client 端 accept 不严
@@ -818,8 +895,8 @@
 
 ## 不做什么(范围围栏)
 
-- ❌ **Markdown 粘贴导入** / 任意 .md 转 deck:延 Phase 17+(冷启动诉求弱于备份诉求)
-- ❌ **PPTX 导入**:延 Phase 17+(PPTX 解析 + layout 映射工作量极大)
+- ❌ **Markdown 粘贴导入** / 任意 `.md` 转 deck：2026-07-11 产品决策，永久不做
+- ❌ **PPTX 外部格式导入**：2026-07-11 产品决策，永久不做
 - ❌ **跨 schema version 自动 migration**:不支持版本直接 400 让用户用新版 Lumideck 重新导出
 - ❌ **import 时分支冲突解决**(同名 deck / 同 ID 冲突):一律 new deck,标题加「(导入)」后缀
 - ❌ **包内 user_assets**(ChatPanel 上传的 PDF/DOCX 等参考资料):不在 deck 渲染路径
@@ -843,7 +920,7 @@
 
 ### 预案 2:shared 包 NodeNext build 不完整 → 生产 ERR_MODULE_NOT_FOUND
 
-- **关联 CLAUDE.md 已知坑**:plan 19 踩坑 4(shared)+ Phase 11.6 (slidev/_catalog)
+- **关联 CLAUDE.md 已知坑**:plan 19 踩坑 4(shared)+ Phase 11.6 (slidev/\_catalog)
 - **本 Phase 应用**:Task A 新建 `packages/shared/src/archive.ts` 后,**必须**跑 `pnpm -F @big-ppt/shared build` emit `.js` + `.js.map`;`scripts/deploy.sh build_agent` 已含 shared build,本 Phase 不动部署脚本,只需 commit 前本地 build 一次跑测
 
 ### 预案 3:db.transaction 内 prepared statement stale
@@ -962,31 +1039,31 @@
 
 ## 测试数量落地(2026-05-18 close)
 
-| 指标                       | 起点(Phase 14 close) | 终点(Phase 15 close) | 增量  |
-| -------------------------- | ---------------------- | ---------------------- | ----- |
-| agent unit cases           | 970                    | 1014                   | +44   |
-| agent test files           | (baseline)             | +4(archive-mime-ext / rewrite / build / parse) | +4 |
-| agent integration cases    | (含在 unit)             | (含)                   | +17(routes-decks-archive 7 export + 10 import 含 round-trip) |
-| creator unit cases         | 315                    | 327                    | +12   |
-| creator test files         | (baseline)             | +2(useImport / DeckListPage) | +2 |
-| shared 包                  | -                      | +archive.ts            | +1 文件 |
-| E2E specs(archive 类)    | 0                      | 2(`archive-export` + `archive-roundtrip`)| +2 |
-| coverage lines             | 维持 agent 90%+ / creator 75%+ 门槛 | 维持 | -    |
-| coverage branches          | 维持 agent 85%+ / creator 65%+ 门槛 | 维持 | -    |
+| 指标                    | 起点(Phase 14 close)                | 终点(Phase 15 close)                           | 增量                                                         |
+| ----------------------- | ----------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| agent unit cases        | 970                                 | 1014                                           | +44                                                          |
+| agent test files        | (baseline)                          | +4(archive-mime-ext / rewrite / build / parse) | +4                                                           |
+| agent integration cases | (含在 unit)                         | (含)                                           | +17(routes-decks-archive 7 export + 10 import 含 round-trip) |
+| creator unit cases      | 315                                 | 327                                            | +12                                                          |
+| creator test files      | (baseline)                          | +2(useImport / DeckListPage)                   | +2                                                           |
+| shared 包               | -                                   | +archive.ts                                    | +1 文件                                                      |
+| E2E specs(archive 类)   | 0                                   | 2(`archive-export` + `archive-roundtrip`)      | +2                                                           |
+| coverage lines          | 维持 agent 90%+ / creator 75%+ 门槛 | 维持                                           | -                                                            |
+| coverage branches       | 维持 agent 85%+ / creator 65%+ 门槛 | 维持                                           | -                                                            |
 
 **Phase 15 commit chain**(由旧到新,10 commit):
 
-| SHA | 内容 |
-| --- | ---- |
-| `23ee014` | docs(phase15): 重定义 Phase 15 为「归档数据包 export + import 双向闭环」|
-| `7531f0a` | feat(phase15-A): shared archive types + agent mime-ext / errors / rewrite-asset-urls 基建 |
-| `c7929e5` | fix(phase15-A): ArchiveError 改 override readonly cause? 跟 LLMError 一致 |
-| `16821cb` | feat(phase15-B): buildArchive + GET /api/decks/:id/export-archive route |
-| `1b517a6` | fix(phase15-B): Content-Disposition 加 RFC 6266 filename* UTF-8 编码(中文 title 下载防乱码)|
-| `fb0c3d0` | feat(phase15-C): parseArchive + POST /api/decks/import route + round-trip 测试 |
+| SHA       | 内容                                                                                                           |
+| --------- | -------------------------------------------------------------------------------------------------------------- |
+| `23ee014` | docs(phase15): 重定义 Phase 15 为「归档数据包 export + import 双向闭环」                                       |
+| `7531f0a` | feat(phase15-A): shared archive types + agent mime-ext / errors / rewrite-asset-urls 基建                      |
+| `c7929e5` | fix(phase15-A): ArchiveError 改 override readonly cause? 跟 LLMError 一致                                      |
+| `16821cb` | feat(phase15-B): buildArchive + GET /api/decks/:id/export-archive route                                        |
+| `1b517a6` | fix(phase15-B): Content-Disposition 加 RFC 6266 filename\* UTF-8 编码(中文 title 下载防乱码)                   |
+| `fb0c3d0` | feat(phase15-C): parseArchive + POST /api/decks/import route + round-trip 测试                                 |
 | `52d7b7b` | fix(phase15-C): import 加 templateId whitelist 校(防 unknown 模板 silent corruption)+ .find() → Map index 性能 |
-| `f566546` | feat(phase15-D): ExportModal 加 .lumideck radio + useExport lumideck 分支 |
-| `11fe3d0` | feat(phase15-E): useImport + DeckListPage 导入按钮 + E2E archive export/roundtrip |
-| `c8acf86` | fix(phase15-E): ImportArchiveResponse 类型提到 shared 包(source of truth)|
+| `f566546` | feat(phase15-D): ExportModal 加 .lumideck radio + useExport lumideck 分支                                      |
+| `11fe3d0` | feat(phase15-E): useImport + DeckListPage 导入按钮 + E2E archive export/roundtrip                              |
+| `c8acf86` | fix(phase15-E): ImportArchiveResponse 类型提到 shared 包(source of truth)                                      |
 
 **实施总工时**:plan 估 7d,实际(subagent-driven-development + 多轮 review fix)wall-clock 约 **6h**(controller + 5 fresh implementer + 10 reviewer 轮次)。跟 Phase 14 同 pattern;subagent 流程比传统单线程提速 ~8-10x。

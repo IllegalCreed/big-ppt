@@ -1,18 +1,15 @@
 /**
- * Phase 11.8 Task H-1:anchor 选样全链路 E2E。
+ * Phase 17:预设优先的配图风格全链路 E2E。
  *
  * stub 模式:
  * - BIG_PPT_TEST_IMAGE_MODE=stub:generateImage 跳真 OpenAI 读 fixture PNG
- * - BIG_PPT_TEST_MOOD_BOARD_MODE=stub:mood-board generator 跳真主 LLM 返 3 个 hardcoded sample
- * 两个 env 都在 playwright.config.ts webServer.env 设好,本 spec 不烧 token。
+ * 系统预设选择不调用 mood-board；普通生图继续用 BIG_PPT_TEST_IMAGE_MODE=stub。
  *
  * 覆盖:
- *  (a) 完整闭环:配 image LLM → 建 deck → 点选风格 → 选第 1 张 → DB 验 anchor_asset_id +
- *      asset.purpose='anchor' + 其它 candidate=discarded
- *  (b) 跳过路径:开 modal → 点跳过 → modal 关 + deck.anchor_asset_id 仍 null
- *  (c) 工具透传:配 anchor 后调 generate_slide_image → job 透传 baseImage(anchor BLOB)
- *
- * 换批限频 e2e 不重复(routes-mood-board.test.ts 已 16 case 覆盖含 429)。
+ *  (a) 系统预设一键应用并 materialize 为 deck-local anchor
+ *  (b) 自由生成路径解除首次决策
+ *  (c) 系统预设 anchor 继续透传给 generate_slide_image
+ *  (d) deck A 显式 AI 探索并保存 → deck B 从“我的风格”即时复用
  */
 import { test, expect } from '@playwright/test'
 import mysql from 'mysql2/promise'
@@ -77,97 +74,88 @@ async function createDeck(page: import('@playwright/test').Page, title: string):
   return Number(page.url().match(/\/decks\/(\d+)/)![1])
 }
 
-async function openAnchorPicker(page: import('@playwright/test').Page): Promise<void> {
-  const button = page.locator('[data-anchor-picker-btn]')
+async function openStyleLibrary(page: import('@playwright/test').Page): Promise<void> {
+  const button = page.locator('[data-image-style-library-btn]')
   await expect(button).toBeVisible({ timeout: 10_000 })
   await button.click()
-  await expect(page.locator('[data-anchor-picker-modal]')).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[data-image-style-library]')).toBeVisible({ timeout: 30_000 })
 }
 
-test.describe('Phase 11.8 anchor 选样闭环', () => {
-  test('配 image+main LLM → 建 deck → 点选风格 → 选定 → DB 验 anchor_asset_id 写入', async ({
-    page,
-  }) => {
+test.describe('Phase 17 配图风格库闭环', () => {
+  test('系统预设即时应用 → DB 写入 deck-local anchor 与来源', async ({ page }) => {
     await registerAndConfigure(page)
     const deckId = await createDeck(page, 'anchor happy-path')
 
-    await openAnchorPicker(page)
+    await openStyleLibrary(page)
 
-    // 3 张候选缩略图渲染
-    const cards = page.locator('[data-candidate-id]')
-    await expect(cards).toHaveCount(3, { timeout: 60_000 })
+    // 系统预设立即出现，不等待 AI 抽卡。
+    const cards = page.locator('[data-style-source="system"]')
+    await expect(cards.first()).toBeVisible({ timeout: 10_000 })
 
-    // 点第 1 张选定
+    // 点第 1 张直接应用。
     const firstCard = cards.first()
-    const targetAssetId = await firstCard.getAttribute('data-candidate-id')
-    expect(targetAssetId).toMatch(/^[0-9a-f-]{36}$/i)
+    const targetStyleId = await firstCard.getAttribute('data-style-id')
+    expect(targetStyleId).toMatch(/^[a-z0-9-]+$/)
     await firstCard.click()
 
     // modal 关闭
-    await expect(page.locator('[data-anchor-picker-modal]')).toBeHidden({ timeout: 10_000 })
+    await expect(page.locator('[data-image-style-library]')).toBeHidden({ timeout: 10_000 })
 
-    // DB 验证:decks.anchor_asset_id = 选中的 assetId
+    // DB 验证:deck 指向 materialized asset。
     const [[deckRow]] = await db.execute<mysql.RowDataPacket[]>(
-      `SELECT anchor_asset_id FROM decks WHERE id = ?`,
+      `SELECT anchor_asset_id, anchor_skipped FROM decks WHERE id = ?`,
       [deckId],
     )
-    expect(deckRow!.anchor_asset_id).toBe(targetAssetId)
+    expect(deckRow!.anchor_asset_id).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(Boolean(deckRow!.anchor_skipped)).toBe(true)
 
-    // DB 验证:asset.purpose = 'anchor';其它两个候选保留为 candidate,方便重开 modal 重选
+    // 系统 preset 只复制一份 anchor，不会先生成 3 张 mood-board candidate。
     const [assets] = await db.execute<mysql.RowDataPacket[]>(
-      `SELECT id, purpose FROM deck_assets WHERE deck_id = ? ORDER BY created_at`,
+      `SELECT id, purpose, style_source, style_source_id FROM deck_assets WHERE deck_id = ?`,
       [deckId],
     )
-    expect(assets.length).toBe(3)
-    const map = Object.fromEntries(assets.map((a) => [a.id, a.purpose]))
-    expect(map[targetAssetId!]).toBe('anchor')
-    const others = assets.map((a) => a.id).filter((id) => id !== targetAssetId)
-    for (const oid of others) {
-      expect(map[oid]).toBe('mood-board-candidate')
-    }
+    expect(assets).toHaveLength(1)
+    expect(assets[0]!.id).toBe(deckRow!.anchor_asset_id)
+    expect(assets[0]!.purpose).toBe('style-preset-anchor')
+    expect(assets[0]!.style_source).toBe('system')
+    expect(assets[0]!.style_source_id).toBe(targetStyleId)
   })
 
-  test('开 modal → 点跳过 → deck.anchor_asset_id 仍 null + 流程继续', async ({ page }) => {
+  test('开风格库 → 使用自由生成 → anchor 为空且决策已完成', async ({ page }) => {
     await registerAndConfigure(page)
     const deckId = await createDeck(page, 'anchor skip-path')
 
-    await openAnchorPicker(page)
-    await expect(page.locator('[data-candidate-id]')).toHaveCount(3, { timeout: 60_000 })
+    await openStyleLibrary(page)
+    await page.locator('[data-free-style]').click()
+    await expect(page.locator('[data-image-style-library]')).toBeHidden({ timeout: 5_000 })
 
-    // 点 "跳过本次" 按钮
-    await page.locator('[data-primary-action][data-mode="skip"]').click()
-    await expect(page.locator('[data-anchor-picker-modal]')).toBeHidden({ timeout: 5_000 })
-
-    // DB 验证:deck.anchor_asset_id 仍 null;3 个 candidate 行仍存在(purpose='mood-board-candidate')
+    // 没有抽卡，也不会制造 deck asset。
     const [[deckRow]] = await db.execute<mysql.RowDataPacket[]>(
-      `SELECT anchor_asset_id FROM decks WHERE id = ?`,
+      `SELECT anchor_asset_id, anchor_skipped FROM decks WHERE id = ?`,
       [deckId],
     )
     expect(deckRow!.anchor_asset_id).toBeNull()
+    expect(Boolean(deckRow!.anchor_skipped)).toBe(true)
 
-    const [candidates] = await db.execute<mysql.RowDataPacket[]>(
-      `SELECT id, purpose FROM deck_assets WHERE deck_id = ?`,
+    const [assets] = await db.execute<mysql.RowDataPacket[]>(
+      `SELECT id FROM deck_assets WHERE deck_id = ?`,
       [deckId],
     )
-    expect(candidates.length).toBe(3)
-    for (const c of candidates) expect(c.purpose).toBe('mood-board-candidate')
+    expect(assets).toHaveLength(0)
   })
 
-  test('选定 anchor 后调 generate_slide_image → 工具透传 baseImage(读 anchor BLOB)', async ({
-    page,
-  }) => {
+  test('应用系统预设后调 generate_slide_image → 工具透传 materialized anchor', async ({ page }) => {
     await registerAndConfigure(page)
     const deckId = await createDeck(page, 'anchor tool inject')
 
-    await openAnchorPicker(page)
-    await expect(page.locator('[data-candidate-id]')).toHaveCount(3, { timeout: 60_000 })
-
-    const targetAssetId = await page
-      .locator('[data-candidate-id]')
-      .first()
-      .getAttribute('data-candidate-id')
-    await page.locator('[data-candidate-id]').first().click()
-    await expect(page.locator('[data-anchor-picker-modal]')).toBeHidden({ timeout: 5_000 })
+    await openStyleLibrary(page)
+    await page.locator('[data-style-source="system"]').first().click()
+    await expect(page.locator('[data-image-style-library]')).toBeHidden({ timeout: 5_000 })
+    const [[selectedDeck]] = await db.execute<mysql.RowDataPacket[]>(
+      `SELECT anchor_asset_id FROM decks WHERE id = ?`,
+      [deckId],
+    )
+    const targetAssetId = selectedDeck!.anchor_asset_id as string
 
     // 直接调 /api/call-tool 触发 generate_slide_image(slideIndex=2)
     const callRes = await page.request.post(`${AGENT_BASE}/api/call-tool`, {
@@ -189,7 +177,9 @@ test.describe('Phase 11.8 anchor 选样闭环', () => {
     expect(callRes.ok()).toBe(true)
     const callBody = await callRes.json()
     const inner =
-      typeof callBody.result === 'string' ? JSON.parse(callBody.result) : callBody.result ?? callBody
+      typeof callBody.result === 'string'
+        ? JSON.parse(callBody.result)
+        : (callBody.result ?? callBody)
     expect(inner.success).toBe(true)
     const jobId = inner.jobId as string
 
@@ -206,20 +196,18 @@ test.describe('Phase 11.8 anchor 选样闭环', () => {
       )
       .toMatch(/done|fallback-rewrote/)
 
-    // worker 完成后 deck_assets 应有:1 anchor + 2 同批候选 + 1 普通生图产物(purpose=null)
+    // worker 完成后 deck_assets 应有:1 preset anchor + 1 普通生图产物。
     const [assets] = await db.execute<mysql.RowDataPacket[]>(
       `SELECT id, purpose FROM deck_assets WHERE deck_id = ? ORDER BY created_at`,
       [deckId],
     )
-    expect(assets.length).toBe(4)
+    expect(assets.length).toBe(2)
     const purposeCount = assets.reduce<Record<string, number>>((acc, a) => {
       const k = a.purpose ?? 'null'
       acc[k] = (acc[k] ?? 0) + 1
       return acc
     }, {})
-    // 选定的那张 anchor + 2 张仍可重选的 candidate + 1 张刚生成的普通(purpose=null)
-    expect(purposeCount['anchor']).toBe(1)
-    expect(purposeCount['mood-board-candidate']).toBe(2)
+    expect(purposeCount['style-preset-anchor']).toBe(1)
     expect(purposeCount['null']).toBe(1)
 
     // **anchor 仍是当时选定的 assetId**
@@ -228,5 +216,65 @@ test.describe('Phase 11.8 anchor 选样闭环', () => {
       [deckId],
     )
     expect(deckRow!.anchor_asset_id).toBe(targetAssetId)
+  })
+
+  test('deck A 探索并保存 → deck B 从我的风格直接复用', async ({ page }) => {
+    test.setTimeout(60_000)
+    await registerAndConfigure(page)
+    const sourceDeckId = await createDeck(page, 'style source deck')
+
+    await openStyleLibrary(page)
+    await page.locator('[data-style-tab="explore"]').click()
+    await page.locator('[data-explore-styles]').click()
+
+    const exploredCard = page.locator('[data-style-source="explore"]').first()
+    await expect(exploredCard).toBeVisible({ timeout: 20_000 })
+    const sourceAssetId = await exploredCard.getAttribute('data-style-id')
+    expect(sourceAssetId).toMatch(/^[0-9a-f-]{36}$/i)
+
+    const exploredArticle = page
+      .locator(`[data-style-source="explore"][data-style-id="${sourceAssetId}"]`)
+      .locator('xpath=ancestor::article')
+    await exploredArticle.getByRole('button', { name: /^保存.+到我的风格$/ }).click()
+    await expect(exploredArticle.getByText('已保存')).toBeVisible({ timeout: 10_000 })
+
+    const [[preset]] = await db.execute<mysql.RowDataPacket[]>(
+      `SELECT id, source_asset_id FROM user_style_presets WHERE source_asset_id = ?`,
+      [sourceAssetId],
+    )
+    expect(preset!.id).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(preset!.source_asset_id).toBe(sourceAssetId)
+
+    await page.locator('[data-close-style-library]').click()
+    await expect(page.locator('[data-image-style-library]')).toBeHidden({ timeout: 5_000 })
+    await page.getByRole('button', { name: '返回列表' }).click()
+    await expect(page).toHaveURL(/\/decks(\?.*)?$/, { timeout: 10_000 })
+
+    const targetDeckId = await createDeck(page, 'style target deck')
+    await openStyleLibrary(page)
+    await page.locator('[data-style-tab="user"]').click()
+    const savedCard = page.locator('[data-style-source="user"][data-style-id]').first()
+    await expect(savedCard).toBeVisible({ timeout: 10_000 })
+    expect(await savedCard.getAttribute('data-style-id')).toBe(preset!.id)
+    await savedCard.click()
+    await expect(page.locator('[data-image-style-library]')).toBeHidden({ timeout: 10_000 })
+
+    const [[targetDeck]] = await db.execute<mysql.RowDataPacket[]>(
+      `SELECT anchor_asset_id FROM decks WHERE id = ?`,
+      [targetDeckId],
+    )
+    const [[targetAnchor]] = await db.execute<mysql.RowDataPacket[]>(
+      `SELECT style_source, style_source_id, purpose FROM deck_assets WHERE id = ? AND deck_id = ?`,
+      [targetDeck!.anchor_asset_id, targetDeckId],
+    )
+    expect(targetAnchor).toMatchObject({
+      style_source: 'user',
+      style_source_id: preset!.id,
+      purpose: 'style-preset-anchor',
+    })
+
+    // 源 deck 与用户级 preset 均保持原状，目标 deck 只有自己的 materialized 副本。
+    expect(sourceDeckId).not.toBe(targetDeckId)
+    expect(targetDeck!.anchor_asset_id).not.toBe(sourceAssetId)
   })
 })

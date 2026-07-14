@@ -173,6 +173,7 @@ decksArchiveRoute.post('/decks/import', async (c) => {
         userId: user.id,
         title: newTitle,
         templateId: parsed.manifest.deck.templateId,
+        anchorSkipped: parsed.manifest.deck.anchorSkipped,
       })
       const [created] = await tx
         .select({ id: decks.id })
@@ -184,9 +185,12 @@ decksArchiveRoute.post('/decks/import', async (c) => {
 
       // 建 idMap:每张原 asset 用新 uuid 重插,避免跟现有 deck_assets row id 冲突
       const idMap = new Map<string, string>()
+      const importedSourceByOldId = new Map<string, 'system' | 'explore' | null>()
       for (const [oldId, bytes] of parsed.assets.entries()) {
         const newId = randomUUID()
         const meta = metaByOldId.get(oldId)!
+        // 账号级 user preset 不随包迁移；导入后降级为可继续使用/重新保存的 deck-local 风格。
+        const importedStyleSource = meta.styleSource === 'user' ? 'explore' : meta.styleSource
         await tx.insert(deckAssets).values({
           id: newId,
           deckId: created.id,
@@ -196,8 +200,31 @@ decksArchiveRoute.post('/decks/import', async (c) => {
           data: bytes,
           prompt: meta.prompt,
           model: meta.model,
+          style: meta.style,
+          purpose: meta.purpose,
+          styleSource: importedStyleSource,
+          // explore 来源的稳定 id 就是 deck asset 自身；重发 UUID 后必须同步映射。
+          styleSourceId: importedStyleSource === 'explore' ? newId : meta.styleSourceId,
+          stylePalettePolicy: meta.stylePalettePolicy,
+          stylePrompt: meta.stylePrompt,
+          imageWidth: meta.imageWidth,
+          imageHeight: meta.imageHeight,
         })
         idMap.set(oldId, newId)
+        importedSourceByOldId.set(oldId, importedStyleSource)
+      }
+
+      const oldAnchorId = parsed.manifest.deck.anchorAssetId
+      const newAnchorId = oldAnchorId ? (idMap.get(oldAnchorId) ?? null) : null
+      if (oldAnchorId && !newAnchorId) {
+        throw new Error('archive anchor id 映射失败')
+      }
+
+      // deck pointer 是当前状态权威来源；历史包里的 asset purpose 可能漂移，导入时规范化。
+      if (newAnchorId) {
+        const importedAnchorSource = importedSourceByOldId.get(oldAnchorId!) ?? null
+        const purpose = importedAnchorSource === 'system' ? 'style-preset-anchor' : 'anchor'
+        await tx.update(deckAssets).set({ purpose }).where(eq(deckAssets.id, newAnchorId))
       }
 
       // rewrite markdown 内 /api/assets/<oldId> → /api/assets/<newId>
@@ -207,6 +234,7 @@ decksArchiveRoute.post('/decks/import', async (c) => {
         content: newContent,
         message: `从 .lumideck 导入(原 deck #${parsed.manifest.deck.originalDeckId})`,
         templateId: parsed.manifest.deck.templateId,
+        anchorAssetId: newAnchorId,
         authorId: user.id,
       })
       const [firstVer] = await tx
@@ -219,7 +247,11 @@ decksArchiveRoute.post('/decks/import', async (c) => {
 
       await tx
         .update(decks)
-        .set({ currentVersionId: firstVer.id })
+        .set({
+          currentVersionId: firstVer.id,
+          anchorAssetId: newAnchorId,
+          anchorSkipped: parsed.manifest.deck.anchorSkipped,
+        })
         .where(eq(decks.id, created.id))
 
       return { deckId: created.id, title: newTitle }

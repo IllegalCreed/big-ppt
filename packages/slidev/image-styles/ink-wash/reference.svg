@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="624" viewBox="0 0 1280 624">
+  <defs><filter id="ink"><feTurbulence type="fractalNoise" baseFrequency=".02" numOctaves="4" seed="12" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="28"/><feGaussianBlur stdDeviation="3"/></filter></defs>
+  <rect width="1280" height="624" fill="#f5f2e9"/>
+  
+    <g filter="url(#ink)">
+      <path d="M74 486c142-24 196-238 330-266 102-22 142 120 236 82 116-46 174-216 306-190 105 20 120 173 254 226v166H74z" fill="#273139" opacity=".84"/>
+      <path d="M116 488c154-42 218-172 326-178 100-6 152 92 240 48 86-42 136-142 242-136 112 6 154 106 234 142" fill="none" stroke="#6c7778" stroke-width="46" opacity=".5"/>
+      <circle cx="927" cy="174" r="92" fill="#c8c5b9" opacity=".74"/>
+    </g>
+    <g fill="none" stroke="#20282d" stroke-width="7" stroke-linecap="round"><path d="M224 424c72-132 132-212 180-244"/><path d="M362 240c-50-38-86-44-118-18M386 210c34-62 72-90 114-100M350 280c72 2 118 22 142 60"/></g>
+    <rect x="1080" y="430" width="66" height="66" rx="6" fill="#b93c33" opacity=".9"/>
+  
+</svg>

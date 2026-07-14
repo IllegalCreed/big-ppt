@@ -59,7 +59,7 @@ function handleExit() {
   void router.push('/decks')
 }
 
-/** 模板切换完成后，重新拉取 deck + currentVersion 刷新编辑页数据 */
+/** 模板或配图风格变更后，重新拉取 deck + currentVersion 刷新编辑页数据。 */
 async function handleTemplateSwitched() {
   const id = deckId.value
   if (!Number.isInteger(id) || id <= 0) return
@@ -95,6 +95,7 @@ function handleTitleUpdated(payload: { title: string }) {
     :current-version="state.currentVersion"
     @exit-to-list="handleExit"
     @template-switched="handleTemplateSwitched"
+    @style-changed="handleTemplateSwitched"
     @title-updated="handleTitleUpdated"
   />
 </template>

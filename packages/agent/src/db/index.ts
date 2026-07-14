@@ -8,6 +8,7 @@ export {
   deckChats,
   userMcpServers,
   deckAssets,
+  userStylePresets,
   userAssets,
 } from './schema.js'
 export type {
@@ -27,6 +28,8 @@ export type {
   NewUserMcpServer,
   DeckAsset,
   NewDeckAsset,
+  UserStylePreset,
+  NewUserStylePreset,
   UserAsset,
   NewUserAsset,
 } from './schema.js'

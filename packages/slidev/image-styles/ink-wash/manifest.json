@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "ink-wash",
+  "name": "水墨线描",
+  "description": "墨色浓淡、飞白与极少量朱红点睛，适合东方文化与战略主题。",
+  "category": "artistic",
+  "tags": ["水墨", "东方", "克制"],
+  "order": 90,
+  "stylePrompt": "Contemporary Chinese ink-wash illustration with expressive black and gray brush gradients, dry-brush texture, elegant negative space, sparse line work, and a restrained vermilion accent.",
+  "palettePolicy": "reference",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

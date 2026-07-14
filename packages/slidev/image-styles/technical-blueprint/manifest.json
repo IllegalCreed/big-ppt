@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "technical-blueprint",
+  "name": "技术蓝图",
+  "description": "深色网格、发光线框与工程示意，适合系统架构和技术方案。",
+  "category": "business",
+  "tags": ["科技", "架构", "线框"],
+  "order": 30,
+  "stylePrompt": "Technical blueprint schematic on a deep navy grid, precise cyan line work, engineering callouts, modular system blocks, luminous nodes, and disciplined technical drafting.",
+  "palettePolicy": "reference",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

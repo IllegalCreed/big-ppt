@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "clay-3d",
+  "name": "黏土 3D",
+  "description": "柔软圆润的黏土质感与柔和阴影，现代、轻松并有亲和力。",
+  "category": "dimensional",
+  "tags": ["3D", "柔和", "亲和"],
+  "order": 50,
+  "stylePrompt": "Soft clay-like 3D forms with rounded geometry, tactile matte material, gentle studio lighting, subtle depth, friendly proportions, and smooth ambient shadows.",
+  "palettePolicy": "template",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

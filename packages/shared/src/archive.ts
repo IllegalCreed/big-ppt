@@ -1,45 +1,77 @@
 /**
- * Phase 15 归档数据包 manifest schema 单一来源。
+ * `.lumideck` 归档 manifest schema 单一来源。
  *
- * 升级 schemaVersion 时:append SUPPORTED_SCHEMA_VERSIONS + bump CURRENT_SCHEMA_VERSION
- * + 加版本差异表(见 plan 31 close-out 章节)。
- * 不支持自动 migration —— 不在表里的版本号 import 直接 400。
+ * v1:deck 当前内容 + asset 基础元数据。
+ * v2(Phase 17):补齐配图风格来源、asset purpose 与 deck anchor 决策。
+ * import 继续接受 v1；parse 端会把缺失字段 normalize 成 null / false。
  */
-export const SUPPORTED_SCHEMA_VERSIONS = [1] as const
+export const SUPPORTED_SCHEMA_VERSIONS = [1, 2] as const
 export type SupportedSchemaVersion = (typeof SUPPORTED_SCHEMA_VERSIONS)[number]
-export const CURRENT_SCHEMA_VERSION: SupportedSchemaVersion = 1
+export const CURRENT_SCHEMA_VERSION = 2 as const satisfies SupportedSchemaVersion
 
-export interface ArchiveAssetEntry {
-  id: string             // uuid (= deck_assets.id)
-  mimeType: string       // e.g. "image/png"
-  bytesSize: number      // 跟 assets/<id>.<ext> 实际字节一致(parse 端会校)
-  prompt: string | null  // 出图 prompt,null 表示用户嵌图
-  model: string | null   // 出图模型,如 "gpt-image-1"
+export type ArchiveAssetPurpose =
+  | 'anchor'
+  | 'style-preset-anchor'
+  | 'mood-board-candidate'
+  | 'mood-board-discarded'
+
+export type ArchiveStyleSource = 'system' | 'user' | 'explore'
+export type ArchiveStylePalettePolicy = 'template' | 'reference'
+
+export interface ArchiveAssetEntryV1 {
+  id: string
+  mimeType: string
+  bytesSize: number
+  prompt: string | null
+  model: string | null
 }
 
-export interface ArchiveDeckMeta {
-  originalDeckId: number     // 源 deck id(import 不复用,纯审计)
+export interface ArchiveAssetEntryV2 extends ArchiveAssetEntryV1 {
+  style: string | null
+  purpose: ArchiveAssetPurpose | null
+  styleSource: ArchiveStyleSource | null
+  styleSourceId: string | null
+  stylePalettePolicy: ArchiveStylePalettePolicy | null
+  stylePrompt: string | null
+  imageWidth: number | null
+  imageHeight: number | null
+}
+
+/** 当前代码消费的统一 asset 形状；v1 parse 后缺失字段已补 null。 */
+export type ArchiveAssetEntry = ArchiveAssetEntryV2
+
+export interface ArchiveDeckMetaV1 {
+  originalDeckId: number
   title: string
-  templateId: string         // 'beitou-standard' 等
-  createdAt: string          // ISO 8601
-  updatedAt: string          // ISO 8601
+  templateId: string
+  createdAt: string
+  updatedAt: string
 }
 
-export interface ArchiveManifest {
-  schemaVersion: SupportedSchemaVersion
-  lumideckVersion: string    // 当前实例 version,如 "0.1.0";仅审计用
-  exportedAt: string         // ISO 8601
-  deck: ArchiveDeckMeta
-  assets: ArchiveAssetEntry[]
+export interface ArchiveDeckMetaV2 extends ArchiveDeckMetaV1 {
+  anchorAssetId: string | null
+  anchorSkipped: boolean
 }
 
-/**
- * POST /api/decks/import 响应体。前后端共享避免类型 drift
- * (字段改名 / 加字段时 TS 跨包 catch)。
- *
- * - `deckId`: 新建 deck 主键(非源 deck id)
- * - `title`: 还原后的 title(后端自动加「(导入)」后缀)
- */
+/** 当前代码消费的统一 deck 形状；v1 parse 后缺失字段已补 null / false。 */
+export type ArchiveDeckMeta = ArchiveDeckMetaV2
+
+interface ArchiveManifestBase<TVersion extends SupportedSchemaVersion, TDeck, TAsset> {
+  schemaVersion: TVersion
+  lumideckVersion: string
+  exportedAt: string
+  deck: TDeck
+  assets: TAsset[]
+}
+
+export type ArchiveManifestV1 = ArchiveManifestBase<1, ArchiveDeckMetaV1, ArchiveAssetEntryV1>
+export type ArchiveManifestV2 = ArchiveManifestBase<2, ArchiveDeckMetaV2, ArchiveAssetEntryV2>
+export type ArchiveManifest = ArchiveManifestV1 | ArchiveManifestV2
+
+/** parseArchive 返回的 canonical v2-shaped manifest。 */
+export type NormalizedArchiveManifest = ArchiveManifestV2
+
+/** POST /api/decks/import 响应体。 */
 export interface ImportArchiveResponse {
   deckId: number
   title: string

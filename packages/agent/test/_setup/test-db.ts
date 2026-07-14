@@ -18,13 +18,16 @@ import { closeDb, getDb } from '../../src/db/index.js'
 import { __resetRegistryForTesting as resetMcpRegistries } from '../../src/mcp-registry/index.js'
 import { __resetLivePresentationsForTesting } from '../../src/live-presentation.js'
 import { __resetRateLimitForTesting } from '../../src/middleware/rate-limit.js'
+import { __resetStyleExploreJobsForTesting } from '../../src/style-library/job.js'
 
 export async function resetDb(): Promise<void> {
+  __resetStyleExploreJobsForTesting()
   const db = getDb()
   await db.execute(sql`SET FOREIGN_KEY_CHECKS=0`)
   await db.execute(sql`TRUNCATE TABLE share_links`)
   await db.execute(sql`TRUNCATE TABLE user_assets`)
   await db.execute(sql`TRUNCATE TABLE user_mcp_servers`)
+  await db.execute(sql`TRUNCATE TABLE user_style_presets`)
   await db.execute(sql`TRUNCATE TABLE deck_assets`)
   await db.execute(sql`TRUNCATE TABLE deck_chats`)
   await db.execute(sql`TRUNCATE TABLE deck_versions`)

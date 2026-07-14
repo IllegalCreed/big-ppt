@@ -5,6 +5,7 @@
 > 前置：Phase 12.7 ✅(pi-agent-core backend agent runtime)
 > 后续：Phase 13.5 候选(MCP catalog 自 host search wrapper,推迟到 dogfood 出痛点再启) / Phase 14 导出
 > 编号：roadmap 原 Phase 13「MCP catalog 扩展」改写成本主题(用户 2026-05-16 拍板:不要本地 stdio MCP,HTTP 生态太瘦,先做文件上传更高 ROI;MCP catalog 仍可后续接 Brave Search 类直连 HTTP wrapper)
+> **后续决策（2026-07-11）**：Markdown / PPTX 外部格式导入永久不做，本决策覆盖设计期的原阶段关系。
 
 ## 1. 目标
 
@@ -18,7 +19,7 @@
 
 - ❌ **音频文件**:不接 ASR(Whisper / 通义听悟),不做语音转文字。低频场景,留 Phase 13.x 候选
 - ❌ **视频文件**:不抽帧 / 不做 video understanding。罕见场景,留 Phase 16+ 候选
-- ❌ **PPTX 导入**:Phase 15 单独 phase,本期不做
+- ❌ **PPTX 外部格式导入**：2026-07-11 产品决策，永久不做
 - ❌ **品牌 asset 持久化**(用户级 logo / 配色 / 字体跨 deck 复用):Phase 13.5 候选,先看 user_assets 单一池的 dogfood 反馈
 - ❌ **Vision LLM 独立配置**:不加 Settings 第 4 tab。主 LLM 是 multi-modal 就走主 LLM,不是就提示用户切;不引入新 vision provider 概念
 - ❌ **OSS / S3 远程存储**:本地 fs 路径起步,产品化时再迁。本 phase 不引入新云服务依赖
@@ -113,15 +114,23 @@
 ```ts
 // packages/agent/src/db/schema.ts
 export const userAssets = mysqlTable('user_assets', {
-  id: varchar('id', { length: 36 }).primaryKey(),  // uuid v4
-  userId: int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  id: varchar('id', { length: 36 }).primaryKey(), // uuid v4
+  userId: int('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
   filename: varchar('filename', { length: 255 }).notNull(),
   mime: varchar('mime', { length: 100 }).notNull(),
   sizeBytes: int('size_bytes').notNull(),
-  sha256: varchar('sha256', { length: 64 }).notNull(),  // dedup hint (不强制 unique,用户可上传同一文件多次)
-  storagePath: varchar('storage_path', { length: 500 }).notNull(),  // ${userId}/${id} 相对 LUMIDECK_ASSETS_DIR
-  extractedText: text('extracted_text'),  // nullable,worker 跑完写入
-  extractStatus: mysqlEnum('extract_status', ['pending', 'running', 'done', 'failed', 'skipped']).default('pending'),
+  sha256: varchar('sha256', { length: 64 }).notNull(), // dedup hint (不强制 unique,用户可上传同一文件多次)
+  storagePath: varchar('storage_path', { length: 500 }).notNull(), // ${userId}/${id} 相对 LUMIDECK_ASSETS_DIR
+  extractedText: text('extracted_text'), // nullable,worker 跑完写入
+  extractStatus: mysqlEnum('extract_status', [
+    'pending',
+    'running',
+    'done',
+    'failed',
+    'skipped',
+  ]).default('pending'),
   extractErrorMsg: text('extract_error_msg'),
   uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 })
@@ -130,50 +139,52 @@ export const userAssets = mysqlTable('user_assets', {
 
 ### 新增文件
 
-| 文件 | 职责 |
-| ---- | ---- |
-| `packages/agent/src/routes/uploads.ts` | POST/GET/DELETE /api/uploads,multipart 解析 + quota check |
-| `packages/agent/src/uploads/storage.ts` | 本地 fs 抽象:put / get / delete + LUMIDECK_ASSETS_DIR env 解析 |
-| `packages/agent/src/uploads/quota.ts` | per-user quota 算总和 + 检查超 cap |
-| `packages/agent/src/uploads/extractor.ts` | extractor worker:5 type parser routing |
-| `packages/agent/src/uploads/parsers/pdf.ts` | pdf-parse wrapper |
-| `packages/agent/src/uploads/parsers/docx.ts` | mammoth wrapper |
-| `packages/agent/src/uploads/parsers/xlsx.ts` | xlsx wrapper(到 JSON.stringify 友好格式) |
-| `packages/agent/src/uploads/parsers/text.ts` | MD/TXT 直读 + 编码检测 |
-| `packages/agent/src/uploads/multi-modal.ts` | hardcoded SUPPORTED_MULTI_MODAL_MODELS set + isMultiModalLLM(provider, model) 函数 |
-| `packages/agent/src/tools/local/list-uploaded-files.ts` | agent tool: list_uploaded_files |
-| `packages/agent/src/tools/local/read-uploaded-file.ts` | agent tool: read_uploaded_file(id, mode) |
-| `packages/creator/src/composables/useUploads.ts` | upload / list / delete API client |
-| `packages/creator/src/components/AssetManagerPanel.vue` | 「我的素材」抽屉/modal |
-| `packages/creator/src/components/UploadButton.vue` | ChatPanel sender 区的 paperclip + 拖拽 zone |
-| `packages/creator/src/components/UploadProgress.vue` | 上传中的 chip 显示 |
-| `docs/plans/29-phase13-file-upload-assets.md` | 本 phase 的 plan |
+| 文件                                                    | 职责                                                                               |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `packages/agent/src/routes/uploads.ts`                  | POST/GET/DELETE /api/uploads,multipart 解析 + quota check                          |
+| `packages/agent/src/uploads/storage.ts`                 | 本地 fs 抽象:put / get / delete + LUMIDECK_ASSETS_DIR env 解析                     |
+| `packages/agent/src/uploads/quota.ts`                   | per-user quota 算总和 + 检查超 cap                                                 |
+| `packages/agent/src/uploads/extractor.ts`               | extractor worker:5 type parser routing                                             |
+| `packages/agent/src/uploads/parsers/pdf.ts`             | pdf-parse wrapper                                                                  |
+| `packages/agent/src/uploads/parsers/docx.ts`            | mammoth wrapper                                                                    |
+| `packages/agent/src/uploads/parsers/xlsx.ts`            | xlsx wrapper(到 JSON.stringify 友好格式)                                           |
+| `packages/agent/src/uploads/parsers/text.ts`            | MD/TXT 直读 + 编码检测                                                             |
+| `packages/agent/src/uploads/multi-modal.ts`             | hardcoded SUPPORTED_MULTI_MODAL_MODELS set + isMultiModalLLM(provider, model) 函数 |
+| `packages/agent/src/tools/local/list-uploaded-files.ts` | agent tool: list_uploaded_files                                                    |
+| `packages/agent/src/tools/local/read-uploaded-file.ts`  | agent tool: read_uploaded_file(id, mode)                                           |
+| `packages/creator/src/composables/useUploads.ts`        | upload / list / delete API client                                                  |
+| `packages/creator/src/components/AssetManagerPanel.vue` | 「我的素材」抽屉/modal                                                             |
+| `packages/creator/src/components/UploadButton.vue`      | ChatPanel sender 区的 paperclip + 拖拽 zone                                        |
+| `packages/creator/src/components/UploadProgress.vue`    | 上传中的 chip 显示                                                                 |
+| `docs/plans/29-phase13-file-upload-assets.md`           | 本 phase 的 plan                                                                   |
 
 ### 修改
 
-| 文件 | 改动 |
-| ---- | ---- |
-| `packages/agent/src/db/schema.ts` | 加 userAssets 表 |
-| `packages/agent/src/app.ts` | mount `/api/uploads` 路由 |
-| `packages/agent/src/tools/registry.ts` | 注册 list_uploaded_files + read_uploaded_file |
-| `packages/agent/src/llm/agent/index.ts` | createAgent systemPrompt 末尾拼 user assets inventory |
-| `packages/agent/src/prompts/buildSystemPrompt.ts` | 加 buildUserAssetsInventory(userId) helper |
-| `packages/creator/src/components/ChatPanel.vue` | sender 区嵌 UploadButton + 拖拽 zone |
-| `packages/creator/src/components/DeckEditorHeader.vue` 或类似顶栏 | 加「我的素材」按钮 |
-| `packages/agent/package.json` | 加 pdf-parse / mammoth / xlsx 依赖;加 multer 或 formidable 处理 multipart |
-| `packages/agent/.env.example` + .env.development.local 等 | 加 LUMIDECK_ASSETS_DIR |
-| `scripts/deploy.sh` | 部署期 mkdir -p /var/lumideck/user-assets;确保 lumideck-agent 进程有写权限 |
-| `CLAUDE.md` | 加 Phase 13 提炼(文件上传 + 多媒体边界 + storage 路径) |
+| 文件                                                              | 改动                                                                       |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `packages/agent/src/db/schema.ts`                                 | 加 userAssets 表                                                           |
+| `packages/agent/src/app.ts`                                       | mount `/api/uploads` 路由                                                  |
+| `packages/agent/src/tools/registry.ts`                            | 注册 list_uploaded_files + read_uploaded_file                              |
+| `packages/agent/src/llm/agent/index.ts`                           | createAgent systemPrompt 末尾拼 user assets inventory                      |
+| `packages/agent/src/prompts/buildSystemPrompt.ts`                 | 加 buildUserAssetsInventory(userId) helper                                 |
+| `packages/creator/src/components/ChatPanel.vue`                   | sender 区嵌 UploadButton + 拖拽 zone                                       |
+| `packages/creator/src/components/DeckEditorHeader.vue` 或类似顶栏 | 加「我的素材」按钮                                                         |
+| `packages/agent/package.json`                                     | 加 pdf-parse / mammoth / xlsx 依赖;加 multer 或 formidable 处理 multipart  |
+| `packages/agent/.env.example` + .env.development.local 等         | 加 LUMIDECK_ASSETS_DIR                                                     |
+| `scripts/deploy.sh`                                               | 部署期 mkdir -p /var/lumideck/user-assets;确保 lumideck-agent 进程有写权限 |
+| `CLAUDE.md`                                                       | 加 Phase 13 提炼(文件上传 + 多媒体边界 + storage 路径)                     |
 
 ## 7. API 设计
 
 ### POST /api/uploads
 
 multipart/form-data:
+
 - `file`: 单文件
 - (前端可一次拖多个 → 串行调用 / 后端不做 batch)
 
 response 200:
+
 ```json
 {
   "asset": {
@@ -192,6 +203,7 @@ response 200:
 ```
 
 错误:
+
 - 401 unauthorized
 - 413 `{error:{code:'file-too-large', message:'单文件最大 10MB'}}`
 - 413 `{error:{code:'quota-exceeded', message:'已用 95MB / 100MB,请先在「我的素材」清理'}}`
@@ -200,6 +212,7 @@ response 200:
 ### GET /api/uploads
 
 response 200:
+
 ```json
 {
   "assets": [{ ... 同上 ... }],
@@ -218,6 +231,7 @@ stream 原字节,Content-Type 跟 DB 的 mime 一致。401 / 403(跨用户) / 40
 ## 8. 后台 Extractor Worker
 
 跟 `packages/agent/src/image-gen-job.ts` 同套路:
+
 - 进程内 in-memory queue + worker pool(concurrency 默认 3 per process)
 - 每个 job: `{ assetId, userId, mime }`
 - worker 解锁后:read fs → call parser → update DB `extractedText` + `extractStatus`
@@ -230,17 +244,19 @@ stream 原字节,Content-Type 跟 DB 的 mime 一致。401 / 403(跨用户) / 40
 ### list_uploaded_files
 
 ```ts
-inputSchema: {} // 无参
-output:
-{
-  files: [{
-    id: 'uuid',
-    filename: 'report.pdf',
-    mime: 'application/pdf',
-    sizeBytes: 1234567,
-    extractStatus: 'done',
-    summary: '<extractedText 前 200 字>'  // 防 list 时返大 text
-  }]
+inputSchema: {
+} // 无参
+output: {
+  files: [
+    {
+      id: 'uuid',
+      filename: 'report.pdf',
+      mime: 'application/pdf',
+      sizeBytes: 1234567,
+      extractStatus: 'done',
+      summary: '<extractedText 前 200 字>', // 防 list 时返大 text
+    },
+  ]
 }
 ```
 
@@ -269,11 +285,18 @@ image mode output: 返 canonical ImageBlock(让 agent 把它当 user message 的
 // packages/agent/src/uploads/multi-modal.ts
 const SUPPORTED_MULTI_MODAL_MODELS = new Set([
   // openai
-  'gpt-5.5', 'gpt-5.2', 'gpt-5v-turbo', 'gpt-4o',
+  'gpt-5.5',
+  'gpt-5.2',
+  'gpt-5v-turbo',
+  'gpt-4o',
   // anthropic
-  'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-3-5-sonnet',
+  'claude-opus-4-7',
+  'claude-sonnet-4-6',
+  'claude-3-5-sonnet',
   // google
-  'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-1.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-1.5-pro',
   // zhipu
   'glm-5v-turbo',
   // ...扩展时按需加
@@ -286,6 +309,7 @@ export function isMultiModalLLM(provider: string, modelId: string | undefined): 
 ```
 
 System prompt 中加注:
+
 ```
 当前主 LLM: {provider}/{model}
 {multi-modal ? '✓ 支持图片,可调 read_uploaded_file(id, mode=\"image\") 读 image 类素材'
@@ -327,15 +351,15 @@ System prompt 中加注:
 
 ## 12. 风险 & 缓解
 
-| 风险 | 后果 | 缓解 |
-| ---- | ---- | ---- |
-| PDF parsing 内存爆 / 慢 | worker 卡死,影响其他 user upload | pdf-parse 设 maxPages=50,超大 PDF truncate;worker timeout 30s |
-| XLSX 多 sheet 巨表 | extractedText 巨大,DB row 膨胀 | parser 限 N 行 / N 列 cap;超出加「... 省略 X 行」尾标 |
-| 用户上传恶意文件(.exe 伪装) | 安全风险 | mime 白名单 + magic-bytes 检测(file-type 包),不在 whitelist 拒 |
-| fs 路径 traversal 攻击 | 越权访问其他 user 文件 | id 用 uuid + 强制 `${userId}/${id}` 路径模板,不接受用户传 path |
-| disk 满 | 整个 lumideck-agent 服务挂 | quota cap + healthz 加 disk-free 探针(>90% warn) |
-| 主 LLM 切换破坏 multi-modal 判定 | 切到非 multi-modal 后,历史 image-mode tool 调用失败 | 主 LLM 切换时 chat 历史不动;新 turn read 工具运行时检测 |
-| 上传中网络断 | 半个文件残留 | multer / formidable 自带 cleanup;fs 写完整后才写 DB row |
+| 风险                             | 后果                                                | 缓解                                                           |
+| -------------------------------- | --------------------------------------------------- | -------------------------------------------------------------- |
+| PDF parsing 内存爆 / 慢          | worker 卡死,影响其他 user upload                    | pdf-parse 设 maxPages=50,超大 PDF truncate;worker timeout 30s  |
+| XLSX 多 sheet 巨表               | extractedText 巨大,DB row 膨胀                      | parser 限 N 行 / N 列 cap;超出加「... 省略 X 行」尾标          |
+| 用户上传恶意文件(.exe 伪装)      | 安全风险                                            | mime 白名单 + magic-bytes 检测(file-type 包),不在 whitelist 拒 |
+| fs 路径 traversal 攻击           | 越权访问其他 user 文件                              | id 用 uuid + 强制 `${userId}/${id}` 路径模板,不接受用户传 path |
+| disk 满                          | 整个 lumideck-agent 服务挂                          | quota cap + healthz 加 disk-free 探针(>90% warn)               |
+| 主 LLM 切换破坏 multi-modal 判定 | 切到非 multi-modal 后,历史 image-mode tool 调用失败 | 主 LLM 切换时 chat 历史不动;新 turn read 工具运行时检测        |
+| 上传中网络断                     | 半个文件残留                                        | multer / formidable 自带 cleanup;fs 写完整后才写 DB row        |
 
 ## 13. 工作量估
 
@@ -352,7 +376,7 @@ System prompt 中加注:
 ## 14. Phase 关系
 
 - **依赖**:Phase 12.7 ✅(pi-agent-core agent runtime 已落,新工具走 tool registry 即可)
-- **不依赖**:Phase 13.5 候选(MCP catalog 扩展)/ Phase 14 导出 / Phase 15 PPTX 导入
+- **不依赖**:Phase 13.5 候选(MCP catalog 扩展)/ Phase 14 导出
 - **后续解锁**:
   - Phase 13.5 candidate:用户级品牌 asset 持久化(复用 user_assets pool 加 isBranded flag)
   - Phase 13.x candidate:音频 ASR(挂 extractor worker 同套路)
@@ -372,7 +396,7 @@ System prompt 中加注:
 
 ## 不变约束
 
-- secrets / .env.*.local 不入 git(沿 CLAUDE.md)
+- secrets / .env.\*.local 不入 git(沿 CLAUDE.md)
 - commit 中文 + 禁用 `git add -A`
 - 测试覆盖率门槛:agent ≥ 90/85;creator ≥ 75/65(沿现行)
 - 沿 subagent-driven-development 套路(implementer + spec reviewer + code quality reviewer per task)

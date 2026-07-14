@@ -46,7 +46,9 @@ export async function apiRequest<T = unknown>(path: string, opts: RequestOptions
 
   const contentType = res.headers.get('content-type') ?? ''
   const isJson = contentType.includes('application/json')
-  const payload: unknown = isJson ? await res.json().catch(() => ({})) : await res.text().catch(() => '')
+  const payload: unknown = isJson
+    ? await res.json().catch(() => ({}))
+    : await res.text().catch(() => '')
 
   if (!res.ok) {
     const serverMsg =
@@ -66,6 +68,8 @@ export const api = {
     apiRequest<T>(path, { ...opts, method: 'POST', body }),
   put: <T>(path: string, body?: unknown, opts?: RequestOptions) =>
     apiRequest<T>(path, { ...opts, method: 'PUT', body }),
+  patch: <T>(path: string, body?: unknown, opts?: RequestOptions) =>
+    apiRequest<T>(path, { ...opts, method: 'PATCH', body }),
   delete: <T>(path: string, opts?: RequestOptions) =>
     apiRequest<T>(path, { ...opts, method: 'DELETE' }),
 }

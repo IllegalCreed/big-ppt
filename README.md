@@ -8,12 +8,12 @@ Lumideck 是一个 AI 演示文稿生成平台：登录后新建 deck，与 Chat
 
 这是一个 pnpm workspace + Turborepo monorepo：
 
-| 包                                     | 作用                                                                         | 端口 |
-| -------------------------------------- | ---------------------------------------------------------------------------- | ---- |
+| 包                                     | 作用                                                                          | 端口 |
+| -------------------------------------- | ----------------------------------------------------------------------------- | ---- |
 | [`packages/creator`](packages/creator) | Vue 3 前端：登录/注册、deck 列表、编辑器、ChatPanel + SlidePreview + Settings | 3030 |
-| [`packages/agent`](packages/agent)     | Hono 后端：Auth、Deck/Share CRUD、LLM 代理、工具执行、MCP                    | 4000 |
+| [`packages/agent`](packages/agent)     | Hono 后端：Auth、Deck/Share CRUD、LLM 代理、工具执行、MCP                     | 4000 |
 | [`packages/slidev`](packages/slidev)   | 纯设计系统包：模板、layouts、图表组件和 prompt catalog                        | —    |
-| [`packages/shared`](packages/shared)   | 前后端契约 TypeScript types                                                  | —    |
+| [`packages/shared`](packages/shared)   | 前后端契约 TypeScript types                                                   | —    |
 | [`packages/e2e`](packages/e2e)         | Playwright 端到端测试                                                         | —    |
 
 ## 快速开始
@@ -36,11 +36,11 @@ pnpm dev             # 同时起 creator / agent
 
 三层 env，每层都有 `.env.{env}.example`（入库，占位符）和 `.env.{env}.local`（gitignored，真实值）：
 
-| 层级        | local 文件                                    | 触发命令                |
-| ----------- | --------------------------------------------- | ----------------------- |
-| development | `packages/agent/.env.development.local`      | `pnpm dev`              |
-| test        | `packages/agent/.env.test.local`             | `pnpm test`             |
-| production  | `packages/agent/.env.production.local`       | `pnpm start`（部署时）   |
+| 层级        | local 文件                              | 触发命令               |
+| ----------- | --------------------------------------- | ---------------------- |
+| development | `packages/agent/.env.development.local` | `pnpm dev`             |
+| test        | `packages/agent/.env.test.local`        | `pnpm test`            |
+| production  | `packages/agent/.env.production.local`  | `pnpm start`（部署时） |
 
 **切勿把 `.env.*.local` 提交到 git**（根 `.gitignore` 已全线屏蔽）。
 
@@ -71,4 +71,6 @@ pnpm -F @big-ppt/e2e test              # Playwright（真浏览器 + 真后端 +
 - ✅ Phase 15：`.lumideck` 归档导出与原子导入
 - ✅ Phase 15.5：CI、lint、类型、bundle budget 与浏览器守门
 - ✅ Phase 16：原生 PresentationViewer、演讲者模式、公开分享、画笔；Slidev runtime 退役
-- ⏳ Phase 17+：Markdown 粘贴导入与 PPTX 导入
+- ✅ Phase 17：配图风格资产库、跨 deck 复用与按需 AI 探索
+
+> 产品边界：不提供 Markdown / PPTX 外部格式导入；跨账号、跨实例恢复使用 `.lumideck` 归档。

@@ -20,6 +20,7 @@ import { rewriteForTemplate } from '../prompts/rewriteForTemplate.js'
 import { canonicalToRow, rowToCanonical } from '../llm/chat-row.js'
 import type { CanonicalMessage, CanonicalRole } from '../llm/types.js'
 import { endOwnerDeckLivePresentation } from '../live-presentation.js'
+import { cancelStyleExploreForDeck } from '../style-library/job.js'
 
 type UserVars = AuthVars
 
@@ -227,6 +228,7 @@ decksRoute.delete('/decks/:id{[0-9]+}', async (c) => {
   const db = getDb()
   await db.update(decks).set({ status: 'deleted' }).where(eq(decks.id, deckId))
   endOwnerDeckLivePresentation(user.id, deckId)
+  cancelStyleExploreForDeck(user.id, deckId)
   // Phase 11.5：deck 是 soft delete 不触发 FK cascade,显式清 deck_assets BLOB 行
   // 避免 DB 长期膨胀。失败不阻塞响应(asset 留库变孤儿是可恢复的)。
   try {

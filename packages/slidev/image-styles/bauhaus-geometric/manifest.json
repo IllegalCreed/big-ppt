@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "bauhaus-geometric",
+  "name": "包豪斯几何",
+  "description": "强几何、原色关系和大胆留白，适合趋势、品牌和创意提案。",
+  "category": "artistic",
+  "tags": ["包豪斯", "几何", "强视觉"],
+  "order": 100,
+  "stylePrompt": "Bauhaus-inspired geometric composition with bold circles, rectangles and triangles, asymmetric balance, primary-color tension, flat print surfaces, and rigorous modernist structure.",
+  "palettePolicy": "reference",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

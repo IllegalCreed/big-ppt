@@ -20,7 +20,13 @@
  */
 import JSZip from 'jszip'
 import { eq } from 'drizzle-orm'
-import { CURRENT_SCHEMA_VERSION, type ArchiveManifest } from '@big-ppt/shared'
+import {
+  CURRENT_SCHEMA_VERSION,
+  type ArchiveAssetPurpose,
+  type ArchiveManifestV2,
+  type ArchiveStylePalettePolicy,
+  type ArchiveStyleSource,
+} from '@big-ppt/shared'
 import { getDb, decks, deckVersions, deckAssets } from '../db/index.js'
 import { mimeToExt } from './mime-ext.js'
 
@@ -46,8 +52,23 @@ export async function buildArchive(args: { deckId: number; userId: number }): Pr
 
   // 一次性查所有 asset(含 BLOB)。dogfood 期单 deck 资源量可控。
   const assets = await db.select().from(deckAssets).where(eq(deckAssets.deckId, args.deckId))
+  // Phase 17 探索任务的 staging 是未提交中间态，不能进入可移植归档。
+  const archivedAssets = assets.filter((asset) => asset.purpose !== 'mood-board-staging')
+  const archiveAnchorAssetId =
+    deck.anchorAssetId && archivedAssets.some((asset) => asset.id === deck.anchorAssetId)
+      ? deck.anchorAssetId
+      : null
 
-  const manifest: ArchiveManifest = {
+  const validPurposes = new Set<ArchiveAssetPurpose>([
+    'anchor',
+    'style-preset-anchor',
+    'mood-board-candidate',
+    'mood-board-discarded',
+  ])
+  const validSources = new Set<ArchiveStyleSource>(['system', 'user', 'explore'])
+  const validPalettePolicies = new Set<ArchiveStylePalettePolicy>(['template', 'reference'])
+
+  const manifest: ArchiveManifestV2 = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     lumideckVersion: LUMIDECK_VERSION,
     exportedAt: new Date().toISOString(),
@@ -57,14 +78,48 @@ export async function buildArchive(args: { deckId: number; userId: number }): Pr
       templateId: deck.templateId,
       createdAt: deck.createdAt.toISOString(),
       updatedAt: deck.updatedAt.toISOString(),
+      anchorAssetId: archiveAnchorAssetId,
+      // 脏/孤儿/staging anchor 安全降级为已决策自由生成，避免导出自损包。
+      anchorSkipped: archiveAnchorAssetId
+        ? !!deck.anchorSkipped
+        : !!deck.anchorSkipped || !!deck.anchorAssetId,
     },
-    assets: assets.map((a) => ({
-      id: a.id,
-      mimeType: a.mimeType,
-      bytesSize: a.bytesSize,
-      prompt: a.prompt,
-      model: a.model,
-    })),
+    assets: archivedAssets.map((a) => {
+      const palettePolicy = validPalettePolicies.has(
+        a.stylePalettePolicy as ArchiveStylePalettePolicy,
+      )
+        ? (a.stylePalettePolicy as ArchiveStylePalettePolicy)
+        : null
+      const source =
+        validSources.has(a.styleSource as ArchiveStyleSource) &&
+        !!a.styleSourceId &&
+        !!palettePolicy
+          ? (a.styleSource as ArchiveStyleSource)
+          : null
+      const currentAnchorPurpose: ArchiveAssetPurpose =
+        source === 'system' || source === 'user' ? 'style-preset-anchor' : 'anchor'
+      return {
+        id: a.id,
+        mimeType: a.mimeType,
+        bytesSize: a.bytesSize,
+        prompt: a.prompt,
+        model: a.model,
+        style: a.style ?? null,
+        // deck pointer 是当前状态的权威来源，历史 restore 可能留下 purpose 漂移。
+        purpose:
+          a.id === archiveAnchorAssetId
+            ? currentAnchorPurpose
+            : validPurposes.has(a.purpose as ArchiveAssetPurpose)
+              ? (a.purpose as ArchiveAssetPurpose)
+              : null,
+        styleSource: source,
+        styleSourceId: source ? a.styleSourceId : null,
+        stylePalettePolicy: source ? palettePolicy : null,
+        stylePrompt: a.stylePrompt ?? null,
+        imageWidth: a.imageWidth ?? null,
+        imageHeight: a.imageHeight ?? null,
+      }
+    }),
   }
 
   const zip = new JSZip()
@@ -75,7 +130,7 @@ export async function buildArchive(args: { deckId: number; userId: number }): Pr
     // jszip 文档说仅在路径合法时返 null;'assets' 一定合法 —— 兜底防御性 throw
     throw new Error('jszip-folder-create-failed')
   }
-  for (const a of assets) {
+  for (const a of archivedAssets) {
     const filename = `${a.id}.${mimeToExt(a.mimeType)}`
     assetsDir.file(filename, a.data, { compression: 'STORE' })
   }

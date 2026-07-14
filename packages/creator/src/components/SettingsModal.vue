@@ -448,6 +448,14 @@ function buildPayload() {
  */
 const llmApplied = ref(false)
 const imageApplied = ref(false)
+/**
+ * 打开期间的初始加载门控:GET 未返前不渲染表单体。
+ * 否则用户(或 E2E)会看到并操作「全部未配置」的默认态,loadSettings 的异步
+ * reset 再擦掉这些交互(apiKey 明文有 snapshot 保护,但 hasApiKey 徽章 /
+ * advanced 下拉没有)。Phase 17 关闭后 probeLlmSettings 重探测让这个窗口
+ * 更容易被撞上(save→关→立刻重开),从渲染层面关死。
+ */
+const settingsLoading = ref(false)
 let llmAppliedTimer: ReturnType<typeof setTimeout> | null = null
 let imageAppliedTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -552,7 +560,12 @@ watch(
   () => props.open,
   async (val) => {
     if (val) {
-      await Promise.all([loadSettings(), loadImageSettings(), refresh()])
+      settingsLoading.value = true
+      try {
+        await Promise.all([loadSettings(), loadImageSettings(), refresh()])
+      } finally {
+        settingsLoading.value = false
+      }
     }
   },
   { immediate: true },
@@ -618,7 +631,9 @@ onMounted(() => {
           </div>
         </div>
 
-        <div v-if="activeTab === 'llm'" class="modal-body">
+        <div v-if="settingsLoading" class="modal-body settings-loading-body">加载配置中…</div>
+
+        <div v-else-if="activeTab === 'llm'" class="modal-body">
           <section class="form-section">
             <header class="section-header">
               <span class="section-title">活跃 Provider</span>
@@ -1420,6 +1435,14 @@ onMounted(() => {
   flex-direction: column;
   gap: var(--space-6);
   overflow-y: auto;
+}
+
+.settings-loading-body {
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--color-fg-tertiary);
+  font-size: var(--fs-sm);
 }
 
 .form-section {

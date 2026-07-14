@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "colored-pencil",
+  "name": "手绘彩铅",
+  "description": "可见笔触、轻微不规则线条和温暖纸色，适合创意与教学主题。",
+  "category": "illustration",
+  "tags": ["手绘", "彩铅", "创意"],
+  "order": 80,
+  "stylePrompt": "Hand-drawn colored-pencil illustration on warm paper, visible layered strokes, slightly imperfect outlines, thoughtful sketchbook composition, and expressive but controlled color marks.",
+  "palettePolicy": "template",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

@@ -9,11 +9,7 @@
  *   5. 3 个 prompt 并发调 generateImage → 落 deck_assets(purpose='mood-board-candidate')
  *   6. 任一图失败 → 已写入 candidate 标记 discarded(避免脏 row)+ 抛 MoodBoardGenError
  */
-import {
-  createAsset,
-  discardAssets,
-  type AssetPurpose,
-} from '../db/deck-assets.js'
+import { createAsset, discardAssets, type AssetPurpose } from '../db/deck-assets.js'
 import fs from 'node:fs'
 import path from 'node:path'
 import { generateImage as defaultGenerateImage } from '../llm/openai-image.js'
@@ -24,6 +20,7 @@ import { acquireLlmSlot } from '../middleware/llm-semaphore.js'
 import { loadUserLlmSettings, resolveUpstream } from '../prompts/rewriteForTemplate.js'
 import { getImageLlmSettings } from '../db/image-llm-settings.js'
 import { getManifest } from '../templates/registry.js'
+import { listImageStyles, readImageStyleReference } from '../image-styles/registry.js'
 import { logServerEvent } from '../logger/server-log.js'
 import {
   MOOD_BOARD_SYSTEM_PROMPT,
@@ -62,6 +59,9 @@ export interface GenerateMoodBoardInput {
    * 比例对齐,免得 anchor 看起来 1:1 漂亮但实际正式页 2:1 走形)。
    */
   templateId: string
+  /** Phase 17 background explore: keep rows hidden until the whole batch succeeds. */
+  staging?: boolean
+  signal?: AbortSignal
 }
 
 /**
@@ -146,6 +146,7 @@ export type MainLlmCaller = (args: {
   userId: number
   systemPrompt: string
   userPrompt: string
+  signal?: AbortSignal
 }) => Promise<string>
 
 let mainLlmCallerOverride: MainLlmCaller | null = null
@@ -184,8 +185,7 @@ const STUB_SAMPLES_JSON = JSON.stringify({
 
 function shouldUseStubMainLlm(): boolean {
   return (
-    process.env.NODE_ENV !== 'production' &&
-    process.env.BIG_PPT_TEST_MOOD_BOARD_MODE === 'stub'
+    process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_MOOD_BOARD_MODE === 'stub'
   )
 }
 
@@ -194,28 +194,24 @@ function shouldUseStubMainLlm(): boolean {
  * 避免 mood-board 在 e2e 真打 OpenAI。仅 NODE_ENV !== 'production' 时启用。
  */
 function shouldUseStubGenerateImage(): boolean {
-  return (
-    process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_IMAGE_MODE === 'stub'
-  )
+  return process.env.NODE_ENV !== 'production' && process.env.BIG_PPT_TEST_IMAGE_MODE === 'stub'
 }
 
 function readStubImageBytes(): Buffer {
-  const fixturePath = path.join(
-    process.cwd(),
-    'packages/agent/test/fixtures/test-image.png',
-  )
+  // Phase 17:探索候选需要真实的目标宽高，才能覆盖“保存后跨 deck 复用”的 E2E。
+  // 复用首个已校验系统 reference，避免旧 1×1 通用 fixture 被正确判为图幅不兼容。
+  const firstStyle = listImageStyles()[0]
+  const styleReference = firstStyle ? readImageStyleReference(firstStyle.manifest.id, 0) : null
+  if (styleReference) return styleReference.data
+
+  const fixturePath = path.join(process.cwd(), 'packages/agent/test/fixtures/test-image.png')
   if (fs.existsSync(fixturePath)) return fs.readFileSync(fixturePath)
-  const fallback = path.join(
-    import.meta.dirname ?? '',
-    '../../test/fixtures/test-image.png',
-  )
+  const fallback = path.join(import.meta.dirname ?? '', '../../test/fixtures/test-image.png')
   if (fs.existsSync(fallback)) return fs.readFileSync(fallback)
   throw new Error(`mood-board stub fixture not found: ${fixturePath}`)
 }
 
-async function stubGenerateImageForMoodBoard(
-  _input: ImageGenInput,
-): Promise<ImageGenOutput> {
+async function stubGenerateImageForMoodBoard(_input: ImageGenInput): Promise<ImageGenOutput> {
   const buf = readStubImageBytes()
   return {
     b64: buf.toString('base64'),
@@ -225,7 +221,12 @@ async function stubGenerateImageForMoodBoard(
 }
 
 /** 默认主 LLM 调用实现(套用 rewriteSinglePageToComponents 同款套路:loadUserLlmSettings + fetch /chat/completions) */
-const defaultMainLlmCaller: MainLlmCaller = async ({ userId, systemPrompt, userPrompt }) => {
+const defaultMainLlmCaller: MainLlmCaller = async ({
+  userId,
+  systemPrompt,
+  userPrompt,
+  signal,
+}) => {
   if (shouldUseStubMainLlm()) {
     return STUB_SAMPLES_JSON
   }
@@ -235,6 +236,7 @@ const defaultMainLlmCaller: MainLlmCaller = async ({ userId, systemPrompt, userP
   try {
     const resp = await fetch(url, {
       method: 'POST',
+      signal,
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${settings.apiKey}`,
@@ -307,6 +309,7 @@ export async function generateMoodBoard(
       userId: input.userId,
       systemPrompt: MOOD_BOARD_SYSTEM_PROMPT,
       userPrompt: `Deck outline:\n\n${outline}`,
+      signal: input.signal,
     })
     samples = parseMoodBoardLlmResponse(raw).samples
   } catch (err) {
@@ -339,6 +342,7 @@ export async function generateMoodBoard(
         userId: input.userId,
         systemPrompt: buildRetrySystemPrompt(samples.map((s) => s.style)),
         userPrompt: `Deck outline:\n\n${outline}`,
+        signal: input.signal,
       })
       const retryParsed = parseMoodBoardLlmResponse(raw)
       const retrySim = assessStyleDiversity(retryParsed.samples)
@@ -378,6 +382,10 @@ export async function generateMoodBoard(
       ? stubGenerateImageForMoodBoard
       : defaultGenerateImage
   const ctrl = new AbortController()
+  if (input.signal) {
+    if (input.signal.aborted) ctrl.abort()
+    else input.signal.addEventListener('abort', () => ctrl.abort(), { once: true })
+  }
 
   type ImageOutcome =
     | { ok: true; assetId: string; style: string; prompt: string }
@@ -405,6 +413,7 @@ export async function generateMoodBoard(
           { deckId: input.deckId, userId: input.userId, style: sample.style },
         )
         const bytes = Buffer.from(out.b64, 'base64')
+        const dimensions = readImageDimensions(bytes)
         const { id } = await createAsset({
           deckId: input.deckId,
           userId: input.userId,
@@ -412,10 +421,19 @@ export async function generateMoodBoard(
           data: bytes,
           prompt: sample.prompt,
           model: out.modelUsed,
-          purpose: 'mood-board-candidate' satisfies AssetPurpose,
+          purpose: (input.staging
+            ? 'mood-board-staging'
+            : 'mood-board-candidate') satisfies AssetPurpose,
           // Phase 11.8 dogfood:把短风格标签也存 DB,picker reopen 时 GET candidates
           // 能拿回展示,不再依赖 frontend 内存
           style: sample.style,
+          styleSource: 'explore',
+          stylePalettePolicy: 'reference',
+          // LLM 的完整 sample.prompt 含当前 deck 业务主题，不能作为跨 deck 风格指令；
+          // 短 style label 才是纯视觉技法 fallback。
+          stylePrompt: sample.style,
+          imageWidth: dimensions?.width,
+          imageHeight: dimensions?.height,
         })
         return { ok: true, assetId: id, style: sample.style, prompt: sample.prompt }
       } catch (err) {

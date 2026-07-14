@@ -48,7 +48,9 @@ async function makeRealArchiveBuffer(): Promise<{
   png1: Buffer
   png2: Buffer
 }> {
-  const { user } = await createTestUser(`parse-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@a.com`)
+  const { user } = await createTestUser(
+    `parse-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@a.com`,
+  )
   const content = '---\ntitle: x\n---\n\n# slide one\n\n---\n\n# slide two'
   const { deck } = await createDeckDirect(user.id, 'Parse Test Deck', content)
   const png1 = fakePng(7)
@@ -101,6 +103,93 @@ describe('parseArchive', () => {
     expect(got2).toBeDefined()
     expect(got1!.equals(png1)).toBe(true)
     expect(got2!.equals(png2)).toBe(true)
+  })
+
+  it('v1 包继续可导入并 normalize 风格字段为 null / false', async () => {
+    const { buffer } = await makeRealArchiveBuffer()
+    const v1 = await mutateZip(buffer, (_, manifest) => {
+      const raw = manifest as unknown as {
+        schemaVersion: number
+        deck: Record<string, unknown>
+        assets: Array<Record<string, unknown>>
+      }
+      raw.schemaVersion = 1
+      delete raw.deck.anchorAssetId
+      delete raw.deck.anchorSkipped
+      raw.assets.forEach((asset) => {
+        delete asset.style
+        delete asset.purpose
+        delete asset.styleSource
+        delete asset.styleSourceId
+        delete asset.stylePalettePolicy
+        delete asset.stylePrompt
+        delete asset.imageWidth
+        delete asset.imageHeight
+      })
+    })
+
+    const parsed = await parseArchive(v1)
+    expect(parsed.manifest.schemaVersion).toBe(2)
+    expect(parsed.manifest.deck.anchorAssetId).toBeNull()
+    expect(parsed.manifest.deck.anchorSkipped).toBe(false)
+    expect(parsed.manifest.assets[0]).toMatchObject({
+      style: null,
+      purpose: null,
+      styleSource: null,
+      styleSourceId: null,
+      stylePalettePolicy: null,
+      stylePrompt: null,
+      imageWidth: null,
+      imageHeight: null,
+    })
+  })
+
+  it('v2 anchorAssetId 不在 assets 中 → manifest-invalid', async () => {
+    const { buffer } = await makeRealArchiveBuffer()
+    const bad = await mutateZip(buffer, (_, manifest) => {
+      ;(manifest.deck as { anchorAssetId: string | null }).anchorAssetId =
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    })
+    await expect(parseArchive(bad)).rejects.toMatchObject({ code: 'manifest-invalid' })
+  })
+
+  it('v2 asset purpose 非法 → manifest-invalid', async () => {
+    const { buffer } = await makeRealArchiveBuffer()
+    const bad = await mutateZip(buffer, (_, manifest) => {
+      ;(manifest.assets[0] as unknown as { purpose: string }).purpose = 'not-a-purpose'
+    })
+    await expect(parseArchive(bad)).rejects.toMatchObject({ code: 'manifest-invalid' })
+  })
+
+  it('v2 合法 2001–8000 字 stylePrompt 可 round-trip', async () => {
+    const { buffer } = await makeRealArchiveBuffer()
+    const longPrompt = 'style '.repeat(600)
+    const changed = await mutateZip(buffer, (_, manifest) => {
+      ;(manifest.assets[0] as unknown as { stylePrompt: string }).stylePrompt = longPrompt
+    })
+    const parsed = await parseArchive(changed)
+    expect(parsed.manifest.assets[0]!.stylePrompt).toBe(longPrompt)
+  })
+
+  it('asset 为 null 或 id 重复 → manifest-invalid', async () => {
+    const { buffer } = await makeRealArchiveBuffer()
+    const nullAsset = await mutateZip(buffer, (_, manifest) => {
+      ;(manifest as unknown as { assets: unknown[] }).assets[0] = null
+    })
+    await expect(parseArchive(nullAsset)).rejects.toMatchObject({ code: 'manifest-invalid' })
+
+    const duplicate = await mutateZip(buffer, (_, manifest) => {
+      manifest.assets[1]!.id = manifest.assets[0]!.id
+    })
+    await expect(parseArchive(duplicate)).rejects.toMatchObject({ code: 'manifest-invalid' })
+  })
+
+  it('36 个连字符不再被当成合法 uuid', async () => {
+    const { buffer } = await makeRealArchiveBuffer()
+    const bad = await mutateZip(buffer, (_, manifest) => {
+      manifest.assets[0]!.id = '-'.repeat(36)
+    })
+    await expect(parseArchive(bad)).rejects.toMatchObject({ code: 'manifest-invalid' })
   })
 
   it('schemaVersion = 99 → schema-unsupported(message 含 99 + 不被支持)', async () => {

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "minimal-line-art",
+  "name": "极简线稿",
+  "description": "单色连续线条、少量强调色和大面积留白，简洁而高级。",
+  "category": "business",
+  "tags": ["线稿", "极简", "留白"],
+  "order": 120,
+  "stylePrompt": "Minimal editorial line art with confident monoline contours, sparse geometric symbols, generous negative space, a single restrained accent color, and precise visual rhythm.",
+  "palettePolicy": "template",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

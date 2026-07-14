@@ -34,10 +34,8 @@ export type DeckChatContext = {
   templateId: string
   initialHistory: ChatBubble[]
   /**
-   * Phase 11.8 trigger-timing fix:write_slides 工具成功完成后回调编辑器,
-   * 编辑器内部判断「image LLM 已配 + deck.anchorAssetId == null + !anchorSkipped」
-   * 决定要不要弹 mood-board picker。useAIChat 自己不知道 anchor 状态,所以
-   * 完全交回编辑器 layer 处理(保持 chat composable 不依赖 picker)。
+   * write_slides 工具成功完成后回调编辑器。编辑器结合 deck 决策状态决定是否
+   * 打开风格库；风格库只展示预设，不会自动触发 AI 探索。
    */
   onWriteSlidesCompleted?: () => void
 }
@@ -191,7 +189,10 @@ export function useAIChat(): UseAIChatReturn {
     try {
       const chats = await listChats(deckCtx.deckId)
       chatMessages.value = chats
-        .filter((c): c is typeof c & { role: 'user' | 'assistant' } => c.role === 'user' || c.role === 'assistant')
+        .filter(
+          (c): c is typeof c & { role: 'user' | 'assistant' } =>
+            c.role === 'user' || c.role === 'assistant',
+        )
         .map((c) => ({ role: c.role, content: c.content }))
       kickOffPendingImageJobs(chats)
     } catch (err) {
@@ -346,9 +347,8 @@ export function useAIChat(): UseAIChatReturn {
           map.set(event.toolCallId, { ...existing, state: event.isError ? 'error' : 'done' })
           currentToolExecutions.value = map
         }
-        // Phase 11.8 trigger-timing fix:write_slides 成功 = 主 LLM 第一次产出业务大纲;
-        // 此刻 deck.content 已经从 starter 骨架变为真实页面内容,适合让 mood-board
-        // 读真实大纲拼差异化 prompt。失败(isError=true)不触发避免拿空内容跑。
+        // write_slides 成功 = 首次业务大纲已落盘，编辑器可提示用户选配图风格。
+        // 失败(isError=true)不触发。
         // canonical tool_execution.end 不带 toolName(只有 toolCallId),用 start 阶段
         // 写入 currentToolExecutions Map 的 toolName 反查。
         if (existing && existing.toolName === 'write_slides' && !event.isError) {

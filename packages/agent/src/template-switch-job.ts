@@ -10,11 +10,12 @@
  *  3. success     —— 插入「切换后」version + 更新 decks.template_id + current_version_id 指向新 version
  */
 import { randomUUID } from 'node:crypto'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import type { TemplateManifest } from '@big-ppt/shared'
-import { getDb, decks, deckVersions } from './db/index.js'
+import { getDb, decks, deckVersions, deckAssets } from './db/index.js'
 import { getManifest } from './templates/registry.js'
 import { analyzeDeckPurity } from './templates/analyzeDeckPurity.js'
+import { SIZE_AR_TOLERANCE } from './llm/image-dimensions.js'
 
 export type SwitchJobState = 'pending' | 'snapshotting' | 'migrating' | 'success' | 'failed'
 
@@ -76,6 +77,15 @@ function mutateJob(id: string, patch: Partial<SwitchJob>): void {
   const existing = jobs.get(id)
   if (!existing) return
   jobs.set(id, { ...existing, ...patch })
+}
+
+function imageSizesCompatible(
+  source: { width: number; height: number },
+  target: { width: number; height: number },
+): boolean {
+  const sourceRatio = source.width / source.height
+  const targetRatio = target.width / target.height
+  return Math.abs(sourceRatio - targetRatio) / targetRatio <= SIZE_AR_TOLERANCE
 }
 
 /**
@@ -199,16 +209,57 @@ export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise
       }
     }
 
+    // Phase 17: template layout and image style are independent choices. Preserve the
+    // current anchor/free decision whenever the target image area has a compatible ratio;
+    // only incompatible references return to the undecided state.
+    let nextAnchorAssetId = deck.anchorAssetId
+    let nextAnchorSkipped = deck.anchorSkipped
+    if (deck.anchorAssetId && toManifest) {
+      const [anchor] = await db
+        .select({
+          width: deckAssets.imageWidth,
+          height: deckAssets.imageHeight,
+          styleSource: deckAssets.styleSource,
+        })
+        .from(deckAssets)
+        .where(
+          and(
+            eq(deckAssets.id, deck.anchorAssetId),
+            eq(deckAssets.deckId, job.deckId),
+            eq(deckAssets.userId, job.userId),
+          ),
+        )
+        .limit(1)
+      const targetSize = toManifest.imageGenSize ?? { width: 1536, height: 720 }
+      const sourceSize =
+        anchor?.width && anchor.height
+          ? { width: anchor.width, height: anchor.height }
+          : (fromManifest?.imageGenSize ?? { width: 1536, height: 720 })
+      if (!anchor || !imageSizesCompatible(sourceSize, targetSize)) {
+        nextAnchorAssetId = null
+        nextAnchorSkipped = false
+        if (anchor) {
+          await db
+            .update(deckAssets)
+            .set({
+              purpose:
+                anchor.styleSource === 'system' || anchor.styleSource === 'user'
+                  ? 'mood-board-discarded'
+                  : 'mood-board-candidate',
+            })
+            .where(and(eq(deckAssets.id, deck.anchorAssetId), eq(deckAssets.deckId, job.deckId)))
+        }
+      }
+    }
+
     // 插切换后 version + 更新 decks.template_id / current_version_id
-    // Phase 11.8: 切模板成功 → 新 version 的 anchor_asset_id = NULL(语义:切模板就是想换风格,
-    // anchor 跟旧模板色板一脉相承,保留反而冲突);decks.anchor_asset_id 一并清空,让用户
-    // 下次走 image-gen 前重新选 anchor。undo 切模板时 restore 端点能从 snapshot version 恢复。
+    // Phase 17:新 version 记录兼容性判定后的 anchor；undo 仍可从 snapshot 恢复旧值。
     await db.insert(deckVersions).values({
       deckId: job.deckId,
       content: rewritten,
       message: `切换到模板 ${job.to}`,
       templateId: job.to,
-      anchorAssetId: null,
+      anchorAssetId: nextAnchorAssetId,
       authorId: job.userId,
     })
     const [newest] = await db
@@ -219,15 +270,14 @@ export async function runSwitchJob(jobId: string, rewriteFn: RewriteFn): Promise
       .limit(1)
     if (!newest) throw new Error('new version 回查失败')
 
-    // Phase 11.8: 切模板成功 → 同时 reset anchorSkipped=false 让下次走 image-gen 前
-    // 重新走 mood-board 流程(新模板的色板 / 风格调性可能不一样,用户应该重选 anchor)
+    // 尺寸兼容时保留 preset/generated/free；不兼容才回 undecided。
     await db
       .update(decks)
       .set({
         templateId: job.to,
         currentVersionId: newest.id,
-        anchorAssetId: null,
-        anchorSkipped: false,
+        anchorAssetId: nextAnchorAssetId,
+        anchorSkipped: nextAnchorSkipped,
       })
       .where(eq(decks.id, job.deckId))
 

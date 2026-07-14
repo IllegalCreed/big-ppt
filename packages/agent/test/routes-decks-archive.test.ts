@@ -217,6 +217,13 @@ describe('routes/decks-archive — import', () => {
       userId: user.id,
       mimeType: 'image/png',
       data: png,
+      purpose: 'anchor',
+      style: 'soft watercolor',
+      styleSource: 'explore',
+      stylePalettePolicy: 'reference',
+      stylePrompt: 'soft translucent watercolor wash',
+      imageWidth: 1280,
+      imageHeight: 624,
     })
     // update content 用真 asset id 引用,以验证 rewrite
     const realContent = `# slide 1\n\n![img](/api/assets/${oldAssetId})`
@@ -232,7 +239,10 @@ describe('routes/decks-archive — import', () => {
       .from(deckVersions)
       .where(eq(deckVersions.deckId, deck.id))
     const maxVerId = Math.max(...allVers.map((v) => v.id))
-    await getDb().update(decks).set({ currentVersionId: maxVerId }).where(eq(decks.id, deck.id))
+    await getDb()
+      .update(decks)
+      .set({ currentVersionId: maxVerId, anchorAssetId: oldAssetId, anchorSkipped: true })
+      .where(eq(decks.id, deck.id))
 
     // export
     const buf = await exportArchiveFor(app, cookie, deck.id)
@@ -251,6 +261,9 @@ describe('routes/decks-archive — import', () => {
     expect(newDeck!.userId).toBe(user.id)
     expect(newDeck!.templateId).toBe(deck.templateId)
     expect(newDeck!.currentVersionId).not.toBeNull()
+    expect(newDeck!.anchorSkipped).toBe(true)
+    expect(newDeck!.anchorAssetId).not.toBeNull()
+    expect(newDeck!.anchorAssetId).not.toBe(oldAssetId)
 
     // 新 currentVersion.content 内 asset url 已 rewrite 成新 uuid(不再是 oldAssetId)
     const [newVer] = await getDb()
@@ -261,9 +274,13 @@ describe('routes/decks-archive — import', () => {
     expect(newVer!.content).toContain('/api/assets/')
     expect(newVer!.content).not.toContain(oldAssetId)
     expect(newVer!.content).toContain('# slide 1')
+    expect(newVer!.anchorAssetId).toBe(newDeck!.anchorAssetId)
 
     // 新 deck 下有 1 个 asset,bytes byte-equal 原图
-    const newAssets = await getDb().select().from(deckAssets).where(eq(deckAssets.deckId, body.deckId))
+    const newAssets = await getDb()
+      .select()
+      .from(deckAssets)
+      .where(eq(deckAssets.deckId, body.deckId))
     expect(newAssets).toHaveLength(1)
     const newAsset = newAssets[0]!
     expect(newAsset.id).not.toBe(oldAssetId)
@@ -271,6 +288,15 @@ describe('routes/decks-archive — import', () => {
     expect(newAsset.mimeType).toBe('image/png')
     expect(newAsset.bytesSize).toBe(png.length)
     expect(Buffer.from(newAsset.data).equals(png)).toBe(true)
+    expect(newAsset.id).toBe(newDeck!.anchorAssetId)
+    expect(newAsset.purpose).toBe('anchor')
+    expect(newAsset.style).toBe('soft watercolor')
+    expect(newAsset.styleSource).toBe('explore')
+    expect(newAsset.styleSourceId).toBe(newAsset.id)
+    expect(newAsset.stylePalettePolicy).toBe('reference')
+    expect(newAsset.stylePrompt).toBe('soft translucent watercolor wash')
+    expect(newAsset.imageWidth).toBe(1280)
+    expect(newAsset.imageHeight).toBe(624)
     // rewrite 后的新 url 真指向新 asset id
     expect(newVer!.content).toContain(`/api/assets/${newAsset.id}`)
   })
@@ -419,7 +445,9 @@ describe('routes/decks-archive — import', () => {
     const { user, cookie } = await createLoggedInUser('roundtrip@a.com')
 
     // 2 张不同 mime 的 asset
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02, 0x03])
+    const png = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01, 0x02, 0x03,
+    ])
     const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46])
     const { deck: original } = await createDeckDirect(user.id, 'RT Original', '# placeholder')
     const { id: pngId } = await createAsset({
@@ -496,7 +524,10 @@ describe('routes/decks-archive — import', () => {
     expect(stripUrls(newVer!.content)).toBe(stripUrls(originalContent))
 
     // 新 deck 下 2 张 asset bytes byte-equal 原图
-    const newAssets = await getDb().select().from(deckAssets).where(eq(deckAssets.deckId, body.deckId))
+    const newAssets = await getDb()
+      .select()
+      .from(deckAssets)
+      .where(eq(deckAssets.deckId, body.deckId))
     expect(newAssets).toHaveLength(2)
     const byMime = new Map(newAssets.map((a) => [a.mimeType, a]))
     const newPng = byMime.get('image/png')!
@@ -516,5 +547,6 @@ describe('routes/decks-archive — import', () => {
     // rewrite 后的 content 确实指向新 asset id
     expect(newVer!.content).toContain(`/api/assets/${newPng.id}`)
     expect(newVer!.content).toContain(`/api/assets/${newJpg.id}`)
-  })
+    // 多步 round-trip(export→删→import)对远程 RDS 往返多,全量串行长跑时 5s 默认超时会抖
+  }, 15_000)
 })

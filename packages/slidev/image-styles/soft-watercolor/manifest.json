@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "soft-watercolor",
+  "name": "柔和水彩",
+  "description": "透明叠色、湿润边缘与纸张留白，适合教育、文化和情绪表达。",
+  "category": "artistic",
+  "tags": ["水彩", "柔和", "留白"],
+  "order": 70,
+  "stylePrompt": "Soft watercolor painting on textured paper with translucent layered washes, organic wet edges, restrained brush detail, delicate pigment blooms, and abundant breathing room.",
+  "palettePolicy": "template",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

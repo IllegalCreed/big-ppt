@@ -6,7 +6,8 @@
  * 整 deck 删除时 cascade 自动清(但因为 decks 是 soft delete,需在路由层显式调 deleteAssetsByDeck)。
  */
 import { randomUUID } from 'node:crypto'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, notInArray } from 'drizzle-orm'
+import type { ImageStylePalettePolicy } from '@big-ppt/shared'
 import { getDb } from './client.js'
 import { deckAssets, decks } from './schema.js'
 
@@ -17,7 +18,14 @@ import { deckAssets, decks } from './schema.js'
  * - 'mood-board-candidate': 候选未选中
  * - 'mood-board-discarded': 历史"换一批"丢弃 / 未中选
  */
-export type AssetPurpose = 'anchor' | 'mood-board-candidate' | 'mood-board-discarded'
+export type AssetPurpose =
+  | 'anchor'
+  | 'mood-board-candidate'
+  | 'mood-board-discarded'
+  | 'mood-board-staging'
+  | 'style-preset-anchor'
+
+export type AssetStyleSource = 'system' | 'user' | 'explore'
 
 export interface CreateAssetArgs {
   deckId: number
@@ -30,6 +38,14 @@ export interface CreateAssetArgs {
   purpose?: AssetPurpose
   /** Phase 11.8 dogfood:mood-board candidate 的短风格标签(picker UI 展示用) */
   style?: string
+  /** Phase 17: materialized preset / explore provenance。 */
+  styleSource?: AssetStyleSource
+  styleSourceId?: string
+  stylePalettePolicy?: ImageStylePalettePolicy
+  /** 与业务主题 prompt 分离的纯视觉技法提示。 */
+  stylePrompt?: string
+  imageWidth?: number
+  imageHeight?: number
 }
 
 export interface AssetRow {
@@ -43,6 +59,12 @@ export interface AssetRow {
   model: string | null
   purpose: string | null
   style: string | null
+  styleSource: string | null
+  styleSourceId: string | null
+  stylePalettePolicy: string | null
+  stylePrompt: string | null
+  imageWidth: number | null
+  imageHeight: number | null
   createdAt: Date
 }
 
@@ -60,6 +82,13 @@ export async function createAsset(args: CreateAssetArgs): Promise<{ id: string }
     model: args.model,
     purpose: args.purpose,
     style: args.style,
+    styleSource: args.styleSource,
+    // explore candidate 的稳定 source id 就是自己的 deck asset id。
+    styleSourceId: args.styleSourceId ?? (args.styleSource === 'explore' ? id : undefined),
+    stylePalettePolicy: args.stylePalettePolicy,
+    stylePrompt: args.stylePrompt,
+    imageWidth: args.imageWidth,
+    imageHeight: args.imageHeight,
   })
   return { id }
 }
@@ -163,7 +192,25 @@ export async function listMoodBoardCandidates(
  */
 export async function listAnchorAndCandidates(
   deckId: number,
-): Promise<Array<Pick<AssetRow, 'id' | 'mimeType' | 'prompt' | 'style' | 'purpose' | 'createdAt'>>> {
+): Promise<
+  Array<
+    Pick<
+      AssetRow,
+      | 'id'
+      | 'mimeType'
+      | 'prompt'
+      | 'style'
+      | 'purpose'
+      | 'styleSource'
+      | 'styleSourceId'
+      | 'stylePalettePolicy'
+      | 'stylePrompt'
+      | 'imageWidth'
+      | 'imageHeight'
+      | 'createdAt'
+    >
+  >
+> {
   const db = getDb()
   return db
     .select({
@@ -172,6 +219,12 @@ export async function listAnchorAndCandidates(
       prompt: deckAssets.prompt,
       style: deckAssets.style,
       purpose: deckAssets.purpose,
+      styleSource: deckAssets.styleSource,
+      styleSourceId: deckAssets.styleSourceId,
+      stylePalettePolicy: deckAssets.stylePalettePolicy,
+      stylePrompt: deckAssets.stylePrompt,
+      imageWidth: deckAssets.imageWidth,
+      imageHeight: deckAssets.imageHeight,
       createdAt: deckAssets.createdAt,
     })
     .from(deckAssets)
@@ -185,22 +238,27 @@ export async function listAnchorAndCandidates(
 }
 
 /**
- * Phase 11.8 dogfood:把同 deck 现有的所有 mood-board 候选 + 当前 anchor 标 discarded。
- * 「换一批」前先调用本函数,避免历史候选堆积让 listAnchorAndCandidates 返超过 3 行。
- * decks.anchor_asset_id 跟着置 NULL(因为已选的 anchor 也被丢弃,语义=用户决定换一组)。
+ * Phase 17 compatibility path for the legacy synchronous mood-board endpoint.
+ * Replace only old, non-active candidates after the new batch has fully succeeded.
+ * The current anchor is intentionally untouched.
  */
-export async function discardCurrentMoodBoard(deckId: number): Promise<void> {
-  const db = getDb()
-  await db
+export async function replaceMoodBoardCandidatesAfterSuccess(
+  deckId: number,
+  userId: number,
+  newAssetIds: string[],
+): Promise<void> {
+  if (newAssetIds.length === 0) return
+  await getDb()
     .update(deckAssets)
     .set({ purpose: 'mood-board-discarded' })
     .where(
       and(
         eq(deckAssets.deckId, deckId),
-        inArray(deckAssets.purpose, ['mood-board-candidate', 'anchor']),
+        eq(deckAssets.userId, userId),
+        eq(deckAssets.purpose, 'mood-board-candidate'),
+        notInArray(deckAssets.id, newAssetIds),
       ),
     )
-  await db.update(decks).set({ anchorAssetId: null }).where(eq(decks.id, deckId))
 }
 
 /**

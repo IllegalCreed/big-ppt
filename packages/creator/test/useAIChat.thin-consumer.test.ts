@@ -98,7 +98,7 @@ function makeSSEResponse(events: CanonicalEvent[]): Response {
 }
 
 /** 用 Vue test-utils 在一个 host 里 provide DECK_CHAT_CONTEXT 后 useAIChat。 */
-function setupChat(deckId = 7) {
+function setupChat(deckId = 7, onWriteSlidesCompleted?: () => void) {
   const box: { chat: UseAIChatReturn | null } = { chat: null }
   // 两层组件：父 provide，子 inject + useAIChat。同组件内 provide 不能被自己 inject。
   const Child = defineComponent({
@@ -114,6 +114,7 @@ function setupChat(deckId = 7) {
         deckId,
         templateId: 'beitou-standard',
         initialHistory: [],
+        onWriteSlidesCompleted,
       })
       return () => h(Child)
     },
@@ -273,6 +274,25 @@ describe('useAIChat (thin consumer)', () => {
     expect(chat.currentToolExecutions.value.size).toBe(0)
   })
 
+  it('write_slides 成功才通知编辑器进入首次风格决策', async () => {
+    const onWriteSlidesCompleted = vi.fn()
+    chatTurnMock.mockResolvedValueOnce(
+      makeSSEResponse([
+        { type: 'tool_execution.start', toolCallId: 'write-ok', toolName: 'write_slides' },
+        { type: 'tool_execution.end', toolCallId: 'write-ok', isError: false },
+        { type: 'tool_execution.start', toolCallId: 'write-fail', toolName: 'write_slides' },
+        { type: 'tool_execution.end', toolCallId: 'write-fail', isError: true },
+        { type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' },
+      ]),
+    )
+
+    const { chat } = setupChat(7, onWriteSlidesCompleted)
+    await chat.sendMessage('生成 deck')
+    await flushPromises()
+
+    expect(onWriteSlidesCompleted).toHaveBeenCalledOnce()
+  })
+
   it('tool_execution 中间状态：start→end isError=false→done；start→end isError=true→error', async () => {
     // 用半开 stream 捕获 done / error 中间态
     const encoder = new TextEncoder()
@@ -410,7 +430,10 @@ describe('useAIChat (thin consumer)', () => {
         { type: 'turn.end', usage: { input: 1, output: 1 }, reason: 'stop' },
       ]),
     )
-    listChatsMock.mockResolvedValueOnce([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }])
+    listChatsMock.mockResolvedValueOnce([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello' },
+    ])
     const { chat } = setupChat()
     await chat.sendMessage('hi')
     await flushPromises()
@@ -440,7 +463,9 @@ describe('useAIChat (thin consumer)', () => {
     // 空状态调 retry → 提示无可重试
     chat.retryLastUserMessage()
     await nextTick()
-    expect(chat.chatMessages.value).toEqual([{ role: 'assistant', content: '没有可重试的用户消息。' }])
+    expect(chat.chatMessages.value).toEqual([
+      { role: 'assistant', content: '没有可重试的用户消息。' },
+    ])
     expect(chatTurnMock).not.toHaveBeenCalled()
 
     // 加一条 user 后 retry → 触发 sendMessage
@@ -475,7 +500,9 @@ describe('useAIChat (thin consumer)', () => {
     expect(chat.status.value).toBe('error')
     expect(chatTurnMock).toHaveBeenCalledTimes(1)
     // chatMessages 包含 user "first try"(refresh 后 backend 视图)
-    expect(chat.chatMessages.value.some((m) => m.role === 'user' && m.content === 'first try')).toBe(true)
+    expect(
+      chat.chatMessages.value.some((m) => m.role === 'user' && m.content === 'first try'),
+    ).toBe(true)
 
     // error 终态 retry：旧守护会 silent return,新守护放行
     chat.retryLastUserMessage()

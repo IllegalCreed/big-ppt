@@ -13,6 +13,7 @@ import { getPaths } from './workspace.js'
 import { registerLocalTools } from './tools/local/index.js'
 // Phase 9-F：MCP registry 改为 per-user lazy 化（不再启动期全局 init）。
 import { verifyTemplatesOrThrow } from './templates/registry.js'
+import { verifyImageStylesOrThrow } from './image-styles/registry.js'
 
 const port = Number(process.env.AGENT_PORT ?? 4000)
 
@@ -27,6 +28,7 @@ try {
 // 模板 manifest 自检：任一模板 manifest 非法或 starter.md 缺失即拒绝启动
 try {
   verifyTemplatesOrThrow()
+  verifyImageStylesOrThrow()
 } catch (err) {
   console.error((err as Error).message)
   process.exit(1)

@@ -268,12 +268,25 @@ export const deckAssets = mysqlTable(
      * 仅 mood-board-* purpose 行有值;其他 asset 用途 NULL。前端 picker modal 展示用。
      */
     style: varchar('style', { length: 64 }),
+    /** Phase 17: style-library 来源。普通 slide image 仍为 NULL。 */
+    styleSource: varchar('style_source', { length: 16 }),
+    /** system manifest id / user preset uuid / explore candidate uuid。 */
+    styleSourceId: varchar('style_source_id', { length: 64 }),
+    /** 参考图与模板色板冲突时的优先级:template | reference。 */
+    stylePalettePolicy: varchar('style_palette_policy', { length: 16 }),
+    /** 纯视觉技法指令。与可能含业务主题的 prompt 分离，供 hybrid 路 B 降级使用。 */
+    stylePrompt: text('style_prompt'),
+    /** reference 实际像素尺寸；用于按 template imageGenSize 判断兼容，不必 load BLOB。 */
+    imageWidth: int('image_width'),
+    imageHeight: int('image_height'),
     /**
      * Phase 11.8: asset 用途分类。
      * - null: 默认/历史/普通 generate_slide_image 产物(slide imageSrc 指向用)
      * - 'anchor': 当前选定锚图(被 decks.anchor_asset_id 引用)
      * - 'mood-board-candidate': 候选未选中(用户可能挑选 / 换批)
      * - 'mood-board-discarded': 历史"换一批"丢弃 / 未中选(留待 Phase 17+ GC 清)
+     * - 'mood-board-staging': Phase 17 探索任务部分完成、尚未整批提交的临时行
+     * - 'style-preset-anchor': system/user preset materialize 的 deck-local 副本
      */
     purpose: varchar('purpose', { length: 32 }),
     createdAt: timestamp('created_at').default(NOW).notNull(),
@@ -281,6 +294,53 @@ export const deckAssets = mysqlTable(
   (t) => ({
     deckIdx: index('deck_assets_deck_idx').on(t.deckId),
     userIdx: index('deck_assets_user_idx').on(t.userId),
+    deckStyleSourceUniq: uniqueIndex('deck_assets_deck_style_source_uniq').on(
+      t.deckId,
+      t.styleSource,
+      t.styleSourceId,
+    ),
+  }),
+)
+
+/**
+ * Phase 17：用户保存的可跨 deck 复用配图风格。
+ *
+ * BLOB 独立于源 deck_assets，故删除源 deck 不影响风格库；应用时再复制为目标
+ * deck-local anchor，正式生图仍沿用 deckId + userId + assetId 三条件守卫。
+ */
+export const userStylePresets = mysqlTable(
+  'user_style_presets',
+  {
+    id: varchar('id', { length: 36 }).primaryKey(),
+    userId: int('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** 仅审计保存来源；兼容性只看 reference width/height。 */
+    sourceTemplateId: varchar('source_template_id', { length: 64 }),
+    /** 不设 FK：源 deck soft-delete 会清 deck_assets，但 preset 必须继续存在。 */
+    sourceAssetId: varchar('source_asset_id', { length: 36 }),
+    name: varchar('name', { length: 80 }).notNull(),
+    style: varchar('style', { length: 64 }).notNull(),
+    /** 原探索 prompt，仅审计/分析，不直接覆盖新 deck 的业务主题。 */
+    prompt: text('prompt'),
+    /** 纯视觉技法 prompt，hybrid 降级到 text-only 时仍能保住风格。 */
+    stylePrompt: text('style_prompt').notNull(),
+    palettePolicy: varchar('palette_policy', { length: 16 }).notNull(),
+    mimeType: varchar('mime_type', { length: 50 }).notNull(),
+    bytesSize: int('bytes_size').notNull(),
+    data: mediumBlob('data').notNull(),
+    width: int('width'),
+    height: int('height'),
+    lastUsedAt: datetime('last_used_at'),
+    createdAt: timestamp('created_at').default(NOW).notNull(),
+    updatedAt: timestamp('updated_at').default(NOW_ON_UPDATE).notNull(),
+  },
+  (t) => ({
+    userCreatedIdx: index('user_style_presets_user_created_idx').on(t.userId, t.createdAt),
+    userSourceUniq: uniqueIndex('user_style_presets_user_source_uniq').on(
+      t.userId,
+      t.sourceAssetId,
+    ),
   }),
 )
 
@@ -335,5 +395,7 @@ export type UserMcpServer = typeof userMcpServers.$inferSelect
 export type NewUserMcpServer = typeof userMcpServers.$inferInsert
 export type DeckAsset = typeof deckAssets.$inferSelect
 export type NewDeckAsset = typeof deckAssets.$inferInsert
+export type UserStylePreset = typeof userStylePresets.$inferSelect
+export type NewUserStylePreset = typeof userStylePresets.$inferInsert
 export type UserAsset = typeof userAssets.$inferSelect
 export type NewUserAsset = typeof userAssets.$inferInsert

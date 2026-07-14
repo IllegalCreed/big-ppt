@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "paper-cut",
+  "name": "剪纸层叠",
+  "description": "层层纸片、柔和投影与手工边缘，适合有温度的品牌叙事。",
+  "category": "artistic",
+  "tags": ["纸艺", "层次", "手工"],
+  "order": 60,
+  "stylePrompt": "Layered paper-cut illustration with tactile cardstock surfaces, softly irregular cut edges, stacked depth, warm cast shadows, and handcrafted dimensional composition.",
+  "palettePolicy": "template",
+  "previewImage": "reference.png",
+  "references": [{ "file": "reference.png", "width": 1280, "height": 624 }]
+}

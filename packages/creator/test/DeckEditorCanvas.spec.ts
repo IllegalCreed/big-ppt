@@ -38,6 +38,7 @@ const deck: Deck = {
   templateId: 'beitou-standard',
   currentVersionId: 100,
   anchorAssetId: null,
+  anchorSkipped: false,
   status: 'active',
   createdAt: '2026-04-23T00:00:00Z',
   updatedAt: '2026-04-23T00:00:00Z',
@@ -132,9 +133,7 @@ describe('DeckEditorCanvas · title inline 编辑', () => {
 
   it('API 出错 → 副标题行显示错误文案 + input 仍开着', async () => {
     server.use(
-      http.put('/api/decks/42', () =>
-        HttpResponse.json({ error: '重名已存在' }, { status: 409 }),
-      ),
+      http.put('/api/decks/42', () => HttpResponse.json({ error: '重名已存在' }, { status: 409 })),
     )
     const wrapper = mountIt()
     await flushPromises()
@@ -152,7 +151,7 @@ describe('DeckEditorCanvas · title inline 编辑', () => {
   })
 })
 
-describe('DeckEditorCanvas · Phase 11.8 anchor picker 集成', () => {
+describe('DeckEditorCanvas · Phase 17 image style library 集成', () => {
   function seedLlmHandlers(opts: { hasImage: boolean; hasMain: boolean }) {
     server.use(
       http.get('/api/image-llm-settings', () =>
@@ -164,42 +163,27 @@ describe('DeckEditorCanvas · Phase 11.8 anchor picker 集成', () => {
     )
   }
 
-  it('未配 image LLM → 顶栏不渲染选风格按钮', async () => {
+  it('未配 image LLM → 仍可打开风格库浏览预设', async () => {
     seedLlmHandlers({ hasImage: false, hasMain: true })
     const wrapper = mountIt()
     await flushPromises()
-    expect(wrapper.find('[data-anchor-picker-btn]').exists()).toBe(false)
+    expect(wrapper.find('[data-image-style-library-btn]').exists()).toBe(true)
   })
 
-  it('未配主 LLM → 顶栏不渲染选风格按钮(两个都要有)', async () => {
+  it('未配主 LLM → 仍渲染风格库按钮，只有 AI 探索在 modal 内 gate', async () => {
     seedLlmHandlers({ hasImage: true, hasMain: false })
     const wrapper = mountIt()
     await flushPromises()
-    expect(wrapper.find('[data-anchor-picker-btn]').exists()).toBe(false)
+    expect(wrapper.find('[data-image-style-library-btn]').exists()).toBe(true)
   })
 
-  it('配齐 image+main LLM → 渲染选风格按钮 + title=选风格', async () => {
+  it('配齐 image+main LLM → 渲染选风格按钮且不会自动探索', async () => {
     seedLlmHandlers({ hasImage: true, hasMain: true })
-    // mood-board generate 自动 open 时会调一次 — handler 必须存在防 unhandled
-    server.use(
-      http.post('/api/decks/42/mood-board/generate', () =>
-        HttpResponse.json({
-          candidates: [
-            { assetId: 'a-1', style: 's1', prompt: 'p1' },
-            { assetId: 'a-2', style: 's2', prompt: 'p2' },
-            { assetId: 'a-3', style: 's3', prompt: 'p3' },
-          ],
-          retried: false,
-          diversityDegraded: false,
-          remaining: 2,
-        }),
-      ),
-    )
     const wrapper = mountIt()
     await flushPromises()
-    const btn = wrapper.find('[data-anchor-picker-btn]')
+    const btn = wrapper.find('[data-image-style-library-btn]')
     expect(btn.exists()).toBe(true)
-    expect(btn.attributes('title')).toMatch(/选 AI 生图风格/)
+    expect(btn.attributes('title')).toMatch(/选择配图风格/)
   })
 
   it('已有 anchor → 按钮 title 改为"重选风格"', async () => {
@@ -215,7 +199,7 @@ describe('DeckEditorCanvas · Phase 11.8 anchor picker 集成', () => {
       },
     })
     await flushPromises()
-    const btn = wrapper.find('[data-anchor-picker-btn]')
+    const btn = wrapper.find('[data-image-style-library-btn]')
     expect(btn.exists()).toBe(true)
     expect(btn.attributes('title')).toMatch(/重选/)
   })
